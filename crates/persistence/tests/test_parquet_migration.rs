@@ -38,7 +38,7 @@ use nautilus_persistence::{
         },
         session::DataBackendSession,
     },
-    catalog::types::CatalogType,
+    catalog::types::CatalogDataType,
     test_data::RustTestCustomData,
 };
 use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
@@ -343,7 +343,7 @@ fn migration_rejects_nonempty_destination() {
 fn migration_preserves_empty_coverage_files(
     #[case] source_type: &str,
     #[case] target_type: &str,
-    #[case] catalog_type: CatalogType,
+    #[case] catalog_type: CatalogDataType,
 ) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");

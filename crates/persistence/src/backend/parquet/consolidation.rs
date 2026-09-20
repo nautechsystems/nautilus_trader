@@ -40,7 +40,8 @@ use crate::{
         },
     },
     catalog::types::{
-        CatalogDataType, CatalogType, parquet_catalog_type_path_prefix, parquet_data_path_prefix,
+        CatalogDataType, HasCatalogDataType, parquet_catalog_data_type_path_prefixes,
+        parquet_data_path_prefix,
     },
     common::custom::group_custom_data_by_type,
 };
@@ -196,15 +197,36 @@ impl ParquetDataCatalog {
     /// ```
     pub fn consolidate_data(
         &mut self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
-        let type_name = parquet_catalog_type_path_prefix(catalog_type);
-        let type_name = type_name.as_ref();
+        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+            self.consolidate_prefix_data(
+                type_name.as_ref(),
+                identifier,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn consolidate_prefix_data(
+        &mut self,
+        type_name: &str,
+        identifier: Option<&str>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
+    ) -> anyhow::Result<()> {
         let directory = self.make_path(type_name, identifier)?;
         let raw_result = self.consolidate_directory(
             &directory,
@@ -233,8 +255,8 @@ impl ParquetDataCatalog {
                      {type_name}; retrying with typed period consolidation. Raw error: {raw_error}"
                 );
 
-                self.consolidate_data_by_period(
-                    catalog_type,
+                self.consolidate_prefix_data_by_period(
+                    type_name,
                     identifier,
                     None,
                     start,
@@ -543,6 +565,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `catalog_type` is a record family or an instrument selector, which have no
+    ///   period-typed rewrite; use [`Self::consolidate_data`] for those.
     /// - The directory path cannot be constructed.
     /// - File operations fail.
     /// - Data querying or writing fails.
@@ -599,15 +623,45 @@ impl ParquetDataCatalog {
     /// ```
     pub fn consolidate_data_by_period(
         &mut self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
         period_nanos: Option<u64>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
     ) -> anyhow::Result<()> {
-        let type_name = parquet_catalog_type_path_prefix(catalog_type);
-        let type_name = type_name.as_ref();
+        anyhow::ensure!(
+            matches!(
+                catalog_type,
+                CatalogDataType::Data(data_type) if *data_type != NautilusDataType::Instrument
+            ),
+            "Period consolidation applies to data families only, not {catalog_type}; \
+             use consolidate_data",
+        );
+
+        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+            self.consolidate_prefix_data_by_period(
+                type_name.as_ref(),
+                identifier,
+                period_nanos,
+                start,
+                end,
+                ensure_contiguous_files,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn consolidate_prefix_data_by_period(
+        &mut self,
+        type_name: &str,
+        identifier: Option<&str>,
+        period_nanos: Option<u64>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ensure_contiguous_files: Option<bool>,
+    ) -> anyhow::Result<()> {
         if !self.dispatch_consolidate_data_by_period(
             type_name,
             identifier,
@@ -755,7 +809,7 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()>
     where
         T: DecodeTypedFromRecordBatch
-            + CatalogDataType
+            + HasCatalogDataType
             + EncodeToRecordBatch
             + HasTsInit
             + TryFrom<Data>
@@ -767,7 +821,8 @@ impl ParquetDataCatalog {
         // Use get_intervals for cleaner implementation
         let data_type = T::catalog_data_type();
         let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals = self.get_intervals(&CatalogType::Data(data_type.clone()), identifier)?;
+        let intervals =
+            self.get_intervals(&CatalogDataType::Data(data_type.clone()), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate
@@ -916,7 +971,7 @@ impl ParquetDataCatalog {
             type_name: type_name.to_string(),
         };
         let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals = self.get_intervals(&CatalogType::Data(data_type), identifier)?;
+        let intervals = self.get_intervals(&CatalogDataType::Data(data_type), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate

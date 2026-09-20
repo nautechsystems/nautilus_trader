@@ -146,9 +146,10 @@ trades = catalog.query_trade_ticks(
 
 ### Core parameters
 
-- `data_type` is one of `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`, `OrderBookDepth`,
-  `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`, or
-  `InstrumentClose`.
+- `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
+  `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
+  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads every instrument class the
+  catalog holds for the selected identifiers.
 - `catalog_path` identifies the catalog root.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
@@ -275,7 +276,7 @@ you need the `files` or `optimize_file_loading` controls:
 
 ```python
 catalog.query(
-    data_type="quotes",
+    data_type=NautilusDataType.QuoteTick,
     identifiers=["EUR/USD.SIM"],
     start=1704067200000000000,
     end=1704153600000000000,
@@ -301,7 +302,11 @@ ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
 
 ## Catalog operations
 
-Catalog operations rename, consolidate, or delete data files.
+Catalog operations rename, consolidate, or delete data files. Each operation takes a type selector:
+a `NautilusDataType`, a `NautilusRecordType`, or a `NautilusInstrumentType`.
+`NautilusDataType.Instrument` covers every instrument class; a `NautilusInstrumentType` targets
+one. `delete_data_range(...)` takes a `NautilusDataType` alone, because only data families support
+ranged deletes.
 
 ### Reset file names
 
@@ -368,7 +373,8 @@ optional bounds. Supply an identifier to the data-type method for data partition
 
 The catalog-wide method processes quotes, trades, order book deltas, order book depths, bars, index
 prices, mark prices, instrument closes, and registered custom types. It logs a warning and skips
-other types.
+other types. The data-type method rejects instrument and record selectors, which have no
+period-typed rewrite; use `consolidate_data(...)` for those.
 
 ```python
 DAY_NS = 86_400_000_000_000
@@ -383,13 +389,13 @@ catalog.consolidate_catalog_by_period(
 )
 
 catalog.consolidate_data_by_period(
-    type_name=NautilusDataType.QuoteTick,
+    data_type=NautilusDataType.QuoteTick,
     identifier="EUR/USD.SIM",
     period_nanos=HOUR_NS,
 )
 
 catalog.consolidate_data_by_period(
-    type_name=NautilusDataType.TradeTick,
+    data_type=NautilusDataType.TradeTick,
     identifier="EUR/USD.SIM",
     period_nanos=HOUR_NS,
     start=1704067200000000000,
@@ -422,12 +428,12 @@ catalog.delete_catalog_range(
 catalog.delete_catalog_range(end=1704067200000000000)
 
 catalog.delete_data_range(
-    type_name=NautilusDataType.QuoteTick,
+    data_type=NautilusDataType.QuoteTick,
     instrument_id="BTC/USD.BINANCE",
 )
 
 catalog.delete_data_range(
-    type_name=NautilusDataType.TradeTick,
+    data_type=NautilusDataType.TradeTick,
     instrument_id="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,

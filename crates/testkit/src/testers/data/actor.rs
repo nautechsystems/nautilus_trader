@@ -80,7 +80,6 @@ impl DataActor for DataTester {
                     None,
                     None,
                     client_id,
-                    None,
                     request_params.clone(),
                 );
             }

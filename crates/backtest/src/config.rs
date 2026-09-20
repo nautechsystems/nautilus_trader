@@ -881,6 +881,7 @@ impl BacktestDataConfig {
                     | NautilusDataType::OptionGreeks
                     | NautilusDataType::InstrumentStatus
                     | NautilusDataType::InstrumentClose
+                    | NautilusDataType::Instrument
             ),
             ConfigError::unsupported_value(
                 "data_type",
@@ -1247,7 +1248,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case(NautilusDataType::Instrument)]
+    fn test_data_config_accepts_the_instrument_family() {
+        let config = BacktestDataConfig::builder()
+            .data_type(NautilusDataType::Instrument)
+            .catalog_path("/tmp/catalog".to_string())
+            .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
+            .build()
+            .unwrap();
+
+        assert_eq!(config.data_type(), &NautilusDataType::Instrument);
+    }
+
+    #[rstest]
     #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
     fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
         let error = BacktestDataConfig::builder()

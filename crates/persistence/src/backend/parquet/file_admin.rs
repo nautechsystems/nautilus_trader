@@ -27,7 +27,7 @@ use crate::{
         io::min_max_from_parquet_metadata_object_store,
         paths::{make_object_store_path, timestamps_to_filename},
     },
-    catalog::types::{CatalogType, parquet_catalog_type_path_prefix},
+    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
 };
 
 impl ParquetDataCatalog {
@@ -183,12 +183,15 @@ impl ParquetDataCatalog {
     /// ```
     pub fn reset_data_file_names(
         &self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<()> {
-        let directory =
-            self.make_path(&parquet_catalog_type_path_prefix(catalog_type), identifier)?;
-        self.reset_file_names(&directory)
+        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+            let directory = self.make_path(type_name.as_ref(), identifier)?;
+            self.reset_file_names(&directory)?;
+        }
+
+        Ok(())
     }
 
     /// Resets the filenames of Parquet files in a directory to match their actual content timestamps.

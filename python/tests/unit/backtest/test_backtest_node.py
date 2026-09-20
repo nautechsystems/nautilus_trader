@@ -203,6 +203,56 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         node.dispose()
 
 
+def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: Path) -> None:
+    """
+    Test an instrument data config loads definitions across instrument classes.
+    """
+    currency_pair = TestInstrumentProvider.audusd_sim()
+    equity = TestInstrumentProvider.aapl_equity()
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    ParquetDataCatalog(str(catalog_path)).write_instruments([currency_pair, equity])
+    venues = [
+        BacktestVenueConfig(
+            name="SIM",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+        ),
+        BacktestVenueConfig(
+            name="XNAS",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+        ),
+    ]
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.Instrument,
+        catalog_path=str(catalog_path),
+        instrument_ids=[currency_pair.id, equity.id],
+    )
+    config = BacktestRunConfig(
+        venues=venues,
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        cache = node.get_engine_cache(config.id)
+
+        assert sorted(str(instrument_id) for instrument_id in cache.instrument_ids()) == [
+            str(equity.id),
+            str(currency_pair.id),
+        ]
+    finally:
+        node.dispose()
+
+
 @pytest.mark.parametrize("from_config", [False, True])
 def test_node_registers_actor_forms(tmp_path: Path, from_config: bool) -> None:
     """

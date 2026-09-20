@@ -551,6 +551,38 @@ def test_query_catalog_accepts_nautilus_instrument_type(
     assert _value(df, "instrument_type") == "FuturesContract"
 
 
+@pytest.mark.parametrize("catalog_backend", ["parquet"])
+def test_query_catalog_instrument_family_returns_every_class_in_one_table(
+    tmp_path: Path,
+    catalog_backend: str,
+) -> None:
+    """
+    Verify the instrument data type returns every class in one table.
+    """
+    path = tmp_path / f"{catalog_backend}_catalog"
+    path.mkdir()
+    catalog = ParquetDataCatalog(str(path))
+    futures = TestInstrumentProviderPyo3.futures_contract_es()
+    equity = TestInstrumentProviderPyo3.aapl_equity()
+    catalog.write_instruments([futures, equity])
+
+    table = query_catalog(
+        catalog,
+        NautilusDataType.Instrument,
+        output=CatalogOutput.ARROW,
+    )
+    rows = {row["instrument_id"]: row for row in table.sort_by("instrument_id").to_pylist()}
+
+    assert set(rows) == {str(futures.id), str(equity.id)}
+    assert rows[str(futures.id)]["instrument_type"] == "FuturesContract"
+    assert rows[str(equity.id)]["instrument_type"] == "Equity"
+    # Class-specific columns are null where the trait accessor does not apply.
+    assert rows[str(futures.id)]["underlying"] == "ES"
+    assert rows[str(equity.id)]["underlying"] is None
+    assert rows[str(futures.id)]["expiration_ns"] is not None
+    assert rows[str(equity.id)]["expiration_ns"] is None
+
+
 def test_query_catalog_use_arrow_dtypes_uses_arrow_dtypes(tmp_path: Path) -> None:
     """
     Verify query catalog use arrow dtypes uses arrow dtypes.

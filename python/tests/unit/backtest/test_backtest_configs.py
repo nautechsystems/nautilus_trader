@@ -629,10 +629,23 @@ def test_data_config_exposes_the_data_type_enum() -> None:
     assert isinstance(config.data_type, NautilusDataType)
 
 
+def test_data_config_accepts_the_instrument_family() -> None:
+    """
+    Select every instrument class through the Instrument data type.
+    """
+    config = BacktestDataConfig(
+        data_type=NautilusDataType.Instrument,
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    )
+
+    assert config.data_type == NautilusDataType.Instrument
+    assert isinstance(config.data_type, NautilusDataType)
+
+
 @pytest.mark.parametrize(
     "data_type",
     [
-        NautilusDataType.Instrument,
         NautilusDataType.Custom("Signal"),
         NautilusDataType("Defi"),
     ],

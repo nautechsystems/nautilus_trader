@@ -1439,14 +1439,7 @@ LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
 DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
-VENUE_REQUEST_PARAMETERS = (
-    "venue",
-    "start",
-    "end",
-    "client_id",
-    "instrument_type",
-    "params",
-)
+VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
@@ -1481,14 +1474,7 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "params",
 )
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
-INSTRUMENT_REQUEST_PARAMETERS = (
-    "instrument_id",
-    "start",
-    "end",
-    "client_id",
-    "instrument_type",
-    "params",
-)
+INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
 BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
 BOOK_DEPTH_REQUEST_PARAMETERS = (

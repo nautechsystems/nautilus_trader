@@ -28,7 +28,7 @@ use crate::{
     },
     catalog::{
         traits::CatalogMetadata,
-        types::{CatalogType, parquet_catalog_type_path_prefix},
+        types::{CatalogDataType, parquet_catalog_data_type_table_stem},
     },
     common::{datafusion::build_query, metadata::arrow_metadata_to_params},
 };
@@ -41,7 +41,7 @@ impl ParquetDataCatalog {
     /// Returns an error if file discovery, Parquet metadata reading, or query execution fails.
     pub fn query_metadata(
         &mut self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifiers: Option<Vec<String>>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -52,7 +52,7 @@ impl ParquetDataCatalog {
 
         let files_list = self.query_files(catalog_type, identifiers, start, end)?;
         let table_prefix =
-            make_sql_safe_identifier(&parquet_catalog_type_path_prefix(catalog_type));
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(catalog_type));
         let mut metadata_by_key: BTreeMap<String, CatalogMetadata> = BTreeMap::new();
 
         for (index, file_uri) in files_list.iter().enumerate() {

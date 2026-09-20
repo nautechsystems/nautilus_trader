@@ -47,10 +47,7 @@ use nautilus_model::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OptionSeriesId,
         OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
-    instruments::{
-        CurrencyPair, Instrument, InstrumentAny, NautilusInstrumentType, SyntheticInstrument,
-        stubs::*,
-    },
+    instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
     position::Position,
@@ -3463,7 +3460,7 @@ fn test_request_instrument(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_instrument(audusd_sim.id, None, None, None, None, None)
+        .request_instrument(audusd_sim.id, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -3502,7 +3499,7 @@ fn test_request_instruments(
 
     let venue = Venue::test_default();
     let request_id = actor
-        .request_instruments(Some(venue), None, None, None, None, None)
+        .request_instruments(Some(venue), None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -3725,7 +3722,6 @@ fn test_request_facade_sends_exact_command_matrix(
             Some(start),
             Some(end),
             Some(client_id),
-            Some(NautilusInstrumentType::CurrencyPair),
             Some(params.clone()),
         )
         .unwrap();
@@ -3735,7 +3731,6 @@ fn test_request_facade_sends_exact_command_matrix(
             Some(start),
             Some(end),
             Some(client_id),
-            Some(NautilusInstrumentType::Equity),
             Some(params.clone()),
         )
         .unwrap();

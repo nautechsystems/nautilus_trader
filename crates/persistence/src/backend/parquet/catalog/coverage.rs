@@ -15,16 +15,11 @@
 
 //! Interval coverage and missing-interval checks for the Parquet catalog.
 
-#![expect(
-    clippy::missing_panics_doc,
-    reason = "coverage functions use checked schema assumptions from catalog-controlled batches"
-)]
-
 use super::{
     Cow, ParquetDataCatalog, extract_bar_type_instrument_id, parse_filename_timestamps,
     query::is_parquet_bar_prefix, query_interval_diff, urisafe_instrument_id, urlencoding,
 };
-use crate::catalog::types::{CatalogType, parquet_catalog_type_path_prefix};
+use crate::catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes};
 
 impl ParquetDataCatalog {
     /// Finds the missing time intervals for a specific data type and instrument ID.
@@ -83,7 +78,7 @@ impl ParquetDataCatalog {
         &self,
         start: u64,
         end: u64,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
         let intervals = self.get_intervals(catalog_type, identifier)?;
@@ -148,7 +143,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_first_timestamp(
         &self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(catalog_type, identifier)?;
@@ -213,7 +208,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_last_timestamp(
         &self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(catalog_type, identifier)?;
@@ -267,11 +262,28 @@ impl ParquetDataCatalog {
     /// ```
     pub fn get_intervals(
         &self,
-        catalog_type: &CatalogType,
+        catalog_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let data_cls = parquet_catalog_type_path_prefix(catalog_type);
-        let data_cls = data_cls.as_ref();
+        let prefixes = parquet_catalog_data_type_path_prefixes(catalog_type);
+
+        if let [data_cls] = prefixes.as_slice() {
+            return self.get_prefix_intervals(data_cls.as_ref(), identifier);
+        }
+
+        let mut intervals = Vec::new();
+        for data_cls in &prefixes {
+            intervals.extend(self.get_prefix_intervals(data_cls.as_ref(), identifier)?);
+        }
+
+        Ok(merge_overlapping(intervals))
+    }
+
+    fn get_prefix_intervals(
+        &self,
+        data_cls: &str,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<Vec<(u64, u64)>> {
         let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 

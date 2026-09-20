@@ -90,7 +90,7 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
         is_monotonically_increasing_by_init,
     },
-    instruments::{Instrument, InstrumentAny, NautilusInstrumentType},
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
@@ -100,7 +100,6 @@ use nautilus_serialization::arrow::{
 };
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use serde::Serialize;
-use strum::IntoEnumIterator;
 
 use crate::{
     backend::parquet::{
@@ -120,7 +119,7 @@ use crate::{
             filter_instruments_for_request_range,
         },
         types::{
-            CatalogAsOf, CatalogDataType, CatalogType, INSTRUMENT_PATH_PREFIXES,
+            CatalogAsOf, CatalogDataType, HasCatalogDataType, INSTRUMENT_PATH_PREFIXES,
             instrument_any_type, instrument_path_prefix, parquet_data_path_prefix,
             record_path_prefix,
         },
@@ -591,7 +590,7 @@ impl CatalogReader for ParquetDataCatalog {
             .unwrap_or(true);
         Self::query_identifiers(
             self,
-            &CatalogType::Data(data_type),
+            &CatalogDataType::Data(data_type),
             identifiers,
             start,
             end,
@@ -669,7 +668,7 @@ impl CatalogReader for ParquetDataCatalog {
             .unwrap_or(true);
         Self::query_record_batches(
             self,
-            &CatalogType::Record(record_type),
+            &CatalogDataType::Record(record_type),
             identifier,
             start,
             end,
@@ -697,28 +696,19 @@ impl CatalogReader for ParquetDataCatalog {
             start,
             end,
             where_clause,
+            instrument_type,
             ..
         } = query.clone();
-
-        if data_type == NautilusDataType::Instrument {
-            let mut metadata = Vec::new();
-            for instrument_type in NautilusInstrumentType::iter() {
-                metadata.extend(Self::query_metadata(
-                    self,
-                    &CatalogType::Instrument(instrument_type),
-                    identifiers.clone(),
-                    start,
-                    end,
-                    where_clause.as_deref(),
-                )?);
+        let catalog_type = match (data_type, instrument_type) {
+            (NautilusDataType::Instrument, Some(instrument_type)) => {
+                CatalogDataType::Instrument(instrument_type)
             }
-            metadata.sort_by_key(|entry| entry.first_ts_init);
-            return Ok(metadata);
-        }
+            (data_type, _) => CatalogDataType::Data(data_type),
+        };
 
         Self::query_metadata(
             self,
-            &CatalogType::Data(data_type),
+            &catalog_type,
             identifiers,
             start,
             end,
@@ -762,7 +752,7 @@ impl CatalogReader for ParquetDataCatalog {
                         self,
                         start.as_u64(),
                         end.as_u64(),
-                        &CatalogType::Data(NautilusDataType::Custom { type_name }),
+                        &CatalogDataType::Data(NautilusDataType::Custom { type_name }),
                         None,
                     )
                 }
@@ -771,7 +761,7 @@ impl CatalogReader for ParquetDataCatalog {
                 self,
                 start.as_u64(),
                 end.as_u64(),
-                &CatalogType::Data(data_type),
+                &CatalogDataType::Data(data_type),
                 identifier,
             ),
         }
@@ -800,12 +790,12 @@ impl CatalogReader for ParquetDataCatalog {
                 } else {
                     Self::query_last_timestamp(
                         self,
-                        &CatalogType::Data(NautilusDataType::Custom { type_name }),
+                        &CatalogDataType::Data(NautilusDataType::Custom { type_name }),
                         None,
                     )
                 }
             }
-            _ => Self::query_last_timestamp(self, &CatalogType::Data(data_type), identifier),
+            _ => Self::query_last_timestamp(self, &CatalogDataType::Data(data_type), identifier),
         }
     }
 }
@@ -873,7 +863,7 @@ impl CatalogWriter for ParquetDataCatalog {
                 let directory = self.make_path_custom_data(type_name, identifier)?;
                 self.extend_file_name_in_directory(&directory, start, end)
             }
-            _ => self.extend_file_name(&CatalogType::Data(data_type), identifier, start, end),
+            _ => self.extend_file_name(&CatalogDataType::Data(data_type), identifier, start, end),
         }
     }
 }

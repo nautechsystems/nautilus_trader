@@ -49,8 +49,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{OrderAny, OrderList},
     python::{
-        data::option_chain::PyStrikeRange,
-        instruments::{PyNautilusInstrumentType, instrument_any_to_pyobject},
+        data::option_chain::PyStrikeRange, instruments::instrument_any_to_pyobject,
         orders::order_any_to_pyobject,
     },
 };
@@ -2289,8 +2288,7 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "request_instrument")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, instrument_type=None, params=None))]
-    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
     fn py_request_instrument(
         &mut self,
         py: Python<'_>,
@@ -2298,7 +2296,6 @@ impl PyDataActor {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
-        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
@@ -2309,7 +2306,6 @@ impl PyDataActor {
             start,
             end,
             client_id,
-            instrument_type.map(|instrument_type| instrument_type.inner()),
             params,
         )
         .map_err(to_pyvalue_err)?;
@@ -2317,8 +2313,7 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, instrument_type=None, params=None))]
-    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None))]
     fn py_request_instruments(
         &mut self,
         py: Python<'_>,
@@ -2326,21 +2321,13 @@ impl PyDataActor {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
-        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
-        let request_id = DataActor::request_instruments(
-            self.inner_mut(),
-            venue,
-            start,
-            end,
-            client_id,
-            instrument_type.map(|instrument_type| instrument_type.inner()),
-            params,
-        )
-        .map_err(to_pyvalue_err)?;
+        let request_id =
+            DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
+                .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 

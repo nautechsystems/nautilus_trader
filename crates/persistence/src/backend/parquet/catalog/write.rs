@@ -24,7 +24,7 @@
 use nautilus_serialization::arrow::catalog_identifier_from_metadata;
 
 use super::{
-    BTreeMap, CatalogDataType, CustomData, Data, DataBatch, EncodeToRecordBatch, HasTsInit,
+    BTreeMap, CustomData, Data, DataBatch, EncodeToRecordBatch, HasCatalogDataType, HasTsInit,
     InstrumentAny, NautilusRecordType, ObjectPath, ObjectStoreExt, Params, ParquetDataCatalog,
     PathBuf, RecordBatch, Serialize, UnixNanos, WRITE_SKIP_DISJOINT_CHECK, are_intervals_disjoint,
     instrument_any_type, instrument_path_prefix, parquet_data_path_prefix,
@@ -94,7 +94,7 @@ impl ParquetDataCatalog {
         skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<()>
     where
-        T: Clone + HasTsInit + EncodeToRecordBatch + CatalogDataType,
+        T: Clone + HasTsInit + EncodeToRecordBatch + HasCatalogDataType,
     {
         let mut groups: BTreeMap<Option<String>, Vec<T>> = BTreeMap::new();
 
@@ -219,7 +219,7 @@ impl ParquetDataCatalog {
         skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<PathBuf>
     where
-        T: HasTsInit + EncodeToRecordBatch + CatalogDataType,
+        T: HasTsInit + EncodeToRecordBatch + HasCatalogDataType,
     {
         if data.is_empty() {
             return Ok(PathBuf::new());
@@ -594,7 +594,7 @@ impl ParquetDataCatalog {
         write_metadata: bool,
     ) -> anyhow::Result<PathBuf>
     where
-        T: HasTsInit + Serialize + CatalogDataType + EncodeToRecordBatch,
+        T: HasTsInit + Serialize + HasCatalogDataType + EncodeToRecordBatch,
     {
         if data.is_empty() {
             return Ok(PathBuf::new());

@@ -35,7 +35,8 @@ use crate::{
         paths::{make_object_store_path, timestamps_to_filename},
     },
     catalog::types::{
-        CatalogDataType, CatalogType, data_type_from_data_path_prefix, parquet_data_path_prefix,
+        CatalogDataType, HasCatalogDataType, data_type_from_data_path_prefix,
+        parquet_data_path_prefix,
     },
     common::custom::group_custom_data_by_type,
 };
@@ -97,7 +98,7 @@ impl ParquetDataCatalog {
         let path_prefix = parquet_data_path_prefix(&data_type);
 
         // Get intervals for the custom data type
-        let intervals = self.get_intervals(&CatalogType::Data(data_type), identifier)?;
+        let intervals = self.get_intervals(&CatalogDataType::Data(data_type), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process
@@ -280,7 +281,13 @@ impl ParquetDataCatalog {
             NautilusDataType::Custom { type_name } => {
                 self.delete_custom_data_range(type_name, identifier, start, end)
             }
-            other => anyhow::bail!("Unsupported data type: {other}"),
+            other @ NautilusDataType::Instrument => {
+                anyhow::bail!("Unsupported data type: {other}")
+            }
+            #[cfg(feature = "defi")]
+            other @ NautilusDataType::Defi => {
+                anyhow::bail!("Unsupported data type: {other}")
+            }
         }
     }
 
@@ -399,7 +406,7 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()>
     where
         T: DecodeTypedFromRecordBatch
-            + CatalogDataType
+            + HasCatalogDataType
             + EncodeToRecordBatch
             + HasTsInit
             + TryFrom<Data>
@@ -408,7 +415,8 @@ impl ParquetDataCatalog {
         // Get intervals for cleaner implementation
         let data_type = T::catalog_data_type();
         let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals = self.get_intervals(&CatalogType::Data(data_type.clone()), identifier)?;
+        let intervals =
+            self.get_intervals(&CatalogDataType::Data(data_type.clone()), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process

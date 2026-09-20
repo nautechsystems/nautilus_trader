@@ -37,12 +37,14 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::parquet::{catalog::ParquetDataCatalog, delete::DeleteOperationKind},
+    backend::parquet::{
+        catalog::ParquetDataCatalog, delete::DeleteOperationKind, paths::urisafe_instrument_id,
+    },
     catalog::{
         traits::{
             CatalogInstrumentQuery, CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter,
         },
-        types::CatalogAsOf,
+        types::{CatalogAsOf, CatalogDataType},
     },
     test_data::{
         MacroYieldCurveData, RustTestCustomData, RustTestHashMapCustomData,
@@ -5138,6 +5140,292 @@ fn test_data_catalog_instruments_applies_where_clause() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(Instrument::id(&loaded[0]), instrument_id);
     assert_eq!(HasTsInit::ts_init(&loaded[0]), UnixNanos::from(2_000));
+}
+
+#[rstest]
+fn test_instrument_family_coverage_spans_every_class() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let mut currency_pair = audusd_sim();
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
+    let mut equity = equity_aapl();
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
+
+    catalog
+        .write_instruments(vec![
+            InstrumentAny::CurrencyPair(currency_pair),
+            InstrumentAny::Equity(equity),
+        ])
+        .unwrap();
+
+    let aggregate = catalog
+        .get_intervals(&NautilusDataType::Instrument.into(), None)
+        .unwrap();
+    assert_eq!(aggregate, vec![(1_000, 1_000), (2_000, 2_000)]);
+
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), None)
+            .unwrap(),
+        vec![(1_000, 1_000)]
+    );
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusInstrumentType::Equity.into(), None)
+            .unwrap(),
+        vec![(2_000, 2_000)]
+    );
+
+    assert_eq!(
+        catalog
+            .query_first_timestamp(&NautilusDataType::Instrument.into(), None)
+            .unwrap(),
+        Some(1_000)
+    );
+    assert_eq!(
+        catalog
+            .query_last_timestamp(&NautilusDataType::Instrument.into(), None)
+            .unwrap(),
+        Some(2_000)
+    );
+    assert_eq!(
+        catalog
+            .get_missing_intervals_for_request(0, 3_000, &NautilusDataType::Instrument.into(), None)
+            .unwrap(),
+        vec![(0, 999), (1_001, 1_999), (2_001, 3_000)]
+    );
+}
+
+#[rstest]
+fn test_instrument_family_file_operations_span_every_class() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let currency_pair_id = audusd_sim().id.to_string();
+    let equity_id = equity_aapl().id.to_string();
+
+    for ts in [1_000_u64, 2_000] {
+        let mut currency_pair = audusd_sim();
+        currency_pair.ts_event = UnixNanos::from(ts);
+        currency_pair.ts_init = UnixNanos::from(ts);
+        let mut equity = equity_aapl();
+        equity.ts_event = UnixNanos::from(ts);
+        equity.ts_init = UnixNanos::from(ts);
+        catalog
+            .write_instruments(vec![InstrumentAny::CurrencyPair(currency_pair)])
+            .unwrap();
+        catalog
+            .write_instruments(vec![InstrumentAny::Equity(equity)])
+            .unwrap();
+    }
+
+    let files = catalog
+        .query_files(&NautilusDataType::Instrument.into(), None, None, None)
+        .unwrap();
+    assert_eq!(files.len(), 4);
+
+    let mut listed = catalog
+        .list_instruments(&NautilusDataType::Instrument.into())
+        .unwrap();
+    listed.sort();
+    let mut expected = vec![
+        urisafe_instrument_id(&currency_pair_id),
+        urisafe_instrument_id(&equity_id),
+    ];
+    expected.sort();
+    assert_eq!(listed, expected);
+
+    let metadata = CatalogReader::query_metadata(
+        &mut catalog,
+        &CatalogQuery::new(NautilusDataType::Instrument),
+    )
+    .unwrap();
+    assert_eq!(metadata.len(), 2);
+    assert_eq!(metadata[0].first_ts_init, UnixNanos::from(1_000));
+    assert_eq!(metadata[1].first_ts_init, UnixNanos::from(1_000));
+
+    catalog
+        .consolidate_data(
+            &NautilusDataType::Instrument.into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog
+            .query_files(
+                &NautilusInstrumentType::CurrencyPair.into(),
+                None,
+                None,
+                None
+            )
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        catalog
+            .query_files(&NautilusInstrumentType::Equity.into(), None, None, None)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    catalog
+        .reset_data_file_names(&NautilusDataType::Instrument.into(), None)
+        .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Instrument.into(), None)
+            .unwrap(),
+        vec![(1_000, 2_000)]
+    );
+}
+
+#[rstest]
+fn test_list_instruments_aggregate_reports_shared_identifier_once() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let currency_pair = audusd_sim();
+    let shared_id = currency_pair.id;
+    let mut equity = equity_aapl();
+    equity.id = shared_id;
+    catalog
+        .write_instruments(vec![
+            InstrumentAny::CurrencyPair(currency_pair),
+            InstrumentAny::Equity(equity),
+        ])
+        .unwrap();
+
+    assert_eq!(
+        catalog
+            .list_instruments(&NautilusDataType::Instrument.into())
+            .unwrap(),
+        vec![urisafe_instrument_id(&shared_id.to_string())]
+    );
+}
+
+#[rstest]
+#[case::aggregate(CatalogDataType::Data(NautilusDataType::Instrument), "Instrument")]
+#[case::class(CatalogDataType::Instrument(NautilusInstrumentType::Equity), "Equity")]
+#[case::record(
+    CatalogDataType::Record(NautilusRecordType::AccountState),
+    "AccountState"
+)]
+fn test_consolidate_data_by_period_rejects_non_data_selectors(
+    #[case] catalog_type: CatalogDataType,
+    #[case] display: &str,
+) {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let error = catalog
+        .consolidate_data_by_period(&catalog_type, None, None, None, None, None)
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Period consolidation applies to data families only, not {display}; \
+             use consolidate_data"
+        )
+    );
+}
+
+#[rstest]
+fn test_extend_file_name_extends_every_class_holding_the_identifier() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let mut currency_pair = audusd_sim();
+    let shared_id = currency_pair.id;
+    currency_pair.ts_event = UnixNanos::from(2_000);
+    currency_pair.ts_init = UnixNanos::from(2_000);
+    let mut equity = equity_aapl();
+    equity.id = shared_id;
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
+    let id_str = shared_id.to_string();
+    catalog
+        .write_instruments(vec![
+            InstrumentAny::CurrencyPair(currency_pair),
+            InstrumentAny::Equity(equity),
+        ])
+        .unwrap();
+
+    catalog
+        .extend_file_name(
+            &NautilusDataType::Instrument.into(),
+            Some(&id_str),
+            UnixNanos::from(2_001),
+            UnixNanos::from(3_000),
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), Some(&id_str))
+            .unwrap(),
+        vec![(2_000, 3_000)]
+    );
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusInstrumentType::Equity.into(), Some(&id_str))
+            .unwrap(),
+        vec![(2_000, 3_000)]
+    );
+
+    let error = catalog
+        .extend_file_name(
+            &NautilusDataType::Instrument.into(),
+            Some("MISSING.SIM"),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Cannot extend file name for Instrument: no instrument class holds MISSING.SIM; \
+         name the class with a NautilusInstrumentType"
+    );
+}
+
+#[rstest]
+fn test_query_metadata_honors_the_instrument_class_filter() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let currency_pair = audusd_sim();
+    let equity = equity_aapl();
+    let equity_id = equity.id.to_string();
+    catalog
+        .write_instruments(vec![
+            InstrumentAny::CurrencyPair(currency_pair),
+            InstrumentAny::Equity(equity),
+        ])
+        .unwrap();
+
+    let every_class = CatalogReader::query_metadata(
+        &mut catalog,
+        &CatalogQuery::new(NautilusDataType::Instrument),
+    )
+    .unwrap();
+    let equities = CatalogReader::query_metadata(
+        &mut catalog,
+        &CatalogQuery::new(NautilusDataType::Instrument)
+            .with_instrument_type(Some(NautilusInstrumentType::Equity)),
+    )
+    .unwrap();
+
+    assert_eq!(every_class.len(), 2);
+    assert_eq!(equities.len(), 1);
+    assert_eq!(equities[0].metadata["instrument_id"], equity_id);
 }
 
 #[rstest]

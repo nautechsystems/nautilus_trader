@@ -246,7 +246,7 @@ class ParquetDataCatalog:
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
-        instrument_type: typing.Any | None = None,
+        instrument_type: model.NautilusInstrumentType | None = None,
     ) -> list[typing.Any]: ...
     def query_instrument_arrow_bytes(
         self,
@@ -254,7 +254,7 @@ class ParquetDataCatalog:
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
-        instrument_type: typing.Any | None = None,
+        instrument_type: model.NautilusInstrumentType | None = None,
     ) -> bytes: ...
     def query_instrument_arrow_stream(
         self,
@@ -262,13 +262,11 @@ class ParquetDataCatalog:
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
-        instrument_type: typing.Any | None = None,
+        instrument_type: model.NautilusInstrumentType | None = None,
     ) -> typing.Any: ...
     def extend_file_name(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None,
         start: int,
         end: int,
@@ -282,9 +280,7 @@ class ParquetDataCatalog:
     ) -> None: ...
     def consolidate_data(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -300,9 +296,7 @@ class ParquetDataCatalog:
     ) -> None: ...
     def consolidate_data_by_period(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         identifier: str | None = None,
         period_nanos: int | None = None,
         start: int | None = None,
@@ -312,9 +306,7 @@ class ParquetDataCatalog:
     def reset_all_file_names(self) -> None: ...
     def reset_data_file_names(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
     ) -> None: ...
     def delete_catalog_range(self, start: int | None = None, end: int | None = None) -> None: ...
@@ -334,16 +326,12 @@ class ParquetDataCatalog:
     ) -> str: ...
     def list_instruments(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
     ) -> list[str]: ...
     def list_parquet_files(self, data_type: str, instrument_id: str) -> list[str]: ...
     def query_files(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -407,35 +395,27 @@ class ParquetDataCatalog:
         self,
         start: int,
         end: int,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
     ) -> list[tuple[int, int]]: ...
     def query_first_timestamp(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
     ) -> int | None: ...
     def query_last_timestamp(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
     ) -> int | None: ...
     def get_intervals(
         self,
-        catalog_type: model.NautilusDataType
-        | model.NautilusRecordType
-        | model.NautilusInstrumentType,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         instrument_id: str | None = None,
     ) -> list[tuple[int, int]]: ...
     def query(
         self,
-        data_type: str,
+        data_type: model.NautilusDataType,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
