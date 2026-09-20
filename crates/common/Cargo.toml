@@ -203,3 +203,13 @@ doc = false
 name = "cache_xrate_profile"
 path = "examples/cache_xrate_profile.rs"
 doc = false
+
+[[example]]
+name = "signal_reentrancy"
+path = "examples/signal_reentrancy.rs"
+doc = false
+
+[[example]]
+name = "cache_reentrancy"
+path = "examples/cache_reentrancy.rs"
+doc = false

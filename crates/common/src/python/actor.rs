@@ -68,7 +68,7 @@ use crate::{
     },
     cache::Cache,
     clock::Clock,
-    component::{Component, with_component_registry},
+    component::{Component, ComponentAccessError, with_component_registry},
     enums::ComponentState,
     logging::{CMD, RECV},
     messages::{
@@ -1669,9 +1669,14 @@ impl PyDataActor {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
-        self.ensure_registered()?;
-        DataActor::subscribe_signal(self.inner_mut(), name, priority);
+    fn py_subscribe_signal(
+        slf: &Bound<'_, Self>,
+        name: &str,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
+        let actor = borrow_actor_mut(slf, "subscribe_signal")?;
+        actor.ensure_registered()?;
+        DataActor::subscribe_signal(actor.inner_mut(), name, priority);
         Ok(())
     }
 
@@ -1989,9 +1994,10 @@ impl PyDataActor {
 
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
-    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
-        self.ensure_registered()?;
-        DataActor::unsubscribe_signal(self.inner_mut(), name);
+    fn py_unsubscribe_signal(slf: &Bound<'_, Self>, name: &str) -> PyResult<()> {
+        let actor = borrow_actor_mut(slf, "unsubscribe_signal")?;
+        actor.ensure_registered()?;
+        DataActor::unsubscribe_signal(actor.inner_mut(), name);
         Ok(())
     }
 
@@ -2948,6 +2954,18 @@ fn extract_bool_config_attr(config: &Bound<'_, PyAny>, attr: &str) -> Option<boo
         .and_then(|value| value.extract::<bool>().ok())
 }
 
+fn borrow_actor_mut<'py>(
+    actor: &Bound<'py, PyDataActor>,
+    operation: &'static str,
+) -> PyResult<PyRefMut<'py, PyDataActor>> {
+    actor.try_borrow_mut().map_err(|_| {
+        to_pyruntime_err(ComponentAccessError::WriteConflict {
+            resource: "Python actor",
+            operation,
+        })
+    })
+}
+
 /// Returns whether the config retained by the actor supplies an actor ID.
 ///
 /// The config is read through Python rather than the extracted [`DataActorConfig`] so that a
@@ -3457,11 +3475,15 @@ class PreparedActor(DataActor):
 
         *get_message_bus().borrow_mut() = MessageBus::default();
 
-        let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("example", None).unwrap();
-        actor.py_unsubscribe_signal("example").unwrap();
-        actor.py_subscribe_signal("", None).unwrap();
-        actor.py_unsubscribe_signal("").unwrap();
+        let actor = create_registered_actor(clock, cache, trader_id);
+        Python::initialize();
+        Python::attach(|py| {
+            let actor = Bound::new(py, actor).unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "example", None).unwrap();
+            PyDataActor::py_unsubscribe_signal(&actor, "example").unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "", None).unwrap();
+            PyDataActor::py_unsubscribe_signal(&actor, "").unwrap();
+        });
     }
 
     #[rstest]
@@ -3474,14 +3496,18 @@ class PreparedActor(DataActor):
 
         *get_message_bus().borrow_mut() = MessageBus::default();
 
-        let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("trigger", Some(50)).unwrap();
+        let actor = create_registered_actor(clock, cache, trader_id);
+        Python::initialize();
+        Python::attach(|py| {
+            let actor = Bound::new(py, actor).unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "trigger", Some(50)).unwrap();
 
-        // The PyO3 binding must forward the priority to the bus unchanged.
-        let topic = get_signal_topic("trigger");
-        let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
-        assert_eq!(subs.len(), 1);
-        assert_eq!(subs[0].priority, 50);
+            // The PyO3 binding must forward the priority to the bus unchanged.
+            let topic = get_signal_topic("trigger");
+            let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subs.len(), 1);
+            assert_eq!(subs[0].priority, 50);
+        });
     }
 
     #[rstest]
@@ -3594,7 +3620,9 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "example", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1.5".into_py_any_unwrap(py);
             let val2: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_actor
@@ -3630,14 +3658,18 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "example", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             rust_actor
                 .py_publish_signal(py, "example", val1, 0)
                 .unwrap();
 
-            rust_actor.py_unsubscribe_signal("example").unwrap();
+            drop(rust_actor);
+            PyDataActor::py_unsubscribe_signal(&bound_actor, "example").unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             rust_actor
                 .py_publish_signal(py, "example", val2, 0)
                 .unwrap();
@@ -3796,7 +3828,9 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             let val3: Py<PyAny> = "3".into_py_any_unwrap(py);

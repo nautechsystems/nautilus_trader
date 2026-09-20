@@ -62,7 +62,7 @@ use crate::python::msgbus::PyMessageBusScope;
 use crate::{
     cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
-    component::Component,
+    component::{Component, ComponentAccessError},
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, REQ, SEND},
     messages::{
@@ -184,18 +184,29 @@ pub trait DataActorNative {
     ///
     /// # Panics
     ///
-    /// Panics if the actor has not been registered with a trader.
+    /// Panics if the actor is unregistered or the clock is already borrowed.
     fn clock_mut(&mut self) -> RefMut<'_, dyn Clock> {
-        let core = self.core_mut();
-        core.clock
+        self.try_clock_mut().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns a mutable clock borrow without panicking on an access conflict.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor is unregistered or the clock is already borrowed.
+    fn try_clock_mut(&mut self) -> Result<RefMut<'_, dyn Clock>, ComponentAccessError> {
+        self.core_mut()
+            .clock
             .as_ref()
-            .unwrap_or_else(|| {
-                panic!(
-                    "DataActor {} must be registered before calling `clock_mut()` - trader_id: {:?}",
-                    core.actor_id, core.trader_id
-                )
+            .ok_or(ComponentAccessError::NotRegistered {
+                resource: "clock",
+                operation: "clock_mut",
+            })?
+            .try_borrow_mut()
+            .map_err(|_| ComponentAccessError::WriteConflict {
+                resource: "clock",
+                operation: "clock_mut",
             })
-            .borrow_mut()
     }
 
     /// Returns a clone of the reference-counted clock.
@@ -215,13 +226,29 @@ pub trait DataActorNative {
     ///
     /// # Panics
     ///
-    /// Panics if the actor has not yet been registered.
+    /// Panics if the actor is unregistered or the cache is already mutably borrowed.
     fn cache_ref(&self) -> Ref<'_, Cache> {
+        self.try_cache_ref().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns a cache borrow without panicking on an access conflict.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor is unregistered or the cache is already mutably borrowed.
+    fn try_cache_ref(&self) -> Result<Ref<'_, Cache>, ComponentAccessError> {
         self.core()
             .cache
             .as_ref()
-            .expect("DataActor must be registered before accessing cache")
-            .borrow()
+            .ok_or(ComponentAccessError::NotRegistered {
+                resource: "cache",
+                operation: "cache_ref",
+            })?
+            .try_borrow()
+            .map_err(|_| ComponentAccessError::ReadConflict {
+                resource: "cache",
+                operation: "cache_ref",
+            })
     }
 
     /// Returns a clone of the reference-counted cache.

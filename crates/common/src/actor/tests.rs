@@ -74,7 +74,7 @@ use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
     clock::{Clock, VirtualClock},
-    component::Component,
+    component::{Component, ComponentAccessError},
     logging::{logger::LogGuard, logging_is_initialized},
     messages::{
         data::{
@@ -7004,4 +7004,142 @@ fn test_update_synthetic_replaces_existing(
     let guard = cache.borrow();
     let stored = guard.synthetic(&synthetic_id).unwrap();
     assert_eq!(stored.formula, new_formula);
+}
+
+#[rstest]
+#[case::self_publication(false)]
+#[case::nested_fanout(true)]
+#[ignore = "canonical signal callbacks reenter before the current publication completes"]
+fn test_reentrant_signal_publication_preserves_callback_order(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] fanout: bool,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let trace = Rc::new(RefCell::new(Vec::new()));
+
+    for (name, priority) in [("A", 100), ("B", 10)] {
+        if name == "B" && !fanout {
+            continue;
+        }
+
+        let mut actor = ReentrantSignalActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(ActorId::new(name)),
+                ..DataActorConfig::default()
+            }),
+            name,
+            trace: trace.clone(),
+        };
+
+        actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
+        let id = actor.actor_id().inner();
+        register_actor(actor);
+        let mut actor = get_actor_unchecked::<ReentrantSignalActor>(&id);
+        actor.start().unwrap();
+        actor.subscribe_signal("reentry", Some(priority));
+    }
+
+    let mut publisher = TestDataActor::new(DataActorConfig::default());
+    publisher.register(trader_id, clock, cache).unwrap();
+    publisher.publish_signal("reentry", "outer".to_string(), UnixNanos::from(1));
+    assert!(!super::drain_callbacks(8).unwrap());
+
+    let mut expected = Vec::new();
+
+    for value in ["outer", "inner"] {
+        for name in if fanout { &["A", "B"][..] } else { &["A"][..] } {
+            expected.push(format!("{name}:{value}:enter"));
+            expected.push(format!("{name}:{value}:exit"));
+        }
+    }
+
+    assert_eq!(*trace.borrow(), expected);
+}
+
+#[derive(Debug)]
+struct ReentrantSignalActor {
+    core: DataActorCore,
+    name: &'static str,
+    trace: Rc<RefCell<Vec<String>>>,
+}
+
+nautilus_actor!(ReentrantSignalActor);
+
+impl DataActor for ReentrantSignalActor {
+    fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+        self.trace
+            .borrow_mut()
+            .push(format!("{}:{}:enter", self.name, signal.value));
+
+        if self.name == "A" && signal.value == "outer" {
+            self.publish_signal("reentry", "inner".to_string(), UnixNanos::from(2));
+        }
+
+        self.trace
+            .borrow_mut()
+            .push(format!("{}:{}:exit", self.name, signal.value));
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_native_borrow_conflicts_return_component_access_errors(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let cache_borrow = cache.borrow_mut();
+    let cache_error = actor.try_cache_ref().unwrap_err();
+    drop(cache_borrow);
+    let clock_borrow = clock.borrow();
+    let clock_error = actor.try_clock_mut().err().unwrap();
+    drop(clock_borrow);
+
+    assert_eq!(
+        cache_error,
+        ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "cache_ref",
+        }
+    );
+    assert_eq!(
+        clock_error,
+        ComponentAccessError::WriteConflict {
+            resource: "clock",
+            operation: "clock_mut",
+        }
+    );
+    assert!(actor.try_cache_ref().is_ok());
+    assert!(actor.try_clock_mut().is_ok());
+}
+
+#[rstest]
+fn test_native_borrow_before_registration_returns_component_access_error() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let cache_error = actor.try_cache_ref().unwrap_err();
+    let clock_error = actor.try_clock_mut().err().unwrap();
+
+    assert_eq!(
+        cache_error,
+        ComponentAccessError::NotRegistered {
+            resource: "cache",
+            operation: "cache_ref",
+        }
+    );
+    assert_eq!(
+        clock_error,
+        ComponentAccessError::NotRegistered {
+            resource: "clock",
+            operation: "clock_mut",
+        }
+    );
 }

@@ -1473,3 +1473,133 @@ def _make_token1(chain: object) -> object:
         symbol="WETH",
         decimals=18,
     )
+
+
+@pytest.mark.xfail(
+    run=False,
+    strict=True,
+    reason="Canonical signal callbacks reenter before the current publication completes",
+)
+@pytest.mark.parametrize("fanout", [False, True], ids=["self_publication", "nested_fanout"])
+def test_reentrant_signal_publication_preserves_callback_order(fanout: bool) -> None:
+    """
+    Reproduce callback ordering failures by running with --runxfail.
+    """
+    trace: list[str] = []
+
+    class PublishingActor(DataActor):
+        def on_start(self) -> None:
+            self.subscribe_signal("reentry", priority=100)
+
+        def on_signal(self, signal: Signal) -> None:
+            trace.append(f"A:{signal.value}:enter")
+            if signal.value == "outer":
+                self.publish_signal("reentry", "inner", ts_event=2)
+            trace.append(f"A:{signal.value}:exit")
+
+    class ObservingActor(DataActor):
+        def on_start(self) -> None:
+            self.subscribe_signal("reentry", priority=10)
+
+        def on_signal(self, signal: Signal) -> None:
+            trace.append(f"B:{signal.value}:enter")
+            trace.append(f"B:{signal.value}:exit")
+
+    class InitialPublisher(DataActor):
+        def on_start(self) -> None:
+            self.publish_signal("reentry", "outer", ts_event=1)
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    actor = PublishingActor()
+    engine.add_actor(actor)
+    try:
+        if fanout:
+            observer = ObservingActor()
+            engine.add_actor(observer)
+        engine.add_actor(InitialPublisher())
+        engine.run()
+
+        names = ["A", "B"] if fanout else ["A"]
+        expected = [
+            f"{name}:{value}:{boundary}"
+            for value in ("outer", "inner")
+            for name in names
+            for boundary in ("enter", "exit")
+        ]
+        assert trace == expected, f"Callback trace: {trace!r}"
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("operation", ["subscribe_signal", "unsubscribe_signal"])
+def test_signal_subscription_borrow_conflict_names_operation(operation: str) -> None:
+    """
+    Retain the operation name when startup reenters a borrowed Python actor.
+    """
+
+    class BorrowingActor(DataActor):
+        def on_start(self) -> None:
+            getattr(self, operation)("reentry")
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    actor = BorrowingActor()
+    engine.add_actor(actor)
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            actor.start()
+
+        assert str(exc.value) == (
+            f"Python on_start failed: RuntimeError: Cannot modify Python actor during {operation}: "
+            "it is already borrowed. Release existing borrows before accessing it mutably; "
+            "callback reentry can cause this conflict"
+        )
+        assert getattr(actor, operation)("reentry") is None
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("operation", ["subscribe_signal", "unsubscribe_signal"])
+def test_signal_subscription_shared_borrow_conflict_names_operation(operation: str) -> None:
+    """
+    Report nested publication conflicts and allow the same operation after publication.
+    """
+    trace: list[str] = []
+
+    class BorrowingActor(DataActor):
+        def on_start(self) -> None:
+            self.subscribe_signal("reentry")
+
+        def on_signal(self, signal: Signal) -> None:
+            trace.append(f"{signal.value}:enter")
+            if signal.value == "outer":
+                self.publish_signal("reentry", "inner", ts_event=2)
+            else:
+                try:
+                    getattr(self, operation)("reentry")
+                except RuntimeError as e:
+                    trace.append(str(e))
+            trace.append(f"{signal.value}:exit")
+
+    class InitialPublisher(DataActor):
+        def on_start(self) -> None:
+            self.publish_signal("reentry", "outer", ts_event=1)
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    actor = BorrowingActor()
+    engine.add_actor(actor)
+    engine.add_actor(InitialPublisher())
+    try:
+        engine.run()
+
+        assert trace == [
+            "outer:enter",
+            "inner:enter",
+            f"Cannot modify Python actor during {operation}: it is already borrowed. "
+            "Release existing borrows before accessing it mutably; "
+            "callback reentry can cause this conflict",
+            "inner:exit",
+            "outer:exit",
+        ]
+        assert getattr(actor, operation)("reentry") is None
+    finally:
+        engine.dispose()

@@ -86,6 +86,7 @@ use crate::{
         SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
+    component::ComponentAccessError,
     signal::Signal,
 };
 
@@ -12333,4 +12334,102 @@ fn test_view_returns_borrowed_when_unfiltered(mut cache: Cache, audusd_sim: Curr
     check_borrow!(position_ids_view, positions);
     check_borrow!(position_open_ids_view, positions_open);
     check_borrow!(position_closed_ids_view, positions_closed);
+}
+
+#[rstest]
+fn test_cache_api_borrow_conflict_is_distinct_from_missing_data() {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let id = ClientOrderId::from("BORROW-ORDER");
+    let guard = cell.borrow_mut();
+    let lookup_error = api.try_order(&id).unwrap_err();
+    let get_error = api.get("borrow-key").unwrap_err();
+    drop(guard);
+
+    assert_eq!(
+        lookup_error,
+        OrderLookupError::Access(ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "try_order",
+        })
+    );
+    assert_eq!(
+        get_error.downcast_ref::<ComponentAccessError>(),
+        Some(&ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "get",
+        })
+    );
+    assert_eq!(api.try_order(&id), Err(OrderLookupError::not_found(id)));
+    assert_eq!(api.get("borrow-key").unwrap(), None);
+}
+
+#[rstest]
+#[case("try_account")]
+#[case("try_currency")]
+#[case("try_instrument")]
+#[case("try_synthetic")]
+#[case("try_order_book")]
+#[case("try_own_order_book")]
+#[case("try_order_list")]
+#[case("try_position")]
+fn test_cache_api_lookup_borrow_conflict(#[case] operation: &'static str) {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let _guard = cell.borrow_mut();
+
+    let expected = ComponentAccessError::ReadConflict {
+        resource: "cache",
+        operation,
+    };
+
+    match operation {
+        "try_account" => assert_eq!(
+            api.try_account(&AccountId::from("SIM-001")).unwrap_err(),
+            AccountLookupError::Access(expected)
+        ),
+        "try_currency" => assert_eq!(
+            api.try_currency(&Ustr::from("USD")).unwrap_err(),
+            CurrencyLookupError::Access(expected)
+        ),
+        "try_instrument" => assert_eq!(
+            api.try_instrument(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            InstrumentLookupError::Access(expected)
+        ),
+        "try_synthetic" => assert_eq!(
+            api.try_synthetic(&InstrumentId::from("SYNTH.SYNTH"))
+                .unwrap_err(),
+            SyntheticInstrumentLookupError::Access(expected)
+        ),
+        "try_order_book" => assert_eq!(
+            api.try_order_book(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            OrderBookLookupError::Access(expected)
+        ),
+        "try_own_order_book" => assert_eq!(
+            api.try_own_order_book(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            OwnOrderBookLookupError::Access(expected)
+        ),
+        "try_order_list" => assert_eq!(
+            api.try_order_list(&OrderListId::from("OL-001"))
+                .unwrap_err(),
+            OrderListLookupError::Access(expected)
+        ),
+        "try_position" => assert_eq!(
+            api.try_position(&PositionId::from("P-001")).unwrap_err(),
+            PositionLookupError::Access(expected)
+        ),
+        _ => unreachable!(),
+    }
+}
+
+#[rstest]
+#[should_panic(expected = "Cannot read cache during cache read: it is already mutably borrowed")]
+fn test_cache_api_infallible_borrow_conflict_panics_with_context() {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let _guard = cell.borrow_mut();
+    let _ = api.order(&ClientOrderId::from("BORROW-ORDER"));
 }

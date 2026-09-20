@@ -247,6 +247,14 @@ The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
 - `bracket`
 - `create_list`
 
+### Cache and clock access
+
+The cache facade's `try_*` lookups return a lookup error's `Access` variant for borrow conflicts;
+`NotFound` still means the requested data is absent. The cache facade's `get()` method and native-backed clock
+scheduling methods return access errors through `anyhow::Result`. Existing infallible accessors
+still panic on conflicts. Release conflicting borrows before retrying; these errors do not defer
+callbacks or change their delivery order.
+
 ### Core wiring macros
 
 Rust actors, strategies, and execution algorithms keep their runtime core as a
@@ -316,6 +324,13 @@ for normal strategy order construction. Reach for
 | `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
 | `cache_ref()` | `Ref<'_, Cache>`         | Need short live-cache reads.    |
 | `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
+
+Use `try_cache_ref()` and `try_clock_mut()` to handle failed native borrows without panicking.
+`try_cache_ref()` returns `ComponentAccessError::ReadConflict` when the cache is mutably borrowed;
+`try_clock_mut()` returns `ComponentAccessError::WriteConflict` when the clock is already borrowed.
+Both return `ComponentAccessError::NotRegistered` when registration has not supplied the resource.
+Import the error type from `nautilus_common::component`. The error identifies the resource and
+attempted operation. Callback reentry can cause a conflict, but a conflict alone does not establish its cause.
 
 #### `StrategyNative` methods
 

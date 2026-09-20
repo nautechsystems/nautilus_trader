@@ -22,7 +22,10 @@ use rstest::{fixture, rstest};
 use ustr::Ustr;
 
 use super::*;
-use crate::timer::{TimeEvent, TimeEventCallback};
+use crate::{
+    component::ComponentAccessError,
+    timer::{TimeEvent, TimeEventCallback},
+};
 
 #[derive(Debug, Default)]
 struct TestCallback {
@@ -1838,4 +1841,82 @@ const CLOCK_TIME_HEADROOM: u64 = 100_000;
 
 fn clock_timer_name(index: usize) -> Ustr {
     Ustr::from(CLOCK_TIMER_NAMES[index])
+}
+
+#[rstest]
+#[case("set_time_alert")]
+#[case("set_time_alert_ns")]
+#[case("set_timer")]
+#[case("set_timer_ns")]
+fn test_clock_api_scheduling_borrow_conflict_returns_access_error(
+    test_clock: VirtualClock,
+    #[case] operation: &'static str,
+) {
+    test_clock.set_time(UnixNanos::from(1));
+    let cell = RefCell::new(test_clock);
+    let api = ClockApi::new(&cell);
+
+    let schedule = || match operation {
+        "set_time_alert" => api.set_time_alert(
+            "borrow-timer",
+            UnixNanos::from(10).to_datetime_utc(),
+            None,
+            None,
+        ),
+        "set_time_alert_ns" => {
+            api.set_time_alert_ns("borrow-timer", UnixNanos::from(10), None, None)
+        }
+        "set_timer" => api.set_timer(
+            "borrow-timer",
+            Duration::from_nanos(9),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        "set_timer_ns" => api.set_timer_ns(
+            "borrow-timer",
+            DurationNanos::new(9),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        _ => unreachable!(),
+    };
+
+    let guard = cell.borrow();
+    let error = schedule().unwrap_err();
+    drop(guard);
+
+    assert_eq!(
+        error.downcast_ref::<ComponentAccessError>(),
+        Some(&ComponentAccessError::WriteConflict {
+            resource: "clock",
+            operation,
+        })
+    );
+    assert_eq!(api.timer_count(), 0);
+    schedule().unwrap();
+    assert_eq!(api.next_time_ns("borrow-timer"), Some(UnixNanos::from(10)));
+}
+
+#[rstest]
+#[should_panic(expected = "Cannot read clock during timestamp_ns: it is already mutably borrowed")]
+fn test_clock_api_read_borrow_conflict_panics_with_context(test_clock: VirtualClock) {
+    let cell = RefCell::new(test_clock);
+    let api = ClockApi::new(&cell);
+    let _guard = cell.borrow_mut();
+    let _ = api.timestamp_ns();
+}
+
+#[rstest]
+#[should_panic(expected = "Cannot modify clock during cancel_timers: it is already borrowed")]
+fn test_clock_api_write_borrow_conflict_panics_with_context(test_clock: VirtualClock) {
+    let cell = RefCell::new(test_clock);
+    let api = ClockApi::new(&cell);
+    let _guard = cell.borrow();
+    api.cancel_timers();
 }

@@ -15,7 +15,11 @@
 
 //! User-facing facade over clock operations.
 
-use std::{cell::RefCell, fmt::Debug, time::Duration};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    fmt::Debug,
+    time::Duration,
+};
 
 use jiff::Timestamp;
 use nautilus_core::{
@@ -25,7 +29,7 @@ use nautilus_core::{
 use ustr::Ustr;
 
 use super::{Clock, duration_to_nanos};
-use crate::timer::TimeEventCallback;
+use crate::{component::ComponentAccessError, timer::TimeEventCallback};
 
 /// Provides a user-facing facade over clock operations.
 ///
@@ -119,7 +123,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timestamp_ns(&self) -> UnixNanos {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timestamp_ns(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timestamp_ns").timestamp_ns(),
             ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)(),
         }
     }
@@ -132,7 +136,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timestamp_us(&self) -> u64 {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timestamp_us(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timestamp_us").timestamp_us(),
             ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().as_micros(),
         }
     }
@@ -145,7 +149,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timestamp_ms(&self) -> u64 {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timestamp_ms(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timestamp_ms").timestamp_ms(),
             ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().as_millis(),
         }
     }
@@ -158,7 +162,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timestamp(&self) -> f64 {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timestamp(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timestamp").timestamp(),
             ClockApiBacking::Handlers(handlers) => {
                 (handlers.timestamp_ns)().as_f64() / (NANOSECONDS_IN_SECOND as f64)
             }
@@ -173,24 +177,21 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn utc_now(&self) -> Timestamp {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().utc_now(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "utc_now").utc_now(),
             ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().to_datetime_utc(),
         }
     }
 
-    // panics-doc-ok
     /// Sets a time alert for the specified UTC timestamp.
     ///
     /// See [`Clock::set_time_alert`] for timing and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the timestamp cannot be converted to [`UnixNanos`] or the backing clock
-    /// rejects the alert.
-    ///
-    /// # Panics
-    ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Returns:
+    /// - An error if the timestamp cannot be converted to [`UnixNanos`] or the backing clock
+    ///   rejects the alert.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
     pub fn set_time_alert(
         &self,
         name: &str,
@@ -199,8 +200,7 @@ impl<'a> ClockApi<'a> {
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock
-                .borrow_mut()
+            ClockApiBacking::Native(clock) => clock_mut(clock, "set_time_alert")?
                 .set_time_alert(name, alert_time, callback, allow_past),
             ClockApiBacking::Handlers(handlers) => (handlers.set_time_alert_ns)(
                 name,
@@ -211,18 +211,15 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    // panics-doc-ok
     /// Sets a time alert for the specified UNIX nanosecond timestamp.
     ///
     /// See [`Clock::set_time_alert_ns`] for timing and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the backing clock rejects the alert.
-    ///
-    /// # Panics
-    ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Returns:
+    /// - An error if the backing clock rejects the alert.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
     pub fn set_time_alert_ns(
         &self,
         name: &str,
@@ -231,30 +228,24 @@ impl<'a> ClockApi<'a> {
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => {
-                clock
-                    .borrow_mut()
-                    .set_time_alert_ns(name, alert_time_ns, callback, allow_past)
-            }
+            ClockApiBacking::Native(clock) => clock_mut(clock, "set_time_alert_ns")?
+                .set_time_alert_ns(name, alert_time_ns, callback, allow_past),
             ClockApiBacking::Handlers(handlers) => {
                 (handlers.set_time_alert_ns)(name, alert_time_ns, callback, allow_past)
             }
         }
     }
 
-    // panics-doc-ok
     /// Sets an interval timer using UTC timestamps.
     ///
     /// See [`Clock::set_timer`] for scheduling and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the interval exceeds `u64::MAX` nanoseconds, a timestamp cannot be
-    /// converted to [`UnixNanos`], or the backing clock rejects the timer.
-    ///
-    /// # Panics
-    ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Returns:
+    /// - An error if the interval exceeds `u64::MAX` nanoseconds, a timestamp cannot be
+    ///   converted to [`UnixNanos`], or the backing clock rejects the timer.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer(
         &self,
@@ -267,7 +258,7 @@ impl<'a> ClockApi<'a> {
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow_mut().set_timer(
+            ClockApiBacking::Native(clock) => clock_mut(clock, "set_timer")?.set_timer(
                 name,
                 interval,
                 start_time,
@@ -288,18 +279,15 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    // panics-doc-ok
     /// Sets an interval timer using UNIX nanosecond timestamps.
     ///
     /// See [`Clock::set_timer_ns`] for scheduling and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the backing clock rejects the timer.
-    ///
-    /// # Panics
-    ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Returns:
+    /// - An error if the backing clock rejects the timer.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer_ns(
         &self,
@@ -312,7 +300,7 @@ impl<'a> ClockApi<'a> {
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow_mut().set_timer_ns(
+            ClockApiBacking::Native(clock) => clock_mut(clock, "set_timer_ns")?.set_timer_ns(
                 name,
                 interval_ns,
                 start_time_ns,
@@ -341,8 +329,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timer_names(&self) -> Vec<String> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock
-                .borrow()
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timer_names")
                 .timer_names()
                 .into_iter()
                 .map(str::to_string)
@@ -359,7 +346,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timer_count(&self) -> usize {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timer_count(),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "timer_count").timer_count(),
             ClockApiBacking::Handlers(handlers) => (handlers.timer_count)(),
         }
     }
@@ -372,7 +359,9 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn timer_exists(&self, name: &str) -> bool {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().timer_exists(&Ustr::from(name)),
+            ClockApiBacking::Native(clock) => {
+                clock_ref(clock, "timer_exists").timer_exists(&Ustr::from(name))
+            }
             ClockApiBacking::Handlers(handlers) => (handlers.timer_exists)(name),
         }
     }
@@ -387,7 +376,7 @@ impl<'a> ClockApi<'a> {
     #[must_use]
     pub fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow().next_time_ns(name),
+            ClockApiBacking::Native(clock) => clock_ref(clock, "next_time_ns").next_time_ns(name),
             ClockApiBacking::Handlers(handlers) => (handlers.next_time_ns)(name),
         }
     }
@@ -399,7 +388,9 @@ impl<'a> ClockApi<'a> {
     /// With native backing, panics if the clock is already borrowed.
     pub fn cancel_timer(&self, name: &str) {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timer(name),
+            ClockApiBacking::Native(clock) => clock_mut(clock, "cancel_timer")
+                .unwrap_or_else(|e| panic!("{e}"))
+                .cancel_timer(name),
             ClockApiBacking::Handlers(handlers) => (handlers.cancel_timer)(name),
         }
     }
@@ -411,7 +402,9 @@ impl<'a> ClockApi<'a> {
     /// With native backing, panics if the clock is already borrowed.
     pub fn cancel_timers(&self) {
         match &self.backing {
-            ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timers(),
+            ClockApiBacking::Native(clock) => clock_mut(clock, "cancel_timers")
+                .unwrap_or_else(|e| panic!("{e}"))
+                .cancel_timers(),
             ClockApiBacking::Handlers(handlers) => (handlers.cancel_timers)(),
         }
     }
@@ -456,3 +449,27 @@ type SetTimerNsHandler<'a> = dyn Fn(
         Option<bool>,
     ) -> anyhow::Result<()>
     + 'a;
+
+fn clock_ref<'a>(clock: &'a RefCell<dyn Clock>, operation: &'static str) -> Ref<'a, dyn Clock> {
+    clock.try_borrow().unwrap_or_else(|_| {
+        panic!(
+            "{}",
+            ComponentAccessError::ReadConflict {
+                resource: "clock",
+                operation,
+            }
+        )
+    })
+}
+
+fn clock_mut<'a>(
+    clock: &'a RefCell<dyn Clock>,
+    operation: &'static str,
+) -> Result<RefMut<'a, dyn Clock>, ComponentAccessError> {
+    clock
+        .try_borrow_mut()
+        .map_err(|_| ComponentAccessError::WriteConflict {
+            resource: "clock",
+            operation,
+        })
+}

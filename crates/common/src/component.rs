@@ -29,6 +29,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_model::identifiers::{ComponentId, TraderId};
+use thiserror::Error;
 use ustr::Ustr;
 
 use crate::{
@@ -37,6 +38,42 @@ use crate::{
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
 };
+
+/// Failure to acquire access to component state.
+///
+/// A conflict identifies the requested access, not the holder or its call stack.
+/// Callback reentry can cause a conflict, but is not the only possible cause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ComponentAccessError {
+    /// Registration has not supplied the requested resource.
+    #[error("Cannot access {resource} during {operation}: the actor is not registered")]
+    NotRegistered {
+        /// The resource being accessed.
+        resource: &'static str,
+        /// The attempted operation.
+        operation: &'static str,
+    },
+    /// Shared access conflicts with an existing exclusive borrow.
+    #[error(
+        "Cannot read {resource} during {operation}: it is already mutably borrowed. Release the existing borrow before accessing it again; callback reentry can cause this conflict"
+    )]
+    ReadConflict {
+        /// The resource being accessed.
+        resource: &'static str,
+        /// The attempted operation.
+        operation: &'static str,
+    },
+    /// Exclusive access conflicts with an existing shared or exclusive borrow.
+    #[error(
+        "Cannot modify {resource} during {operation}: it is already borrowed. Release existing borrows before accessing it mutably; callback reentry can cause this conflict"
+    )]
+    WriteConflict {
+        /// The resource being accessed.
+        resource: &'static str,
+        /// The attempted operation.
+        operation: &'static str,
+    },
+}
 
 /// Components have state and lifecycle management capabilities.
 pub trait Component {

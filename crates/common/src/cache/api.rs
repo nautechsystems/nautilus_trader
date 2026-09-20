@@ -52,6 +52,7 @@ use super::{
         SyntheticInstrumentLookupError,
     },
 };
+use crate::component::ComponentAccessError;
 
 /// User-facing cache API.
 ///
@@ -326,18 +327,16 @@ impl<'a> CacheApi<'a> {
         self.cache().order_owned(client_order_id)
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the order for the `client_order_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    /// - [`OrderLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_order(&self, client_order_id: &ClientOrderId) -> Result<OrderAny, OrderLookupError> {
-        self.cache().try_order_owned(client_order_id)
+        self.try_cache("try_order")?
+            .try_order_owned(client_order_id)
     }
 
     /// Returns owned copies of the orders for `client_order_ids`.
@@ -820,21 +819,20 @@ impl<'a> CacheApi<'a> {
         self.cache().order_list(order_list_id).cloned()
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the order list for the `order_list_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`OrderListLookupError::NotFound`] when the order list is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`OrderListLookupError::NotFound`] when the order list is not present in the cache.
+    /// - [`OrderListLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_order_list(
         &self,
         order_list_id: &OrderListId,
     ) -> Result<OrderList, OrderListLookupError> {
-        self.cache().try_order_list(order_list_id).cloned()
+        self.try_cache("try_order_list")?
+            .try_order_list(order_list_id)
+            .cloned()
     }
 
     /// Returns owned copies of all order lists matching the optional filter parameters.
@@ -967,18 +965,15 @@ impl<'a> CacheApi<'a> {
             .map(|position| position.cloned())
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the position for the `position_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`PositionLookupError::NotFound`] when the position is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`PositionLookupError::NotFound`] when the position is not present in the cache.
+    /// - [`PositionLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_position(&self, position_id: &PositionId) -> Result<Position, PositionLookupError> {
-        self.cache()
+        self.try_cache("try_position")?
             .try_position_ref(position_id)
             .map(|position| position.cloned())
     }
@@ -1226,18 +1221,15 @@ impl<'a> CacheApi<'a> {
         self.cache().strategy_id_for_position(position_id).copied()
     }
 
-    // panics-doc-ok
     /// Returns the general cache value for the `key` (if found).
     ///
     /// # Errors
     ///
-    /// Returns an error if the `key` is invalid.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The `key` is invalid.
+    /// - The cache is already mutably borrowed ([`ComponentAccessError`]).
     pub fn get(&self, key: &str) -> anyhow::Result<Option<Bytes>> {
-        let cache = self.cache();
+        let cache = self.try_cache("get")?;
         let value = cache.get(key)?;
         Ok(value.cloned())
     }
@@ -1336,21 +1328,20 @@ impl<'a> CacheApi<'a> {
         self.cache().order_book(instrument_id).cloned()
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the order book for the `instrument_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`OrderBookLookupError::NotFound`] when the order book is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`OrderBookLookupError::NotFound`] when the order book is not present in the cache.
+    /// - [`OrderBookLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_order_book(
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<OrderBook, OrderBookLookupError> {
-        self.cache().try_order_book(instrument_id).cloned()
+        self.try_cache("try_order_book")?
+            .try_order_book(instrument_id)
+            .cloned()
     }
 
     /// Returns an owned copy of the own order book for the `instrument_id` (if found).
@@ -1363,22 +1354,20 @@ impl<'a> CacheApi<'a> {
         self.cache().own_order_book(instrument_id).cloned()
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the own order book for the `instrument_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`OwnOrderBookLookupError::NotFound`] when the own order book is not present in the
-    /// cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`OwnOrderBookLookupError::NotFound`] when the own order book is not present in the cache.
+    /// - [`OwnOrderBookLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_own_order_book(
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<OwnOrderBook, OwnOrderBookLookupError> {
-        self.cache().try_own_order_book(instrument_id).cloned()
+        self.try_cache("try_own_order_book")?
+            .try_own_order_book(instrument_id)
+            .cloned()
     }
 
     /// Returns the latest quote for the `instrument_id` (if found).
@@ -1734,18 +1723,15 @@ impl<'a> CacheApi<'a> {
         self.cache().currency(code).copied()
     }
 
-    // panics-doc-ok
     /// Returns the currency for the `code`.
     ///
     /// # Errors
     ///
-    /// Returns [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
+    /// - [`CurrencyLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_currency(&self, code: &Ustr) -> Result<Currency, CurrencyLookupError> {
-        self.cache().try_currency(code).copied()
+        self.try_cache("try_currency")?.try_currency(code).copied()
     }
 
     /// Returns an owned copy of the instrument for the `instrument_id` (if found).
@@ -1758,21 +1744,20 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument(instrument_id).cloned()
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the instrument for the `instrument_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
+    /// - [`InstrumentLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<InstrumentAny, InstrumentLookupError> {
-        self.cache().try_instrument(instrument_id).cloned()
+        self.try_cache("try_instrument")?
+            .try_instrument(instrument_id)
+            .cloned()
     }
 
     /// Returns the instrument IDs in the cache, optionally filtered by `venue`.
@@ -1852,22 +1837,21 @@ impl<'a> CacheApi<'a> {
         self.cache().synthetic(instrument_id).cloned()
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the synthetic instrument for the `instrument_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`SyntheticInstrumentLookupError::NotFound`] when the synthetic instrument is not
-    /// present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`SyntheticInstrumentLookupError::NotFound`] when the synthetic instrument is not present
+    ///   in the cache.
+    /// - [`SyntheticInstrumentLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_synthetic(
         &self,
         instrument_id: &InstrumentId,
     ) -> Result<SyntheticInstrument, SyntheticInstrumentLookupError> {
-        self.cache().try_synthetic(instrument_id).cloned()
+        self.try_cache("try_synthetic")?
+            .try_synthetic(instrument_id)
+            .cloned()
     }
 
     /// Returns the synthetic instrument IDs in the cache.
@@ -1970,18 +1954,15 @@ impl<'a> CacheApi<'a> {
         self.cache().account_owned(account_id)
     }
 
-    // panics-doc-ok
     /// Returns an owned copy of the account for the `account_id`.
     ///
     /// # Errors
     ///
-    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
+    /// Returns:
+    /// - [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    /// - [`AccountLookupError::Access`] if the cache is already mutably borrowed.
     pub fn try_account(&self, account_id: &AccountId) -> Result<AccountAny, AccountLookupError> {
-        self.cache()
+        self.try_cache("try_account")?
             .try_account(account_id)
             .map(|account| account.cloned())
     }
@@ -2031,6 +2012,16 @@ impl<'a> CacheApi<'a> {
     }
 
     fn cache(&self) -> Ref<'_, Cache> {
-        self.cache.borrow()
+        self.try_cache("cache read")
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn try_cache(&self, operation: &'static str) -> Result<Ref<'_, Cache>, ComponentAccessError> {
+        self.cache
+            .try_borrow()
+            .map_err(|_| ComponentAccessError::ReadConflict {
+                resource: "cache",
+                operation,
+            })
     }
 }
