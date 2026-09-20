@@ -955,7 +955,7 @@ impl SocketClientInner {
                         match writer_tx.send(msg) {
                             Ok(()) => log::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
-                                log::error!("Failed to send heartbeat to writer task: {e}");
+                                log::warn!("Failed to send heartbeat to writer task: {e}");
                             }
                         }
                     }
@@ -1540,6 +1540,7 @@ impl Drop for SocketClient {
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use log::Level;
     use nautilus_common::testing::wait_until_async;
     use parking_lot::Mutex as BlockingMutex;
     use rstest::rstest;
@@ -1552,7 +1553,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{SocketState, socket::SocketHeartbeat};
+    use crate::{SocketState, logging::tests::capture_logs_for, socket::SocketHeartbeat};
 
     async fn bind_test_server() -> (u16, TcpListener) {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -1835,6 +1836,45 @@ mod tests {
         );
 
         server_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_heartbeat_task_warns_when_writer_channel_closed() {
+        let capture = capture_logs_for(&["nautilus_network::socket::client"]).await;
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let task = SocketClientInner::spawn_heartbeat_task(
+            Arc::clone(&connection_state),
+            1,
+            b"ping".to_vec(),
+            writer_tx,
+        );
+
+        tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
+            .await
+            .expect("timed out waiting for the first heartbeat")
+            .expect("heartbeat channel closed before the first heartbeat");
+        drop(writer_rx);
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+
+        let messages = capture.messages();
+        assert!(
+            messages.iter().any(|(level, message)| {
+                *level == Level::Warn && message.contains("Failed to send heartbeat to writer task")
+            }),
+            "expected WARN when the writer channel is closed, was {messages:?}"
+        );
+        assert!(
+            !messages.iter().any(|(level, _)| *level == Level::Error),
+            "a closed writer channel must not log ERROR, was {messages:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("heartbeat task should stop after close")
+            .unwrap();
     }
 
     #[tokio::test]
