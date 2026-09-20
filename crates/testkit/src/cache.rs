@@ -38,7 +38,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Currency, Money},
 };
@@ -54,12 +54,23 @@ struct TestCacheDatabaseState {
     actors: AHashMap<ActorId, AHashMap<String, Bytes>>,
     strategies: AHashMap<StrategyId, AHashMap<String, Bytes>>,
     instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
+    orders: AHashMap<ClientOrderId, OrderAny>,
+    index_load_failure: Option<TestCacheIndexLoadFailure>,
     events: Vec<String>,
     fail_load_actor: bool,
     fail_load_strategy: bool,
     fail_update_actor: bool,
     fail_update_strategy: bool,
     fail_update_position: bool,
+}
+
+/// Cache index read to fail after order data has loaded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TestCacheIndexLoadFailure {
+    /// Fail the order-to-position index read.
+    OrderPosition,
+    /// Fail the order-to-client index read.
+    OrderClient,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -79,6 +90,19 @@ impl TestCacheDatabaseControl {
             },
             control,
         )
+    }
+
+    /// Seeds order data returned by subsequent cache loads.
+    pub fn set_orders(&self, orders: Vec<OrderAny>) {
+        self.state.lock().orders = orders
+            .into_iter()
+            .map(|order| (order.client_order_id(), order))
+            .collect();
+    }
+
+    /// Configures a cache index read failure, or clears it with `None`.
+    pub fn set_index_load_failure(&self, failure: Option<TestCacheIndexLoadFailure>) {
+        self.state.lock().index_load_failure = failure;
     }
 
     /// Records an event in the shared lifecycle log.
@@ -174,8 +198,10 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        let state = self.control.state.lock();
         Ok(CacheMap {
-            instrument_closes: self.control.state.lock().instrument_closes.clone(),
+            instrument_closes: state.instrument_closes.clone(),
+            orders: state.orders.clone(),
             ..Default::default()
         })
     }
@@ -207,7 +233,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
-        Ok(AHashMap::new())
+        Ok(self.control.state.lock().orders.clone())
     }
 
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
@@ -215,10 +241,20 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        if self.control.state.lock().index_load_failure
+            == Some(TestCacheIndexLoadFailure::OrderPosition)
+        {
+            anyhow::bail!("test order-position index load failure");
+        }
         Ok(AHashMap::new())
     }
 
     fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        if self.control.state.lock().index_load_failure
+            == Some(TestCacheIndexLoadFailure::OrderClient)
+        {
+            anyhow::bail!("test order-client index load failure");
+        }
         Ok(AHashMap::new())
     }
 

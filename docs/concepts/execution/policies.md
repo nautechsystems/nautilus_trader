@@ -183,8 +183,85 @@ or not a strategy claims the activity.
 Startup reconciliation runs before trader components start. A startup failure stops the node from
 starting unless a documented compatibility path handles that specific condition.
 
+### Retaining unresolved submissions
+
+The native live runtime defaults to `SubmittedOrderExhaustionPolicy::ResolveLocally`
+(`"resolve_locally"` in serialized configuration), preserving the terminal policies below.
+To retain submissions whose venue outcomes remain unknown, set
+`LiveExecutionEngineConfig.submitted_order_exhaustion_policy` to
+`SubmittedOrderExhaustionPolicy::RetainUnresolved` (`"retain_unresolved"`).
+
+This policy covers every unknown submission, including a lost acknowledgement with no explicit
+adapter error. Both in-flight exhaustion and full-history missing-order resolution retain the
+original native order and its tracking. Cancel or modify commands sent before acknowledgement
+do not erase submission uncertainty. Cancel/modify retry and timeout policies for orders
+already acknowledged by the venue remain unchanged.
+
+Startup also registers unresolved `Submitted` or `Released` history already present in the
+native cache, including later pending cancel/modify states. It starts a fresh recovery budget;
+exhaustion diagnostics and retry counters are not persisted. Applied native submission events
+use the same tracking. Commands denied before client routing receive native `OrderDenied`
+evidence, including commands whose orders were not already cached.
+For a restored `Released` order, a matched venue outcome reconstructs the missing native
+`Submitted` step before applying acceptance or fills. The original identity remains intact,
+and the reconstructed step records the report or outcome as its cause. Conclusive expired
+or triggered evidence also supplies any acceptance step required by the native state machine
+for a retained submission, including a cancellation requested before acknowledgement.
+A matching unchanged acceptance snapshot, direct acceptance, or trigger evidence records the
+submission outcome and restores the outstanding native pending command with reconciliation
+provenance. Its own recovery continues, and repeated submission evidence does not restart its
+budget or clear that command. A correlated replacement acknowledgement with a new venue ID
+completes a recovered modification through a native update, retaining the original client identity
+and historical venue aliases. A direct acknowledgement carries no amended terms, so cached terms
+remain until later authoritative evidence supplies them. A matching replacement status report
+can supply those terms through the same native update path. A first partial fill can preserve the original
+pending event without reconstruction; its command recovery remains active, and older matching
+acceptance or trigger evidence cannot roll back that partial-fill state. A lower cumulative-fill
+snapshot must be newer than the applied fills before it can generate a correction; equal timestamps
+do not establish that chronology. Explicit native fill-void events retain their normal validation.
+This protection follows
+native command history after recovery, including command completion and fresh report IDs; a new
+ordinary pending command ends that recovery scope. Original fill identity
+is checked before normalization for
+retained submitted, released, and pending states. A later snapshot confirming changed order terms
+applies a native update; it completes a pending modification while preserving an outstanding
+cancellation. A direct update acknowledging an earlier modification also preserves a recovered
+pending cancellation and its remaining retry budget. A direct terminal fill-void outcome uses native
+identity, transition, and duplicate-void validation before any required history is reconstructed.
+If persistent cache loading fails after installing orders, the startup error also reports
+any loaded unresolved submissions; a failed index read does not hide their identities.
+
+Recovery remains bounded by the existing retry settings. Failed, mismatched, timed-out, or
+incomplete final queries also exhaust the opt-in budget when their results cannot be applied.
+Targeted fill recovery for terminal bulk reports consumes the configured missing-order budget;
+a single incomplete fill lookup does not exhaust a larger remaining budget.
+Exhaustion stops automatic per-order
+queries without generating `OrderRejected` or `OrderCanceled`; periodic account-wide polling
+and incoming venue events can still recover the order. Empty reports, scheduler ticks, and
+repeated command registration do not restart the exhausted budget. Only evidence applied to
+the native cached order clears submission uncertainty, including a venue trigger received during
+a pre-acknowledgement modification. Pending venue reports do not infer acceptance under this
+policy; real companion fills still apply even when the pending snapshot reports zero fills.
+Pending snapshots cannot reverse those fills. Late fills use normal native order, position,
+and duplicate-fill handling.
+
+The Rust message bus publishes one typed `SubmissionRecoveryExhausted` diagnostic on
+`reconciliation.SubmissionRecoveryExhausted`. It carries the original trader, execution client
+when known, strategy, instrument and client order ID, recovery source, native retry counter,
+and exhaustion timestamp. This is a diagnostic, not a terminal order status. Rust callers can
+also inspect `ExecutionManager::submission_recovery_exhaustion` and
+`ExecutionManager::unresolved_submission_ids`.
+
+Normal bounded shutdown and managed exit remain active. If submission uncertainty remains at
+finalization, the node returns an incomplete submission recovery error after releasing resources.
+A late fill received during the shutdown window can still enter native managed cleanup. This
+policy does not provide crash-durable uncertainty, prove account-wide flatness, or confirm a
+venue outcome after the node has disconnected. Operators must reconcile unresolved identities
+before deciding whether to submit again.
+
 ### Terminal reconciliation provenance
 
+The following table describes the default `ResolveLocally` policy.
 The `reconciliation` field identifies an event generated through reconciliation. It does not by
 itself distinguish a venue status report from a local policy resolution:
 

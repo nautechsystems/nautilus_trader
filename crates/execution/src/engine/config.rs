@@ -67,6 +67,11 @@ pub struct ExecutionEngineConfig {
     #[serde(default)]
     #[builder(default)]
     pub filter_unclaimed_external_orders: bool,
+    /// If pending reports must not synthesize acceptance for an unresolved submission.
+    /// Set by the live engine's retain-unresolved exhaustion policy.
+    #[serde(default)]
+    #[builder(default)]
+    pub preserve_unresolved_submissions: bool,
     /// The client IDs declared for external stream processing.
     ///
     /// The execution engine will not attempt to send trading commands to these

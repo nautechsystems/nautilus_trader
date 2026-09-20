@@ -15827,9 +15827,19 @@ fn test_reconcile_execution_mass_status_with_order_reports(mut execution_engine:
 #[case::client_id(true)]
 #[case::venue_id(false)]
 fn test_reconcile_execution_mass_status_corrects_fills_without_new_trades(
-    mut execution_engine: ExecutionEngine,
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
     #[case] include_client_id: bool,
 ) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let client_order_id = order.client_order_id();
     let venue_order_id = VenueOrderId::from("V-001");
@@ -15916,10 +15926,20 @@ fn test_reconcile_execution_mass_status_corrects_fills_without_new_trades(
 #[case::equal(100, 80_000)]
 #[case::newer(101, 80_000)]
 fn test_reconcile_execution_mass_status_respects_snapshot_start(
-    mut execution_engine: ExecutionEngine,
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
     #[case] fill_ts: u64,
     #[case] expected_qty: u64,
 ) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let client_order_id = order.client_order_id();
     let venue_order_id = VenueOrderId::from("V-001");
@@ -16005,9 +16025,19 @@ fn test_reconcile_execution_mass_status_respects_snapshot_start(
 #[case::partial(20_000)]
 #[case::full(80_000)]
 fn test_reconcile_execution_mass_status_preserves_newer_fill_void(
-    mut execution_engine: ExecutionEngine,
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
     #[case] voided_qty: u64,
 ) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let client_order_id = order.client_order_id();
     let venue_order_id = VenueOrderId::from("V-001");
@@ -16085,9 +16115,19 @@ fn test_reconcile_execution_mass_status_preserves_newer_fill_void(
 #[case::client_id(true)]
 #[case::venue_id(false)]
 fn test_reconcile_execution_mass_status_delivers_trades_with_stale_order_snapshot(
-    mut execution_engine: ExecutionEngine,
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
     #[case] include_client_id: bool,
 ) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let client_order_id = order.client_order_id();
     let venue_order_id = VenueOrderId::from("V-001");

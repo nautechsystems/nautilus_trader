@@ -126,6 +126,8 @@ use rstest::rstest;
 use serde_json::json;
 use ustr::Ustr;
 
+mod submission_recovery;
+
 const MARGIN_SPOT_PARENT_CLIENT_ORDER_ID: &str = "OEEADEMOSTOPLIMIT001";
 const MARGIN_SPOT_PARENT_VENUE_ORDER_ID: &str = "2497956918703120500";
 const MARGIN_SPOT_CHILD_VENUE_ORDER_ID: &str = "2497956918703120501";

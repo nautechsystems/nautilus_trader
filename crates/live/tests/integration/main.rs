@@ -16,3 +16,4 @@
 mod manager;
 mod node;
 mod stress;
+mod submission_recovery;

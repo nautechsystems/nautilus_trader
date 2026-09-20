@@ -102,6 +102,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["node"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
