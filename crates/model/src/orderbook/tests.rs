@@ -29,8 +29,10 @@ use rust_decimal_macros::dec;
 
 use crate::{
     data::{
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, depth::OrderBookDepth,
-        order::BookOrder, stubs::*,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        depth::OrderBookDepth,
+        order::{BookOrder, NULL_ORDER},
+        stubs::*,
     },
     enums::{
         AggressorSide, BookAction, BookType, OrderSide, OrderStatus, OrderType, RecordFlag,
@@ -1816,6 +1818,42 @@ fn test_book_update_stale_quote_tick_does_not_mutate_l1() {
     assert_eq!(book.ts_last, UnixNanos::from(2));
     assert_eq!(book.best_bid_price().unwrap(), Price::from("10.000"));
     assert_eq!(book.best_ask_price().unwrap(), Price::from("10.000"));
+}
+
+#[rstest]
+fn test_apply_delta_non_snapshot_clear_resets_sequence_high_water() {
+    let instrument_id = InstrumentId::from("ES.GLBX");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    book.add(
+        BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(100), 1),
+        0,
+        50,
+        UnixNanos::from(1000),
+    );
+
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Clear,
+        NULL_ORDER,
+        0,
+        0,
+        UnixNanos::from(2000),
+        UnixNanos::from(2000),
+    ))
+    .unwrap();
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(50),
+            2,
+        ),
+        0,
+        1,
+        UnixNanos::from(3000),
+    );
+
+    assert_eq!(book.sequence, 1);
 }
 
 struct BookWarnCapture {
