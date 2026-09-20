@@ -115,15 +115,26 @@ the repetition around that operation. Prefer these small runtime-specific loops 
 scheduler with runtime modes, lifecycle state, or policy objects. Share more code only when doing
 so removes duplication without adding those mechanisms.
 
-The boundary map below distinguishes existing integration points from constraints on further
-integration. It does not authorize queued callback activation.
+The boundary map separates existing integration and ownership rules from evidence required for
+queued callback activation. The last column states test requirements, not completed validation.
 
-| Boundary                   | Backtest                                                                        | Live                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Startup readiness          | Data commands and callbacks; trading commands stay queued                       | First running-loop drain after successful startup                                 |
-| Event settlement           | `drain_command_queues` after enclosing engine work and after each timer handler | Bounded running-loop passes with yield and stop checks                            |
-| Normal stop                | Settle due work, stop trader, settle stop-generated commands, stop engines      | Residual deadline and final buffered dispatch; standalone runner retains channels |
-| Fatal failure and teardown | Release owned work before clearing callback state                               | Existing lifecycle handles failure; disposal releases runner before cleanup       |
+| Runtime and boundary            | Existing integration                                                                    | Retained ownership and release                                                            | Required activation evidence                                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Backtest startup                | Settles data commands and callbacks; leaves trading commands queued                     | Startup engine borrows end before settlement                                              | Startup callback sequence before the first input; trading commands remain queued                            |
+| Backtest event settlement       | `drain_command_queues` after engine work and each timer handler                         | Enclosing engine and venue borrows end before settlement                                  | Callback-generated commands settle before the next timer or time advance                                    |
+| Backtest normal stop            | Settles due work, stops trader, settles stop-generated commands, then stops engines     | Trader and engine borrows end before callback delivery                                    | Exact stop-generated command and callback sequence                                                          |
+| Backtest failure and teardown   | Abort cleanup and guarded callback clearing                                             | Owned synchronous work releases before captures are cleared                               | Fatal-abort discard and rejection while external roots remain                                               |
+| Live startup                    | First running-loop drain after successful startup                                       | Connection and mass-status futures retain engine borrows until completion or cancellation | Instruments precede execution connection; native and Python callbacks run after enclosing borrows end       |
+| Live event settlement           | Bounded running-loop passes with yield and stop checks                                  | Synchronous event-handler borrows end before the next drain                               | Exact callback sequence, batch continuation, stop eligibility, and unchanged channel-only scheduling        |
+| Live report requests            | Serializes report families; commands use shared client access; instrument updates defer | Shared client borrows span loop iterations and end before deferred instruments flush      | Hold a report pending while exercising the real callback route; prove access safety and subsequent progress |
+| Live normal stop                | Residual deadline and final buffered dispatch; standalone runner retains channels       | Report futures drop before deferred-instrument flush and client disconnection             | Pending-report completion, timeout, and shutdown cancellation preserve ordering                             |
+| Live fatal failure and disposal | Existing shutdown handles failure; disposal clears without delivery                     | Kernel disposal precedes retained-runner release and guarded clearing                     | Stop-generated work is discarded; external roots still reject clearing                                      |
+| Live hosted-run abandonment     | Dropping the run future can leave shutdown incomplete                                   | Report futures drop before the node returns; later disposal attempts cleanup              | Distinguish awaited cancellation from abandonment; verify capture release and guarded cleanup               |
+
+Live ownership is implemented by the [execution-client facade](../../crates/live/src/execution/client.rs),
+[report-task lifecycle](../../crates/live/src/node/reconciliation.rs),
+[node lifecycle](../../crates/live/src/node/mod.rs), and
+[Python hosted-run owner](../../crates/live/src/python/node.rs).
 
 ### Backtest boundaries
 
@@ -133,7 +144,9 @@ venue processing releases its borrow before settlement. Moving all drains to the
 would change these boundaries. Startup's data-command and callback pass also cannot use unrestricted
 settlement without changing when trading commands execute.
 
-### Live startup and manual lifecycle
+### Live startup and standalone lifecycle
+
+#### Startup ordering
 
 Preserve startup ordering: instrument events reach the cache before execution clients connect and
 before subscription commands are handled.
@@ -147,6 +160,8 @@ Connection futures hold mutable engine borrows across their awaits, as does the
 mass-status request during startup reconciliation. Their completion alone does not justify another
 drain site. Replay and startup failures take separate exits and require their own ownership proof.
 
+#### Standalone lifecycle restrictions
+
 Standalone calls to `LiveNode::start` and `stop` do not run a continuous event loop: `start` returns
 with the runner retained, and stop or abort processes its pending messages. This path remains
 supported as a building block for tests and embedding, with its existing synchronous callbacks.
@@ -159,13 +174,18 @@ startup with a clear error before queued callbacks can be admitted; it must not 
 to synchronous delivery or leave callbacks undelivered. This restriction concerns standalone startup,
 not a stop request through the handle of a node running its event loop.
 
+Queued actor delivery and this rejection are not implemented. Enforcing the lifecycle restriction
+is an activation requirement; it does not change the existing standalone APIs.
+
+#### Hosted-run cancellation and abandonment
+
 Awaited cancellation of a hosted run drives graceful shutdown. Discarding that run while the host
 loop is running can instead drop its future before shutdown completes; callback delivery is not
 guaranteed on that path. Activation coverage must verify ownership release and guarded disposal
 cleanup after abandonment separately from graceful shutdown.
 
-Queued actor delivery and this rejection are not implemented. Enforcing the lifecycle restriction
-is an activation requirement; it does not change the existing standalone APIs.
+Dropping the run future releases report borrows but does not itself run report-task cancellation
+cleanup: it does not flush deferred instrument updates or remove targeted-query markers.
 
 ### Live stop and terminal cleanup
 
@@ -200,6 +220,8 @@ Verify that:
 
 ### Required boundary verification
 
+#### Sequence requirements
+
 Boundary changes require exact sequence assertions for:
 
 - Backtest startup data commands and callbacks before the first input, with trading commands queued.
@@ -213,6 +235,28 @@ Boundary changes require exact sequence assertions for:
 These sequence checks are activation requirements, not evidence of implemented live queued delivery.
 Exercise activated routes through real native and Python components. Private dispatcher tests alone
 do not establish that runtime borrows end at the selected boundary.
+
+#### Access enforcement
+
+For each activated route, reserve through the existing admission mechanism and acquire checked
+component access for invocation. Identify every engine, client, and cache access the callback can
+reach: the actor allocation guard does not protect those separate borrows or unchecked handles.
+The implementation must establish compatible access before invoking the callback; a successful
+actor guard alone is insufficient.
+
+#### Pending-report tests
+
+Hold a report request pending with an explicit test synchronization point, then exercise the real
+callback route and assert its exact event and command sequence before and after releasing the report.
+Cover successful completion, timeout, shutdown cancellation, and hosted-run abandonment where the
+route is reachable. Shared command access may proceed while the report is pending; mutable client
+access must wait until conflicting borrows end. Preserve publication order and report-future progress
+if the route needs deferral. Do not turn a busy head at a declared safe drain boundary into an
+unbounded retry: the [fatal stalled-delivery rule](#draining-and-progress) still applies.
+
+Existing [live-node tests](../../crates/live/tests/integration/node.rs) cover report serialization,
+deferred instrument updates, and timeout and shutdown cleanup. They do not exercise production queued
+actor delivery and cannot substitute for these route-specific activation tests.
 
 ## Runtime integration
 
@@ -264,7 +308,7 @@ These boundaries do not activate queued actor delivery. Before activation, runti
 - Preserve the [independent ingress boundaries](#sender-types-and-ingress) when activating additional callback routes or
   introducing reusable invocation storage.
 - Complete live lifecycle drain boundaries and ownership coverage outside terminal disposal.
-- Enforce the [live lifecycle restriction](#live-startup-and-manual-lifecycle) before admitting queued callbacks.
+- Enforce the [live lifecycle restriction](#live-startup-and-standalone-lifecycle) before admitting queued callbacks.
 - Establish native and Python ownership safety for every activated callback route.
 - Validate queued callbacks through complete backtest and live runtime lifecycles.
 - Prove deterministic callback sequences through native and Python components in the synchronous core

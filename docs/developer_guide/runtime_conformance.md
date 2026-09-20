@@ -42,7 +42,7 @@ in each lifecycle or flush method. After successful live startup, the first runn
 the existing delivery boundary. Live disposal releases the retained runner after kernel disposal,
 then attempts callback cleanup; external roots can still block clearing. Standalone `start`/`stop`
 has no continuous queued callback delivery schedule and retains its existing synchronous behavior.
-The [live lifecycle contract](callback_dispatch.md#live-startup-and-manual-lifecycle) restricts initial
+The [live lifecycle contract](callback_dispatch.md#live-startup-and-standalone-lifecycle) restricts initial
 queued activation to Rust `run`/`run_with_mode` and Python `run`/`run_async`. Activation must reject
 queued delivery with standalone startup before admitting callbacks. That rejection is not implemented.
 
