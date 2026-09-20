@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Lighter `use_gtd` to choose venue or local GTD expiry (#4997), thanks @graceyangfan
+- Added Lighter transport batching for batch cancellation and cancel-all requests (#4470)
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
@@ -115,6 +116,7 @@ Released on TBD (UTC).
 
 - Documented the adapter config field layout convention in the developer guide
 - Documented shared order book recovery ownership and Lighter recovery limits
+- Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
 - Documented Hyperliquid inferred-fill commissions as unset

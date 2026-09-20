@@ -47,6 +47,8 @@ use crate::{
     http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
 };
 
+pub(crate) const CANCEL_BATCH_ID_PREFIX: &str = "cancel-batch:";
+
 /// Inbound message produced by the Lighter feed handler and consumed by the
 /// data and execution clients.
 ///
@@ -88,6 +90,13 @@ pub enum NautilusWsMessage {
         message: String,
         tx_hash: Option<String>,
     },
+    SendTxBatchResult {
+        connection_epoch: u64,
+        id: String,
+        code: i64,
+        message: String,
+        tx_hashes: Vec<String>,
+    },
     Raw(serde_json::Value),
     Reconnected {
         connection_epoch: u64,
@@ -121,6 +130,19 @@ impl NautilusWsMessage {
                 code,
                 message,
                 tx_hash,
+            },
+            Self::SendTxBatchResult {
+                id,
+                code,
+                message,
+                tx_hashes,
+                ..
+            } => Self::SendTxBatchResult {
+                connection_epoch,
+                id,
+                code,
+                message,
+                tx_hashes,
             },
             other => other,
         }
@@ -187,6 +209,8 @@ pub enum LighterWsRequest {
     Unsubscribe { channel: String },
     #[serde(rename = "jsonapi/sendtx")]
     SendTx { data: LighterWsSendTx },
+    #[serde(rename = "jsonapi/sendtxbatch")]
+    SendTxBatch { data: LighterWsSendTxBatch },
 }
 
 impl Zeroize for LighterWsRequest {
@@ -232,6 +256,18 @@ impl LighterWsRequest {
 pub struct LighterWsSendTx {
     pub tx_type: u8,
     pub tx_info: Box<RawValue>,
+}
+
+/// WebSocket batch payload with JSON-encoded transaction arrays.
+///
+/// `tx_types` encodes transaction type numbers; `tx_infos` encodes signed
+/// transaction JSON strings. Their positions correspond within the batch.
+/// `id` correlates the response. The venue permits at most 15 transactions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LighterWsSendTxBatch {
+    pub id: String,
+    pub tx_types: String,
+    pub tx_infos: String,
 }
 
 /// Wire labels for the Lighter WebSocket channel taxonomy.

@@ -98,12 +98,13 @@ The current adapter scope is deliberately narrower than the venue's full transac
 
 - Grouped order lists, OCO/OTO groups, brackets, TWAP, trailing stops, and iceberg display size are
   not implemented. Batch submit does not use `CreateGroupedOrders`.
-- Order-list submit and batch cancel fan out independent transactions sequentially over WebSocket.
-  Both operations are capped at 15 transactions per command.
+- Order-list submit sends independent transactions sequentially over WebSocket. Batch cancel sends
+  signed cancellations in WebSocket batches of up to 15 transactions. Both commands are capped at 15 transactions.
 - The execution client implements `CancelAllOrders` from cached open orders filtered by the requested
   instrument and optional `order_side`, across strategies. Each cancellation retains the order's
-  owning strategy. The execution client uses individual cancellations because its local cancel-all signing
-  schema has no market restriction or side filter.
+  owning strategy. The native cancel-all transaction cannot enforce the side filter, and the local
+  signing schema has no market restriction. The adapter sends explicit per-order cancellations
+  in WebSocket batches of up to 15 transactions.
 - Spot trading supports market and limit orders. Conditional stop-loss and take-profit orders are
   limited to perpetual markets.
 - Account state and position reports come from private WebSocket streams. `query_account` and
@@ -534,16 +535,38 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 | Cancel order        | ✓          | ✓    | Sends a signed `L2CancelOrder` transaction.                    |
 | Cancel all orders   | ✓          | ✓    | Cancels cached orders by instrument and optional side.         |
 | Set leverage        | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.               |
-| Batch cancel orders | ✓          | ✓    | Sequential fanout of up to 15 independent cancel transactions. |
+| Batch cancel orders | ✓          | ✓    | WebSocket batches of up to 15 signed cancel transactions.      |
 | Query order         | ✓          | ✓    | Requires credentials and REST lookup.                          |
 | Query account       | ✓          | ✓    | Replays the latest private WebSocket account state.            |
 | Mass status         | ✓          | ✓    | Bounded to account-active markets from WS and REST reports.    |
 
-`SubmitOrderList` and `BatchCancelOrders` sign and hand off each child transaction in order through
-the hash-correlated WebSocket `sendTx` path. The adapter allocates each nonce only after the prior
-child handoff completes. Each transaction therefore receives normal acknowledgement, rejection,
-and nonce recovery handling. Fanout is not atomic: it does not create grouped venue orders or
-provide OCO/OTO or bracket semantics.
+`SubmitOrderList` signs and sends each child transaction in order through the hash-correlated
+WebSocket `sendTx` path, allocating each nonce after the prior handoff completes.
+
+`BatchCancelOrders` uses WebSocket `jsonapi/sendtxbatch` with sequential nonces from the same API key.
+`CancelAllOrders` splits selected orders into batches of up to 15 transactions, including sided
+requests. An explicit `BatchCancelOrders` request containing more than 15 orders is rejected;
+automatic chunking applies to `CancelAllOrders`. A selection of 45 orders normally produces three
+15-transaction batches, but concurrent nonce allocation can produce smaller batches. The account's
+[active-order limits](#active-and-pending-order-limits) still apply: a Standard account cannot hold
+45 active orders on one market.
+
+Each batch uses one API key with consecutive nonces, as required by Lighter's
+[nonce contract](https://apidocs.lighter.xyz/docs/get-started#nonce). The adapter uses
+`skip_nonce=0`, so it must preserve nonce order. Its local window permits 16 unconfirmed nonce
+allocations per key; this is an adapter capacity limit, not a venue allowance for out-of-order
+transactions. Unsigned cancellations wait for capacity or nonce recovery instead of being discarded.
+Shutdown stops new dispatch and drops any remaining queued work. Batch responses correlate through
+the request ID and each signed transaction hash.
+
+A pre-admission rejection fails the whole batch without consuming its nonces; an invalid-nonce
+response also triggers nonce refresh. An acknowledgement confirms transaction admission, not order
+cancellation. Individual cancellations can fail after admission while other transactions in the batch
+succeed; these execution failures consume their nonces. Order updates and transaction lookups resolve cancellation outcomes.
+Ambiguous delivery retains pending state for reconciliation instead of resending the batch.
+Before signing the next chunk, the adapter waits up to 10 seconds for the current chunk's
+acknowledgements. A timeout allows dispatch to continue while retaining unacknowledged entries for reconciliation.
+Neither operation provides atomic execution, grouped orders, OCO/OTO, or bracket semantics.
 
 `UpdateLeverage` is exposed as `LighterExecutionClient::update_leverage(instrument_id,
 initial_margin_fraction, margin_mode)`. The `initial_margin_fraction` is in venue ticks
@@ -696,45 +719,79 @@ Higher [account tiers](#account-tiers) still require explicit client quotas:
 These options change local pacing only. Public data requests remain unauthenticated, so setting a
 higher local quota does not make those requests eligible for an account-level venue limit.
 
-### L1-address transaction limit
+### Transaction type limits
 
-The venue also enforces a 40 req/min limit per L1 address on transaction traffic, below the
-default `sendtx_quota_per_min` of 60. A Lighter Mainnet quoting session amending on every quote drift hit
+Lighter documents a default transaction-type limit of 40 requests per minute, with exceptions by
+transaction type. This is separate from the account-tier `sendTx`/`sendTxBatch` request limit.
+A Lighter Mainnet quoting session amending on every quote drift hit
 `code=23000` (`Too Many Requests`) after roughly 40 modify transactions in a minute; see
 [Volume quota and no-fill quoting](#volume-quota-and-no-fill-quoting) for the related quota that
 modify transactions also spend. Set `sendtx_quota_per_min` to 40 or lower for transaction-heavy
 quoting workloads. The limiter is shared across all `sendTx` traffic, so a lower quota also paces
 creates and cancels.
 
+The local quotas allow bursts; they do not enforce a strict rolling-minute ceiling. A quota of
+30 permits an initial burst of 30 requests while replenishing capacity at 30 per minute, so it can
+still exceed a venue limit of 40 requests in 60 seconds. Leave headroom for that burst and for other
+clients sharing the L1 address. For bounded Standard-account testing, 15 transaction requests and
+5 REST calls per minute leave room for independent account checks.
+
+An uncorrelated WebSocket `23000` response is logged without rejecting a particular transaction.
+It can apply to non-transaction traffic, so the adapter does not guess which order or batch failed.
+Pending outcomes require reconciliation; do not resend them blindly.
+
 The REST limiter counts one token per call rather than venue endpoint weights. Set
 `rest_quota_per_min` for the effective endpoint mix: a 24,000 weighted req/min premium limit yields
-40 calls/minute to endpoints with weight 600, such as `/api/v1/trades` and
-`/api/v1/recentTrades`.
+40 calls/minute to `/api/v1/recentTrades` (weight 600), or 120 calls/minute to
+`/api/v1/trades` (weight 200), before accounting for other requests.
 
-The venue meters transactions per account across both transports in one bucket. The execution
-client enforces `sendtx_quota_per_min` with a single shared limiter across WebSocket `sendTx`
-(including order-list and cancel fanout) and the HTTP `sendTx` used for startup integrator
-approval. Low-level raw `sendTx` and `sendTxBatch` calls use that limiter when the client is
+The venue meters transaction requests per L1 address across HTTP and WebSocket in one bucket.
+A batch counts as one `sendTxBatch` request and can carry up to 15 transactions. Standard accounts
+remain subject to the 60-request-per-minute limit; the separate venue read and transaction buckets
+apply to Plus and Premium accounts. The adapter keeps separate local read and transaction limiters,
+so Standard users must budget their combined traffic, including nonce and reconciliation reads.
+
+The execution client enforces `sendtx_quota_per_min` with a single shared limiter across WebSocket `sendTx`
+and `sendTxBatch` (including order lists and cancellation batches), and the HTTP `sendTx` used for
+startup integrator approval. Low-level raw `sendTx` and `sendTxBatch` calls use that limiter when the client is
 constructed with it; otherwise, they fall back to the raw client's REST limiter.
 
 The clients share one WebSocket message limiter per venue URL. It paces non-transaction control
 frames at 200 messages/minute across both clients. A closed-loop subscription gate caps
 unacknowledged requests at 35, below the venue's 50-message per-IP ceiling; this count depends on
-acknowledgement latency, not send rate. `sendTx` does not count against the client-message bucket.
+acknowledgement latency, not send rate. `sendTx` and `sendTxBatch` do not count against the
+client-message bucket or its 50-message inflight cap.
 
-| Scope                                | Venue limit                 | Adapter behavior                                     |
-| ------------------------------------ | --------------------------- | ---------------------------------------------------- |
-| REST, standard account               | 60 req/min                  | Default; set `rest_quota_per_min` to override.       |
-| REST, premium account                | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
-| REST, plus account                   | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
-| REST, builder account                | 240,000 weighted req/min    | Local override required; venue attribution applies.  |
-| `sendTx` / `sendTxBatch`, standard   | 60 req/min                  | Execution orders use WebSocket `sendTx`.             |
-| `sendTx` / `sendTxBatch`, premium    | 4,000-48,000 req/min        | Set `sendtx_quota_per_min` (scales with staked LIT). |
-| `sendTx` / `sendTxBatch`, plus       | 4,000 req/min               | Set `sendtx_quota_per_min` to use it.                |
-| Default transaction type limit       | 40 req/min                  | Applies to tx types not covered by volume quota.     |
-| `L2UpdateLeverage` transaction limit | 40 req/min                  | Relevant to `update_leverage`.                       |
-| Pending orders                       | 500/account, 16/market      | Venue limit; adapter does not pre-count it.          |
-| Active orders                        | 1,500/account, 1,000/market | Venue limit; adapter does not pre-count it.          |
+| Scope                                | Venue limit              | Adapter behavior                                     |
+| ------------------------------------ | ------------------------ | ---------------------------------------------------- |
+| REST, standard account               | 60 req/min               | Default; set `rest_quota_per_min` to override.       |
+| REST, premium account                | 24,000 weighted req/min  | Local override required; venue attribution applies.  |
+| REST, plus account                   | 24,000 weighted req/min  | Local override required; venue attribution applies.  |
+| REST, builder account                | 240,000 weighted req/min | Local override required; venue attribution applies.  |
+| `sendTx` / `sendTxBatch`, standard   | 60 req/min               | Shared with REST reads; includes HTTP and WebSocket. |
+| `sendTx` / `sendTxBatch`, premium    | 4,000-48,000 req/min     | Set `sendtx_quota_per_min` (scales with staked LIT). |
+| `sendTx` / `sendTxBatch`, plus       | 4,000 req/min            | Set `sendtx_quota_per_min` to use it.                |
+| Default transaction type limit       | 40 req/min               | Applies to tx types not covered by volume quota.     |
+| `L2UpdateLeverage` transaction limit | 40 req/min               | Relevant to `update_leverage`.                       |
+
+### Active and pending order limits
+
+Lighter's [rate-limit documentation](https://apidocs.lighter.xyz/docs/rate-limits) specifies these
+limits by account tier. Each per-market cap applies within the account.
+
+| Account tier | Active per account | Active per market | Pending per account | Pending per market |
+| ------------ | ------------------ | ----------------- | ------------------- | ------------------ |
+| Standard     | 250                | 30                | 50                  | 10                 |
+| Plus         | 750                | 250               | 500                 | 100                |
+| Premium      | 1,500              | 1,000             | 1,000               | 100                |
+
+Active orders rest on the book. Venue-pending orders include untriggered take-profit, stop-loss,
+and TWAP orders; these counts are separate from Nautilus `PendingCancel` and from unacknowledged
+transaction requests. The adapter does not pre-count these venue limits. Leave room for existing
+orders when placing new ones. Standard accounts support at most 30 active orders on each market
+and 250 across the account. Increasing local quotas does not raise these caps.
+
+### Endpoint weights and transport limits
 
 Common REST endpoint weights from the official docs:
 
@@ -742,25 +799,26 @@ Common REST endpoint weights from the official docs:
 | ------------------------------------ | ------ | ----------------------------------------------- |
 | `sendTx`, `sendTxBatch`, `nextNonce` | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
 | `accountInactiveOrders`              | 100    | Adapter counts one REST token per HTTP call.    |
-| `trades`, `recentTrades`             | 600    | Adapter counts one REST token per HTTP call.    |
+| `trades`                             | 200    | Adapter counts one REST token per HTTP call.    |
+| `recentTrades`                       | 600    | Adapter counts one REST token per HTTP call.    |
 | Other endpoints                      | 300    | Adapter counts one REST token per HTTP call.    |
 
-| Endpoint or transport                  | Limit      | Notes                                                |
-| -------------------------------------- | ---------- | ---------------------------------------------------- |
-| `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.        |
-| `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.           |
-| `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.          |
-| `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum.   |
-| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap.   |
-| WebSocket connections                  | 255 / IP   | Venue limit.                                         |
-| WebSocket subscriptions / connection   | 500        | Venue limit.                                         |
-| WebSocket unique accounts / connection | 500        | Venue limit.                                         |
-| WebSocket connections / minute         | 255        | Venue limit.                                         |
-| WebSocket client messages / minute     | 200        | Paces non-tx frames; heartbeat pings bypass it.      |
-| WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop. |
-| WebSocket `sendTxBatch` batch size     | 15 txs     | Venue limit; adapter fanout is also capped at 15.    |
-| WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.           |
-| WebSocket outbound command queue       | Not capped | Paced before writes; no queue-depth cap.             |
+| Endpoint or transport                  | Limit      | Notes                                                      |
+| -------------------------------------- | ---------- | ---------------------------------------------------------- |
+| `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.              |
+| `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.                 |
+| `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.                |
+| `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum.         |
+| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap.         |
+| WebSocket connections                  | 255 / IP   | Venue limit.                                               |
+| WebSocket subscriptions / connection   | 500        | Venue limit.                                               |
+| WebSocket unique accounts / connection | 500        | Venue limit.                                               |
+| WebSocket connections / minute         | 255        | Venue limit.                                               |
+| WebSocket client messages / minute     | 200        | Paces non-tx frames; heartbeat pings bypass it.            |
+| WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop.       |
+| WebSocket `sendTxBatch` batch size     | 15 txs     | Cancel-all chunks; explicit batches above 15 are rejected. |
+| WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.                 |
+| WebSocket outbound command queue       | Not capped | Paced before writes; no queue-depth cap.                   |
 
 Historical bar and funding-rate requests stop after 500 REST pages. This covers up to 250,000 bars
 or 49,500 hourly funding intervals. If the cap leaves part of the requested range uncovered, the
@@ -793,8 +851,9 @@ reconnect triggers a fresh token and account resubscription after tracked subscr
 replaying.
 
 On execution reconnect, the adapter starts a nonce-baseline refresh through
-`GET /api/v1/nextNonce`. New signed transaction dispatch is rejected until that refresh, or its
-background retry, installs the replacement connection's nonce baseline.
+`GET /api/v1/nextNonce`. Submit, modify, and single-cancel commands cannot sign until that refresh,
+or its background retry, installs the replacement connection's nonce baseline. Batch cancellations
+wait for nonce readiness, including requests received during the refresh.
 
 Within a session, venue confirmations advance the local nonce window, definitive rejections or
 pre-handoff failures may roll back its latest nonce, and stale state triggers a

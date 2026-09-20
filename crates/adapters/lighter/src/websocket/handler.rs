@@ -58,8 +58,8 @@ use super::{
     account_state::LighterAccountStateReconciler,
     error::LighterWsError,
     messages::{
-        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
-        LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
+        AccountStream, CANCEL_BATCH_ID_PREFIX, ExecutionReport, LighterAsset, LighterPosition,
+        LighterUserStats, LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
         LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
     },
     parse::{
@@ -164,6 +164,11 @@ pub enum HandlerCommand {
         connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<(), LighterWsError>>,
     },
+    SendTxBatch {
+        data: super::messages::LighterWsSendTxBatch,
+        connection_epoch: u64,
+        response_tx: tokio::sync::oneshot::Sender<Result<(), LighterWsError>>,
+    },
 }
 
 impl Debug for HandlerCommand {
@@ -220,6 +225,7 @@ impl Debug for HandlerCommand {
                 .field("account_id", account_id)
                 .field("account_index", account_index)
                 .finish(),
+            Self::SendTxBatch { .. } => f.write_str("SendTxBatch(<redacted>)"),
             Self::SendTx { tx_type, .. } => f
                 .debug_struct(stringify!(SendTx))
                 .field("tx_type", tx_type)
@@ -637,6 +643,13 @@ impl FeedHandler {
                         }
                         HandlerCommand::SetExecutionContext { account_id, account_index } => {
                             self.exec_account = Some((account_id, account_index));
+                        }
+                        HandlerCommand::SendTxBatch { data, connection_epoch, response_tx } => {
+                            let result = match serde_json::to_string(&LighterWsRequest::SendTxBatch { data }) {
+                                Ok(payload) => self.send_once(payload, connection_epoch).await,
+                                Err(e) => Err(LighterWsError::Client(format!("failed to serialize Lighter sendTxBatch: {e}"))),
+                            };
+                            let _ = response_tx.send(result);
                         }
                         HandlerCommand::SendTx {
                             tx_type,
@@ -1137,6 +1150,40 @@ impl FeedHandler {
         &mut self,
         value: &serde_json::Value,
     ) -> (bool, Option<NautilusWsMessage>) {
+        if value.get("type").and_then(|v| v.as_str()) == Some("jsonapi/sendtxbatch")
+            || value
+                .get("id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id.starts_with(CANCEL_BATCH_ID_PREFIX))
+        {
+            let body = value.get("error").unwrap_or(value);
+            let id = value.get("id").and_then(|v| v.as_str());
+            let code = body.get("code").and_then(|v| v.as_i64());
+
+            let (Some(id), Some(code)) = (id, code) else {
+                log::warn!("Ignoring malformed Lighter sendTxBatch response");
+                return (true, None);
+            };
+
+            return (
+                true,
+                Some(NautilusWsMessage::SendTxBatchResult {
+                    connection_epoch: 0,
+                    id: id.to_string(),
+                    code,
+                    message: body
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("batch rejected")
+                        .to_string(),
+                    tx_hashes: value
+                        .get("tx_hash")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default(),
+                }),
+            );
+        }
+
         if let Some(error) = already_subscribed_error(value) {
             self.confirm_already_subscribed(error);
             return (true, None);
@@ -3288,6 +3335,37 @@ mod tests {
         let (matched, msg) = handle_control_text(&mut handler, &text);
         assert_eq!(matched, expected_matched, "matched flag");
         assert_eq!(msg.is_some(), expected_has_msg, "msg presence");
+    }
+
+    #[rstest]
+    #[case::ack(serde_json::json!({"type":"jsonapi/sendtxbatch","id":"cancel-batch:abc","code":200,"tx_hash":["abc","def"]}), 200, "batch rejected", vec!["abc", "def"])]
+    #[case::error(serde_json::json!({"id":"cancel-batch:abc","error":{"code":21104,"message":"invalid nonce"}}), 21104, "invalid nonce", vec![])]
+    fn batch_response_preserves_correlation_and_epoch(
+        #[case] value: serde_json::Value,
+        #[case] expected_code: i64,
+        #[case] expected_message: &str,
+        #[case] expected_hashes: Vec<&str>,
+    ) {
+        let mut handler = make_handler_with_account();
+        let (matched, message) = handler.handle_control_value(&value);
+        assert!(matched);
+
+        match message.unwrap().with_connection_epoch(7) {
+            NautilusWsMessage::SendTxBatchResult {
+                connection_epoch,
+                id,
+                code,
+                message,
+                tx_hashes,
+            } => {
+                assert_eq!(connection_epoch, 7);
+                assert_eq!(id, "cancel-batch:abc");
+                assert_eq!(code, expected_code);
+                assert_eq!(message, expected_message);
+                assert_eq!(tx_hashes, expected_hashes);
+            }
+            message => panic!("expected batch response, was {message:?}"),
+        }
     }
 
     #[rstest]

@@ -1107,16 +1107,24 @@ impl LighterWebSocketClient {
         })?
     }
 
-    #[cfg(test)]
-    pub(crate) async fn drop_next_send_tx_result_for_test(&self) {
-        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        *self.cmd_tx.write().await = cmd_tx;
+    pub(crate) async fn send_tx_batch_on_connection(
+        &self,
+        data: super::messages::LighterWsSendTxBatch,
+        connection_epoch: u64,
+    ) -> Result<(), LighterWsError> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.send_cmd(HandlerCommand::SendTxBatch {
+            data,
+            connection_epoch,
+            response_tx,
+        })
+        .await?;
 
-        get_runtime().spawn(async move {
-            if let Some(HandlerCommand::SendTx { response_tx, .. }) = cmd_rx.recv().await {
-                drop(response_tx);
-            }
-        });
+        response_rx.await.map_err(|e| {
+            LighterWsError::SendTxOutcomeUnknown(format!(
+                "handler dropped sendTxBatch result after accepting the command: {e}",
+            ))
+        })?
     }
 
     async fn send_subscribe(
@@ -1296,6 +1304,23 @@ mod tests {
         consts::LIGHTER_VENUE,
         enums::{LighterProductType, LighterTxType},
     };
+
+    impl LighterWebSocketClient {
+        pub(crate) async fn drop_next_send_tx_result_for_test(&self) {
+            let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            *self.cmd_tx.write().await = cmd_tx;
+
+            get_runtime().spawn(async move {
+                if let Some(
+                    HandlerCommand::SendTx { response_tx, .. }
+                    | HandlerCommand::SendTxBatch { response_tx, .. },
+                ) = cmd_rx.recv().await
+                {
+                    drop(response_tx);
+                }
+            });
+        }
+    }
 
     fn registry_with(
         market_index: i64,
