@@ -2315,14 +2315,16 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                let instrument = self
-                    .get_instrument_by_raw_symbol(order.descr.pair.as_str())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "ClosedOrders: instrument not in cache for pair {}",
-                            order.descr.pair
-                        )
-                    })?;
+                // A historical record can reference an instrument absent from the current
+                // listing, so warn and keep the rest rather than withholding the whole read.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
+                else {
+                    log::warn!(
+                        "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
+                        order.descr.pair
+                    );
+                    continue;
+                };
 
                 match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
                     Ok(report) => all_reports.push(report),
@@ -2377,14 +2379,15 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                let instrument = self
-                    .get_instrument_by_raw_symbol(trade.pair.as_str())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "TradesHistory: instrument not in cache for pair {}",
-                            trade.pair
-                        )
-                    })?;
+                // As above: historical fills outlive the listing, so preserve the usable rows.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str())
+                else {
+                    log::warn!(
+                        "TradesHistory: instrument not in cache for pair {}, skipping trade {trade_id}",
+                        trade.pair
+                    );
+                    continue;
+                };
 
                 match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
                     Ok(report) => all_reports.push(report),

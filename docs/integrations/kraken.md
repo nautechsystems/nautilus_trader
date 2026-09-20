@@ -528,8 +528,10 @@ the exchange state at startup or during operation.
   `raw_symbol`, and the altname (`XBTEUR`). `OpenPositions` returns the key, while `OpenOrders`
   and `TradesHistory` return the altname.
 - The adapter resolves both spellings, so an order or fill on a legacy-named pair is reported.
-- A report whose pair cannot be resolved to a cached instrument fails the read, rather than being
-  omitted from an otherwise successful one.
+- An open order whose pair cannot be resolved to a cached instrument fails the read, rather than
+  being omitted from an otherwise successful one.
+- A closed order or fill that cannot be resolved is logged as a warning and skipped, preserving the
+  records that do resolve. Historical records routinely outlive the loaded instrument set.
 
 **Account balances:**
 

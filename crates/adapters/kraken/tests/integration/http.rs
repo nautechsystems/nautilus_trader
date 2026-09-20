@@ -112,6 +112,8 @@ struct TestServerState {
     spot_asset_pairs_legacy: Arc<AtomicBool>,
     /// When set, `/0/private/OpenOrders` returns this JSON string instead of the fixture file.
     open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/ClosedOrders` returns this JSON string instead of the fixture file.
+    closed_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON string instead of the fixture file.
     trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     spot_asset_pairs_tokenized_duplicate: Arc<AtomicBool>,
@@ -146,6 +148,7 @@ impl Default for TestServerState {
             spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
             spot_asset_pairs_legacy: Arc::new(AtomicBool::new(false)),
             open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            closed_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             spot_asset_pairs_tokenized_duplicate: Arc::new(AtomicBool::new(false)),
             spot_asset_pairs_request_count: Arc::new(AtomicUsize::new(0)),
@@ -460,7 +463,20 @@ async fn mock_open_orders(state: Arc<TestServerState>) -> Response {
         .unwrap()
 }
 
-async fn mock_closed_orders() -> Response {
+async fn mock_closed_orders(state: Arc<TestServerState>) -> Response {
+    {
+        let mut guard = state.closed_orders_json.lock().await;
+        if let Some(json) = guard.take() {
+            // Serve the override once, then empty pages so the caller's pagination terminates.
+            *guard = Some(r#"{"error":[],"result":{"closed":{},"count":0}}"#.to_string());
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(Body::from(json))
+                .unwrap();
+        }
+    }
+
     let data = load_test_data("http_closed_orders.json");
     Response::builder()
         .status(StatusCode::OK)
@@ -717,7 +733,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             }
         }
         "/0/private/OpenOrders" => mock_open_orders(state.clone()).await,
-        "/0/private/ClosedOrders" => mock_closed_orders().await,
+        "/0/private/ClosedOrders" => mock_closed_orders(state.clone()).await,
         "/0/private/TradesHistory" => mock_trades_history(state.clone()).await,
         "/0/private/AddOrder" => {
             state.add_order_calls.fetch_add(1, Ordering::Relaxed);
@@ -4358,9 +4374,37 @@ fn spot_open_orders_json_for_pair(pair: &str) -> String {
     )
 }
 
-fn spot_trades_history_json_for_pair(pair: &str) -> String {
+fn spot_trades_history_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""TTRADE-{i}":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"0.50000000","margin":"0.00000","misc":"","trade_id":{i},"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}"#
+            )
+        })
+        .collect();
     format!(
-        r#"{{"error":[],"result":{{"trades":{{"TCCCTY-WJ6EO-4FP4VZ":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"0.50000000","margin":"0.00000","misc":"","trade_id":1001,"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}}},"count":1}}}}"#
+        r#"{{"error":[],"result":{{"trades":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+fn spot_closed_orders_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""OCLOSED-{i}":{{"refid":null,"userref":0,"status":"closed","reason":"User requested","opentm":1688583840.8648,"closetm":1688590000.5432,"starttm":0,"expiretm":0,"descr":{{"pair":"{pair}","type":"buy","ordertype":"limit","price":"29500.0","price2":"0","leverage":"none","order":"buy 0.50000000 {pair} @ limit 29500.0","close":""}},"vol":"0.50000000","vol_exec":"0.50000000","cost":"14750.00000","fee":"22.12500","price":"29500.0","stopprice":"0.00000","limitprice":"0.00000","misc":"","oflags":""}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"closed":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
     )
 }
 
@@ -4415,7 +4459,7 @@ async fn test_spot_order_reports_resolve_altname_spelled_pair() {
 async fn test_spot_fill_reports_resolve_altname_spelled_pair() {
     let (addr, state) = start_test_server().await;
     state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
-    *state.trades_history_json.lock().await = Some(spot_trades_history_json_for_pair("XBTEUR"));
+    *state.trades_history_json.lock().await = Some(spot_trades_history_json(&["XBTEUR"]));
 
     let client = legacy_pair_spot_client(addr).await;
 
@@ -4453,6 +4497,74 @@ async fn test_spot_order_reports_error_on_unresolvable_pair() {
             .to_string()
             .contains("OpenOrders: instrument not in cache for pair NOSUCHPAIR"),
         "unexpected error: {error}"
+    );
+}
+
+/// A historical fill whose instrument is gone must not withhold the fills that resolve.
+///
+/// Historical queries reach past the loaded instrument set routinely, so an unresolved row is
+/// logged and skipped while the usable records are preserved.
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_reports_preserve_records_around_unresolvable_historical_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    // Control: the identical payload with both pairs resolvable returns both rows, which proves
+    // the row dropped below is well-formed and is skipped only because its pair cannot resolve.
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("control fills must resolve");
+    assert_eq!(control.len(), 2);
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "DELISTEDPAIR"]));
+    let reports = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("an unresolved historical fill must not fail the read");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+}
+
+/// The same contract for closed orders: warn on the unresolved row, return the rest.
+#[rstest]
+#[tokio::test]
+async fn test_spot_closed_order_reports_preserve_records_around_unresolvable_historical_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(r#"{"error":[],"result":{"open":{}}}"#.to_string());
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    // Control, as above: both rows come back when both pairs resolve.
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, false)
+        .await
+        .expect("control closed orders must resolve");
+    assert_eq!(control.len(), 2);
+
+    *state.closed_orders_json.lock().await =
+        Some(spot_closed_orders_json(&["XBTEUR", "DELISTEDPAIR"]));
+    let reports = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, false)
+        .await
+        .expect("an unresolved historical order must not fail the read");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
     );
 }
 
