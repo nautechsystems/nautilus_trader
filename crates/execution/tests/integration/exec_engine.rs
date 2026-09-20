@@ -470,6 +470,76 @@ fn test_subscribe_venue_instruments_delivers_to_client_adapter(
 }
 
 #[rstest]
+fn test_same_venue_clients_receive_instruments_once(
+    mut execution_engine: ExecutionEngine,
+    #[values(false, true)] route_other: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clients: Vec<_> = [("A", "SIM"), ("B", "SIM"), ("C", "OTHER")]
+        .into_iter()
+        .map(|(id, venue)| {
+            StubExecutionClient::new(
+                ClientId::from(id),
+                AccountId::new(format!("{id}-001")),
+                Venue::from(venue),
+                OmsType::Netting,
+                None,
+            )
+        })
+        .collect();
+
+    for client in &clients {
+        execution_engine
+            .register_client(Box::new(client.clone()))
+            .unwrap();
+    }
+
+    let duplicate = execution_engine.register_client(Box::new(clients[0].clone()));
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim().id())
+        .quantity(Quantity::from(1))
+        .build();
+    assert!(execution_engine.get_clients_for_orders(&[order]).is_empty());
+    assert_eq!(
+        duplicate.unwrap_err().to_string(),
+        "Client already registered with ID A"
+    );
+
+    if route_other {
+        execution_engine
+            .register_venue_routing(ClientId::from("C"), Venue::from("SIM"))
+            .unwrap();
+    }
+
+    let engine = Rc::new(RefCell::new(execution_engine));
+    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
+    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    msgbus::publish_instrument(
+        switchboard::get_instrument_topic(instrument.id()),
+        &instrument,
+    );
+
+    assert_eq!(
+        *clients[0].received_instruments().borrow(),
+        vec![instrument.clone()]
+    );
+    assert_eq!(
+        *clients[1].received_instruments().borrow(),
+        vec![instrument.clone()]
+    );
+
+    let expected_other = if route_other {
+        vec![instrument]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(*clients[2].received_instruments().borrow(), expected_other);
+}
+
+#[rstest]
 fn test_deregister_client_removes_client(
     mut execution_engine: ExecutionEngine,
     stub_client: StubExecutionClient,
@@ -814,6 +884,9 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
     let mut execution_engine = ExecutionEngine::new(clock, Rc::clone(&cache), None);
     execution_engine
         .register_client(Box::new(selected_client))
+        .unwrap();
+    execution_engine
+        .register_venue_routing(selected_client_id, instrument_id.venue)
         .unwrap();
     execution_engine.register_default_client(Box::new(other_client));
 
@@ -1841,6 +1914,9 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
     );
     execution_engine
         .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .register_venue_routing(ClientId::from("STUB"), instrument.id.venue)
         .unwrap();
 
     execution_engine
@@ -16992,6 +17068,9 @@ fn test_query_account_routes_by_account_issuer_venue(mut execution_engine: Execu
     );
     let queried_account_ids = client.queried_account_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
+    execution_engine
+        .register_venue_routing(ClientId::from("BROKER"), Venue::from("IBKR"))
+        .unwrap();
 
     let account_id = AccountId::from("IBKR-123");
     let query_account = QueryAccount {
@@ -17073,6 +17152,9 @@ fn test_submit_order_routes_by_instrument_venue(mut execution_engine: ExecutionE
     );
     let submitted_order_ids = client.submitted_order_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
+    execution_engine
+        .register_venue_routing(ClientId::from("SIM_CLIENT"), instrument.id.venue)
+        .unwrap();
 
     execution_engine
         .cache()
@@ -17353,6 +17435,9 @@ fn test_submit_order_list_claims_are_atomic(
     );
     let submitted_order_ids = client.submitted_order_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
+    execution_engine
+        .register_venue_routing(routed_client_id, instrument.id.venue)
+        .unwrap();
 
     execution_engine
         .cache()
@@ -17839,6 +17924,9 @@ fn test_modify_order_routes_by_account_issuer_before_instrument_venue(
     execution_engine
         .register_client(Box::new(venue_client))
         .unwrap();
+    execution_engine
+        .register_venue_routing(ClientId::from("SIM_CLIENT"), instrument.id.venue)
+        .unwrap();
 
     execution_engine
         .cache()
@@ -17947,7 +18035,9 @@ fn test_submit_order_with_no_client_denies_order(execution_engine: ExecutionEngi
 }
 
 #[rstest]
-fn test_register_client_errors_on_duplicate_venue(mut execution_engine: ExecutionEngine) {
+fn test_register_clients_share_venue_without_replacing_route(
+    mut execution_engine: ExecutionEngine,
+) {
     let client_a = StubExecutionClient::new(
         ClientId::from("CLIENT_A"),
         AccountId::from("ACCOUNT-A"),
@@ -17967,14 +18057,29 @@ fn test_register_client_errors_on_duplicate_venue(mut execution_engine: Executio
         .register_client(Box::new(client_a))
         .unwrap();
 
-    let result = execution_engine.register_client(Box::new(client_b));
-    assert!(result.is_err());
-    assert!(
-        result
+    execution_engine
+        .register_venue_routing(ClientId::from("CLIENT_A"), Venue::test_default())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(client_b))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim().id())
+        .quantity(Quantity::from(1))
+        .build();
+    let clients = execution_engine.get_clients_for_orders(std::slice::from_ref(&order));
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), ClientId::from("CLIENT_A"));
+    assert_eq!(
+        execution_engine
+            .register_venue_routing(ClientId::from("CLIENT_B"), Venue::test_default())
             .unwrap_err()
-            .to_string()
-            .contains("already routed to CLIENT_A"),
+            .to_string(),
+        "Venue SIM already routed to CLIENT_A, cannot re-route to CLIENT_B",
     );
+    let clients = execution_engine.get_clients_for_orders(&[order]);
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), ClientId::from("CLIENT_A"));
 }
 
 #[rstest]

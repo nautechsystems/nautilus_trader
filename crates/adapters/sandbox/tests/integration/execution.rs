@@ -4166,6 +4166,9 @@ fn test_cancel_all_orders_routes_by_client_account_and_side(
 
     let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
     engine.register_client(Box::new(client_a)).unwrap();
+    engine
+        .register_venue_routing(client_a_id, instrument_id.venue)
+        .unwrap();
     engine.register_default_client(Box::new(client_b));
     let command_client = selected_client.map(ClientId::new);
     let routed_client = command_client.unwrap_or(client_a_id);

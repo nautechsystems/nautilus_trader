@@ -32,7 +32,7 @@ use std::{
     time::SystemTime,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
@@ -115,8 +115,9 @@ pub struct ExecutionEngine {
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, ExecutionClientAdapter>,
     default_client_id: Option<ClientId>,
-    routing_map: HashMap<Venue, ClientId>,
-    oms_overrides: HashMap<StrategyId, OmsType>,
+    routing_map: AHashMap<Venue, ClientId>,
+    instrument_venues: AHashSet<Venue>,
+    oms_overrides: AHashMap<StrategyId, OmsType>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
@@ -148,8 +149,9 @@ impl ExecutionEngine {
             cache,
             clients: IndexMap::new(),
             default_client_id: None,
-            routing_map: HashMap::new(),
-            oms_overrides: HashMap::new(),
+            routing_map: AHashMap::new(),
+            instrument_venues: AHashSet::new(),
+            oms_overrides: AHashMap::new(),
             external_clients: config
                 .as_ref()
                 .and_then(|c| c.external_clients.clone())
@@ -244,18 +246,23 @@ impl ExecutionEngine {
     /// Subscribes to instrument updates for a venue via the message bus.
     ///
     /// When instruments are published by the `DataEngine`, the handler routes
-    /// them to the execution client registered for that venue.
+    /// them to every client whose own venue matches, plus the client routed to that
+    /// venue, if any. Repeated subscriptions for the same venue are ignored.
     pub fn subscribe_venue_instruments(engine: &Rc<RefCell<Self>>, venue: Venue) {
+        if !engine.borrow_mut().instrument_venues.insert(venue) {
+            return;
+        }
+
         let weak = WeakCell::from(Rc::downgrade(engine));
         let pattern = switchboard::get_instruments_pattern(venue);
 
         let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
             if let Some(rc) = weak.upgrade() {
                 let venue = instrument.id().venue;
-                let client_id = rc.borrow().routing_map.get(&venue).copied();
-                if let Some(client_id) = client_id {
-                    let mut engine = rc.borrow_mut();
-                    if let Some(adapter) = engine.get_client_adapter_mut(&client_id) {
+                let mut engine = rc.borrow_mut();
+                let routed_client = engine.routing_map.get(&venue).copied();
+                for adapter in engine.clients.values_mut() {
+                    if adapter.venue == venue || Some(adapter.client_id) == routed_client {
                         adapter.on_instrument(instrument.clone());
                     }
                 }
@@ -347,14 +354,16 @@ impl ExecutionEngine {
         self.cache.borrow().external_order_claim(instrument_id)
     }
 
-    /// Registers a new execution client.
+    /// Registers a new execution client without assigning venue or default routing.
+    ///
+    /// Callers configure venue and fallback routing separately with
+    /// [`Self::register_venue_routing`] and [`Self::set_default_client`].
     ///
     /// # Errors
     ///
     /// Returns an error if a client with the same ID is already registered.
     pub fn register_client(&mut self, client: Box<dyn ExecutionClient>) -> anyhow::Result<()> {
         let client_id = client.client_id();
-        let venue = client.venue();
 
         if self.clients.contains_key(&client_id) {
             anyhow::bail!("Client already registered with ID {client_id}");
@@ -362,14 +371,6 @@ impl ExecutionEngine {
 
         let adapter = ExecutionClientAdapter::new(client);
 
-        if let Some(existing_client_id) = self.routing_map.get(&venue) {
-            anyhow::bail!(
-                "Venue {venue} already routed to {existing_client_id}, \
-                 cannot register {client_id} for the same venue"
-            );
-        }
-
-        self.routing_map.insert(venue, client_id);
         log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
         Ok(())
@@ -540,7 +541,8 @@ impl ExecutionEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error if the client ID is not registered.
+    /// Returns an error if the client ID is not registered or the venue already
+    /// routes to a different client.
     pub fn register_venue_routing(
         &mut self,
         client_id: ClientId,

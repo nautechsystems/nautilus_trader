@@ -299,7 +299,7 @@ For a local execution client, the `ExecutionEngine` resolves the root command to
 in this order:
 
 1. The explicit `client_id`, when it identifies a registered local client.
-1. The client registered for the instrument's venue.
+1. The client routed for the instrument's venue.
 1. The default execution client.
 
 The engine then creates fresh child commands for the selected client and its account:

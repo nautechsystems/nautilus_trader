@@ -98,7 +98,9 @@ singular `product_type` field, and the live factories create one data or
 execution client from one config. To run Spot and Futures in the same node,
 configure separate clients with distinct IDs such as `BINANCE_SPOT` and
 `BINANCE_FUTURES`, then pass the matching `client_id` when a strategy subscribes
-or submits orders. See the current Python examples for complete client setup.
+or submits orders. When using both execution clients, configure an explicit `BINANCE` venue route
+or a default client as described in [Execution client routing](../concepts/live.md#execution-client-routing).
+See the current Python examples for complete client setup.
 :::
 
 ## Data types

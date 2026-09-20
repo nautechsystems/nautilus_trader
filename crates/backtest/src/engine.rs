@@ -29,6 +29,7 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     actor::{self, CallbackDispatchError, DataActor, DataActorNative},
     cache::Cache,
+    clients::ExecutionClient,
     clock::{Clock, VirtualClock},
     component::{Component, component_state},
     enums::{ComponentState, LogColor},
@@ -313,10 +314,15 @@ impl BacktestEngine {
             .borrow_mut()
             .register_client(Rc::new(exec_client.clone()));
 
-        self.kernel
-            .exec_engine
-            .borrow_mut()
-            .register_client(Box::new(exec_client.clone()))?;
+        {
+            let mut exec_engine = self.kernel.exec_engine.borrow_mut();
+            let client_id = exec_client.client_id();
+            exec_engine.register_client(Box::new(exec_client.clone()))?;
+            if let Err(e) = exec_engine.register_venue_routing(client_id, venue) {
+                exec_engine.deregister_client(client_id)?;
+                return Err(e);
+            }
+        }
 
         SimulatedExchange::register_spread_quote_endpoint(&exchange);
         self.venues.insert(venue, exchange);
@@ -3328,20 +3334,31 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_venue_execution_registration_failure_publishes_nothing() {
+    #[case::duplicate_client(false)]
+    #[case::occupied_route(true)]
+    fn test_add_venue_execution_registration_failure_publishes_nothing(
+        #[case] occupied_route: bool,
+    ) {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
         let venue = Venue::from("SIM");
+        let client_id = ClientId::from(if occupied_route { "OTHER" } else { "SIM" });
         engine
             .kernel
             .exec_engine
             .borrow_mut()
             .register_client(Box::new(StubExecutionClient::new(
-                ClientId::from(venue.as_str()),
+                client_id,
                 AccountId::from("SIM-001"),
                 venue,
                 OmsType::Netting,
                 None,
             )))
+            .unwrap();
+        engine
+            .kernel
+            .exec_engine
+            .borrow_mut()
+            .register_venue_routing(client_id, venue)
             .unwrap();
         let client_ids_before = engine.kernel.exec_engine.borrow().client_ids();
 
