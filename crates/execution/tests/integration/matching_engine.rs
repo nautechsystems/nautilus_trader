@@ -10822,9 +10822,101 @@ fn test_l1_queue_position_trade_partial_does_not_fill(
 }
 
 #[rstest]
+#[case(OrderSide::Buy, "100.00", AggressorSide::Sell)]
+#[case(OrderSide::Sell, "101.00", AggressorSide::Buy)]
+fn test_l1_queue_position_quote_size_caps_queue(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+    #[case] order_price: &str,
+    #[case] aggressor_side: AggressorSide,
+    #[values("0.000", "500.000")] displayed_size: &str,
+) {
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+    let price = Price::from(order_price);
+    let displayed_size = Quantity::from(displayed_size);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("3000.000"),
+        Quantity::from("4000.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .price(price)
+        .quantity(Quantity::from("2.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    let reduced_quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        quote.bid_price,
+        quote.ask_price,
+        if order_side == OrderSide::Buy {
+            displayed_size
+        } else {
+            quote.bid_size
+        },
+        if order_side == OrderSide::Sell {
+            displayed_size
+        } else {
+            quote.ask_size
+        },
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    engine.process_quote_tick(&reduced_quote);
+
+    // New liquidity must not move the resting order back in the queue
+    let increased_quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        quote.bid_price,
+        quote.ask_price,
+        Quantity::from("5000.000"),
+        Quantity::from("6000.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&increased_quote);
+    assert_eq!(get_order_event_handler_messages(&handler), vec![]);
+
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        price,
+        displayed_size + Quantity::from("1.000"),
+        aggressor_side,
+        TradeId::new("1"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    engine.process_trade_tick(&trade);
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1);
+
+    let OrderEventAny::Filled(fill) = &events[0] else {
+        panic!("Expected a fill, received {:?}", events[0]);
+    };
+
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.order_side, order_side);
+    assert_eq!(fill.last_px, price);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
 fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usdt: InstrumentAny) {
-    // Trades at the order's price consume queue ahead. Quote size
-    // changes do not affect queue. Fill only when a trade exhausts queue.
+    // Quote sizes above the remaining queue preserve trade-driven progress
     let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
 
     let quote0 = QuoteTick::new(
@@ -10866,7 +10958,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
             .all(|e| !matches!(e, OrderEventAny::Filled(_)))
     );
 
-    // Quote size decrease does not affect queue (trade-driven model)
+    // Displayed size remains above the remaining queue
     let quote1 = QuoteTick::new(
         instrument_eth_usdt.id(),
         Price::from("100.00"),

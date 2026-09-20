@@ -1038,6 +1038,8 @@ impl OrderMatchingEngine {
 
         // Resolve pending snapshots when BBO reaches a tracked order's price
         self.resolve_pending_l1_snapshots(bid_price_raw, bid_size_raw, ask_price_raw, ask_size_raw);
+        self.cap_queue_ahead(bid_price_raw, bid_size_raw, Some(OrderSide::Buy));
+        self.cap_queue_ahead(ask_price_raw, ask_size_raw, Some(OrderSide::Sell));
     }
 
     fn adjust_l1_queue_on_price_move(

@@ -184,6 +184,8 @@ displayed-size evidence:
 - A move away through the order's price clears the queue.
 - A move toward the order preserves the queue.
 - A return to a previously visible level caps quantity ahead at the new displayed size.
+- A quote at the order's price caps quantity ahead at the same-side displayed size.
+- A displayed-size increase preserves queue progress.
 - An order behind the BBO remains pending until a quote reaches its price or a trade crosses it.
 
 ### Limitations
