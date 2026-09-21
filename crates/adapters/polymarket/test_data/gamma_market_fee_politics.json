@@ -1,0 +1,20 @@
+{
+  "id": "fee-politics-1",
+  "conditionId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "question": "Politics fee market",
+  "clobTokenIds": "[\"55555555555555555555555555555555555555555555555555555555555555555555555555555\", \"66666666666666666666666666666666666666666666666666666666666666666666666666666\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeType": "politics_fees",
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.04,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

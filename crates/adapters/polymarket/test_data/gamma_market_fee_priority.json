@@ -1,0 +1,27 @@
+{
+  "id": "fee-priority-1",
+  "conditionId": "0x1717171717171717171717171717171717171717171717171717171717171717",
+  "question": "Fee type wins over misleading tags",
+  "clobTokenIds": "[\"18181818181818181818181818181818181818181818181818181818181818181818181818181\", \"19191919191919191919191919191919191919191919191919191919191919191919191919191\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeType": "politics_fees",
+  "tags": [
+    {
+      "id": "2",
+      "label": "Crypto",
+      "slug": "crypto"
+    }
+  ],
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.04,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

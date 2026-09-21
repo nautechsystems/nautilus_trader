@@ -844,6 +844,13 @@ mod tests {
         )
     }
 
+    #[rstest]
+    fn test_data_client_wires_clob_client_for_fee_rate_fallback() {
+        let client = make_client_for_reset_test();
+
+        assert!(client.provider().http_client().clob_client().is_some());
+    }
+
     fn rtds_crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));

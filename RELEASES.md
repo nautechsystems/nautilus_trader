@@ -84,6 +84,7 @@ Released on TBD (UTC).
 - Fixed OKX fee and filled-quantity caches growing unbounded over long-running sessions
 - Fixed OKX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
+- Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 
 ### Internal Improvements
 

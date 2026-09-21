@@ -366,6 +366,14 @@ pub struct GammaMarket {
     pub neg_risk_market_id: Option<String>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
+    /// Whether fees are enabled for this market.
+    pub fees_enabled: Option<bool>,
+    /// Fee type identifier (e.g. `crypto_fees`, `sports_fees_v2`).
+    pub fee_type: Option<String>,
+    /// Tags associated with this market.
+    pub tags: Option<Vec<GammaTag>>,
+    /// Sports market type (e.g. `moneyline`), present for sports markets.
+    pub sports_market_type: Option<String>,
     /// Game ID for sport markets, kept verbatim because Gamma emits both
     /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
     /// both mean "no game" and surface as `None`. Reference shape:
@@ -490,6 +498,8 @@ pub struct GammaEvent {
     pub volume_24hr: Option<Decimal>,
     /// Event category.
     pub category: Option<String>,
+    /// Tags associated with this event.
+    pub tags: Option<Vec<GammaTag>>,
     /// Whether event uses neg-risk.
     pub neg_risk: Option<bool>,
     /// Neg-risk market ID.
@@ -545,7 +555,16 @@ pub struct TickSizeResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct FeeRateResponse {
     /// Fee rate in basis points.
+    #[serde(deserialize_with = "deserialize_decimal_from_json")]
     pub base_fee: Decimal,
+}
+
+impl FeeRateResponse {
+    /// Converts the basis-points fee to a decimal taker rate.
+    #[must_use]
+    pub fn to_rate(&self) -> Decimal {
+        self.base_fee / Decimal::from(10_000)
+    }
 }
 
 /// A single price level from the CLOB order book.
@@ -1696,5 +1715,42 @@ mod tests {
             trade.size,
             Decimal::from_str_exact("123456789.1234567890123456789").unwrap()
         );
+    }
+
+    #[rstest]
+    fn test_gamma_market_fee_fields() {
+        let market: GammaMarket = load("gamma_market.json");
+
+        assert_eq!(market.fees_enabled, Some(true));
+        assert_eq!(market.fee_type.as_deref(), Some("crypto_fees"));
+        assert!(market.tags.is_none());
+        assert!(market.sports_market_type.is_none());
+    }
+
+    #[rstest]
+    fn test_gamma_market_sports_fee_fields() {
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+
+        assert_eq!(market.fees_enabled, Some(true));
+        assert_eq!(market.fee_type.as_deref(), Some("sports_fees_v2"));
+    }
+
+    #[rstest]
+    fn test_gamma_event_tags() {
+        let events: Vec<GammaEvent> = load("gamma_event_sports_composite_game_id.json");
+        let tags = events[0].tags.as_ref().unwrap();
+
+        assert!(tags.iter().any(|tag| tag.slug.as_deref() == Some("sports")));
+    }
+
+    #[rstest]
+    fn test_fee_rate_response_to_rate() {
+        let zero: FeeRateResponse = load("clob_fee_rate_response_zero.json");
+        let nonzero: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
+        let numeric: FeeRateResponse = serde_json::from_str(r#"{"base_fee":700}"#).unwrap();
+
+        assert_eq!(zero.to_rate(), Decimal::ZERO);
+        assert_eq!(nonzero.to_rate(), dec!(0.015));
+        assert_eq!(numeric.to_rate(), dec!(0.07));
     }
 }

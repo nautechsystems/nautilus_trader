@@ -728,6 +728,19 @@ impl PolymarketClobPublicClient {
         decode_response(&response)
     }
 
+    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
+        let params = [("token_id", token_id)];
+        let url = format!("{}/fee-rate", self.base_url);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
+    }
+
     /// Requests an order book snapshot and builds an [`OrderBook`].
     pub async fn request_book_snapshot(
         &self,

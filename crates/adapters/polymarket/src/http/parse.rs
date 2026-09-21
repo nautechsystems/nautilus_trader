@@ -28,7 +28,7 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket};
+use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket, GammaTag};
 use crate::common::{
     consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
@@ -36,6 +36,12 @@ use crate::common::{
 };
 
 const DEFAULT_TICK_SIZE: Decimal = dec!(0.001);
+
+// Maker rebate shares per the published fee schedule.
+// Reference: https://docs.polymarket.com/trading/fees
+const REBATE_CRYPTO: Decimal = dec!(0.20);
+const REBATE_SPORTS: Decimal = dec!(0.15);
+const REBATE_STANDARD: Decimal = dec!(0.25);
 
 /// Normalized instrument definition for a single Polymarket outcome token.
 ///
@@ -207,6 +213,188 @@ fn market_event_id(market: &GammaMarket) -> Option<Ustr> {
     }
 
     Some(Ustr::from(first.id.as_str()))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FeeCategory {
+    Crypto,
+    Sports,
+    Standard,
+    FeeFree,
+}
+
+// Resolves the maker rebate share from market category metadata, returning
+// 0.20 for crypto, 0.15 for sports, 0.25 for other documented fee-enabled
+// categories, and zero for fee-free or unclassifiable markets.
+pub(crate) fn resolve_maker_rebate_rate(market: &GammaMarket) -> Decimal {
+    match classify_market(market) {
+        Some(FeeCategory::Crypto) => REBATE_CRYPTO,
+        Some(FeeCategory::Sports) => REBATE_SPORTS,
+        Some(FeeCategory::Standard) => REBATE_STANDARD,
+        Some(FeeCategory::FeeFree) | None => Decimal::ZERO,
+    }
+}
+
+// Ensures the market carries a fee schedule with a category-resolved rebate.
+// Existing schedules keep their rate and have their rebate overwritten.
+// Missing schedules are created for fee-enabled markets with a zero rate
+// for the CLOB fallback to fill. Fee-free and unclassifiable markets keep
+// a zero rebate and no invented schedule.
+pub(crate) fn enrich_market_fee_schedule(market: &mut GammaMarket) {
+    let rebate = resolve_maker_rebate_rate(market);
+    match market.fee_schedule.as_mut() {
+        Some(schedule) => {
+            schedule.rebate_rate = rebate;
+        }
+        None => {
+            if rebate.is_zero() {
+                return;
+            }
+
+            market.fee_schedule = Some(FeeSchedule {
+                exponent: Decimal::ONE,
+                rate: Decimal::ZERO,
+                taker_only: true,
+                rebate_rate: rebate,
+            });
+        }
+    }
+}
+
+fn classify_market(market: &GammaMarket) -> Option<FeeCategory> {
+    if market.fees_enabled == Some(false) {
+        return Some(FeeCategory::FeeFree);
+    }
+
+    if let Some(fee_type) = market.fee_type.as_deref()
+        && let Some(category) = classify_fee_type(fee_type)
+    {
+        return Some(category);
+    }
+
+    if market.crypto_market_config.is_some() {
+        return Some(FeeCategory::Crypto);
+    }
+
+    if market.sports_market_type.is_some() || market.game_id.is_some() {
+        return Some(FeeCategory::Sports);
+    }
+
+    let mut candidates = Vec::new();
+
+    if let Some(category) = market.category.as_deref()
+        && let Some(matched) = classify_label(category)
+    {
+        candidates.push(matched);
+    }
+
+    candidates.extend(classify_tags(market.tags.as_deref()));
+
+    if let Some(parent) = market.parent_event.as_ref() {
+        if let Some(category) = parent.category.as_deref()
+            && let Some(matched) = classify_label(category)
+        {
+            candidates.push(matched);
+        }
+
+        candidates.extend(classify_tags(parent.tags.as_deref()));
+        if parent.game_id.is_some() {
+            candidates.push(FeeCategory::Sports);
+        }
+    }
+
+    if let Some(events) = market.events.as_ref() {
+        for event in events {
+            if let Some(category) = event.category.as_deref()
+                && let Some(matched) = classify_label(category)
+            {
+                candidates.push(matched);
+            }
+
+            candidates.extend(classify_tags(event.tags.as_deref()));
+            if event.game_id.is_some() {
+                candidates.push(FeeCategory::Sports);
+            }
+        }
+    }
+
+    let first = candidates.first()?;
+    if candidates.iter().all(|category| category == first) {
+        return Some(*first);
+    }
+
+    None
+}
+
+fn classify_fee_type(fee_type: &str) -> Option<FeeCategory> {
+    let normalized = fee_type.trim().to_lowercase();
+
+    if normalized.contains("crypto") {
+        return Some(FeeCategory::Crypto);
+    }
+
+    if normalized.contains("sport") {
+        return Some(FeeCategory::Sports);
+    }
+
+    if normalized.contains("geopolit") {
+        return Some(FeeCategory::FeeFree);
+    }
+
+    for token in [
+        "finance", "politic", "economic", "culture", "weather", "mention", "tech", "general",
+        "other", "prices",
+    ] {
+        if normalized.contains(token) {
+            return Some(FeeCategory::Standard);
+        }
+    }
+
+    None
+}
+
+fn classify_tags(tags: Option<&[GammaTag]>) -> Vec<FeeCategory> {
+    let mut categories = Vec::new();
+
+    for tag in tags.unwrap_or(&[]) {
+        for value in [tag.label.as_deref(), tag.slug.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(category) = classify_label(value) {
+                categories.push(category);
+            }
+        }
+    }
+
+    categories
+}
+
+fn classify_label(value: &str) -> Option<FeeCategory> {
+    let normalized = value.trim().to_lowercase();
+
+    if normalized.contains("crypto") {
+        return Some(FeeCategory::Crypto);
+    }
+
+    if normalized.contains("sport") || normalized.contains("esport") {
+        return Some(FeeCategory::Sports);
+    }
+
+    if normalized.contains("geopolit") || normalized.contains("world event") {
+        return Some(FeeCategory::FeeFree);
+    }
+
+    for token in [
+        "finance", "politic", "economic", "culture", "weather", "mention", "tech", "general",
+        "other",
+    ] {
+        if normalized.contains(token) {
+            return Some(FeeCategory::Standard);
+        }
+    }
+
+    None
 }
 
 /// Converts a Polymarket instrument definition into a Nautilus `InstrumentAny`.
@@ -1133,5 +1321,60 @@ mod tests {
         };
         assert_eq!(new_bo.outcome, orig_bo.outcome);
         assert_eq!(new_bo.currency, orig_bo.currency);
+    }
+
+    #[rstest]
+    #[case("gamma_market_fee_crypto.json", dec!(0.20))]
+    #[case("gamma_market_fee_sports.json", dec!(0.15))]
+    #[case("gamma_market_fee_politics.json", dec!(0.25))]
+    #[case("gamma_market_fee_free.json", Decimal::ZERO)]
+    #[case("gamma_market_fee_unclassifiable.json", Decimal::ZERO)]
+    #[case("gamma_market_fee_zero_rate.json", dec!(0.20))]
+    #[case("gamma_market_fee_conflict.json", Decimal::ZERO)]
+    #[case("gamma_market_fee_priority.json", dec!(0.25))]
+    fn test_resolve_maker_rebate_rate(#[case] filename: &str, #[case] expected: Decimal) {
+        let market = load_gamma_market(filename);
+
+        assert_eq!(resolve_maker_rebate_rate(&market), expected);
+    }
+
+    #[rstest]
+    fn test_enrich_market_fee_schedule_overwrites_rebate_and_keeps_rate() {
+        let mut market = load_gamma_market("gamma_market_fee_crypto.json");
+        let original_rate = market.fee_schedule.as_ref().unwrap().rate;
+
+        enrich_market_fee_schedule(&mut market);
+
+        let schedule = market.fee_schedule.as_ref().unwrap();
+        assert_eq!(schedule.rate, original_rate);
+        assert_eq!(schedule.rebate_rate, dec!(0.20));
+        assert_eq!(schedule.exponent, Decimal::ONE);
+        assert!(schedule.taker_only);
+    }
+
+    #[rstest]
+    fn test_enrich_market_fee_schedule_creates_schedule_for_fee_enabled() {
+        let mut market = load_gamma_market("gamma_market_fee_crypto.json");
+        market.fee_schedule = None;
+
+        enrich_market_fee_schedule(&mut market);
+
+        let schedule = market.fee_schedule.as_ref().unwrap();
+        assert_eq!(schedule.rate, Decimal::ZERO);
+        assert_eq!(schedule.rebate_rate, dec!(0.20));
+        assert_eq!(schedule.exponent, Decimal::ONE);
+        assert!(schedule.taker_only);
+    }
+
+    #[rstest]
+    #[case("gamma_market_fee_free.json")]
+    #[case("gamma_market_fee_unclassifiable.json")]
+    fn test_enrich_market_fee_schedule_keeps_zero_without_inventing(#[case] filename: &str) {
+        let mut market = load_gamma_market(filename);
+        market.fee_schedule = None;
+
+        enrich_market_fee_schedule(&mut market);
+
+        assert!(market.fee_schedule.is_none());
     }
 }
