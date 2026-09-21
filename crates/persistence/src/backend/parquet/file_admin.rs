@@ -145,7 +145,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to target.
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -183,10 +183,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn reset_data_file_names(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<()> {
-        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
             let directory = self.make_path(type_name.as_ref(), identifier)?;
             self.reset_file_names(&directory)?;
         }

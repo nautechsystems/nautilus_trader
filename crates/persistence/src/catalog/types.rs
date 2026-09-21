@@ -499,8 +499,8 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
 /// `instruments` name rather than any one of them. The stem names registered query tables and
 /// never addresses storage; use [`parquet_catalog_data_type_path_prefixes`] for directories.
 #[must_use]
-pub fn parquet_catalog_data_type_table_stem(catalog_type: &CatalogDataType) -> Cow<'static, str> {
-    match catalog_type {
+pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<'static, str> {
+    match data_type {
         CatalogDataType::Data(data_type) => parquet_data_path_prefix(data_type),
         CatalogDataType::Record(record_type) => record_path_prefix(record_type),
         CatalogDataType::Instrument(instrument_type) => {
@@ -516,9 +516,9 @@ pub fn parquet_catalog_data_type_table_stem(catalog_type: &CatalogDataType) -> C
 /// other family covers exactly one directory.
 #[must_use]
 pub fn parquet_catalog_data_type_path_prefixes(
-    catalog_type: &CatalogDataType,
+    data_type: &CatalogDataType,
 ) -> Vec<Cow<'static, str>> {
-    match catalog_type {
+    match data_type {
         CatalogDataType::Data(NautilusDataType::Instrument) => INSTRUMENT_PATH_PREFIXES
             .iter()
             .map(|prefix| Cow::Borrowed(*prefix))
@@ -711,7 +711,7 @@ mod tests {
     }
 
     #[rstest]
-    fn catalog_type_converts_from_every_selector_family() {
+    fn catalog_data_type_converts_from_every_selector_family() {
         assert_eq!(
             CatalogDataType::from(NautilusDataType::QuoteTick),
             CatalogDataType::Data(NautilusDataType::QuoteTick)

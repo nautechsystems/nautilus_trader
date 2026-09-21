@@ -1008,12 +1008,12 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Py<PyDict>> {
-        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         let metadata = py
             .detach(|| {
                 CatalogReader::query_metadata(
                     &mut self.inner,
-                    &CatalogQuery::new(catalog_data_type)
+                    &CatalogQuery::new(data_type)
                         .with_identifiers(identifiers)
                         .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
                         .with_where_clause(where_clause.map(str::to_string)),
@@ -1048,9 +1048,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyBytes>> {
-        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(catalog_data_type.clone())
+        let query = CatalogQuery::new(data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1061,11 +1061,11 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pybytes(py, &schema, &batches)
     }
@@ -1094,9 +1094,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(catalog_data_type.clone())
+        let query = CatalogQuery::new(data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1107,11 +1107,11 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pyarrow_stream(py, &schema, batches)
     }

@@ -5325,14 +5325,14 @@ fn test_list_instruments_aggregate_reports_shared_identifier_once() {
     "AccountState"
 )]
 fn test_consolidate_data_by_period_rejects_non_data_selectors(
-    #[case] catalog_type: CatalogDataType,
+    #[case] data_type: CatalogDataType,
     #[case] display: &str,
 ) {
     let temp_dir = TempDir::new().unwrap();
     let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let error = catalog
-        .consolidate_data_by_period(&catalog_type, None, None, None, None, None)
+        .consolidate_data_by_period(&data_type, None, None, None, None, None)
         .unwrap_err();
 
     assert_eq!(

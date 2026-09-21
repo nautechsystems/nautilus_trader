@@ -98,8 +98,8 @@ impl PyCatalogDataType {
 impl<'py> FromPyObject<'_, 'py> for PyCatalogDataType {
     type Error = PyErr;
 
-    fn extract(catalog_type: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
-        catalog_data_type_from_py(&catalog_type).map(Self)
+    fn extract(data_type: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        catalog_data_type_from_py(&data_type).map(Self)
     }
 }
 
@@ -107,18 +107,16 @@ impl_stub_type!(
     PyCatalogDataType = PyNautilusDataType | PyNautilusRecordType | PyNautilusInstrumentType
 );
 
-pub(crate) fn catalog_data_type_from_py(
-    catalog_type: &Bound<'_, PyAny>,
-) -> PyResult<CatalogDataType> {
-    if let Ok(data_type) = catalog_type.extract::<PyRef<'_, PyNautilusDataType>>() {
+pub(crate) fn catalog_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<CatalogDataType> {
+    if let Ok(data_type) = data_type.extract::<PyRef<'_, PyNautilusDataType>>() {
         return Ok(CatalogDataType::from(data_type.inner()));
     }
 
-    if let Ok(record_type) = catalog_type.extract::<PyRef<'_, PyNautilusRecordType>>() {
+    if let Ok(record_type) = data_type.extract::<PyRef<'_, PyNautilusRecordType>>() {
         return Ok(CatalogDataType::Record(record_type.inner()));
     }
 
-    if let Ok(instrument_type) = catalog_type.extract::<PyRef<'_, PyNautilusInstrumentType>>() {
+    if let Ok(instrument_type) = data_type.extract::<PyRef<'_, PyNautilusInstrumentType>>() {
         return Ok(CatalogDataType::Instrument(instrument_type.inner()));
     }
 

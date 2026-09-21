@@ -343,7 +343,7 @@ fn migration_rejects_nonempty_destination() {
 fn migration_preserves_empty_coverage_files(
     #[case] source_type: &str,
     #[case] target_type: &str,
-    #[case] catalog_type: CatalogDataType,
+    #[case] data_type: CatalogDataType,
 ) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
@@ -368,7 +368,7 @@ fn migration_preserves_empty_coverage_files(
     let catalog = ParquetDataCatalog::new(&target, None, None, None, None);
     assert_eq!(
         catalog
-            .get_intervals(&catalog_type, Some("AUDUSD.SIM"))
+            .get_intervals(&data_type, Some("AUDUSD.SIM"))
             .unwrap(),
         vec![(1_700_000_000_000_000_123, 1_700_000_000_000_000_126)]
     );

@@ -699,7 +699,7 @@ impl CatalogReader for ParquetDataCatalog {
             instrument_type,
             ..
         } = query.clone();
-        let catalog_type = match (data_type, instrument_type) {
+        let data_type = match (data_type, instrument_type) {
             (NautilusDataType::Instrument, Some(instrument_type)) => {
                 CatalogDataType::Instrument(instrument_type)
             }
@@ -708,7 +708,7 @@ impl CatalogReader for ParquetDataCatalog {
 
         Self::query_metadata(
             self,
-            &catalog_type,
+            &data_type,
             identifiers,
             start,
             end,

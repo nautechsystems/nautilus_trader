@@ -142,7 +142,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to consolidate.
+    /// - `data_type`: The stored family to consolidate.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Optional start timestamp to limit consolidation to files within this range.
     /// - `end`: Optional end timestamp to limit consolidation to files within this range.
@@ -197,14 +197,14 @@ impl ParquetDataCatalog {
     /// ```
     pub fn consolidate_data(
         &mut self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
-        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
             self.consolidate_prefix_data(
                 type_name.as_ref(),
                 identifier,
@@ -545,7 +545,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to consolidate.
+    /// - `data_type`: The stored family to consolidate.
     /// - `identifier`: Optional instrument ID to consolidate. If None, consolidates all instruments.
     /// - `period_nanos`: The period duration for consolidation in nanoseconds. Default is 1 day (86400000000000).
     ///   Examples: 3600000000000 (1 hour), 604800000000000 (7 days), 1800000000000 (30 minutes)
@@ -565,7 +565,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `catalog_type` is a record family or an instrument selector, which have no
+    /// - `data_type` is a record family or an instrument selector, which have no
     ///   period-typed rewrite; use [`Self::consolidate_data`] for those.
     /// - The directory path cannot be constructed.
     /// - File operations fail.
@@ -623,7 +623,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn consolidate_data_by_period(
         &mut self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
         period_nanos: Option<u64>,
         start: Option<UnixNanos>,
@@ -632,14 +632,14 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
             matches!(
-                catalog_type,
+                data_type,
                 CatalogDataType::Data(data_type) if *data_type != NautilusDataType::Instrument
             ),
-            "Period consolidation applies to data families only, not {catalog_type}; \
+            "Period consolidation applies to data families only, not {data_type}; \
              use consolidate_data",
         );
 
-        for type_name in parquet_catalog_data_type_path_prefixes(catalog_type) {
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
             self.consolidate_prefix_data_by_period(
                 type_name.as_ref(),
                 identifier,

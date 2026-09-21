@@ -48,7 +48,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to target.
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Start timestamp of the new range to extend to.
     /// - `end`: End timestamp of the new range to extend to.
@@ -92,12 +92,12 @@ impl ParquetDataCatalog {
     /// ```
     pub fn extend_file_name(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
-        let prefixes = parquet_catalog_data_type_path_prefixes(catalog_type);
+        let prefixes = parquet_catalog_data_type_path_prefixes(data_type);
 
         if let [data_cls] = prefixes.as_slice() {
             let directory = self.make_path(data_cls.as_ref(), identifier)?;
@@ -118,7 +118,7 @@ impl ParquetDataCatalog {
         }
         anyhow::ensure!(
             extended,
-            "Cannot extend file name for {catalog_type}: no instrument class holds {}; \
+            "Cannot extend file name for {data_type}: no instrument class holds {}; \
              name the class with a NautilusInstrumentType",
             identifier.unwrap_or("any identifier"),
         );
@@ -248,7 +248,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to target.
+    /// - `data_type`: The stored family to target.
     ///
     /// # Returns
     ///
@@ -257,9 +257,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if directory listing fails.
-    pub fn list_instruments(&self, catalog_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
+    pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
         let mut instruments = Vec::new();
-        for data_type in parquet_catalog_data_type_path_prefixes(catalog_type) {
+        for data_type in parquet_catalog_data_type_path_prefixes(data_type) {
             instruments.extend(self.list_prefix_instruments(data_type.as_ref())?);
         }
         // The same identifier can live under more than one instrument class.
@@ -294,7 +294,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to target.
+    /// - `data_type`: The stored family to target.
     /// - `identifiers`: Optional list of identifiers to filter by.
     /// - `start`: Optional start timestamp to filter files by their time range.
     /// - `end`: Optional end timestamp to filter files by their time range.
@@ -308,13 +308,13 @@ impl ParquetDataCatalog {
     /// Returns an error if directory listing or file filtering fails.
     pub fn list_parquet_files_with_criteria(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
         let mut all_files = Vec::new();
-        for data_cls in parquet_catalog_data_type_path_prefixes(catalog_type) {
+        for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
             all_files.extend(self.list_prefix_files_with_criteria(
                 data_cls.as_ref(),
                 identifiers,

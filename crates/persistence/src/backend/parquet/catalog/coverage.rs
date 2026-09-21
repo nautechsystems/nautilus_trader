@@ -32,7 +32,7 @@ impl ParquetDataCatalog {
     ///
     /// - `start`: Start timestamp of the requested range (Unix nanoseconds).
     /// - `end`: End timestamp of the requested range (Unix nanoseconds).
-    /// - `catalog_type`: The stored family to inspect.
+    /// - `data_type`: The stored family to inspect.
     /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
@@ -78,10 +78,10 @@ impl ParquetDataCatalog {
         &self,
         start: u64,
         end: u64,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let intervals = self.get_intervals(catalog_type, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(query_interval_diff(start, end, &intervals))
     }
@@ -94,7 +94,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to inspect.
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -143,10 +143,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_first_timestamp(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
-        let intervals = self.get_intervals(catalog_type, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(intervals.first().map(|interval| interval.0))
     }
@@ -159,7 +159,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to inspect.
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -208,10 +208,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_last_timestamp(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
-        let intervals = self.get_intervals(catalog_type, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(intervals.last().map(|interval| interval.1))
     }
@@ -224,7 +224,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `catalog_type`: The stored family to inspect.
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -262,10 +262,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn get_intervals(
         &self,
-        catalog_type: &CatalogDataType,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let prefixes = parquet_catalog_data_type_path_prefixes(catalog_type);
+        let prefixes = parquet_catalog_data_type_path_prefixes(data_type);
 
         if let [data_cls] = prefixes.as_slice() {
             return self.get_prefix_intervals(data_cls.as_ref(), identifier);
