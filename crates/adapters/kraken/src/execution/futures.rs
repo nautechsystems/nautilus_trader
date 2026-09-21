@@ -943,9 +943,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
         let account_id = self.core.account_id;
 
-        let mut order_reports = self
+        let (mut order_reports, orders_complete) = self
             .http
-            .request_order_status_reports(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, true)
             .await?;
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
@@ -965,9 +965,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             order_reports.push(report);
         }
 
-        let fill_reports = self
+        let (fill_reports, fills_complete) = self
             .http
-            .request_fill_reports(account_id, None, start, None)
+            .request_fill_reports_checked(account_id, None, start, None)
             .await?;
         let position_reports = self
             .http
@@ -984,6 +984,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+        // As for spot: one cutoff for every historical query, recorded with its completeness.
+        mass_status.set_report_window(
+            start.map(UnixNanos::from),
+            orders_complete && fills_complete,
+        );
 
         Ok(Some(mass_status))
     }

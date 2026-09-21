@@ -2254,10 +2254,28 @@ impl KrakenSpotHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_checked(account_id, instrument_id, start, end, open_only)
+            .await
+            .map(|(reports, _)| reports)
+    }
+
+    /// Requests order status reports, also reporting whether the set is complete.
+    ///
+    /// The flag is `false` when a historical record was skipped because its instrument could not
+    /// be resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
+    pub(crate) async fn request_order_status_reports_checked(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        open_only: bool,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
+        let mut complete = true;
 
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
 
@@ -2289,7 +2307,7 @@ impl KrakenSpotHttpClient {
         }
 
         if open_only {
-            return Ok(all_reports);
+            return Ok((all_reports, complete));
         }
 
         // Kraken API expects Unix timestamps in seconds
@@ -2326,6 +2344,7 @@ impl KrakenSpotHttpClient {
                         "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
                         order.descr.pair
                     );
+                    complete = false;
                     continue;
                 };
 
@@ -2340,7 +2359,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok(all_reports)
+        Ok((all_reports, complete))
     }
 
     /// Requests fill/trade reports from Kraken.
@@ -2351,10 +2370,26 @@ impl KrakenSpotHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_checked(account_id, instrument_id, start, end)
+            .await
+            .map(|(reports, _)| reports)
+    }
+
+    /// Requests fill reports, also reporting whether the set is complete.
+    ///
+    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    pub(crate) async fn request_fill_reports_checked(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+    ) -> anyhow::Result<(Vec<FillReport>, bool)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
+        let mut complete = true;
 
         // Kraken API expects Unix timestamps in seconds
         let start_ts = start.map(|dt| dt.as_second());
@@ -2389,6 +2424,7 @@ impl KrakenSpotHttpClient {
                         "TradesHistory: instrument not in cache for pair {}, skipping trade {trade_id}",
                         trade.pair
                     );
+                    complete = false;
                     continue;
                 };
 
@@ -2403,7 +2439,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok(all_reports)
+        Ok((all_reports, complete))
     }
 
     /// Requests position status reports for SPOT instruments.

@@ -1351,13 +1351,13 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
 
         let account_id = self.core.account_id;
-        let order_reports = self
+        let (order_reports, orders_complete) = self
             .http
-            .request_order_status_reports(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, true)
             .await?;
-        let fill_reports = self
+        let (fill_reports, fills_complete) = self
             .http
-            .request_fill_reports(account_id, None, start, None)
+            .request_fill_reports_checked(account_id, None, start, None)
             .await?;
         let mut position_reports = self
             .http
@@ -1384,6 +1384,12 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+        // One cutoff covers every historical query above, so record it with the completeness of
+        // the sources the engine needs to interpret the bounded set.
+        mass_status.set_report_window(
+            start.map(UnixNanos::from),
+            orders_complete && fills_complete,
+        );
 
         Ok(Some(mass_status))
     }
