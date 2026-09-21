@@ -953,105 +953,146 @@ impl StrategyNative for PyStrategyInner {
     }
 }
 
+// Strategy callbacks return `()`, so a Python exception would otherwise be dropped;
+// log it the same way the data callbacks surface theirs through `DataActor`.
+fn log_dispatch_error(method: &str, result: PyResult<()>) {
+    if let Err(e) = result {
+        log::error!("Python {method} failed: {e}");
+    }
+}
+
 impl Strategy for PyStrategyInner {
     fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
         self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_market_exit(&mut self) {
-        let _ = self.dispatch_on_market_exit();
+        log_dispatch_error("on_market_exit", self.dispatch_on_market_exit());
     }
 
     fn post_market_exit(&mut self) {
-        let _ = self.dispatch_post_market_exit();
+        log_dispatch_error("post_market_exit", self.dispatch_post_market_exit());
     }
 
     fn on_order_initialized(&mut self, event: OrderInitialized) {
-        let _ = self.dispatch_on_order_initialized(event);
+        log_dispatch_error(
+            "on_order_initialized",
+            self.dispatch_on_order_initialized(event),
+        );
     }
 
     fn on_order_event(&mut self, event: OrderEventAny) {
-        let _ = self.dispatch_on_order_event(event);
+        log_dispatch_error("on_order_event", self.dispatch_on_order_event(event));
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
-        let _ = self.dispatch_on_order_denied(event);
+        log_dispatch_error("on_order_denied", self.dispatch_on_order_denied(event));
     }
 
     fn on_order_emulated(&mut self, event: OrderEmulated) {
-        let _ = self.dispatch_on_order_emulated(event);
+        log_dispatch_error("on_order_emulated", self.dispatch_on_order_emulated(event));
     }
 
     fn on_order_released(&mut self, event: OrderReleased) {
-        let _ = self.dispatch_on_order_released(event);
+        log_dispatch_error("on_order_released", self.dispatch_on_order_released(event));
     }
 
     fn on_order_submitted(&mut self, event: OrderSubmitted) {
-        let _ = self.dispatch_on_order_submitted(event);
+        log_dispatch_error(
+            "on_order_submitted",
+            self.dispatch_on_order_submitted(event),
+        );
     }
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
-        let _ = self.dispatch_on_order_rejected(event);
+        log_dispatch_error("on_order_rejected", self.dispatch_on_order_rejected(event));
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
-        let _ = self.dispatch_on_order_accepted(event);
+        log_dispatch_error("on_order_accepted", self.dispatch_on_order_accepted(event));
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
-        let _ = self.dispatch_on_order_expired(event);
+        log_dispatch_error("on_order_expired", self.dispatch_on_order_expired(event));
     }
 
     fn on_order_triggered(&mut self, event: OrderTriggered) {
-        let _ = self.dispatch_on_order_triggered(event);
+        log_dispatch_error(
+            "on_order_triggered",
+            self.dispatch_on_order_triggered(event),
+        );
     }
 
     fn on_order_pending_update(&mut self, event: OrderPendingUpdate) {
-        let _ = self.dispatch_on_order_pending_update(event);
+        log_dispatch_error(
+            "on_order_pending_update",
+            self.dispatch_on_order_pending_update(event),
+        );
     }
 
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {
-        let _ = self.dispatch_on_order_pending_cancel(event);
+        log_dispatch_error(
+            "on_order_pending_cancel",
+            self.dispatch_on_order_pending_cancel(event),
+        );
     }
 
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
-        let _ = self.dispatch_on_order_modify_rejected(event);
+        log_dispatch_error(
+            "on_order_modify_rejected",
+            self.dispatch_on_order_modify_rejected(event),
+        );
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
-        let _ = self.dispatch_on_order_cancel_rejected(event);
+        log_dispatch_error(
+            "on_order_cancel_rejected",
+            self.dispatch_on_order_cancel_rejected(event),
+        );
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        let _ = self.dispatch_on_order_updated(&event);
+        log_dispatch_error("on_order_updated", self.dispatch_on_order_updated(&event));
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) {
-        let _ = self.dispatch_on_order_canceled(*event);
+        log_dispatch_error("on_order_canceled", self.dispatch_on_order_canceled(*event));
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        let _ = self.dispatch_on_order_filled(event);
+        log_dispatch_error("on_order_filled", self.dispatch_on_order_filled(event));
     }
 
     fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
-        let _ = self.dispatch_on_order_fill_voided(event);
+        log_dispatch_error(
+            "on_order_fill_voided",
+            self.dispatch_on_order_fill_voided(event),
+        );
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
-        let _ = self.dispatch_on_position_opened(event);
+        log_dispatch_error(
+            "on_position_opened",
+            self.dispatch_on_position_opened(event),
+        );
     }
 
     fn on_position_event(&mut self, event: PositionEvent) {
-        let _ = self.dispatch_on_position_event(event);
+        log_dispatch_error("on_position_event", self.dispatch_on_position_event(event));
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
-        let _ = self.dispatch_on_position_changed(event);
+        log_dispatch_error(
+            "on_position_changed",
+            self.dispatch_on_position_changed(event),
+        );
     }
 
     fn on_position_closed(&mut self, event: PositionClosed) {
-        let _ = self.dispatch_on_position_closed(event);
+        log_dispatch_error(
+            "on_position_closed",
+            self.dispatch_on_position_closed(event),
+        );
     }
 }
 
