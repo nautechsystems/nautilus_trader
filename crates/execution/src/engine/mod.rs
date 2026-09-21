@@ -111,10 +111,10 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 /// processing. It supports multiple execution venues through registered clients and
 /// provides sophisticated order management capabilities.
 ///
-/// An order handed to a registered or external execution client keeps its `Initialized` (or
+/// An order dispatched to a registered or external execution client keeps its `Initialized` (or
 /// `Released`) status until the client's first status event is applied, so cached status alone
 /// cannot distinguish it from an order that has not been routed yet. The engine records each
-/// handoff until that first status transition, and a later submit command naming the order is
+/// dispatch until that first status transition, and a later submit command naming the order is
 /// stale for it: the engine neither routes the order to a client again nor denies it when the
 /// later command fails validation.
 pub struct ExecutionEngine {
@@ -127,7 +127,7 @@ pub struct ExecutionEngine {
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
-    handed_off_orders: RefCell<AHashSet<ClientOrderId>>,
+    orders_dispatched: RefCell<AHashSet<ClientOrderId>>,
     command_count: Cell<u64>,
     event_count: u64,
     report_count: u64,
@@ -166,7 +166,7 @@ impl ExecutionEngine {
                 .collect(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
-            handed_off_orders: RefCell::new(AHashSet::new()),
+            orders_dispatched: RefCell::new(AHashSet::new()),
             command_count: Cell::new(0),
             event_count: 0,
             report_count: 0,
@@ -1941,7 +1941,7 @@ impl ExecutionEngine {
 
         self.cache.borrow_mut().reset();
         self.pos_id_generator.reset();
-        self.handed_off_orders.borrow_mut().clear();
+        self.orders_dispatched.borrow_mut().clear();
 
         self.stop_snapshot_timer();
         self.stop_purge_timers();
@@ -1988,9 +1988,9 @@ impl ExecutionEngine {
                 );
                 return;
             }
-            SubmissionValidationResult::HandedOff { client_order_id } => {
+            SubmissionValidationResult::Dispatched { client_order_id } => {
                 log::warn!(
-                    "Skipping duplicate submit command for {client_order_id} already handed to an execution client"
+                    "Skipping duplicate submit command for {client_order_id} already dispatched to an execution client"
                 );
                 return;
             }
@@ -2009,12 +2009,12 @@ impl ExecutionEngine {
             // The external client now owns the submitted orders, exactly like a registered client
             match &command {
                 TradingCommand::SubmitOrder(cmd) => {
-                    self.handed_off_orders
+                    self.orders_dispatched
                         .borrow_mut()
                         .insert(cmd.client_order_id);
                 }
                 TradingCommand::SubmitOrderList(cmd) => {
-                    self.handed_off_orders
+                    self.orders_dispatched
                         .borrow_mut()
                         .extend(cmd.order_list.client_order_ids.iter().copied());
                 }
@@ -2099,8 +2099,8 @@ impl ExecutionEngine {
                     };
                 }
 
-                if self.is_handed_off(client_order_id) {
-                    return SubmissionValidationResult::HandedOff { client_order_id };
+                if self.is_dispatched(client_order_id) {
+                    return SubmissionValidationResult::Dispatched { client_order_id };
                 }
 
                 SubmissionValidationResult::Valid
@@ -2109,7 +2109,7 @@ impl ExecutionEngine {
                 let cache = self.cache.borrow();
                 let client_order_ids = &cmd.order_list.client_order_ids;
                 let has_ineligible_order = client_order_ids.iter().any(|client_order_id| {
-                    self.is_handed_off(*client_order_id)
+                    self.is_dispatched(*client_order_id)
                         || cache
                             .order(client_order_id)
                             .is_some_and(|order| !Self::has_submittable_status(&order))
@@ -2134,16 +2134,16 @@ impl ExecutionEngine {
         )
     }
 
-    // The handoff record is checked independently of the cache because an external client is
-    // handed the command without the engine caching its orders (see the type-level documentation).
-    fn is_handed_off(&self, client_order_id: ClientOrderId) -> bool {
-        self.handed_off_orders.borrow().contains(&client_order_id)
+    // The dispatch record is checked independently of the cache because the command is dispatched
+    // to an external client without the engine caching its orders (see the type-level documentation).
+    fn is_dispatched(&self, client_order_id: ClientOrderId) -> bool {
+        self.orders_dispatched.borrow().contains(&client_order_id)
     }
 
     // A cached order accepts a submit command only while it has a submittable status and has not
-    // already been handed to an execution client.
+    // already been dispatched to an execution client.
     fn is_eligible_for_submission(&self, order: &OrderAny) -> bool {
-        Self::has_submittable_status(order) && !self.is_handed_off(order.client_order_id())
+        Self::has_submittable_status(order) && !self.is_dispatched(order.client_order_id())
     }
 
     fn deny_submission(&self, command: &TradingCommand, reason: &OrderDeniedReason) {
@@ -2188,7 +2188,7 @@ impl ExecutionEngine {
                 eligible_orders.push(order);
             } else if Self::has_submittable_status(order) {
                 log::warn!(
-                    "Preserving {} already handed to an execution client, not denying for order list {}",
+                    "Preserving {} already dispatched to an execution client, not denying for order list {}",
                     order.client_order_id(),
                     cmd.order_list.id,
                 );
@@ -2395,7 +2395,7 @@ impl ExecutionEngine {
             return;
         }
 
-        self.handed_off_orders.borrow_mut().insert(client_order_id);
+        self.orders_dispatched.borrow_mut().insert(client_order_id);
     }
 
     fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
@@ -2563,7 +2563,7 @@ impl ExecutionEngine {
             return;
         }
 
-        self.handed_off_orders
+        self.orders_dispatched
             .borrow_mut()
             .extend(orders.iter().map(Order::client_order_id));
     }
@@ -3811,9 +3811,9 @@ impl ExecutionEngine {
             }
         };
 
-        // The client's first status transition closes the handoff window
+        // The client's first status transition closes the dispatch window
         if !Self::has_submittable_status(&order) {
-            self.handed_off_orders.borrow_mut().remove(&client_order_id);
+            self.orders_dispatched.borrow_mut().remove(&client_order_id);
         }
 
         if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
@@ -4776,7 +4776,7 @@ enum SubmissionValidationResult {
         client_order_id: ClientOrderId,
         status: OrderStatus,
     },
-    HandedOff {
+    Dispatched {
         client_order_id: ClientOrderId,
     },
     Deny(OrderDeniedReason),

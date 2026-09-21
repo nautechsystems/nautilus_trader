@@ -1804,7 +1804,7 @@ fn test_submit_order_list_with_terminal_leg_reconstructs_and_denies_missing_elig
     assert!(submitted_order_ids.borrow().is_empty());
 }
 
-/// A later list that re-submits an order already handed to the execution client must not deny
+/// A later list that re-submits an order already dispatched to the execution client must not deny
 /// that order or route it again, whether the list arrives before or after the client's
 /// `OrderSubmitted` event and whether or not the list itself would pass validation (here the
 /// custom position ID is invalid under NETTING). Only the fresh member is denied, and the
@@ -1813,7 +1813,7 @@ fn test_submit_order_list_with_terminal_leg_reconstructs_and_denies_missing_elig
 #[case::invalid_list_before_submitted(false, Some("invalid-netting-position"))]
 #[case::invalid_list_after_submitted(true, Some("invalid-netting-position"))]
 #[case::valid_list_before_submitted(false, None)]
-fn test_submit_order_list_preserves_order_already_handed_to_client(
+fn test_submit_order_list_preserves_order_already_dispatched_to_client(
     mut execution_engine: ExecutionEngine,
     #[case] submitted_before_list: bool,
     #[case] list_position_id: Option<&str>,
@@ -2054,11 +2054,96 @@ fn test_submit_order_skips_duplicate_before_submitted_event(mut execution_engine
     assert_eq!(cached_order.event_count(), 2);
 }
 
-/// Both members of a list handed to the client are recorded, so a later duplicate `SubmitOrder`
+#[rstest]
+fn test_reset_allows_resubmission_before_first_status_event(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let account_id = AccountId::test_default();
+    let client_id = ClientId::from("STUB");
+    let instrument = audusd_sim();
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order.clone()));
+
+    {
+        let cache = execution_engine.cache().borrow();
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+        assert_eq!(cached_order.event_count(), 1);
+    }
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+
+    execution_engine.reset();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.into())
+        .unwrap();
+    execution_engine.execute(TradingCommand::SubmitOrder(SubmitOrder {
+        command_id: UUID4::new(),
+        ..submit_order
+    }));
+
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id(), order.client_order_id()],
+    );
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Initialized);
+    assert_eq!(cached_order.event_count(), 1);
+}
+
+/// Both members of a list dispatched to the client are recorded, so a later duplicate `SubmitOrder`
 /// and a later list naming one of them are refused before the client's `OrderSubmitted` events
 /// arrive, while those events still apply afterwards.
 #[rstest]
-fn test_submit_order_list_records_handoff_for_every_member(mut execution_engine: ExecutionEngine) {
+fn test_submit_order_list_records_dispatch_for_every_member(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let account_id = AccountId::test_default();
@@ -2210,11 +2295,11 @@ fn test_submit_order_list_records_handoff_for_every_member(mut execution_engine:
     assert_eq!(cached_take_profit.event_count(), 2);
 }
 
-/// An order published to an external client is handed off in the same sense as one routed to a
-/// registered client, so a later duplicate `SubmitOrder` is not republished and a later list
+/// An order dispatched to an external client is protected like one dispatched to a registered
+/// client, so a later duplicate `SubmitOrder` is not republished and a later list
 /// naming it denies only the fresh member.
 #[rstest]
-fn test_external_client_handoff_preserves_order_in_later_submit_commands() {
+fn test_external_client_dispatch_preserves_order_in_later_submit_commands() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
     let instrument = audusd_sim();
