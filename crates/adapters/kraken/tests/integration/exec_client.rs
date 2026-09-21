@@ -131,6 +131,8 @@ struct TestServerState {
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
+    /// Last raw body posted to a batch-cancel endpoint, for asserting the submitted IDs.
+    last_batch_cancel_body: Arc<tokio::sync::Mutex<Option<String>>>,
     collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -152,6 +154,7 @@ impl Default for TestServerState {
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            last_batch_cancel_body: Arc::new(tokio::sync::Mutex::new(None)),
             collection_request_ts: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
@@ -540,6 +543,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             state
                 .batch_cancel_request_count
                 .fetch_add(1, Ordering::Relaxed);
+
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            *state.last_batch_cancel_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
 
             match state.command_responses.lock().await.batch_cancel {
                 BatchCancelResponse::Success => {
@@ -1029,12 +1036,21 @@ fn add_spot_limit_order_on_instrument_to_cache(
     client_order_id: ClientOrderId,
     instrument_id: InstrumentId,
 ) -> OrderAny {
+    add_spot_limit_order_with_side_to_cache(cache, client_order_id, instrument_id, OrderSide::Buy)
+}
+
+fn add_spot_limit_order_with_side_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
         test_strategy_id(),
         instrument_id,
         client_order_id,
-        OrderSide::Buy,
+        side,
         Quantity::from("0.1"),
         Price::from("50000"),
         TimeInForce::Gtc,
@@ -1230,6 +1246,20 @@ fn cancel_all_orders_command() -> CancelAllOrders {
     )
 }
 
+fn cancel_all_orders_command_with_side(order_side: Option<OrderSide>) -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        order_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
 fn spot_cancel_all_orders_command() -> CancelAllOrders {
     CancelAllOrders::new(
         test_trader_id(),
@@ -1237,6 +1267,20 @@ fn spot_cancel_all_orders_command() -> CancelAllOrders {
         test_strategy_id(),
         test_spot_instrument_id(),
         None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn spot_cancel_all_orders_command_with_side(order_side: Option<OrderSide>) -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_spot_instrument_id(),
+        order_side,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -2620,18 +2664,201 @@ async fn test_spot_whole_batch_cancel_failure_does_not_emit_one_reject_per_order
 #[rstest]
 #[tokio::test]
 async fn test_spot_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
-    let (client, mut rx, _cache, state) =
+    let (client, mut rx, cache, state) =
         connected_spot_client_with_command_responses(CommandResponses {
-            cancel_all: BatchCancelResponse::WholeFailure,
+            batch_cancel: BatchCancelResponse::WholeFailure,
             ..Default::default()
         })
         .await;
+
+    // Cancel-all now selects open orders and cancels them by id, so the cache needs one.
+    let order = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("cancel-all-whole-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-WHOLE");
 
     client
         .cancel_all_orders(spot_cancel_all_orders_command())
         .unwrap();
 
-    wait_for_count(&state.cancel_all_request_count, 1).await;
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+/// Futures side-filtered cancellation goes through the explicit-id batch path.
+///
+/// The unsided path keeps its symbol-scoped bulk cancellation, which is already correct.
+#[rstest]
+#[tokio::test]
+async fn test_futures_cancel_all_side_filter_uses_batch_path() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-side-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-FUT-BUY");
+
+    client
+        .cancel_all_orders(cancel_all_orders_command_with_side(Some(OrderSide::Buy)))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_eq!(
+        state.cancel_request_count.load(Ordering::Relaxed),
+        0,
+        "side-filtered cancellation must not send per-order cancels"
+    );
+}
+
+/// An unsided cancel-all must stay scoped to the instrument it names.
+///
+/// Kraken's account-wide `CancelAll` ignores the instrument, so it could cancel orders the
+/// request never named.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_unsided_scopes_to_requested_instrument() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let target = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("scoped-target-001"));
+    set_venue_order_id_on_cached_order(&cache, &target, "V-TARGET");
+
+    let other = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        ClientOrderId::new("scoped-other-001"),
+        InstrumentId::from("ETH/USDT.KRAKEN"),
+    );
+    set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER");
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(body.contains("V-TARGET"), "body: {body}");
+    assert!(
+        !body.contains("V-OTHER"),
+        "an order on another instrument must be untouched: {body}"
+    );
+    assert_eq!(
+        state.cancel_all_request_count.load(Ordering::Relaxed),
+        0,
+        "account-wide CancelAll must not be used"
+    );
+}
+
+/// A side-filtered cancel-all submits only the matching side, through the batch path.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_side_filter_selects_only_that_side() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let buy = add_spot_limit_order_with_side_to_cache(
+        &cache,
+        ClientOrderId::new("side-buy-001"),
+        test_spot_instrument_id(),
+        OrderSide::Buy,
+    );
+    set_venue_order_id_on_cached_order(&cache, &buy, "V-BUY");
+
+    let sell = add_spot_limit_order_with_side_to_cache(
+        &cache,
+        ClientOrderId::new("side-sell-001"),
+        test_spot_instrument_id(),
+        OrderSide::Sell,
+    );
+    set_venue_order_id_on_cached_order(&cache, &sell, "V-SELL");
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command_with_side(Some(
+            OrderSide::Sell,
+        )))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(body.contains("V-SELL"), "body: {body}");
+    assert!(
+        !body.contains("V-BUY"),
+        "the opposite side must be untouched: {body}"
+    );
+}
+
+/// With nothing to cancel the adapter must not send a request at all.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_without_matching_orders_sends_no_request() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(state.batch_cancel_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(state.cancel_all_request_count.load(Ordering::Relaxed), 0);
+}
+
+/// Selected ids are chunked at the venue batch limit.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_chunks_at_venue_batch_limit() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    for i in 0..51 {
+        let order = add_spot_limit_order_to_cache(&cache, ClientOrderId::new(format!("chunk-{i}")));
+        set_venue_order_id_on_cached_order(&cache, &order, &format!("V-CHUNK-{i}"));
+    }
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    // 51 selected ids exceed the 50-order venue limit, so two requests are sent.
+    wait_for_count(&state.batch_cancel_request_count, 2).await;
+}
+
+/// A partial batch result is left to reconciliation rather than rejecting individual orders.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_partial_result_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+
+    for i in 0..2 {
+        let order =
+            add_spot_limit_order_to_cache(&cache, ClientOrderId::new(format!("partial-{i}")));
+        set_venue_order_id_on_cached_order(&cache, &order, &format!("V-PARTIAL-{i}"));
+    }
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
 
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(event, OrderEventAny::CancelRejected(_))

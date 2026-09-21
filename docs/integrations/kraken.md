@@ -337,10 +337,15 @@ time rather than silently coercing them.
 :::note
 **Cancel all orders**:
 
-- With no side filter, Spot cancels all open orders across all symbols, while
-  Futures cancels all orders for the requested instrument.
-- With a side filter, both clients select matching cached orders for the
-  requested instrument and cancel them individually.
+- Spot selects the matching open orders for the requested instrument and cancels
+  them by explicit order ID, with or without a side filter, so a request never
+  reaches another instrument.
+- Futures uses the venue's symbol-scoped bulk cancellation when no side filter is
+  given, and selects matching cached orders by explicit order ID when one is.
+- Selected IDs go through the batch-cancel endpoint and are auto-chunked into
+  batches of 50. Each cancel keeps the owning strategy of the order it targets,
+  and aggregate or ambiguous responses are left to reconciliation rather than
+  producing per-order outcomes.
 
 :::
 

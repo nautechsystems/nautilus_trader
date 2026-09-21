@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, DurationNanos, Params, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1615,85 +1615,51 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if cmd.order_side.is_none() {
-            log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
-
-            let http = self.http.clone();
-
-            self.spawn_task("cancel_all_orders", async move {
-                if let Err(e) = http.inner.cancel_all_orders().await {
-                    match command_failure_from_cancel_error(e) {
-                        CommandFailure::NotSent(reason) => {
-                            log::warn!("Cancel-all failed local validation: {reason}");
-                        }
-                        CommandFailure::Ambiguous(reason)
-                        | CommandFailure::VenueRejected(reason) => {
-                            log::warn!(
-                                "Cancel-all ambiguous failure, awaiting reconciliation: {reason}"
-                            );
-                        }
-                    }
-                }
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
         log::debug!(
             "Canceling all orders: instrument_id={instrument_id}, side={:?}",
             cmd.order_side
         );
 
-        let orders_to_cancel: Vec<_> = {
+        // Kraken's account-wide `CancelAll` ignores the requested instrument, so select the
+        // matching open orders and cancel them by explicit venue id instead.
+        let cancels: Vec<CancelOrder> = {
             let cache = self.core.cache();
             let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
+            let ts_init = self.clock.get_time_ns();
+            let correlation_id = cmd.correlation_id.or(Some(cmd.command_id));
 
             open_orders
                 .into_iter()
-                .filter(|order| Some(order.order_side()) == cmd.order_side)
-                .filter_map(|order| {
-                    Some((
-                        order.venue_order_id()?,
-                        order.client_order_id(),
-                        order.instrument_id(),
+                .filter(|order| cmd.order_side.is_none_or(|side| order.order_side() == side))
+                .map(|order| {
+                    CancelOrder::new(
+                        cmd.trader_id,
+                        cmd.client_id,
+                        // Each cancel keeps the owning strategy of the order it targets.
                         order.strategy_id(),
-                    ))
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        order.venue_order_id(),
+                        UUID4::new(),
+                        ts_init,
+                        cmd.params.clone(),
+                        correlation_id,
+                    )
                 })
                 .collect()
         };
 
-        let account_id = self.core.account_id;
-
-        for (venue_order_id, client_order_id, order_instrument_id, strategy_id) in orders_to_cancel
-        {
-            let http = self.http.clone();
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
-
-            self.spawn_task("cancel_order_by_side", async move {
-                if let Err(failure) = cancel_order_for_spot(
-                    &http,
-                    account_id,
-                    order_instrument_id,
-                    Some(client_order_id),
-                    Some(venue_order_id),
-                )
-                .await
-                {
-                    handle_cancel_failure(
-                        &emitter,
-                        clock,
-                        strategy_id,
-                        order_instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        failure,
-                    );
-                }
-                Ok(())
-            });
+        if cancels.is_empty() {
+            log::debug!("No open orders to cancel for {instrument_id}");
+            return Ok(());
         }
+
+        let http = self.http.clone();
+
+        self.spawn_task("cancel_all_orders", async move {
+            batch_cancel_orders_for_spot(&http, &cancels).await;
+            Ok(())
+        });
 
         Ok(())
     }
