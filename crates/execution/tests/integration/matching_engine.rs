@@ -15320,6 +15320,280 @@ fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: A
 }
 
 #[rstest]
+fn test_process_option_expiry_prefers_same_venue_underlying_over_cross_venue(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "OPRA";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let same_venue_underlying = InstrumentAny::IndexInstrument(underlying_index(option_venue));
+    let cross_venue_underlying = InstrumentAny::IndexInstrument(underlying_index("CBOE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(same_venue_underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(cross_venue_underlying.clone())
+        .unwrap();
+
+    // Same-venue ITM (spot 160, strike 149 -> payout 11.00); cross-venue would yield 50.00
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            same_venue_underlying.id(),
+            Price::from("160.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            cross_venue_underlying.id(),
+            Price::from("199.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let fill = events
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("expected settlement fill from same-venue underlying");
+    assert_eq!(fill.last_px, Price::from("11.00"));
+    assert_eq!(fill.position_id, Some(position.id));
+    assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+fn test_process_option_expiry_resolves_unique_cross_venue_underlying(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let cross_venue_underlying = InstrumentAny::IndexInstrument(underlying_index("BSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(cross_venue_underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            cross_venue_underlying.id(),
+            Price::from("160.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let fill = events
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("expected settlement fill from cross-venue underlying");
+    assert_eq!(fill.last_px, Price::from("11.00"));
+    assert_eq!(fill.position_id, Some(position.id));
+    assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+fn test_process_option_expiry_defers_when_cross_venue_underlying_is_ambiguous(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let first_match = InstrumentAny::IndexInstrument(underlying_index("BSE"));
+    let second_match = InstrumentAny::IndexInstrument(underlying_index("NSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_instrument(first_match).unwrap();
+    cache.borrow_mut().add_instrument(second_match).unwrap();
+
+    let _position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "Ambiguous cross-venue underlying must not settle the position"
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Ambiguous cross-venue underlying must defer option expiration"
+    );
+}
+
+#[rstest]
+fn test_process_option_expiry_defers_when_no_symbol_match_in_populated_cache(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let unrelated = InstrumentAny::Equity(underlying_equity("BSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_instrument(unrelated).unwrap();
+
+    let _position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "No fills should be emitted when no cache instrument matches the option's underlying"
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Populated cache without a matching symbol must still defer option expiration"
+    );
+}
+
+#[rstest]
 fn test_process_option_expiry_missing_underlying_price_retries_with_close_preserved(
     account_id: AccountId,
 ) {
