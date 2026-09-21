@@ -54,7 +54,7 @@ use crate::{
     backend::{migration::build_catalog_migration_plan, parquet::catalog::ParquetDataCatalog},
     catalog::{
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
-        types::HasCatalogDataType,
+        types::{HasCatalogDataType, parquet_catalog_data_type_path_prefixes},
     },
     python::backend::{
         PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
@@ -954,13 +954,23 @@ impl PyParquetDataCatalog {
     /// List all Parquet files in the catalog for a given data type and instrument.
     pub fn list_parquet_files(
         &self,
-        data_type: &str,
+        data_type: PyCatalogDataType,
         instrument_id: &str,
     ) -> PyResult<Vec<String>> {
-        let directory = format!("data/{data_type}/{instrument_id}");
-        self.inner
-            .list_parquet_files(&directory)
-            .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))
+        let data_type = data_type.into_inner();
+        let mut files = Vec::new();
+
+        for prefix in parquet_catalog_data_type_path_prefixes(&data_type) {
+            let prefix = prefix.as_ref();
+            let directory = format!("data/{prefix}/{instrument_id}");
+            files.extend(
+                self.inner.list_parquet_files(&directory).map_err(|e| {
+                    PyIOError::new_err(format!("Failed to list parquet files: {e}"))
+                })?,
+            );
+        }
+
+        Ok(files)
     }
 
     /// Query files in the catalog matching the specified criteria.
@@ -1787,8 +1797,7 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
-    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars"), or
-    ///   `custom/{TypeName}` with the registered type name verbatim for custom data
+    /// - `data_type`: The stored family to convert (data type or record type).
     /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
@@ -1803,34 +1812,35 @@ impl PyParquetDataCatalog {
     /// # Convert backtest stream data to parquet
     /// catalog.convert_stream_to_data(
     ///     "instance-123",
-    ///     "quotes",
+    ///     NautilusDataType.QuoteTick,
     ///     subdirectory="backtest"
     /// )
     ///
     /// # Convert live run data with identifier filtering
     /// catalog.convert_stream_to_data(
     ///     "instance-456",
-    ///     "trades",
+    ///     NautilusDataType.TradeTick,
     ///     subdirectory="live",
     ///     identifiers=["EUR/USD.SIM"]
     /// )
     /// ```
-    #[pyo3(signature = (instance_id, data_cls, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[pyo3(signature = (instance_id, data_type, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         subdirectory: Option<&str>,
         identifiers: Option<Vec<String>>,
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
+        let data_type = data_type.into_inner();
         let subdir = subdirectory.unwrap_or("backtest");
 
         self.inner
             .convert_stream_to_data(
                 instance_id,
-                data_cls,
+                &data_type,
                 Some(subdir),
                 identifiers.as_deref(),
                 use_ts_event_for_ts_init,

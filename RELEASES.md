@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added same-venue execution client registration with explicit venue or default routing
 - Added Python `Cache.top_of_book()` without cloning the resident book (#5011), thanks @youayouly
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
+- Added aggregate instrument fan-out across class directories to `list_parquet_files`
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
@@ -30,6 +31,7 @@ Released on TBD (UTC).
 - Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string, where `Instrument` loads every instrument class
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
+- Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)

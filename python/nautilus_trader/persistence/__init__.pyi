@@ -328,7 +328,11 @@ class ParquetDataCatalog:
         self,
         data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
     ) -> list[str]: ...
-    def list_parquet_files(self, data_type: str, instrument_id: str) -> list[str]: ...
+    def list_parquet_files(
+        self,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
+        instrument_id: str,
+    ) -> list[str]: ...
     def query_files(
         self,
         data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
@@ -488,7 +492,7 @@ class ParquetDataCatalog:
     def convert_stream_to_data(
         self,
         instance_id: str,
-        data_cls: str,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
         subdirectory: str | None = None,
         identifiers: typing.Sequence[str] | None = None,
         use_ts_event_for_ts_init: bool = False,

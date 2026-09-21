@@ -73,7 +73,7 @@ def test_parquet_converts_current_feather_stream(tmp_path) -> None:
     writer.write(quote)
     writer.close()
 
-    catalog.convert_stream_to_data("run", "quotes")
+    catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick)
 
     assert catalog.query_quote_ticks() == [quote]
 

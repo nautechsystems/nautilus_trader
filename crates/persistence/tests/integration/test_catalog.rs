@@ -5123,56 +5123,58 @@ fn test_convert_stream_to_data_no_files() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     // Should return Ok(()) when no files are found (not an error)
-    let result =
-        catalog.convert_stream_to_data("test_instance", "quotes", Some("backtest"), None, false);
+    let result = catalog.convert_stream_to_data(
+        "test_instance",
+        &NautilusDataType::QuoteTick.into(),
+        Some("backtest"),
+        None,
+        false,
+    );
 
     assert!(result.is_ok(), "Should return Ok when no files found");
 }
 
 #[rstest]
-fn test_convert_stream_to_data_unknown_type_no_files() {
+fn test_convert_stream_to_data_rejects_instrument_class() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let result = catalog.convert_stream_to_data(
-        "test_instance",
-        "unknown_data_type",
-        Some("backtest"),
-        None,
-        false,
-    );
+    let error = catalog
+        .convert_stream_to_data(
+            "test_instance",
+            &NautilusInstrumentType::Equity.into(),
+            Some("backtest"),
+            None,
+            false,
+        )
+        .unwrap_err();
 
-    assert!(
-        result.is_ok(),
-        "Unknown stream data types should be ignored when no files exist",
+    assert_eq!(
+        error.to_string(),
+        "Stream conversion stages instruments under the aggregate family, not Equity; \
+         pass the Instrument data type",
+        "Should name the aggregate family for class selectors",
     );
 }
 
 #[rstest]
-fn test_convert_stream_to_data_unknown_type_with_files_errors() {
-    let (temp_dir, mut catalog) = create_temp_catalog();
-    let feather_dir = temp_dir
-        .path()
-        .join("backtest")
-        .join("test_instance")
-        .join("unknown_data_type");
-    fs::create_dir_all(&feather_dir).unwrap();
-    fs::File::create(feather_dir.join("unknown_0.feather")).unwrap();
+#[cfg(feature = "defi")]
+fn test_convert_stream_to_data_rejects_unsupported_family() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let result = catalog.convert_stream_to_data(
-        "test_instance",
-        "unknown_data_type",
-        Some("backtest"),
-        None,
-        false,
-    );
+    let error = catalog
+        .convert_stream_to_data(
+            "test_instance",
+            &NautilusDataType::Defi.into(),
+            Some("backtest"),
+            None,
+            false,
+        )
+        .unwrap_err();
 
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown data class"),
-        "Should error once unknown stream files are present",
+    assert_eq!(
+        error.to_string(),
+        "Stream conversion does not support Defi",
+        "Should reject families streams cannot stage",
     );
 }
 
@@ -5216,7 +5218,7 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
     catalog
         .convert_stream_to_data(
             "test_instance_flat",
-            "account_state",
+            &NautilusRecordType::AccountState.into(),
             Some("backtest"),
             None,
             false,
@@ -5298,7 +5300,7 @@ fn test_convert_stream_to_data_keeps_flat_stream_file_with_identifiers() {
     catalog
         .convert_stream_to_data(
             "test_instance_flat_filter",
-            "account_state",
+            &NautilusRecordType::AccountState.into(),
             Some("backtest"),
             Some(&identifiers),
             false,
@@ -5359,7 +5361,7 @@ fn test_convert_stream_to_data_ignores_flat_stream_file_with_non_timestamp_suffi
     catalog
         .convert_stream_to_data(
             "test_instance_flat_suffix",
-            "account_state",
+            &NautilusRecordType::AccountState.into(),
             Some("backtest"),
             None,
             false,
@@ -5444,7 +5446,13 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
     writer.finish().unwrap();
 
     catalog
-        .convert_stream_to_data("test_instance", "quotes", Some("backtest"), None, false)
+        .convert_stream_to_data(
+            "test_instance",
+            &NautilusDataType::QuoteTick.into(),
+            Some("backtest"),
+            None,
+            false,
+        )
         .unwrap();
 
     let files = catalog
@@ -5555,7 +5563,13 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
     writer.finish().unwrap();
 
     catalog
-        .convert_stream_to_data("test_instance_bars", "bars", Some("backtest"), None, false)
+        .convert_stream_to_data(
+            "test_instance_bars",
+            &NautilusDataType::Bar.into(),
+            Some("backtest"),
+            None,
+            false,
+        )
         .unwrap();
 
     let files = catalog

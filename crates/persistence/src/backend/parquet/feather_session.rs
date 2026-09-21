@@ -23,12 +23,12 @@
     reason = "session registration keeps backend-specific ordering logic together"
 )]
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use datafusion::arrow::{datatypes::Schema, record_batch::RecordBatch};
 use futures::StreamExt;
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
+use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
     OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
@@ -44,6 +44,7 @@ use crate::{
         catalog::ParquetDataCatalog,
         paths::{make_object_store_path, urisafe_instrument_id},
     },
+    catalog::types::{CatalogDataType, parquet_data_path_prefix, record_path_prefix},
     common::{
         conversion::FeatherConversionSummary,
         custom::decode_custom_batches_to_data,
@@ -504,7 +505,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instance ID doesn't exist.
+    /// - `data_type` is an instrument class selector, which has no staged stream name.
+    /// - `data_type` is a family streams do not support.
     /// - Feather file listing fails.
     /// - Feather file reading fails.
     /// - Writing to parquet fails.
@@ -512,7 +514,8 @@ impl ParquetDataCatalog {
     /// # Note
     ///
     /// This method converts directly between Arrow IPC stream batches and Parquet batches without
-    /// materializing Nautilus data objects. It requires:
+    /// materializing Nautilus data objects. An instance with no staged files for the family
+    /// converts nothing and returns success. It requires:
     /// - Listing feather files in the specified subdirectory
     /// - Reading feather files (Arrow IPC stream reading)
     /// - Applying table-only stream conversion transforms
@@ -521,6 +524,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -532,28 +536,41 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Convert backtest stream data to parquet
-    /// catalog.convert_stream_to_data("instance-123", "quotes", Some("backtest"), None, false)?;
+    /// catalog.convert_stream_to_data(
+    ///     "instance-123",
+    ///     &NautilusDataType::QuoteTick.into(),
+    ///     Some("backtest"),
+    ///     None,
+    ///     false,
+    /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         subdirectory: Option<&str>,
         identifiers: Option<&[String]>,
         use_ts_event_for_ts_init: bool,
     ) -> anyhow::Result<()> {
         let subdirectory = subdirectory.unwrap_or("backtest");
 
-        // Custom data stages under `data/custom/{TypeName}` with the registered type name verbatim,
-        // so snake-casing would rewrite both the marker and the type name and match no directory.
-        let stream_data_name = if data_cls.starts_with("custom/") {
-            data_cls.to_string()
-        } else {
-            to_snake_case(data_cls)
+        // Streams stage instruments under the single aggregate name,
+        // with the class carried per batch, so a class selector names no staged directory.
+        let stream_data_name: Cow<'static, str> = match data_type {
+            CatalogDataType::Data(data_type) => parquet_data_path_prefix(data_type),
+            CatalogDataType::Record(record_type) => record_path_prefix(record_type),
+            CatalogDataType::Instrument(class) => {
+                anyhow::bail!(
+                    "Stream conversion stages instruments under the aggregate family, not {class}; \
+                     pass the Instrument data type"
+                );
+            }
         };
 
-        let catalog_data_name = Self::canonical_stream_data_name(&stream_data_name);
+        if !Self::is_supported_stream_data_type(&stream_data_name) {
+            anyhow::bail!("Stream conversion does not support {data_type}");
+        }
 
         // List all feather files for this data class
         let feather_files =
@@ -561,10 +578,6 @@ impl ParquetDataCatalog {
 
         if feather_files.is_empty() {
             return Ok(());
-        }
-
-        if !Self::is_supported_stream_data_type(catalog_data_name) {
-            anyhow::bail!("Unknown data class: {data_cls}");
         }
 
         // Process each feather file independently so that each file's identifier
@@ -576,7 +589,7 @@ impl ParquetDataCatalog {
             self.convert_feather_batches_to_parquet(
                 subdirectory,
                 instance_id,
-                catalog_data_name,
+                &stream_data_name,
                 &file_path,
                 &batches,
                 use_ts_event_for_ts_init,

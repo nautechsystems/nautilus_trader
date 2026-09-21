@@ -611,6 +611,36 @@ def test_catalog_instrument_roundtrip(tmp_path: Path) -> None:
     assert [instrument.to_dict() for instrument in read] == [inst.to_dict()]
 
 
+def test_catalog_list_parquet_files_with_typed_selectors(tmp_path: Path) -> None:
+    """
+    Test listing parquet files with typed selectors.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+
+    quotes = [
+        TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
+    ]
+    catalog.write_quote_ticks(quotes)
+    currency_pair = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    equity = TestInstrumentProvider.aapl_equity()
+    catalog.write_instruments([currency_pair, equity])
+
+    quote_files = catalog.list_parquet_files(NautilusDataType.QuoteTick, "AUDUSD.SIM")
+
+    assert len(quote_files) == 1
+    assert "data/quotes/AUDUSD.SIM/" in quote_files[0]
+
+    pair_files = catalog.list_parquet_files(NautilusDataType.Instrument, "AUDUSD.SIM")
+    equity_files = catalog.list_parquet_files(NautilusDataType.Instrument, "AAPL.XNAS")
+
+    assert len(pair_files) == 1
+    assert "data/currency_pair/AUDUSD.SIM/" in pair_files[0]
+    assert len(equity_files) == 1
+    assert "data/equity/AAPL.XNAS/" in equity_files[0]
+
+
 def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
     """
     Test catalog query filters and timestamp metadata.

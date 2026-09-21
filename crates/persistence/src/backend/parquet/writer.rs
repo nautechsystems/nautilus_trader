@@ -659,7 +659,13 @@ mod tests {
 
         if interval != Some(1) {
             catalog
-                .convert_stream_to_data("run-2", "quotes", Some("backtest"), None, false)
+                .convert_stream_to_data(
+                    "run-2",
+                    &NautilusDataType::QuoteTick.into(),
+                    Some("backtest"),
+                    None,
+                    false,
+                )
                 .unwrap();
         }
         let after = catalog
@@ -880,7 +886,7 @@ mod tests {
             catalog
                 .convert_stream_to_data(
                     "run-depth-ties",
-                    "order_book_depths",
+                    &NautilusDataType::OrderBookDepth.into(),
                     Some("backtest"),
                     None,
                     false,
@@ -939,7 +945,10 @@ mod tests {
             catalog
                 .convert_stream_to_data(
                     "run-custom",
-                    "custom/RustTestHashMapCustomData",
+                    &NautilusDataType::Custom {
+                        type_name: "RustTestHashMapCustomData".to_string(),
+                    }
+                    .into(),
                     Some("backtest"),
                     None,
                     false,
@@ -1006,7 +1015,10 @@ mod tests {
         catalog
             .convert_stream_to_data(
                 "run-custom-ids",
-                "custom/RustTestHashMapCustomData",
+                &NautilusDataType::Custom {
+                    type_name: "RustTestHashMapCustomData".to_string(),
+                }
+                .into(),
                 Some("backtest"),
                 Some(&[audusd.to_string()]),
                 false,
@@ -1030,7 +1042,10 @@ mod tests {
         catalog
             .convert_stream_to_data(
                 "run-custom-ids",
-                "custom/RustTestHashMapCustomData",
+                &NautilusDataType::Custom {
+                    type_name: "RustTestHashMapCustomData".to_string(),
+                }
+                .into(),
                 Some("backtest"),
                 None,
                 false,
