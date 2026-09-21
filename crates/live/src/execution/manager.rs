@@ -125,6 +125,8 @@ struct SubmissionRecoveryState {
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     exhausted: bool,
+    // A Submitted report can confirm venue identity without producing a native event
+    venue_confirmed: bool,
     // Native pending event and its command budget, captured at dispatch
     pending_command: Option<(UUID4, InflightCheck)>,
 }
@@ -257,6 +259,19 @@ impl ExecutionManager {
         }
 
         self.confirm_submission_outcome(&client_order_id);
+
+        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
+            && let Some(order) = self.get_order(client_order_id)
+            && order.status() == OrderStatus::Submitted
+            && (!Self::submission_is_unacknowledged(&order)
+                || self
+                    .submissions
+                    .get(&client_order_id)
+                    .is_some_and(|submission| submission.venue_confirmed))
+        {
+            return;
+        }
+
         if self.submission_recovery_pending(client_order_id)
             && self.order_inflight_checks.contains_key(&client_order_id)
         {
@@ -316,16 +331,15 @@ impl ExecutionManager {
         }
 
         self.confirm_submission_outcome(&initialized.client_order_id);
-        if self.submissions.contains_key(&initialized.client_order_id) {
+        if self.submissions.contains_key(&initialized.client_order_id)
+            || self
+                .get_order(initialized.client_order_id)
+                .is_some_and(|order| !Self::submission_is_unacknowledged(&order))
+        {
             return;
         }
 
-        if self
-            .get_order(initialized.client_order_id)
-            .is_none_or(|order| Self::submission_is_unacknowledged(&order))
-        {
-            self.track_submission(initialized, client_id);
-        }
+        self.track_submission(initialized, client_id);
         self.register_inflight(initialized.client_order_id);
     }
 
@@ -347,6 +361,7 @@ impl ExecutionManager {
                 strategy_id: initialized.strategy_id,
                 instrument_id: initialized.instrument_id,
                 exhausted: false,
+                venue_confirmed: false,
                 pending_command: None,
             });
     }
@@ -363,14 +378,14 @@ impl ExecutionManager {
                     | OrderEventAny::Denied(_)
                     | OrderEventAny::Canceled(_)
                     | OrderEventAny::Expired(_)
-            )
+            ) || matches!(event, OrderEventAny::Updated(updated) if updated.venue_order_id.is_some())
         })
     }
 
     fn submission_recovery_pending(&self, client_order_id: ClientOrderId) -> bool {
         self.submissions
             .get(&client_order_id)
-            .is_some_and(|submission| !submission.exhausted)
+            .is_some_and(|submission| !submission.exhausted && !submission.venue_confirmed)
             && self
                 .get_order(client_order_id)
                 .is_none_or(|order| Self::submission_is_unacknowledged(&order))
@@ -404,6 +419,16 @@ impl ExecutionManager {
         };
 
         if Self::submission_is_unacknowledged(&order) {
+            return;
+        }
+
+        if self
+            .submissions
+            .get(client_order_id)
+            .is_some_and(|submission| submission.venue_confirmed)
+        {
+            // The report already retired submission recovery, preserve any newer command budget
+            self.submissions.shift_remove(client_order_id);
             return;
         }
 
@@ -453,7 +478,7 @@ impl ExecutionManager {
             return;
         };
 
-        if submission.exhausted {
+        if submission.exhausted || submission.venue_confirmed {
             return;
         }
 
@@ -512,7 +537,7 @@ impl ExecutionManager {
     /// Clears reconciliation tracking state for an order.
     ///
     /// An active submission's identity and budget survive pre-dispatch cleanup until
-    /// native state acknowledges it or a recovery check exhausts its budget.
+    /// native state or a matching venue report acknowledges it, or recovery exhausts its budget.
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
         if self.submission_recovery_pending(*client_order_id)
             && !self
@@ -524,7 +549,25 @@ impl ExecutionManager {
         }
 
         self.order_inflight_checks.shift_remove(client_order_id);
-        self.submissions.shift_remove(client_order_id);
+
+        if self
+            .submissions
+            .get(client_order_id)
+            .is_some_and(|submission| submission.venue_confirmed)
+            && self
+                .get_order(*client_order_id)
+                .is_some_and(|order| Self::submission_is_unacknowledged(&order))
+            && !self
+                .config
+                .filtered_client_order_ids
+                .contains(client_order_id)
+            && let Some(submission) = self.submissions.get_mut(client_order_id)
+        {
+            // Remember report-only confirmation until native history can prevent re-registration
+            submission.pending_command = None;
+        } else {
+            self.submissions.shift_remove(client_order_id);
+        }
         self.order_recon_retries.shift_remove(client_order_id);
         self.order_coverage_warnings.shift_remove(client_order_id);
         self.order_lookback_warnings.shift_remove(client_order_id);
@@ -3262,6 +3305,27 @@ impl ExecutionManager {
         let Some(client_order_id) = report.client_order_id else {
             return;
         };
+
+        if report.order_status == OrderStatus::Submitted
+            && let Some(submission) = self.submissions.get(&client_order_id)
+            && let Some(order) = self.get_order(client_order_id)
+            && submission.trader_id == order.trader_id()
+            && submission.strategy_id == order.strategy_id()
+            && submission.instrument_id == order.instrument_id()
+            && report.instrument_id == order.instrument_id()
+            && order.account_id() == Some(report.account_id)
+            && order
+                .venue_order_id()
+                .is_none_or(|id| id == report.venue_order_id)
+            && self
+                .cache
+                .borrow()
+                .client_order_id(&report.venue_order_id)
+                .is_none_or(|id| *id == client_order_id)
+            && let Some(submission) = self.submissions.get_mut(&client_order_id)
+        {
+            submission.venue_confirmed = true;
+        }
 
         let accepted_during_pending_command = report.order_status == OrderStatus::Accepted
             && self.get_order(client_order_id).is_some_and(|order| {

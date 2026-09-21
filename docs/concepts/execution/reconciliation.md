@@ -340,6 +340,13 @@ recovery limit. The diagnostic carries the original submission identity, recover
 count, and event timestamp. It is published after processing the local resolution events, once per
 tracked submission. It is not an order event and does not establish a venue outcome.
 
+A matching `Submitted` report with a venue order ID clears the existing in-flight recovery
+tracking, including pending-command tracking, as it does under `ResolveLocally`. The registry
+remembers this confirmation even when reconciliation produces no order event, so duplicate
+submission registration cannot restart the timeout. An applied `OrderUpdated` with venue identity
+also confirms the submission; local updates without venue identity do not. Later cancel or modify
+commands use their own recovery budget, without a submission-exhaustion diagnostic.
+
 The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
 of `N` permits `N - 1` intermediate order queries before local resolution. Missing-order checks use
 `open_check_missing_retries` and require completed, matching client coverage plus a successful
