@@ -390,7 +390,7 @@ def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(1), _make_bar(2)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
+    intervals = catalog.get_intervals(data_type=NautilusDataType.Bar, instrument_id=bar_type_str)
     loaded = catalog.query_bars(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -630,8 +630,10 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
-    assert catalog.query_first_timestamp(NautilusDataType.Bar, bar_type) == 1
-    assert catalog.query_last_timestamp(NautilusDataType.Bar, bar_type) == 6
+    assert (
+        catalog.query_first_timestamp(data_type=NautilusDataType.Bar, instrument_id=bar_type) == 1
+    )
+    assert catalog.query_last_timestamp(data_type=NautilusDataType.Bar, instrument_id=bar_type) == 6
     assert catalog.get_missing_intervals_for_request(0, 10, NautilusDataType.Bar, bar_type) == [
         (0, 0),
         (3, 4),

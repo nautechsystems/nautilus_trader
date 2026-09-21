@@ -276,6 +276,7 @@ impl ParquetDataCatalog {
             intervals.extend(self.get_prefix_intervals(data_cls.as_ref(), identifier)?);
         }
 
+        intervals.sort_by_key(|&(start, _)| start);
         Ok(merge_overlapping(intervals))
     }
 

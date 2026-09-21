@@ -54,7 +54,7 @@ use nautilus_persistence::{
 use nautilus_serialization::{
     arrow::{
         DecodeTypedFromRecordBatch, EncodeToRecordBatch, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
-        timestamp_array, timestamp_data_type,
+        display::instrument::encode_instruments, timestamp_array, timestamp_data_type,
     },
     ensure_custom_data_registered,
 };
@@ -5143,16 +5143,21 @@ fn test_data_catalog_instruments_applies_where_clause() {
 }
 
 #[rstest]
-fn test_instrument_family_coverage_spans_every_class() {
+#[case::class_order(1_000, 2_000)]
+#[case::reverse_class_order(2_000, 1_000)]
+fn test_instrument_family_coverage_spans_every_class(
+    #[case] currency_pair_ts: u64,
+    #[case] equity_ts: u64,
+) {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
-    currency_pair.ts_event = UnixNanos::from(1_000);
-    currency_pair.ts_init = UnixNanos::from(1_000);
+    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
     let mut equity = equity_aapl();
-    equity.ts_event = UnixNanos::from(2_000);
-    equity.ts_init = UnixNanos::from(2_000);
+    equity.ts_event = UnixNanos::from(equity_ts);
+    equity.ts_init = UnixNanos::from(equity_ts);
 
     catalog
         .write_instruments(vec![
@@ -5170,13 +5175,13 @@ fn test_instrument_family_coverage_spans_every_class() {
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), None)
             .unwrap(),
-        vec![(1_000, 1_000)]
+        vec![(currency_pair_ts, currency_pair_ts)]
     );
     assert_eq!(
         catalog
             .get_intervals(&NautilusInstrumentType::Equity.into(), None)
             .unwrap(),
-        vec![(2_000, 2_000)]
+        vec![(equity_ts, equity_ts)]
     );
 
     assert_eq!(
@@ -5340,14 +5345,19 @@ fn test_consolidate_data_by_period_rejects_non_data_selectors(
 }
 
 #[rstest]
-fn test_extend_file_name_extends_every_class_holding_the_identifier() {
+#[case::both_adjacent(2_000, 3_000)]
+#[case::later_class_adjacent(1_000, 1_000)]
+fn test_extend_file_name_extends_every_class_holding_the_identifier(
+    #[case] currency_pair_ts: u64,
+    #[case] currency_pair_end: u64,
+) {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
-    currency_pair.ts_event = UnixNanos::from(2_000);
-    currency_pair.ts_init = UnixNanos::from(2_000);
+    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
     let mut equity = equity_aapl();
     equity.id = shared_id;
     equity.ts_event = UnixNanos::from(2_000);
@@ -5373,7 +5383,7 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier() {
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), Some(&id_str))
             .unwrap(),
-        vec![(2_000, 3_000)]
+        vec![(currency_pair_ts, currency_pair_end)]
     );
     assert_eq!(
         catalog
@@ -5395,6 +5405,75 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier() {
         "Cannot extend file name for Instrument: no instrument class holds MISSING.SIM; \
          name the class with a NautilusInstrumentType"
     );
+}
+
+#[rstest]
+#[case::all(None, &[0, 1])]
+#[case::currency_pair(Some(NautilusInstrumentType::CurrencyPair), &[0])]
+#[case::equity(Some(NautilusInstrumentType::Equity), &[1])]
+fn test_instrument_family_class_filter_applies_to_catalog_readers(
+    #[case] instrument_type: Option<NautilusInstrumentType>,
+    #[case] expected_indices: &[usize],
+) {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let mut currency_pair = audusd_sim();
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
+    let mut equity = equity_aapl();
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
+    let instruments = vec![
+        InstrumentAny::CurrencyPair(currency_pair),
+        InstrumentAny::Equity(equity),
+    ];
+    catalog.write_instruments(instruments.clone()).unwrap();
+    let expected = expected_indices
+        .iter()
+        .map(|&index| instruments[index].clone())
+        .collect::<Vec<_>>();
+    let mut expected_ids = expected
+        .iter()
+        .map(|instrument| instrument.id().to_string())
+        .collect::<Vec<_>>();
+    expected_ids.sort();
+    let mut expected_metadata = Vec::new();
+
+    for &index in expected_indices {
+        let class = [
+            NautilusInstrumentType::CurrencyPair,
+            NautilusInstrumentType::Equity,
+        ][index];
+        expected_metadata.extend(
+            catalog
+                .query_metadata(&class.into(), None, None, None, None)
+                .unwrap(),
+        );
+    }
+    let query =
+        CatalogQuery::new(NautilusDataType::Instrument).with_instrument_type(instrument_type);
+
+    let loaded = CatalogReader::instruments(
+        &mut catalog,
+        &CatalogInstrumentQuery::new().with_instrument_type(instrument_type),
+    )
+    .unwrap();
+    let batch = CatalogReader::query_batch(&mut catalog, &query).unwrap();
+    let identifiers = CatalogReader::query_identifiers(&mut catalog, &query).unwrap();
+    let display = CatalogReader::query_display_record_batches(&mut catalog, &query).unwrap();
+    let metadata = CatalogReader::query_metadata(&mut catalog, &query).unwrap();
+
+    assert_eq!(loaded, expected);
+    assert_eq!(
+        batch.to_data_vec_for_compat(),
+        expected
+            .iter()
+            .cloned()
+            .map(|instrument| Data::Instrument(Box::new(instrument)))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(identifiers, expected_ids);
+    assert_eq!(display, vec![encode_instruments(&expected).unwrap()]);
+    assert_eq!(metadata, expected_metadata);
 }
 
 #[rstest]

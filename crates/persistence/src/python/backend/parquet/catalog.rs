@@ -999,7 +999,10 @@ impl PyParquetDataCatalog {
     pub fn query_metadata(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1034,7 +1037,10 @@ impl PyParquetDataCatalog {
     pub fn query_data_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1077,7 +1083,10 @@ impl PyParquetDataCatalog {
     pub fn query_data_arrow_stream(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1112,7 +1121,10 @@ impl PyParquetDataCatalog {
     pub fn write_record_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         data: Vec<u8>,
         identifier: Option<String>,
         params: Option<Py<PyDict>>,
@@ -1138,7 +1150,10 @@ impl PyParquetDataCatalog {
     pub fn query_record_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1190,7 +1205,10 @@ impl PyParquetDataCatalog {
     pub fn query_record_arrow_stream(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,

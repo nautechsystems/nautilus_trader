@@ -338,7 +338,7 @@ class ParquetDataCatalog:
     ) -> list[str]: ...
     def query_metadata(
         self,
-        data_type: typing.Any,
+        data_type: model.NautilusDataType,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -346,7 +346,7 @@ class ParquetDataCatalog:
     ) -> dict: ...
     def query_data_arrow_bytes(
         self,
-        data_type: typing.Any,
+        data_type: model.NautilusDataType,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -356,7 +356,7 @@ class ParquetDataCatalog:
     ) -> bytes: ...
     def query_data_arrow_stream(
         self,
-        data_type: typing.Any,
+        data_type: model.NautilusDataType,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -366,14 +366,14 @@ class ParquetDataCatalog:
     ) -> typing.Any: ...
     def write_record_arrow_bytes(
         self,
-        record_type: typing.Any,
+        record_type: model.NautilusRecordType,
         data: typing.Sequence[int],
         identifier: str | None = None,
         params: dict | None = None,
     ) -> None: ...
     def query_record_arrow_bytes(
         self,
-        record_type: typing.Any,
+        record_type: model.NautilusRecordType,
         identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -383,7 +383,7 @@ class ParquetDataCatalog:
     ) -> bytes: ...
     def query_record_arrow_stream(
         self,
-        record_type: typing.Any,
+        record_type: model.NautilusRecordType,
         identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,

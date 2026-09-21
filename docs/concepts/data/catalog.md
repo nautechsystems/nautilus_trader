@@ -411,13 +411,13 @@ Delete data within a time range, optionally limited to one data type and instrum
 for data partitioned by instrument.
 
 `delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
-registered custom types. Pass `order_book_depths` for order book depth and `custom/<TypeName>`
-for custom data, such as `custom/MarketTickPython`.
+registered custom types. Pass `NautilusDataType.OrderBookDepth` for order book depth and
+`NautilusDataType.Custom("MarketTickPython")` for a custom data type.
 
 `delete_catalog_range(...)` continues after unsupported directories, logs a warning, and leaves
-their data unchanged. It also skips order book depth directories because their stored path name
-differs from the direct method's type name. Use `delete_data_range(...)` when you need to confirm
-that the requested type is supported.
+their data unchanged. Use `delete_data_range(...)` when you need to confirm that the requested
+type is supported. `NautilusDataType.Instrument` is rejected because instrument definitions do not
+support ranged deletion.
 
 ```python
 catalog.delete_catalog_range(
@@ -429,12 +429,12 @@ catalog.delete_catalog_range(end=1704067200000000000)
 
 catalog.delete_data_range(
     data_type=NautilusDataType.QuoteTick,
-    instrument_id="BTC/USD.BINANCE",
+    identifier="BTC/USD.BINANCE",
 )
 
 catalog.delete_data_range(
     data_type=NautilusDataType.TradeTick,
-    instrument_id="EUR/USD.SIM",
+    identifier="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
 )
