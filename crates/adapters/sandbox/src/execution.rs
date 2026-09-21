@@ -653,6 +653,8 @@ impl ExecutionClient for SandboxExecutionClient {
             }
         }
 
+        self.inner.borrow_mut().load_open_orders();
+
         self.register_message_handlers();
         self.register_expiry_sweep_timer();
 
@@ -941,6 +943,49 @@ impl PartialEq for DelayedCommand {
 impl Eq for DelayedCommand {}
 
 impl SandboxInner {
+    fn load_open_orders(&mut self) {
+        let venue = self.config.venue;
+        let mut open_orders: Vec<(OrderAny, AccountId)> = {
+            let cache = self.cache.borrow();
+            cache
+                .orders_open(Some(&venue), None, None, None, None)
+                .into_iter()
+                .filter(|order| !order.is_emulated())
+                .filter_map(|order| {
+                    order
+                        .account_id()
+                        .map(|account_id| (order.clone(), account_id))
+                })
+                .collect()
+        };
+
+        open_orders.sort_by(|(a, _), (b, _)| {
+            a.ts_init()
+                .cmp(&b.ts_init())
+                .then_with(|| a.client_order_id().cmp(&b.client_order_id()))
+        });
+
+        for (mut order, account_id) in open_orders {
+            let instrument_id = order.instrument_id();
+            let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+            match instrument {
+                Some(instrument) => {
+                    self.ensure_matching_engine(&instrument);
+
+                    if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                        engine.process_order(&mut order, account_id);
+                    }
+                }
+                None => {
+                    log::warn!(
+                        "No instrument for {instrument_id} to restore open order {}",
+                        order.client_order_id()
+                    );
+                }
+            }
+        }
+    }
+
     fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
         let instrument_id = instrument.id();
 
