@@ -70,7 +70,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, StatusCode, create_standard_nautilus_headers},
+    http::{HttpClient, HttpRedirectPolicy, Method, StatusCode, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -305,6 +305,7 @@ fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Dura
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::{Serialize, Serializer, ser::Error as _};
@@ -325,6 +326,33 @@ mod tests {
         {
             Err(S::Error::custom("intentional serialization failure"))
         }
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = OKXRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "pass".into(),
+            "http://localhost".into(),
+            3,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]
@@ -886,6 +914,7 @@ impl OKXRawHttpClient {
             clock: get_atomic_clock_realtime(),
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers(environment))
                 .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas())

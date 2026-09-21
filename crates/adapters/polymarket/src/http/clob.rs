@@ -28,7 +28,9 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+    },
     websocket::proxy::ProxyUrl,
 };
 use rust_decimal::Decimal;
@@ -158,6 +160,7 @@ impl PolymarketClobHttpClient {
         let rate_limiter = PolymarketRateLimiter::for_signer(&address);
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .header_keys(RateLimitHeaders::names())
                 .timeout_secs(timeout_secs)

@@ -44,7 +44,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, create_standard_nautilus_headers},
+    http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -188,6 +188,7 @@ impl AxRawHttpClient {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*AX_REST_QUOTA)
@@ -238,6 +239,7 @@ impl AxRawHttpClient {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*AX_REST_QUOTA)
@@ -2381,5 +2383,46 @@ impl AxHttpClient {
         let request = CancelAllOrdersRequest::new().with_symbol(instrument_id.symbol.inner());
         self.inner.cancel_all_orders(&request).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::credentials(true)]
+    #[case::session_token(false)]
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects(#[case] credentials: bool) {
+        let client = if credentials {
+            AxRawHttpClient::with_credentials(
+                "key".into(),
+                "secret".into(),
+                None,
+                None,
+                3,
+                0,
+                1,
+                1,
+                None,
+            )
+            .unwrap()
+        } else {
+            AxRawHttpClient::new(None, None, 3, 0, 1, 1, None).unwrap()
+        }
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 }

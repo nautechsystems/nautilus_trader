@@ -27,7 +27,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_http_retry_manager},
 };
@@ -220,6 +222,7 @@ impl LighterRawHttpClient {
             base_url,
             environment,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .default_quota(default_quota)
                 .timeout_secs(timeout_secs)
@@ -1539,9 +1542,26 @@ fn venue_error(code: i32, message: Option<&str>, default_message: &str) -> Light
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = LighterRawHttpClient::new(LighterEnvironment::Testnet, None, 3, None)
+            .unwrap()
+            .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     #[case(ENDPOINT_TRADES, "lighter:trades")]

@@ -53,7 +53,9 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -434,6 +436,7 @@ impl BinanceRawSpotHttpClient {
         let headers = Self::default_headers(&credential, json_responses);
 
         let client = HttpClient::builder()
+            .redirect_policy(HttpRedirectPolicy::Reject)
             .headers(headers)
             .header_keys(vec![
                 BINANCE_API_KEY_HEADER.to_string(),
@@ -3733,10 +3736,35 @@ fn log_instrument_parse_error(
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::stubs::currency_pair_btcusdt;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
     use crate::spot::http::models::BinancePriceLevel;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Testnet,
+            Some("key".into()),
+            Some("secret".into()),
+            None,
+            None,
+            Some(3),
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_schema_constants() {

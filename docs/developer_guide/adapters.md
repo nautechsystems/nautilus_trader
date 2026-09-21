@@ -565,6 +565,14 @@ zeroization conventions.
 | WebSocket authentication     | Keep fields and serialized frames in `SecretString`; create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
 | Unsupported combination      | Extend the common client instead of implementing adapter-local URL or error scrubbing.                           | The common API must define the resulting ownership and redaction rule. |
 
+:::warning Disable redirects for authenticated requests
+
+Clients that send credentials or signed payloads must set `HttpRedirectPolicy::Reject`. Use an
+equivalent no-redirect policy with other HTTP transports so redirects cannot forward credentials
+or signed payloads to another destination.
+
+:::
+
 #### Verify credential handling
 
 Test the secret-handling contract as well as successful authentication:

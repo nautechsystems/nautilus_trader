@@ -46,7 +46,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, create_standard_nautilus_headers},
+    http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -429,6 +429,7 @@ impl BybitRawHttpClient {
         proxy_url: Option<String>,
     ) -> Result<HttpClient, BybitHttpError> {
         HttpClient::builder()
+            .redirect_policy(HttpRedirectPolicy::Reject)
             .headers(Self::default_headers())
             .header_keys(vec![
                 BYBIT_RATE_LIMIT_HEADER.to_string(),
@@ -4958,9 +4959,24 @@ impl BybitHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = BybitRawHttpClient::build_http_client(3, None).unwrap();
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_client_creation() {

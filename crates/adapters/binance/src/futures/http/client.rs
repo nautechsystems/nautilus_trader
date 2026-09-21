@@ -42,7 +42,9 @@ use nautilus_model::{
     types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
+    },
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -232,6 +234,7 @@ impl BinanceRawFuturesHttpClient {
         let headers = Self::default_headers(&credential);
 
         let client = HttpClient::builder()
+            .redirect_policy(HttpRedirectPolicy::Reject)
             .headers(headers)
             .header_keys(vec![
                 BINANCE_API_KEY_HEADER.to_string(),
@@ -3529,11 +3532,37 @@ pub(crate) fn order_type_to_binance_futures(
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_network::http::{HttpStatus, StatusCode};
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use tokio_util::bytes::Bytes;
 
     use super::*;
     use crate::common::enums::BinanceTradingStatus;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = BinanceRawFuturesHttpClient::new(
+            BinanceProductType::UsdM,
+            BinanceEnvironment::Testnet,
+            Some("key".into()),
+            Some("secret".into()),
+            None,
+            None,
+            Some(3),
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_rate_limit_config_usdm_has_request_weight_and_orders() {

@@ -48,6 +48,8 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed adapter HTTP redirect leaks of credentials and signed payloads, thanks for reporting @seungpyoson
+
 ### Fixes
 
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale

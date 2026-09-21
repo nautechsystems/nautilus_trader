@@ -40,7 +40,9 @@ use alloy::{
     sol_types::eip712_domain,
 };
 use alloy_primitives::{Address, B256, keccak256};
-use nautilus_network::http::{HttpClient, Method, create_standard_nautilus_headers};
+use nautilus_network::http::{
+    HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -260,6 +262,7 @@ async fn submit_builder_fee_update(
     let limiter = shared_rest_limiter(environment, url, None);
 
     let client = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
         .rate_limiters(Vec::new())
         .timeout_secs(60)
         .build()

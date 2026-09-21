@@ -56,7 +56,7 @@ use nautilus_model::{
     types::{MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, StatusCode, USER_AGENT},
+    http::{HttpClient, HttpRedirectPolicy, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -272,6 +272,7 @@ impl BitmexRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas(
                     max_requests_per_second,
@@ -2853,6 +2854,7 @@ fn account_id_from_margins(margins: &[BitmexMargin]) -> anyhow::Result<Option<Ac
 mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::enums::OrderStatus;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use serde_json::json;
 
@@ -2933,6 +2935,34 @@ mod tests {
 
         report.contingency_type = contingency_type;
         report
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = BitmexRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "http://localhost".into(),
+            3,
+            0,
+            1,
+            1,
+            10000,
+            10,
+            120,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]
