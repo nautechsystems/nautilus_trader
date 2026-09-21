@@ -59,8 +59,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            CancelOrder, ExecutionReport, GenerateOrderStatusReports,
-            GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport,
+            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
         },
         system::SocketState,
     },
@@ -102,6 +102,9 @@ struct TestServerState {
     empty_orders_realtime: Arc<AtomicBool>,
     rejected_orders_realtime: Arc<AtomicBool>,
     orders_realtime_requests: Arc<AtomicUsize>,
+    cancel_order_ret_code: Arc<AtomicUsize>,
+    cancel_order_requests: Arc<AtomicUsize>,
+    cancel_all_requests: Arc<AtomicUsize>,
     position_requests: Arc<AtomicUsize>,
     wallet_balance_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
@@ -127,6 +130,9 @@ impl Default for TestServerState {
             empty_orders_realtime: Arc::new(AtomicBool::new(false)),
             rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
+            cancel_order_ret_code: Arc::new(AtomicUsize::new(0)),
+            cancel_order_requests: Arc::new(AtomicUsize::new(0)),
+            cancel_all_requests: Arc::new(AtomicUsize::new(0)),
             position_requests: Arc::new(AtomicUsize::new(0)),
             wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -363,7 +369,11 @@ async fn handle_post_order(headers: HeaderMap, body: Bytes) -> impl IntoResponse
     .into_response()
 }
 
-async fn handle_cancel_order(headers: HeaderMap, _body: Bytes) -> impl IntoResponse {
+async fn handle_cancel_order(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    _body: Bytes,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -377,6 +387,20 @@ async fn handle_cancel_order(headers: HeaderMap, _body: Bytes) -> impl IntoRespo
             .into_response();
     }
 
+    state.cancel_order_requests.fetch_add(1, Ordering::Relaxed);
+
+    let ret_code = state.cancel_order_ret_code.load(Ordering::Relaxed);
+
+    if ret_code != 0 {
+        return Json(json!({
+            "retCode": ret_code,
+            "retMsg": format!("Test venue rejection {ret_code}"),
+            "result": {},
+            "time": 1704470400123i64
+        }))
+        .into_response();
+    }
+
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
@@ -384,6 +408,36 @@ async fn handle_cancel_order(headers: HeaderMap, _body: Bytes) -> impl IntoRespo
             "orderId": "test-order-id-12345",
             "orderLinkId": "test-order"
         },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+async fn handle_cancel_all_orders(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    _body: Bytes,
+) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    state.cancel_all_requests.fetch_add(1, Ordering::Relaxed);
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": { "list": [] },
         "retExtInfo": {},
         "time": 1704470400123i64
     }))
@@ -688,6 +742,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/execution/list", get(handle_get_empty_report_list))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
+        .route("/v5/order/cancel-all", post(handle_cancel_all_orders))
         .route("/v5/position/switch-mode", post(handle_switch_mode))
         .route("/v5/position/set-leverage", post(handle_set_leverage))
         .route("/v5/account/set-margin-mode", post(handle_set_margin_mode))
@@ -1971,6 +2026,145 @@ async fn test_exec_client_demo_cancel_post_lookup_failure_does_not_reject() {
     client.cancel_order(cmd).unwrap();
 
     assert_no_cancel_rejected(&mut rx, Duration::from_millis(300)).await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_batch_cancel_failure_preserves_owning_strategies() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    state.cancel_order_ret_code.store(110001, Ordering::Relaxed);
+
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+    let cancels: Vec<CancelOrder> = ["S-001", "S-002"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, owner)| {
+            CancelOrder::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from(owner),
+                instrument_id,
+                ClientOrderId::from(format!("O-DEMO-BATCH-{index}")),
+                Some(VenueOrderId::from(format!("venue-batch-{index}"))),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        })
+        .collect();
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            cancels.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut actual = Vec::new();
+
+    for _ in &cancels {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for OrderCancelRejected")
+            .expect("channel closed");
+
+        match event {
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                actual.push((rejected.client_order_id, rejected.strategy_id));
+            }
+            event => panic!("expected OrderCancelRejected, was {event:?}"),
+        }
+    }
+
+    let mut expected: Vec<_> = cancels
+        .iter()
+        .map(|cancel| (cancel.client_order_id, cancel.strategy_id))
+        .collect();
+    actual.sort();
+    expected.sort();
+
+    assert_eq!(actual, expected);
+    assert_eq!(state.cancel_order_requests.load(Ordering::Relaxed), 2);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_sided_cancel_all_with_empty_cache_sends_nothing() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    state.empty_orders_realtime.store(true, Ordering::Relaxed);
+
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+    assert!(
+        cache
+            .borrow()
+            .orders_open(None, Some(&instrument_id), None, None, None)
+            .is_empty()
+    );
+
+    let cancel_all_before = state.cancel_all_requests.load(Ordering::Relaxed);
+    let cancel_before = state.cancel_order_requests.load(Ordering::Relaxed);
+
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            Some(OrderSide::Buy),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    assert_no_cancel_rejected(&mut rx, Duration::from_millis(300)).await;
+    assert_eq!(
+        state.cancel_all_requests.load(Ordering::Relaxed),
+        cancel_all_before
+    );
+    assert_eq!(
+        state.cancel_order_requests.load(Ordering::Relaxed),
+        cancel_before
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
 }

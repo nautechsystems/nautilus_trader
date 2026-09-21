@@ -2039,11 +2039,46 @@ impl ExecutionClient for BybitExecutionClient {
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         if cmd.order_side.is_some() {
-            log::warn!(
-                "Bybit does not support order_side filtering for cancel all orders; \
-                ignoring order_side={:?} and canceling all orders",
-                cmd.order_side,
-            );
+            // Bybit cancel-all has no side parameter, so select matching open
+            // orders and cancel their explicit IDs through the batch path.
+            let cancels: Vec<CancelOrder> = {
+                let cache = self.core.cache();
+                cache
+                    .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
+                    .iter()
+                    .map(|order| CancelOrder {
+                        trader_id: order.trader_id(),
+                        client_id: cmd.client_id,
+                        strategy_id: order.strategy_id(),
+                        instrument_id: order.instrument_id(),
+                        client_order_id: order.client_order_id(),
+                        venue_order_id: order.venue_order_id(),
+                        command_id: cmd.command_id,
+                        ts_init: cmd.ts_init,
+                        params: cmd.params.clone(),
+                        correlation_id: cmd.correlation_id,
+                        causation_id: cmd.causation_id,
+                    })
+                    .collect()
+            };
+
+            if cancels.is_empty() {
+                log::debug!("No open orders to cancel for {}", cmd.instrument_id);
+                return Ok(());
+            }
+
+            return self.batch_cancel_orders(BatchCancelOrders {
+                trader_id: cmd.trader_id,
+                client_id: cmd.client_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                cancels,
+                command_id: cmd.command_id,
+                ts_init: cmd.ts_init,
+                params: cmd.params,
+                correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
+            });
         }
 
         let instrument_id = cmd.instrument_id;
@@ -2078,7 +2113,6 @@ impl ExecutionClient for BybitExecutionClient {
 
         let instrument_id = cmd.instrument_id;
         let product_type = self.get_product_type_for_instrument(instrument_id);
-        let strategy_id = cmd.strategy_id;
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -2089,11 +2123,11 @@ impl ExecutionClient for BybitExecutionClient {
             let cancels: Vec<_> = cmd
                 .cancels
                 .iter()
-                .map(|c| (c.client_order_id, c.venue_order_id))
+                .map(|c| (c.strategy_id, c.client_order_id, c.venue_order_id))
                 .collect();
 
             self.spawn_task("batch_cancel_orders_http", async move {
-                for (client_order_id, venue_order_id) in cancels {
+                for (strategy_id, client_order_id, venue_order_id) in cancels {
                     if let Err(e) = http_client
                         .cancel_order(
                             account_id,
@@ -2138,6 +2172,7 @@ impl ExecutionClient for BybitExecutionClient {
         let raw_symbol = Ustr::from(extract_raw_symbol(instrument_id.symbol.as_str()));
 
         let mut cancel_params = Vec::with_capacity(cmd.cancels.len());
+        let strategy_ids: Vec<_> = cmd.cancels.iter().map(|c| c.strategy_id).collect();
         let client_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.client_order_id).collect();
         let venue_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.venue_order_id).collect();
 
@@ -2184,8 +2219,10 @@ impl ExecutionClient for BybitExecutionClient {
                 let reason = e.to_string();
                 let ts_event = clock.get_time_ns();
 
-                for (client_order_id, venue_order_id) in
-                    client_order_ids.into_iter().zip(venue_order_ids)
+                for ((strategy_id, client_order_id), venue_order_id) in strategy_ids
+                    .into_iter()
+                    .zip(client_order_ids)
+                    .zip(venue_order_ids)
                 {
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
@@ -2294,7 +2331,10 @@ mod tests {
         clients::ExecutionClient,
         messages::{
             ExecutionEvent,
-            execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList},
+            execution::{
+                BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
+                SubmitOrderList,
+            },
         },
     };
     use nautilus_core::{Params, UUID4};
@@ -2303,7 +2343,7 @@ mod tests {
         enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
         identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
-        orders::{OrderList, builder::OrderTestBuilder},
+        orders::{OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::Quantity,
     };
     use rstest::rstest;
@@ -3039,5 +3079,202 @@ mod tests {
         });
 
         assert_eq!(submit_rejection_reason(&err), None);
+    }
+
+    #[rstest]
+    #[case::buy(Some(OrderSide::Buy), vec![0, 2])]
+    #[case::sell(Some(OrderSide::Sell), vec![1, 3])]
+    #[tokio::test]
+    async fn test_cancel_all_orders_filters_by_side_and_preserves_owners(
+        #[case] order_side: Option<OrderSide>,
+        #[case] expected_indices: Vec<usize>,
+    ) {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let other_instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+        let account_id = client.core.account_id;
+        let mut orders = Vec::new();
+
+        for (index, (instrument, owner, side, open)) in [
+            (instrument_id, "S-001", OrderSide::Buy, true),
+            (instrument_id, "S-001", OrderSide::Sell, true),
+            (instrument_id, "S-002", OrderSide::Buy, true),
+            (instrument_id, "S-002", OrderSide::Sell, true),
+            (other_instrument_id, "S-001", OrderSide::Buy, true),
+            (other_instrument_id, "S-002", OrderSide::Sell, true),
+            (instrument_id, "S-001", OrderSide::Buy, false),
+            (instrument_id, "S-002", OrderSide::Sell, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let client_order_id = ClientOrderId::from(format!("O-CANCEL-ALL-{index}"));
+            let mut builder = OrderTestBuilder::new(OrderType::Limit);
+            let order = builder
+                .instrument_id(instrument)
+                .client_order_id(client_order_id)
+                .strategy_id(StrategyId::from(owner))
+                .side(side)
+                .quantity(Quantity::from("1"))
+                .price(Price::from("10000.00"))
+                .build();
+            let venue_order_id = VenueOrderId::from(format!("BYBIT-{index}"));
+            let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, Some(*BYBIT_CLIENT_ID), false)
+                .unwrap();
+            let order = cache.borrow_mut().update_order(&accepted).unwrap();
+
+            if !open {
+                let canceled =
+                    TestOrderEventStubs::canceled(&order, account_id, Some(venue_order_id));
+                cache.borrow_mut().update_order(&canceled).unwrap();
+            }
+
+            orders.push((order, venue_order_id));
+        }
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                order_side,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        // The closed transport rejects the batch, exposing selection and
+        // event ownership through the existing failure path.
+        let mut actual = Vec::new();
+
+        for _ in &expected_indices {
+            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            match event {
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                }
+                event => panic!("expected OrderCancelRejected, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = expected_indices
+            .iter()
+            .map(|&index| {
+                let (order, _) = &orders[index];
+                (order.client_order_id(), order.strategy_id())
+            })
+            .collect();
+
+        actual.sort();
+        expected.sort();
+
+        assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_cancel_all_orders_with_side_and_empty_cache_sends_nothing() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+                Some(OrderSide::Buy),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        assert!(rx.try_recv().is_err());
+        assert!(client.dispatch_state.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_cancel_orders_failure_preserves_owning_strategies() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+
+        let cancels = ["S-001", "S-002"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, owner)| {
+                CancelOrder::new(
+                    TraderId::from("TESTER-001"),
+                    Some(*BYBIT_CLIENT_ID),
+                    StrategyId::from(owner),
+                    instrument_id,
+                    ClientOrderId::from(format!("O-BATCH-OWNER-{index}")),
+                    Some(VenueOrderId::from(format!("BYBIT-BATCH-{index}"))),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                cancels.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        let mut actual = Vec::new();
+
+        for _ in &cancels {
+            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            match event {
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                }
+                event => panic!("expected OrderCancelRejected, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = cancels
+            .iter()
+            .map(|cancel| (cancel.client_order_id, cancel.strategy_id))
+            .collect();
+
+        actual.sort();
+        expected.sort();
+
+        assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
     }
 }
