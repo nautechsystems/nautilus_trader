@@ -49,6 +49,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
@@ -76,7 +77,7 @@ def test_node_construction() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -171,7 +172,7 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(catalog_path),
         instrument_id=instrument.id,
     )
@@ -198,6 +199,56 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         result = node.run()[0]
 
         assert result.backtest_end == quotes[-1].ts_event + 1_000_000_000
+    finally:
+        node.dispose()
+
+
+def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: Path) -> None:
+    """
+    Test an instrument data config loads definitions across instrument classes.
+    """
+    currency_pair = TestInstrumentProvider.audusd_sim()
+    equity = TestInstrumentProvider.aapl_equity()
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    ParquetDataCatalog(str(catalog_path)).write_instruments([currency_pair, equity])
+    venues = [
+        BacktestVenueConfig(
+            name="SIM",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+        ),
+        BacktestVenueConfig(
+            name="XNAS",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+        ),
+    ]
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.Instrument,
+        catalog_path=str(catalog_path),
+        instrument_ids=[currency_pair.id, equity.id],
+    )
+    config = BacktestRunConfig(
+        venues=venues,
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        cache = node.get_engine_cache(config.id)
+
+        assert sorted(str(instrument_id) for instrument_id in cache.instrument_ids()) == [
+            str(equity.id),
+            str(currency_pair.id),
+        ]
     finally:
         node.dispose()
 
@@ -509,7 +560,7 @@ def test_node_venue_mismatch_raises() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
     )
@@ -530,7 +581,7 @@ def test_node_repr() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -551,7 +602,7 @@ def test_node_dispose() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -616,7 +667,7 @@ def test_node_missing_engine_explains_build_requirement(
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(tmp_path),
         instrument_id=InstrumentId.from_str("AAA.SIM"),
     )
@@ -812,7 +863,7 @@ def _build_component_node(
         book_type="L1_MBP",
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(catalog_path),
         instrument_id=instrument.id,
     )
@@ -842,7 +893,7 @@ def _build_ema_cross_node(
         starting_balances=["1_000_000 USDT"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=catalog_path,
         instrument_id=instrument.id,
     )

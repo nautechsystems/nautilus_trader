@@ -52,6 +52,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
@@ -504,11 +505,11 @@ def test_data_config_minimal() -> None:
     """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=instrument_id,
     )
-    assert config.data_type == "QuoteTick"
+    assert config.data_type == NautilusDataType.QuoteTick
     assert config.catalog_path == "/data/catalog"
     assert config.instrument_id == instrument_id
 
@@ -519,7 +520,7 @@ def test_data_config_requires_identifier() -> None:
     """
     with pytest.raises(ValueError, match="instrument_id"):
         BacktestDataConfig(
-            data_type="QuoteTick",
+            data_type=NautilusDataType.QuoteTick,
             catalog_path="/data/catalog",
         )
 
@@ -530,7 +531,7 @@ def test_data_config_with_instrument_id() -> None:
     """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=instrument_id,
     )
@@ -545,7 +546,7 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
     client_id = ClientId("CATALOG")
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     config = BacktestDataConfig(
-        data_type="Bar",
+        data_type=NautilusDataType.Bar,
         catalog_path="/data/catalog",
         catalog_fs_protocol="s3",
         catalog_fs_storage_options={"access_key": "secret"},
@@ -591,7 +592,7 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     Test data config normalizes compatible timestamp inputs to nanoseconds.
     """
     config = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
         start_time=value,
@@ -602,42 +603,54 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     assert config.end_time == 1_700_000_000_000_000_000
 
 
-@pytest.mark.parametrize(
-    "data_type",
-    ["InvalidType", "nautilus_trader.model:TradeTick", "OrderBook"],
-)
-def test_data_config_invalid_data_type(data_type: str) -> None:
+@pytest.mark.parametrize("data_type", ["QuoteTick", "quotes", "OrderBook", 3])
+def test_data_config_rejects_non_enum_data_type(data_type: object) -> None:
     """
-    Test data config invalid data type.
+    Reject selectors that are not a NautilusDataType value.
     """
-    with pytest.raises(ValueError, match="Invalid `NautilusDataType`") as exc_info:
+    with pytest.raises(TypeError):
         BacktestDataConfig(
             data_type=data_type,
             catalog_path="/data/catalog",
         )
 
-    assert str(exc_info.value) == f"Invalid `NautilusDataType`: '{data_type}'"
 
-
-@pytest.mark.parametrize(
-    ("data_type", "expected"),
-    [("trades", "TradeTick"), ("OrderBookDepth", "OrderBookDepth")],
-)
-def test_data_config_uses_model_data_type(data_type: str, expected: str) -> None:
+def test_data_config_exposes_the_data_type_enum() -> None:
     """
-    Resolve catalog aliases and canonical names through the model selector.
+    Read the data type back as the same enum value.
     """
     config = BacktestDataConfig(
-        data_type=data_type,
+        data_type=NautilusDataType.OrderBookDepth,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
 
-    assert config.data_type == expected
+    assert config.data_type == NautilusDataType.OrderBookDepth
+    assert isinstance(config.data_type, NautilusDataType)
 
 
-@pytest.mark.parametrize("data_type", ["Instrument", "Custom:Signal", "Defi"])
-def test_data_config_rejects_unsupported_family(data_type: str) -> None:
+def test_data_config_accepts_the_instrument_family() -> None:
+    """
+    Select every instrument class through the Instrument data type.
+    """
+    config = BacktestDataConfig(
+        data_type=NautilusDataType.Instrument,
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    )
+
+    assert config.data_type == NautilusDataType.Instrument
+    assert isinstance(config.data_type, NautilusDataType)
+
+
+@pytest.mark.parametrize(
+    "data_type",
+    [
+        NautilusDataType.Custom("Signal"),
+        NautilusDataType("Defi"),
+    ],
+)
+def test_data_config_rejects_unsupported_family(data_type: NautilusDataType) -> None:
     """
     Reject model families that config-driven backtests cannot load.
     """
@@ -658,7 +671,7 @@ def test_data_config_repr() -> None:
     Test data config repr.
     """
     config = BacktestDataConfig(
-        data_type="TradeTick",
+        data_type=NautilusDataType.TradeTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -677,7 +690,7 @@ def test_run_config_auto_id() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -697,7 +710,7 @@ def test_run_config_explicit_id() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -717,7 +730,7 @@ def test_run_config_with_engine() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -741,7 +754,7 @@ def test_run_config_options_are_readable() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -795,7 +808,7 @@ def test_run_config_repr() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -815,7 +828,7 @@ def test_run_config_chunk_size_zero_rejected() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )

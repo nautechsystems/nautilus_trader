@@ -40,7 +40,7 @@ pub(crate) fn arrow_ipc_data_schema(
 }
 
 pub(crate) fn arrow_ipc_record_schema(
-    record_type: &NautilusRecordType,
+    record_type: NautilusRecordType,
     batches: &[RecordBatch],
 ) -> PyResult<Schema> {
     arrow_ipc_schema(batches, || {

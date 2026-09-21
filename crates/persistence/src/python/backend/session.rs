@@ -27,7 +27,7 @@ use nautilus_model::{
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use super::conversion::catalog_data_type_from_py;
+use super::conversion::nautilus_data_type_from_py;
 use crate::backend::session::{DataBackendSession, DataQueryResult, QueryError};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
@@ -77,7 +77,7 @@ impl DataBackendSession {
         sql_query: Option<&str>,
     ) -> PyResult<()> {
         let _guard = slf.runtime.enter();
-        let data_type = catalog_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
 
         slf.add_file_for_data_type(&data_type, table_name, file_path, sql_query)
     }

@@ -24,6 +24,10 @@ Released on TBD (UTC).
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
 - Changed Rust `ExecutionEngine::register_client` to require explicit venue or default routing setup for commands that relied on automatic venue routing; live-node and backtest automatic routing remain unchanged
+- Changed `ParquetDataCatalog` file operations to take a `data_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings
+- Changed `ParquetDataCatalog.query` to take a `NautilusDataType` in place of a directory-name string
+- Changed `ParquetDataCatalog.delete_data_range` to take a `NautilusDataType`, excluding record selectors and rejecting instrument definitions
+- Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string, where `Instrument` loads every instrument class
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`

@@ -26,8 +26,9 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDepth, QuoteTick, TradeTick},
+    data::{Bar, Data, NautilusDataType, NautilusRecordType, OrderBookDepth, QuoteTick, TradeTick},
     events::AccountState,
+    instruments::NautilusInstrumentType,
 };
 use nautilus_persistence::{
     backend::{
@@ -37,6 +38,7 @@ use nautilus_persistence::{
         },
         session::DataBackendSession,
     },
+    catalog::types::CatalogDataType,
     test_data::RustTestCustomData,
 };
 use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
@@ -81,7 +83,14 @@ fn runtime_queries_reject_legacy_catalogs(
             .query::<QuoteTick>(None, None, None, predicate, None, true)
             .map(|_| ()),
         "records" => catalog
-            .query_record_batches("account_state", None, None, None, predicate, true)
+            .query_record_batches(
+                &NautilusRecordType::AccountState.into(),
+                None,
+                None,
+                None,
+                predicate,
+                true,
+            )
             .map(|_| ()),
         "instruments" => catalog.query_instruments(None).map(|_| ()),
         "instruments_sql" => catalog
@@ -193,7 +202,14 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         Value::Array(vec![expected["instrument"].clone()])
     );
     let batches = catalog
-        .query_record_batches("account_state", None, None, None, None, true)
+        .query_record_batches(
+            &NautilusRecordType::AccountState.into(),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
         .unwrap();
     let accounts = batches
         .into_iter()
@@ -307,12 +323,28 @@ fn migration_rejects_nonempty_destination() {
 }
 
 #[rstest]
-#[case::canonical("quotes", "quotes")]
-#[case::legacy_quote("quote_tick", "quotes")]
-#[case::legacy_depth("order_book_depth10", "order_book_depths")]
-#[case::instrument("currency_pair", "currency_pair")]
-#[case::legacy_custom("custom_Feed", "custom/Feed")]
-fn migration_preserves_empty_coverage_files(#[case] source_type: &str, #[case] target_type: &str) {
+#[case::canonical("quotes", "quotes", NautilusDataType::QuoteTick.into())]
+#[case::legacy_quote("quote_tick", "quotes", NautilusDataType::QuoteTick.into())]
+#[case::legacy_depth(
+    "order_book_depth10",
+    "order_book_depths",
+    NautilusDataType::OrderBookDepth.into()
+)]
+#[case::instrument(
+    "currency_pair",
+    "currency_pair",
+    NautilusInstrumentType::CurrencyPair.into()
+)]
+#[case::legacy_custom(
+    "custom_Feed",
+    "custom/Feed",
+    NautilusDataType::Custom { type_name: "Feed".to_string() }.into()
+)]
+fn migration_preserves_empty_coverage_files(
+    #[case] source_type: &str,
+    #[case] target_type: &str,
+    #[case] data_type: CatalogDataType,
+) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
     let target = temporary.path().join("target");
@@ -336,7 +368,7 @@ fn migration_preserves_empty_coverage_files(#[case] source_type: &str, #[case] t
     let catalog = ParquetDataCatalog::new(&target, None, None, None, None);
     assert_eq!(
         catalog
-            .get_intervals(target_type, Some("AUDUSD.SIM"))
+            .get_intervals(&data_type, Some("AUDUSD.SIM"))
             .unwrap(),
         vec![(1_700_000_000_000_000_123, 1_700_000_000_000_000_126)]
     );

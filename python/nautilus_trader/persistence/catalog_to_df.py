@@ -79,7 +79,8 @@ def query_catalog(
     catalog : ParquetDataCatalog
         The Rust-backed catalog instance to query.
     data_type : NautilusDataType, NautilusRecordType, or NautilusInstrumentType
-        The typed Nautilus catalog family to query.
+        The typed Nautilus catalog family to query. The Instrument data type reads every
+        instrument class; NautilusInstrumentType reads one class.
     output : CatalogOutput, default CatalogOutput.PANDAS
         The Python result representation. Polars is imported lazily.
     identifiers : list[str], optional

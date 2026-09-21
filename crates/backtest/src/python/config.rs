@@ -21,7 +21,10 @@ use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
-use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    python::{to_pytype_err, to_pyvalue_err},
+};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
@@ -33,9 +36,10 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::margin_model::MarginModelAny,
-    data::{BarSpecification, NautilusDataType},
+    data::BarSpecification,
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
+    python::data::PyNautilusDataType,
     types::Currency,
 };
 use nautilus_persistence::{
@@ -677,7 +681,10 @@ impl BacktestDataConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        data_type: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         catalog_path: String,
         catalog_fs_protocol: Option<String>,
         catalog_fs_storage_options: Option<HashMap<String, String>>,
@@ -703,8 +710,9 @@ impl BacktestDataConfig {
         catalog_backend: Option<pyo3::PyRef<'_, PyCatalogBackend>>,
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
-            .parse::<NautilusDataType>()
-            .map_err(to_pyvalue_err)?;
+            .extract::<pyo3::PyRef<'_, PyNautilusDataType>>()
+            .map(|data_type| data_type.inner())
+            .map_err(|_| to_pytype_err("data_type must be NautilusDataType"))?;
         let start_time = timestamp_from_python(start_time)?;
         let end_time = timestamp_from_python(end_time)?;
         Self::builder()
@@ -745,8 +753,8 @@ impl BacktestDataConfig {
 
     #[getter]
     #[pyo3(name = "data_type")]
-    fn py_data_type(&self) -> String {
-        self.data_type().to_string()
+    fn py_data_type(&self) -> PyNautilusDataType {
+        PyNautilusDataType::new(self.data_type().clone())
     }
 
     #[getter]

@@ -39,7 +39,10 @@ use crate::{
             timestamps_to_filename,
         },
     },
-    catalog::types::{CatalogDataType, INSTRUMENT_PATH_PREFIXES, parquet_data_path_prefix},
+    catalog::types::{
+        CatalogDataType, HasCatalogDataType, parquet_catalog_data_type_path_prefixes,
+        parquet_data_path_prefix,
+    },
     common::custom::group_custom_data_by_type,
 };
 
@@ -139,7 +142,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to consolidate.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Optional start timestamp to limit consolidation to files within this range.
     /// - `end`: Optional end timestamp to limit consolidation to files within this range.
@@ -160,6 +163,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -171,11 +175,18 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Consolidate all quote files for a specific instrument
-    /// catalog.consolidate_data("quotes", Some("BTCUSD"), None, None, None, None)?;
+    /// catalog.consolidate_data(
+    ///     &NautilusDataType::QuoteTick.into(),
+    ///     Some("BTCUSD"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// )?;
     ///
     /// // Consolidate trade files within a time range
     /// catalog.consolidate_data(
-    ///     "trades",
+    ///     &NautilusDataType::TradeTick.into(),
     ///     None,
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
@@ -186,6 +197,29 @@ impl ParquetDataCatalog {
     /// ```
     pub fn consolidate_data(
         &mut self,
+        data_type: &CatalogDataType,
+        identifier: Option<&str>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
+    ) -> anyhow::Result<()> {
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
+            self.consolidate_prefix_data(
+                type_name.as_ref(),
+                identifier,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn consolidate_prefix_data(
+        &mut self,
         type_name: &str,
         identifier: Option<&str>,
         start: Option<UnixNanos>,
@@ -193,20 +227,6 @@ impl ParquetDataCatalog {
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
-        if matches!(type_name, "instrument" | "instruments") {
-            for prefix in INSTRUMENT_PATH_PREFIXES {
-                self.consolidate_data(
-                    prefix,
-                    identifier,
-                    start,
-                    end,
-                    ensure_contiguous_files,
-                    deduplicate,
-                )?;
-            }
-            return Ok(());
-        }
-
         let directory = self.make_path(type_name, identifier)?;
         let raw_result = self.consolidate_directory(
             &directory,
@@ -235,7 +255,7 @@ impl ParquetDataCatalog {
                      {type_name}; retrying with typed period consolidation. Raw error: {raw_error}"
                 );
 
-                self.consolidate_data_by_period(
+                self.consolidate_prefix_data_by_period(
                     type_name,
                     identifier,
                     None,
@@ -502,6 +522,7 @@ impl ParquetDataCatalog {
                     .then(|| path_components[data_index + 3..].join("/"));
                 return Ok((Some(format!("custom/{type_name}")), identifier));
             }
+
             let data_cls = second.clone();
             let identifier = if data_index + 2 < path_components.len() {
                 Some(path_components[data_index + 2].clone())
@@ -524,7 +545,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to consolidate.
     /// - `identifier`: Optional instrument ID to consolidate. If None, consolidates all instruments.
     /// - `period_nanos`: The period duration for consolidation in nanoseconds. Default is 1 day (86400000000000).
     ///   Examples: 3600000000000 (1 hour), 604800000000000 (7 days), 1800000000000 (30 minutes)
@@ -544,6 +565,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `data_type` is a record family or an instrument selector, which have no
+    ///   period-typed rewrite; use [`Self::consolidate_data`] for those.
     /// - The directory path cannot be constructed.
     /// - File operations fail.
     /// - Data querying or writing fails.
@@ -566,6 +589,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -578,7 +602,7 @@ impl ParquetDataCatalog {
     ///
     /// // Consolidate all quote files by 1-day periods
     /// catalog.consolidate_data_by_period(
-    ///     "quotes",
+    ///     &NautilusDataType::QuoteTick.into(),
     ///     None,
     ///     Some(86400000000000), // 1 day in nanoseconds
     ///     None,
@@ -588,7 +612,7 @@ impl ParquetDataCatalog {
     ///
     /// // Consolidate specific instrument by 1-hour periods
     /// catalog.consolidate_data_by_period(
-    ///     "trades",
+    ///     &NautilusDataType::TradeTick.into(),
     ///     Some("BTCUSD"),
     ///     Some(3600000000000), // 1 hour in nanoseconds
     ///     Some(UnixNanos::from(1609459200000000000)),
@@ -598,6 +622,38 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn consolidate_data_by_period(
+        &mut self,
+        data_type: &CatalogDataType,
+        identifier: Option<&str>,
+        period_nanos: Option<u64>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ensure_contiguous_files: Option<bool>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(
+                data_type,
+                CatalogDataType::Data(data_type) if *data_type != NautilusDataType::Instrument
+            ),
+            "Period consolidation applies to data families only, not {data_type}; \
+             use consolidate_data",
+        );
+
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
+            self.consolidate_prefix_data_by_period(
+                type_name.as_ref(),
+                identifier,
+                period_nanos,
+                start,
+                end,
+                ensure_contiguous_files,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn consolidate_prefix_data_by_period(
         &mut self,
         type_name: &str,
         identifier: Option<&str>,
@@ -753,7 +809,7 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()>
     where
         T: DecodeTypedFromRecordBatch
-            + CatalogDataType
+            + HasCatalogDataType
             + EncodeToRecordBatch
             + HasTsInit
             + TryFrom<Data>
@@ -765,7 +821,8 @@ impl ParquetDataCatalog {
         // Use get_intervals for cleaner implementation
         let data_type = T::catalog_data_type();
         let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals = self.get_intervals(path_prefix.as_ref(), identifier)?;
+        let intervals =
+            self.get_intervals(&CatalogDataType::Data(data_type.clone()), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate
@@ -910,10 +967,11 @@ impl ParquetDataCatalog {
         let ensure_contiguous_files = ensure_contiguous_files.unwrap_or(true);
 
         // Get intervals for the custom data type
-        let path_prefix = parquet_data_path_prefix(&NautilusDataType::Custom {
+        let data_type = NautilusDataType::Custom {
             type_name: type_name.to_string(),
-        });
-        let intervals = self.get_intervals(path_prefix.as_ref(), identifier)?;
+        };
+        let path_prefix = parquet_data_path_prefix(&data_type);
+        let intervals = self.get_intervals(&CatalogDataType::Data(data_type), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate
@@ -1291,7 +1349,7 @@ mod tests {
     #[case("quotes", true)]
     #[case("bars", true)]
     #[case("instrument_closes", false)]
-    #[case("custom_signal", false)]
+    #[case("custom/signal", false)]
     fn can_rewrite_consolidation_by_period_only_for_supported_types(
         #[case] type_name: &str,
         #[case] expected: bool,

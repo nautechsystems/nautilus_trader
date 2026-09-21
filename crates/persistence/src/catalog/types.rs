@@ -18,6 +18,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
+    fmt::Display,
 };
 
 use nautilus_core::{Params, UnixNanos};
@@ -40,6 +41,48 @@ use nautilus_model::{
 
 use super::traits::{NautilusDataTypePrefix, NautilusRecordTypePrefix};
 use crate::common::paths::CatalogPathPrefix;
+
+/// Identifies the stored family a catalog operation targets: a data type, a record type, or an
+/// instrument class.
+///
+/// `Data(Instrument)` is the aggregate instrument family: it addresses every instrument class the
+/// backend stores, and each backend resolves the per-class fan-out itself. `Instrument(class)`
+/// addresses one class. Every value of the three families is a valid selector, so `From` and
+/// `Into` are the only construction paths.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CatalogDataType {
+    Data(NautilusDataType),
+    Record(NautilusRecordType),
+    Instrument(NautilusInstrumentType),
+}
+
+impl Display for CatalogDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Data(data_type) => Display::fmt(data_type, f),
+            Self::Record(record_type) => Display::fmt(record_type, f),
+            Self::Instrument(instrument_type) => Display::fmt(instrument_type, f),
+        }
+    }
+}
+
+impl From<NautilusDataType> for CatalogDataType {
+    fn from(value: NautilusDataType) -> Self {
+        Self::Data(value)
+    }
+}
+
+impl From<NautilusRecordType> for CatalogDataType {
+    fn from(value: NautilusRecordType) -> Self {
+        Self::Record(value)
+    }
+}
+
+impl From<NautilusInstrumentType> for CatalogDataType {
+    fn from(value: NautilusInstrumentType) -> Self {
+        Self::Instrument(value)
+    }
+}
 
 /// Backend-native point in catalog history used by a query or restore.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -87,6 +130,9 @@ pub struct CatalogQuery {
     pub params: Option<Params>,
     /// Catalog point to read.
     pub as_of: CatalogAsOf,
+    /// Instrument class to read when `data_type` is the instrument family, or every class when
+    /// `None`.
+    pub instrument_type: Option<NautilusInstrumentType>,
 }
 
 impl CatalogQuery {
@@ -101,7 +147,18 @@ impl CatalogQuery {
             where_clause: None,
             params: None,
             as_of: CatalogAsOf::Latest,
+            instrument_type: None,
         }
+    }
+
+    /// Returns the query restricted to one instrument class.
+    #[must_use]
+    pub const fn with_instrument_type(
+        mut self,
+        instrument_type: Option<NautilusInstrumentType>,
+    ) -> Self {
+        self.instrument_type = instrument_type;
+        self
     }
 
     /// Returns the query restricted to `identifiers`.
@@ -225,6 +282,8 @@ pub struct CatalogInstrumentQuery {
     pub end: Option<UnixNanos>,
     /// Backend SQL predicate applied alongside the identifier and range filters.
     pub where_clause: Option<String>,
+    /// Instrument class to read, or every class when `None`.
+    pub instrument_type: Option<NautilusInstrumentType>,
 }
 
 impl CatalogInstrumentQuery {
@@ -236,6 +295,7 @@ impl CatalogInstrumentQuery {
             start: None,
             end: None,
             where_clause: None,
+            instrument_type: None,
         }
     }
 
@@ -260,9 +320,19 @@ impl CatalogInstrumentQuery {
         self.where_clause = where_clause;
         self
     }
+
+    /// Returns the query restricted to one instrument class.
+    #[must_use]
+    pub const fn with_instrument_type(
+        mut self,
+        instrument_type: Option<NautilusInstrumentType>,
+    ) -> Self {
+        self.instrument_type = instrument_type;
+        self
+    }
 }
 
-/// Returns the shared catalog prefix for a Parquet data type.
+/// Returns the Parquet catalog prefix for a data type.
 #[must_use]
 pub fn parquet_data_path_prefix(data_type: &NautilusDataType) -> Cow<'static, str> {
     data_path_prefix(data_type)
@@ -423,15 +493,53 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
     }
 }
 
+/// Returns the SQL-safe table-name stem identifying a catalog type.
+///
+/// The aggregate instrument family spans several class directories, so its stem is the shared
+/// `instruments` name rather than any one of them. The stem names registered query tables and
+/// never addresses storage; use [`parquet_catalog_data_type_path_prefixes`] for directories.
+#[must_use]
+pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<'static, str> {
+    match data_type {
+        CatalogDataType::Data(data_type) => parquet_data_path_prefix(data_type),
+        CatalogDataType::Record(record_type) => record_path_prefix(record_type),
+        CatalogDataType::Instrument(instrument_type) => {
+            Cow::Borrowed(instrument_path_prefix(instrument_type))
+        }
+    }
+}
+
+/// Returns every Parquet directory prefix a catalog type covers.
+///
+/// Parquet stores each instrument class in its own top-level directory, so the aggregate
+/// instrument family covers every class directory and an instrument class covers one. Every
+/// other family covers exactly one directory.
+#[must_use]
+pub fn parquet_catalog_data_type_path_prefixes(
+    data_type: &CatalogDataType,
+) -> Vec<Cow<'static, str>> {
+    match data_type {
+        CatalogDataType::Data(NautilusDataType::Instrument) => INSTRUMENT_PATH_PREFIXES
+            .iter()
+            .map(|prefix| Cow::Borrowed(*prefix))
+            .collect(),
+        CatalogDataType::Data(data_type) => vec![parquet_data_path_prefix(data_type)],
+        CatalogDataType::Record(record_type) => vec![record_path_prefix(record_type)],
+        CatalogDataType::Instrument(instrument_type) => {
+            vec![Cow::Borrowed(instrument_path_prefix(instrument_type))]
+        }
+    }
+}
+
 /// Maps a Rust built-in data type to its semantic catalog data type.
-pub trait CatalogDataType {
+pub trait HasCatalogDataType {
     fn catalog_data_type() -> NautilusDataType;
 }
 
 macro_rules! impl_catalog_data_families {
     ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
         $(
-            impl CatalogDataType for $type {
+            impl HasCatalogDataType for $type {
                 fn catalog_data_type() -> NautilusDataType {
                     NautilusDataType::$variant
                 }
@@ -599,6 +707,65 @@ mod tests {
         assert_eq!(
             data_path_prefix(&NautilusDataType::OrderBookDepth).as_ref(),
             "order_book_depths"
+        );
+    }
+
+    #[rstest]
+    fn catalog_data_type_converts_from_every_selector_family() {
+        assert_eq!(
+            CatalogDataType::from(NautilusDataType::QuoteTick),
+            CatalogDataType::Data(NautilusDataType::QuoteTick)
+        );
+        assert_eq!(
+            CatalogDataType::from(NautilusDataType::Instrument),
+            CatalogDataType::Data(NautilusDataType::Instrument)
+        );
+        assert_eq!(
+            CatalogDataType::from(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }),
+            CatalogDataType::Data(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            })
+        );
+        assert_eq!(
+            CatalogDataType::from(NautilusRecordType::AccountState),
+            CatalogDataType::Record(NautilusRecordType::AccountState)
+        );
+        assert_eq!(
+            CatalogDataType::from(NautilusInstrumentType::Equity),
+            CatalogDataType::Instrument(NautilusInstrumentType::Equity)
+        );
+    }
+
+    #[rstest]
+    fn parquet_prefixes_fan_out_only_for_the_aggregate_instrument_family() {
+        assert_eq!(
+            parquet_catalog_data_type_path_prefixes(&CatalogDataType::Data(
+                NautilusDataType::Instrument
+            )),
+            INSTRUMENT_PATH_PREFIXES
+                .iter()
+                .map(|prefix| Cow::Borrowed(*prefix))
+                .collect::<Vec<Cow<'static, str>>>()
+        );
+        assert_eq!(
+            parquet_catalog_data_type_path_prefixes(&CatalogDataType::Instrument(
+                NautilusInstrumentType::Equity
+            )),
+            vec![Cow::Borrowed("equity")]
+        );
+        assert_eq!(
+            parquet_catalog_data_type_path_prefixes(&CatalogDataType::Data(
+                NautilusDataType::QuoteTick
+            )),
+            vec![Cow::Borrowed("quotes")]
+        );
+        assert_eq!(
+            parquet_catalog_data_type_path_prefixes(&CatalogDataType::Record(
+                NautilusRecordType::AccountState
+            )),
+            vec![Cow::Borrowed("account_state")]
         );
     }
 

@@ -22,19 +22,24 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
-    python::data::{PyNautilusDataType, PyNautilusRecordType},
+    python::{
+        data::{PyNautilusDataType, PyNautilusRecordType},
+        instruments::PyNautilusInstrumentType,
+    },
 };
 use pyo3::{
+    Borrowed,
     exceptions::PyIOError,
     prelude::*,
     types::{PyDict, PyList},
 };
+use pyo3_stub_gen::impl_stub_type;
 use serde_json::json;
 
 use crate::{
     catalog::{
         traits::{CatalogMetadata, NautilusDataTypePrefix, NautilusRecordTypePrefix},
-        types::data_type_from_data_path_prefix,
+        types::{CatalogDataType, data_type_from_data_path_prefix},
     },
     writer::filter::WriterRecordFilter,
 };
@@ -66,13 +71,58 @@ pub(crate) fn catalog_record_type_from_py(
         .map_err(|_| to_pytype_err("record_type must be NautilusRecordType"))
 }
 
-pub(crate) fn catalog_data_type_from_py(
-    data_type: &Bound<'_, PyAny>,
-) -> PyResult<NautilusDataType> {
+/// Extracts a [`NautilusDataType`] selector from its Python wrapper.
+///
+/// # Errors
+///
+/// Returns a `TypeError` if `data_type` is not a `NautilusDataType`.
+pub fn nautilus_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<NautilusDataType> {
     data_type
         .extract::<PyRef<'_, PyNautilusDataType>>()
         .map(|data_type| data_type.inner())
         .map_err(|_| to_pytype_err("data_type must be NautilusDataType"))
+}
+
+/// Catalog type argument of the Python bindings.
+///
+/// Extraction accepts `NautilusDataType`, `NautilusRecordType`, and `NautilusInstrumentType`, so
+/// the generated stubs name that union rather than `typing.Any`.
+pub struct PyCatalogDataType(CatalogDataType);
+
+impl PyCatalogDataType {
+    pub(crate) fn into_inner(self) -> CatalogDataType {
+        self.0
+    }
+}
+
+impl<'py> FromPyObject<'_, 'py> for PyCatalogDataType {
+    type Error = PyErr;
+
+    fn extract(data_type: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        catalog_data_type_from_py(&data_type).map(Self)
+    }
+}
+
+impl_stub_type!(
+    PyCatalogDataType = PyNautilusDataType | PyNautilusRecordType | PyNautilusInstrumentType
+);
+
+pub(crate) fn catalog_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<CatalogDataType> {
+    if let Ok(data_type) = data_type.extract::<PyRef<'_, PyNautilusDataType>>() {
+        return Ok(CatalogDataType::from(data_type.inner()));
+    }
+
+    if let Ok(record_type) = data_type.extract::<PyRef<'_, PyNautilusRecordType>>() {
+        return Ok(CatalogDataType::Record(record_type.inner()));
+    }
+
+    if let Ok(instrument_type) = data_type.extract::<PyRef<'_, PyNautilusInstrumentType>>() {
+        return Ok(CatalogDataType::Instrument(instrument_type.inner()));
+    }
+
+    Err(to_pytype_err(
+        "data_type must be NautilusDataType, NautilusRecordType, or NautilusInstrumentType",
+    ))
 }
 
 pub(crate) fn write_record_params_from_py(

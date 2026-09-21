@@ -65,8 +65,8 @@ impl PyNautilusInstrumentType {
     }
 
     #[must_use]
-    pub fn inner(&self) -> NautilusInstrumentType {
-        self.inner.clone()
+    pub const fn inner(&self) -> NautilusInstrumentType {
+        self.inner
     }
 }
 

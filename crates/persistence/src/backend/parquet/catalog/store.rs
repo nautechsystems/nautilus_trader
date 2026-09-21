@@ -29,7 +29,10 @@ use super::{
     is_remote_uri_scheme, make_object_store_path, query_intersects_filename, remote_full_uri,
     remote_store_root_url, timestamps_to_filename, urisafe_instrument_id,
 };
-use crate::common::paths::normalize_path_separators;
+use crate::{
+    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
+    common::paths::normalize_path_separators,
+};
 
 impl ParquetDataCatalog {
     /// Extends the timestamp range of an existing Parquet file by renaming it.
@@ -45,7 +48,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Start timestamp of the new range to extend to.
     /// - `end`: End timestamp of the new range to extend to.
@@ -67,6 +70,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -79,7 +83,7 @@ impl ParquetDataCatalog {
     ///
     /// // Extend a file's range backwards or forwards
     /// catalog.extend_file_name(
-    ///     "quotes",
+    ///     &NautilusDataType::QuoteTick.into(),
     ///     Some("BTC/USD.SIM"),
     ///     UnixNanos::from(1609459200000000000),
     ///     UnixNanos::from(1609545600000000000),
@@ -88,14 +92,38 @@ impl ParquetDataCatalog {
     /// ```
     pub fn extend_file_name(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, identifier)?;
+        let prefixes = parquet_catalog_data_type_path_prefixes(data_type);
 
-        self.extend_file_name_in_directory(&directory, start, end)
+        if let [data_cls] = prefixes.as_slice() {
+            let directory = self.make_path(data_cls.as_ref(), identifier)?;
+            return self.extend_file_name_in_directory(&directory, start, end);
+        }
+
+        // The aggregate instrument family spans every class directory, and one identifier can be
+        // stored under several classes, so extend each directory that already holds it rather
+        // than inventing a class for it.
+        let mut extended = false;
+
+        for data_cls in &prefixes {
+            let directory = self.make_path(data_cls.as_ref(), identifier)?;
+            if !self.get_directory_intervals(&directory)?.is_empty() {
+                self.extend_file_name_in_directory(&directory, start, end)?;
+                extended = true;
+            }
+        }
+        anyhow::ensure!(
+            extended,
+            "Cannot extend file name for {data_type}: no instrument class holds {}; \
+             name the class with a NautilusInstrumentType",
+            identifier.unwrap_or("any identifier"),
+        );
+
+        Ok(())
     }
 
     pub(super) fn extend_file_name_in_directory(
@@ -220,7 +248,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to target.
     ///
     /// # Returns
     ///
@@ -229,7 +257,19 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if directory listing fails.
-    pub fn list_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
+    pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
+        let mut instruments = Vec::new();
+        for data_type in parquet_catalog_data_type_path_prefixes(data_type) {
+            instruments.extend(self.list_prefix_instruments(data_type.as_ref())?);
+        }
+        // The same identifier can live under more than one instrument class.
+        instruments.sort();
+        instruments.dedup();
+
+        Ok(instruments)
+    }
+
+    fn list_prefix_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
         self.execute_async(|| async {
             let prefix = ObjectPath::from(format!("data/{data_type}/"));
             let mut stream = self.object_store.list(Some(&prefix));
@@ -254,7 +294,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "custom/MyType").
+    /// - `data_type`: The stored family to target.
     /// - `identifiers`: Optional list of identifiers to filter by.
     /// - `start`: Optional start timestamp to filter files by their time range.
     /// - `end`: Optional end timestamp to filter files by their time range.
@@ -268,7 +308,27 @@ impl ParquetDataCatalog {
     /// Returns an error if directory listing or file filtering fails.
     pub fn list_parquet_files_with_criteria(
         &self,
-        data_type: &str,
+        data_type: &CatalogDataType,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut all_files = Vec::new();
+        for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
+            all_files.extend(self.list_prefix_files_with_criteria(
+                data_cls.as_ref(),
+                identifiers,
+                start,
+                end,
+            )?);
+        }
+
+        Ok(all_files)
+    }
+
+    fn list_prefix_files_with_criteria(
+        &self,
+        data_cls: &str,
         identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -278,7 +338,7 @@ impl ParquetDataCatalog {
         let start_u64 = start.map(|s| s.as_u64());
         let end_u64 = end.map(|e| e.as_u64());
 
-        let base_dir = self.make_path(data_type, None)?;
+        let base_dir = self.make_path(data_cls, None)?;
 
         // Use recursive listing to match Python's glob behavior
         let list_result = self.list_objects(&base_dir)?;
@@ -494,8 +554,7 @@ impl ParquetDataCatalog {
         Ok(path)
     }
 
-    /// Builds the v1-compatible directory path for custom data:
-    /// `data/custom_{snake_type_name}[/{identifier}]`.
+    /// Builds the directory path for custom data: `data/custom/{type_name}[/{identifier}]`.
     pub fn make_path_custom_data(
         &self,
         type_name: &str,

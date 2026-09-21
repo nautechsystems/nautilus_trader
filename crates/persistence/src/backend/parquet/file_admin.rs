@@ -20,11 +20,14 @@ use futures::StreamExt;
 use nautilus_core::UnixNanos;
 use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 
-use crate::backend::parquet::{
-    catalog::ParquetDataCatalog,
-    intervals::are_intervals_disjoint,
-    io::min_max_from_parquet_metadata_object_store,
-    paths::{make_object_store_path, timestamps_to_filename},
+use crate::{
+    backend::parquet::{
+        catalog::ParquetDataCatalog,
+        intervals::are_intervals_disjoint,
+        io::min_max_from_parquet_metadata_object_store,
+        paths::{make_object_store_path, timestamps_to_filename},
+    },
+    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
 };
 
 impl ParquetDataCatalog {
@@ -142,7 +145,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -160,6 +163,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -171,19 +175,23 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Reset filenames for all quote files
-    /// catalog.reset_data_file_names("quotes", None)?;
+    /// catalog.reset_data_file_names(&NautilusDataType::QuoteTick.into(), None)?;
     ///
     /// // Reset filenames for a specific instrument's trade files
-    /// catalog.reset_data_file_names("trades", Some("BTCUSD"))?;
+    /// catalog.reset_data_file_names(&NautilusDataType::TradeTick.into(), Some("BTCUSD"))?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn reset_data_file_names(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, identifier)?;
-        self.reset_file_names(&directory)
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
+            let directory = self.make_path(type_name.as_ref(), identifier)?;
+            self.reset_file_names(&directory)?;
+        }
+
+        Ok(())
     }
 
     /// Resets the filenames of Parquet files in a directory to match their actual content timestamps.

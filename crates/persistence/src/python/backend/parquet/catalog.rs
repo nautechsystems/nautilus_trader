@@ -16,7 +16,6 @@
 #![expect(
     clippy::match_same_arms,
     clippy::too_many_arguments,
-    clippy::too_many_lines,
     reason = "PyO3 catalog wrapper mirrors Python API dispatch surface"
 )]
 
@@ -28,12 +27,15 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
-        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
+        TradeTick, close::InstrumentClose,
     },
     python::{
         data::data_to_pyobject,
-        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+        instruments::{
+            PyNautilusInstrumentType, instrument_any_to_pyobject, pyobject_to_instrument_any,
+        },
     },
 };
 use nautilus_serialization::{
@@ -52,16 +54,12 @@ use crate::{
     backend::{migration::build_catalog_migration_plan, parquet::catalog::ParquetDataCatalog},
     catalog::{
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
-        types::CatalogDataType,
+        types::HasCatalogDataType,
     },
-    python::{
-        backend::{
-            arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
-            arrow_record_batches_from_pybytes, catalog_data_type_from_py,
-            catalog_metadata_to_pydict, catalog_record_type_from_py, to_pyio_err,
-            write_record_params_from_py,
-        },
-        config::py_instrument_type_from_any,
+    python::backend::{
+        PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
+        arrow_record_batches_from_pybytes, catalog_metadata_to_pydict, catalog_record_type_from_py,
+        nautilus_data_type_from_py, to_pyio_err, write_record_params_from_py,
     },
 };
 
@@ -78,7 +76,7 @@ fn write_parquet_data<T>(
     label: &str,
 ) -> PyResult<String>
 where
-    T: HasTsInit + EncodeToRecordBatch + CatalogDataType,
+    T: HasTsInit + EncodeToRecordBatch + HasCatalogDataType,
 {
     catalog
         .write_to_parquet(
@@ -102,7 +100,7 @@ fn query_parquet_data<T>(
     error_context: &str,
 ) -> PyResult<Vec<T>>
 where
-    T: DecodeTypedFromRecordBatch + CatalogDataType + HasTsInit,
+    T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
 {
     catalog
         .query_typed_data::<T>(
@@ -545,11 +543,9 @@ impl PyParquetDataCatalog {
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
-        instrument_type: Option<&Bound<'_, PyAny>>,
+        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
     ) -> PyResult<Vec<Py<PyAny>>> {
-        let instrument_type = instrument_type
-            .map(py_instrument_type_from_any)
-            .transpose()?;
+        let instrument_type = instrument_type.map(|instrument_type| instrument_type.inner());
         let rust_instruments = self
             .inner
             .query_instruments_filtered_with_where_and_type(
@@ -584,11 +580,9 @@ impl PyParquetDataCatalog {
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
-        instrument_type: Option<&Bound<'_, PyAny>>,
+        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
     ) -> PyResult<Py<PyBytes>> {
-        let instrument_type = instrument_type
-            .map(py_instrument_type_from_any)
-            .transpose()?;
+        let instrument_type = instrument_type.map(|instrument_type| instrument_type.inner());
         let instruments = py
             .detach(|| {
                 self.inner.query_instruments_filtered_with_where_and_type(
@@ -622,11 +616,9 @@ impl PyParquetDataCatalog {
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
-        instrument_type: Option<&Bound<'_, PyAny>>,
+        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
     ) -> PyResult<Py<PyAny>> {
-        let instrument_type = instrument_type
-            .map(py_instrument_type_from_any)
-            .transpose()?;
+        let instrument_type = instrument_type.map(|instrument_type| instrument_type.inner());
         let instruments = py
             .detach(|| {
                 self.inner.query_instruments_filtered_with_where_and_type(
@@ -648,24 +640,25 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
-    #[pyo3(signature = (data_cls, instrument_id=None, *, start, end))]
+    #[pyo3(signature = (data_type, instrument_id=None, *, start, end))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
         start: u64,
         end: u64,
     ) -> PyResult<()> {
+        let data_type = data_type.into_inner();
         let start_nanos = UnixNanos::from(start);
         let end_nanos = UnixNanos::from(end);
 
         self.inner
-            .extend_file_name(data_cls, instrument_id.as_deref(), start_nanos, end_nanos)
+            .extend_file_name(&data_type, instrument_id.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to extend file name: {e}")))
     }
 
@@ -697,29 +690,30 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type name to consolidate
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
-    #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
+    #[pyo3(signature = (data_type, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &mut self,
-        type_name: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> PyResult<()> {
+        let data_type = data_type.into_inner();
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
             .consolidate_data(
-                type_name,
+                &data_type,
                 instrument_id.as_deref(),
                 start_nanos,
                 end_nanos,
@@ -774,30 +768,31 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars")
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `identifier`: Optional instrument ID to consolidate. If None, consolidates all instruments
     /// - `period_nanos`: Optional period duration for consolidation in nanoseconds. Default is 1 day (86400000000000).
     ///   Examples: 3600000000000 (1 hour), 604800000000000 (7 days), 1800000000000 (30 minutes)
     /// - `start`: Optional start timestamp for consolidation range (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp for consolidation range (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to control file naming strategy
-    #[pyo3(signature = (type_name, identifier=None, period_nanos=None, start=None, end=None, ensure_contiguous_files=None))]
+    #[pyo3(signature = (data_type, identifier=None, period_nanos=None, start=None, end=None, ensure_contiguous_files=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data_by_period(
         &mut self,
-        type_name: &str,
+        data_type: PyCatalogDataType,
         identifier: Option<String>,
         period_nanos: Option<u64>,
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
     ) -> PyResult<()> {
+        let data_type = data_type.into_inner();
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
             .consolidate_data_by_period(
-                type_name,
+                &data_type,
                 identifier.as_deref(),
                 period_nanos,
                 start_nanos,
@@ -818,17 +813,18 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
-    #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[pyo3(signature = (data_type, instrument_id=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
     ) -> PyResult<()> {
+        let data_type = data_type.into_inner();
         self.inner
-            .reset_data_file_names(data_cls, instrument_id.as_deref())
+            .reset_data_file_names(&data_type, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
@@ -873,8 +869,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars")
-    /// - `instrument_id`: Optional instrument ID to delete data for. If None, deletes data across all instruments
+    /// - `data_type`: The data type to delete from.
+    /// - `identifier`: Optional identifier to delete data for. If None, deletes data across all identifiers
     /// - `start`: Optional start timestamp for the deletion range (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp for the deletion range (nanoseconds since Unix epoch)
     ///
@@ -884,20 +880,24 @@ impl PyParquetDataCatalog {
     /// - Files that partially overlap the deletion range are split to preserve data outside the range
     /// - The method ensures data integrity by using atomic operations where possible
     /// - Empty directories are not automatically removed after deletion
-    #[pyo3(signature = (type_name, identifier=None, start=None, end=None))]
+    #[pyo3(signature = (data_type, identifier=None, start=None, end=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn delete_data_range(
         &mut self,
-        type_name: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
     ) -> PyResult<()> {
-        let instrument_id = identifier;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .delete_data_range(type_name, instrument_id.as_deref(), start_nanos, end_nanos)
+            .delete_data_range(&data_type, identifier.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to delete data range: {e}")))
     }
 
@@ -943,10 +943,11 @@ impl PyParquetDataCatalog {
             .map_err(|e| PyIOError::new_err(format!("Failed to write custom data: {e}")))
     }
 
-    /// List all instrument IDs available in the catalog for a given data type.
-    pub fn list_instruments(&self, data_type: &str) -> PyResult<Vec<String>> {
+    /// List all instrument IDs available in the catalog for a given catalog type.
+    pub fn list_instruments(&self, data_type: PyCatalogDataType) -> PyResult<Vec<String>> {
+        let data_type = data_type.into_inner();
         self.inner
-            .list_instruments(data_type)
+            .list_instruments(&data_type)
             .map_err(|e| PyIOError::new_err(format!("Failed to list instruments: {e}")))
     }
 
@@ -966,7 +967,7 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name to query
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
     ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
@@ -976,19 +977,20 @@ impl PyParquetDataCatalog {
     /// # Returns
     ///
     /// Returns a list of file paths matching the criteria.
-    #[pyo3(signature = (data_cls, identifiers=None, start=None, end=None))]
+    #[pyo3(signature = (data_type, identifiers=None, start=None, end=None))]
     pub fn query_files(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
     ) -> PyResult<Vec<String>> {
+        let data_type = data_type.into_inner();
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .query_files(data_cls, identifiers, start_nanos, end_nanos)
+            .query_files(&data_type, identifiers, start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to query files list: {e}")))
     }
 
@@ -997,18 +999,21 @@ impl PyParquetDataCatalog {
     pub fn query_metadata(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Py<PyDict>> {
-        let catalog_data_type = catalog_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         let metadata = py
             .detach(|| {
                 CatalogReader::query_metadata(
                     &mut self.inner,
-                    &CatalogQuery::new(catalog_data_type)
+                    &CatalogQuery::new(data_type)
                         .with_identifiers(identifiers)
                         .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
                         .with_where_clause(where_clause.map(str::to_string)),
@@ -1032,7 +1037,10 @@ impl PyParquetDataCatalog {
     pub fn query_data_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1040,9 +1048,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyBytes>> {
-        let catalog_data_type = catalog_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(catalog_data_type.clone())
+        let query = CatalogQuery::new(data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1053,11 +1061,11 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pybytes(py, &schema, &batches)
     }
@@ -1075,7 +1083,10 @@ impl PyParquetDataCatalog {
     pub fn query_data_arrow_stream(
         &mut self,
         py: Python<'_>,
-        data_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1083,9 +1094,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        let catalog_data_type = catalog_data_type_from_py(data_type)?;
+        let data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(catalog_data_type.clone())
+        let query = CatalogQuery::new(data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1096,11 +1107,11 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pyarrow_stream(py, &schema, batches)
     }
@@ -1110,7 +1121,10 @@ impl PyParquetDataCatalog {
     pub fn write_record_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         data: Vec<u8>,
         identifier: Option<String>,
         params: Option<Py<PyDict>>,
@@ -1136,7 +1150,10 @@ impl PyParquetDataCatalog {
     pub fn query_record_arrow_bytes(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1153,7 +1170,7 @@ impl PyParquetDataCatalog {
                 if display {
                     CatalogReader::query_record_display_batches(
                         &mut self.inner,
-                        &CatalogRecordQuery::new(record_type.clone())
+                        &CatalogRecordQuery::new(record_type)
                             .with_identifier(identifier)
                             .with_range(start_nanos, end_nanos)
                             .with_where_clause(where_clause.map(str::to_string)),
@@ -1161,7 +1178,7 @@ impl PyParquetDataCatalog {
                 } else {
                     CatalogReader::query_record_batches(
                         &mut self.inner,
-                        &CatalogRecordQuery::new(record_type.clone())
+                        &CatalogRecordQuery::new(record_type)
                             .with_identifier(identifier)
                             .with_range(start_nanos, end_nanos)
                             .with_where_clause(where_clause.map(str::to_string)),
@@ -1169,7 +1186,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_record_schema(&record_type, &batches)?;
+        let schema = arrow_ipc_record_schema(record_type, &batches)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
 
         arrow_record_batches_to_pybytes(py, &schema, &batches)
@@ -1188,7 +1205,10 @@ impl PyParquetDataCatalog {
     pub fn query_record_arrow_stream(
         &mut self,
         py: Python<'_>,
-        record_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.NautilusRecordType"))] record_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1205,7 +1225,7 @@ impl PyParquetDataCatalog {
                 if display {
                     CatalogReader::query_record_display_batches(
                         &mut self.inner,
-                        &CatalogRecordQuery::new(record_type.clone())
+                        &CatalogRecordQuery::new(record_type)
                             .with_identifier(identifier)
                             .with_range(start_nanos, end_nanos)
                             .with_where_clause(where_clause.map(str::to_string)),
@@ -1213,7 +1233,7 @@ impl PyParquetDataCatalog {
                 } else {
                     CatalogReader::query_record_batches(
                         &mut self.inner,
-                        &CatalogRecordQuery::new(record_type.clone())
+                        &CatalogRecordQuery::new(record_type)
                             .with_identifier(identifier)
                             .with_range(start_nanos, end_nanos)
                             .with_where_clause(where_clause.map(str::to_string)),
@@ -1221,7 +1241,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
-        let schema = arrow_ipc_record_schema(&record_type, &batches)?;
+        let schema = arrow_ipc_record_schema(record_type, &batches)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
 
         arrow_record_batches_to_pyarrow_stream(py, &schema, batches)
@@ -1233,23 +1253,24 @@ impl PyParquetDataCatalog {
     ///
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
-    #[pyo3(signature = (start, end, data_cls, instrument_id=None))]
+    #[pyo3(signature = (start, end, data_type, instrument_id=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
         end: u64,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
+        let data_type = data_type.into_inner();
         self.inner
-            .get_missing_intervals_for_request(start, end, data_cls, instrument_id.as_deref())
+            .get_missing_intervals_for_request(start, end, &data_type, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
     }
 
@@ -1257,21 +1278,22 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     ///
     /// # Returns
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[pyo3(signature = (data_type, instrument_id=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
+        let data_type = data_type.into_inner();
         self.inner
-            .query_first_timestamp(data_cls, instrument_id.as_deref())
+            .query_first_timestamp(&data_type, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
@@ -1279,21 +1301,22 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     ///
     /// # Returns
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[pyo3(signature = (data_type, instrument_id=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
+        let data_type = data_type.into_inner();
         self.inner
-            .query_last_timestamp(data_cls, instrument_id.as_deref())
+            .query_last_timestamp(&data_type, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query last timestamp: {e}")))
     }
 
@@ -1301,25 +1324,26 @@ impl PyParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data class name
+    /// - `data_type`: The stored family to target (data type, record type, or instrument type).
     /// - `instrument_id`: Optional instrument ID filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
-    #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[pyo3(signature = (data_type, instrument_id=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
-        data_cls: &str,
+        data_type: PyCatalogDataType,
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
+        let data_type = data_type.into_inner();
         self.inner
-            .get_intervals(data_cls, instrument_id.as_deref())
+            .get_intervals(&data_type, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get intervals: {e}")))
     }
 
-    /// Query Parquet files for data matching the given criteria.
+    /// Queries one data family and returns the decoded Python objects.
     #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None, files=None, optimize_file_loading=true))]
     #[expect(
         clippy::too_many_arguments,
@@ -1328,7 +1352,10 @@ impl PyParquetDataCatalog {
     pub fn query(
         &mut self,
         py: Python<'_>,
-        data_type: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
@@ -1336,144 +1363,44 @@ impl PyParquetDataCatalog {
         files: Option<Vec<String>>,
         optimize_file_loading: bool,
     ) -> PyResult<Vec<Py<PyAny>>> {
+        let data_type = nautilus_data_type_from_py(data_type)?;
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
+        macro_rules! typed {
+            ($type:ty) => {
+                query_parquet_data::<$type>(
+                    &mut self.inner,
+                    identifiers,
+                    start,
+                    end,
+                    where_clause,
+                    files,
+                    optimize_file_loading,
+                    "Query failed",
+                )?
+                .into_iter()
+                .map(Data::from)
+                .collect::<Vec<Data>>()
+            };
+        }
+
         let data = match data_type {
-            "quotes" => query_parquet_data::<QuoteTick>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "trades" => query_parquet_data::<TradeTick>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "bars" => query_parquet_data::<Bar>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "order_book_deltas" => query_parquet_data::<OrderBookDelta>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "order_book_depths" => query_parquet_data::<OrderBookDepth>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "index_prices" => query_parquet_data::<IndexPriceUpdate>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "mark_prices" => query_parquet_data::<MarkPriceUpdate>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "option_greeks" => query_parquet_data::<OptionGreeks>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "instrument_status" => query_parquet_data::<InstrumentStatus>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            "instrument_closes" => query_parquet_data::<InstrumentClose>(
-                &mut self.inner,
-                identifiers,
-                start,
-                end,
-                where_clause,
-                files,
-                optimize_file_loading,
-                "Query failed",
-            )?
-            .into_iter()
-            .map(Data::from)
-            .collect(),
-            _ => py
+            NautilusDataType::QuoteTick => typed!(QuoteTick),
+            NautilusDataType::TradeTick => typed!(TradeTick),
+            NautilusDataType::Bar => typed!(Bar),
+            NautilusDataType::OrderBookDelta => typed!(OrderBookDelta),
+            NautilusDataType::OrderBookDepth => typed!(OrderBookDepth),
+            NautilusDataType::IndexPriceUpdate => typed!(IndexPriceUpdate),
+            NautilusDataType::MarkPriceUpdate => typed!(MarkPriceUpdate),
+            NautilusDataType::FundingRateUpdate => typed!(FundingRateUpdate),
+            NautilusDataType::OptionGreeks => typed!(OptionGreeks),
+            NautilusDataType::InstrumentStatus => typed!(InstrumentStatus),
+            NautilusDataType::InstrumentClose => typed!(InstrumentClose),
+            NautilusDataType::Custom { type_name } => py
                 .detach(|| {
                     self.inner.query_custom_data_dynamic(
-                        data_type,
+                        &type_name,
                         identifiers.as_deref(),
                         start_nanos,
                         end_nanos,
@@ -1483,6 +1410,26 @@ impl PyParquetDataCatalog {
                     )
                 })
                 .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?,
+            NautilusDataType::Instrument => {
+                let instruments = py
+                    .detach(|| {
+                        self.inner.query_instruments_filtered_with_where(
+                            identifiers.as_deref(),
+                            start_nanos,
+                            end_nanos,
+                            where_clause,
+                        )
+                    })
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                return instruments
+                    .into_iter()
+                    .map(|instrument| instrument_any_to_pyobject(py, instrument))
+                    .collect();
+            }
+            #[cfg(feature = "defi")]
+            NautilusDataType::Defi => {
+                return Err(to_pytype_err("Defi data is not supported by query"));
+            }
         };
 
         let mut python_objects = Vec::new();

@@ -146,9 +146,10 @@ trades = catalog.query_trade_ticks(
 
 ### Core parameters
 
-- `data_type` is one of `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`, `OrderBookDepth`,
-  `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`, or
-  `InstrumentClose`.
+- `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
+  `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
+  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads every instrument class the
+  catalog holds for the selected identifiers.
 - `catalog_path` identifies the catalog root.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
@@ -167,10 +168,11 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import PriceType
 
 quote_data = BacktestDataConfig(
-    data_type="QuoteTick",
+    data_type=NautilusDataType.QuoteTick,
     catalog_path="/path/to/catalog",
     instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     start_time=1704067200000000000,
@@ -178,7 +180,7 @@ quote_data = BacktestDataConfig(
 )
 
 trade_data = BacktestDataConfig(
-    data_type="TradeTick",
+    data_type=NautilusDataType.TradeTick,
     catalog_path="/path/to/catalog",
     instrument_ids=[
         InstrumentId.from_str("BTC/USD.BINANCE"),
@@ -187,7 +189,7 @@ trade_data = BacktestDataConfig(
 )
 
 bar_data = BacktestDataConfig(
-    data_type="Bar",
+    data_type=NautilusDataType.Bar,
     catalog_path="/path/to/catalog",
     instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST),
@@ -200,7 +202,7 @@ This bar config selects `AAPL.NASDAQ-5-MINUTE-LAST-EXTERNAL`.
 
 ```python
 book_data = BacktestDataConfig(
-    data_type="OrderBookDelta",
+    data_type=NautilusDataType.OrderBookDelta,
     catalog_path="my-bucket/nautilus-data",
     catalog_fs_protocol="s3",
     catalog_fs_rust_storage_options={
@@ -224,11 +226,12 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 
 data_configs = [
     BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/path/to/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     ),
@@ -273,7 +276,7 @@ you need the `files` or `optimize_file_loading` controls:
 
 ```python
 catalog.query(
-    data_type="quotes",
+    data_type=NautilusDataType.QuoteTick,
     identifiers=["EUR/USD.SIM"],
     start=1704067200000000000,
     end=1704153600000000000,
@@ -299,7 +302,11 @@ ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
 
 ## Catalog operations
 
-Catalog operations rename, consolidate, or delete data files.
+Catalog operations rename, consolidate, or delete data files. Each operation takes a type selector:
+a `NautilusDataType`, a `NautilusRecordType`, or a `NautilusInstrumentType`.
+`NautilusDataType.Instrument` covers every instrument class; a `NautilusInstrumentType` targets
+one. `delete_data_range(...)` takes a `NautilusDataType` alone, because only data families support
+ranged deletes.
 
 ### Reset file names
 
@@ -310,8 +317,8 @@ the operation recursively reads the type directory and moves the renamed files i
 
 ```python
 catalog.reset_all_file_names()
-catalog.reset_data_file_names("quotes", "EUR/USD.SIM")
-catalog.reset_data_file_names("trades", "BTC/USD.BINANCE")
+catalog.reset_data_file_names(NautilusDataType.QuoteTick, "EUR/USD.SIM")
+catalog.reset_data_file_names(NautilusDataType.TradeTick, "BTC/USD.BINANCE")
 ```
 
 ### Recover from overlapping file names
@@ -352,7 +359,7 @@ catalog.consolidate_catalog(
 )
 
 catalog.consolidate_data(
-    "quotes",
+    NautilusDataType.QuoteTick,
     instrument_id="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
@@ -366,7 +373,8 @@ optional bounds. Supply an identifier to the data-type method for data partition
 
 The catalog-wide method processes quotes, trades, order book deltas, order book depths, bars, index
 prices, mark prices, instrument closes, and registered custom types. It logs a warning and skips
-other types.
+other types. The data-type method rejects instrument and record selectors, which have no
+period-typed rewrite; use `consolidate_data(...)` for those.
 
 ```python
 DAY_NS = 86_400_000_000_000
@@ -381,13 +389,13 @@ catalog.consolidate_catalog_by_period(
 )
 
 catalog.consolidate_data_by_period(
-    type_name="quotes",
+    data_type=NautilusDataType.QuoteTick,
     identifier="EUR/USD.SIM",
     period_nanos=HOUR_NS,
 )
 
 catalog.consolidate_data_by_period(
-    type_name="trades",
+    data_type=NautilusDataType.TradeTick,
     identifier="EUR/USD.SIM",
     period_nanos=HOUR_NS,
     start=1704067200000000000,
@@ -403,13 +411,13 @@ Delete data within a time range, optionally limited to one data type and instrum
 for data partitioned by instrument.
 
 `delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
-registered custom types. Pass `order_book_depths` for order book depth and `custom/<TypeName>`
-for custom data, such as `custom/MarketTickPython`.
+registered custom types. Pass `NautilusDataType.OrderBookDepth` for order book depth and
+`NautilusDataType.Custom("MarketTickPython")` for a custom data type.
 
 `delete_catalog_range(...)` continues after unsupported directories, logs a warning, and leaves
-their data unchanged. It also skips order book depth directories because their stored path name
-differs from the direct method's type name. Use `delete_data_range(...)` when you need to confirm
-that the requested type is supported.
+their data unchanged. Use `delete_data_range(...)` when you need to confirm that the requested
+type is supported. `NautilusDataType.Instrument` is rejected because instrument definitions do not
+support ranged deletion.
 
 ```python
 catalog.delete_catalog_range(
@@ -420,13 +428,13 @@ catalog.delete_catalog_range(
 catalog.delete_catalog_range(end=1704067200000000000)
 
 catalog.delete_data_range(
-    type_name="quotes",
-    instrument_id="BTC/USD.BINANCE",
+    data_type=NautilusDataType.QuoteTick,
+    identifier="BTC/USD.BINANCE",
 )
 
 catalog.delete_data_range(
-    type_name="trades",
-    instrument_id="EUR/USD.SIM",
+    data_type=NautilusDataType.TradeTick,
+    identifier="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
 )

@@ -719,7 +719,7 @@ fn resolve_candidate_schemas(
         };
 
         if let Ok(record_type) = candidate.target_type_name.parse::<NautilusRecordType>()
-            && let Ok(current) = catalog_record_schema(&record_type)
+            && let Ok(current) = catalog_record_schema(record_type)
         {
             let expected =
                 nautilus_serialization::arrow::schema_without_identifier_column(&current);

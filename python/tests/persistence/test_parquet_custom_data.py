@@ -27,6 +27,7 @@ import pytest
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import RustTestCustomData
@@ -49,7 +50,7 @@ def test_python_custom_data_query_applies_where_clause(tmp_path: Path) -> None:
     catalog.write_custom_data([CustomData(data_type, item) for item in original])
 
     result = catalog.query(
-        "RustTestCustomData",
+        NautilusDataType.Custom("RustTestCustomData"),
         [str(instrument_id)],
         None,
         None,
