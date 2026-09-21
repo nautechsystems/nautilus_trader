@@ -7181,6 +7181,227 @@ async fn test_reconcile_mass_status_creates_position_from_position_report() {
     }
 }
 
+#[rstest]
+#[case::long(PositionSide::Long, Some(dec!(3000.50)), None, dec!(5), 0)]
+#[case::short(PositionSide::Short, Some(dec!(3000.50)), None, dec!(-5), 0)]
+#[case::missing_price(PositionSide::Long, None, None, Decimal::ZERO, 1)]
+#[case::offset_legs(PositionSide::Long, Some(dec!(3000.50)), Some(Quantity::from("3.0")), dec!(2), 2)]
+#[tokio::test]
+async fn test_mass_status_netting_client_recovers_venue_position_id(
+    #[case] side: PositionSide,
+    #[case] avg_px: Option<Decimal>,
+    #[case] opposite_qty: Option<Quantity>,
+    #[case] expected_qty: Decimal,
+    #[case] unresolved_count: usize,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let venue_position_id = PositionId::from("P-VENUE");
+    ctx.add_instrument(test_instrument());
+
+    let mut client = MockExecutionClient::new(Vec::new());
+    client.oms_type = OmsType::Netting;
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+        engine.register_oms_type(StrategyId::external(), OmsType::Unspecified);
+    }
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        side,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        avg_px,
+    )]);
+
+    if let Some(quantity) = opposite_qty {
+        mass_status.add_position_reports(vec![PositionStatusReport::new(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Short,
+            quantity,
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+            Some(PositionId::from("P-VENUE-SHORT")),
+            avg_px,
+        )]);
+    }
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(cache.position(&venue_position_id).is_none());
+    assert_eq!(
+        positions
+            .iter()
+            .map(|p| p.signed_decimal_qty())
+            .sum::<Decimal>(),
+        expected_qty
+    );
+
+    if avg_px.is_some() {
+        assert_eq!(positions.len(), 1);
+        assert_eq!(cache.oms_type(&positions[0].id), Some(OmsType::Netting));
+    }
+
+    assert_eq!(result.unresolved_positions.len(), unresolved_count);
+}
+
+#[rstest]
+#[case::missing_instrument(false, true, true, Some(dec!(3000.50)), "instrument missing from cache")]
+#[case::missing_account(true, false, true, Some(dec!(3000.50)), "account missing from cache")]
+#[case::disabled_generation(true, true, false, Some(dec!(3000.50)), "generate_missing_orders is disabled")]
+#[case::missing_price(true, true, true, None, "missing avg_px_open for position recovery")]
+#[tokio::test]
+async fn test_mass_status_reports_unresolved_position_prerequisite(
+    #[case] has_instrument: bool,
+    #[case] has_account: bool,
+    #[case] generate_missing_orders: bool,
+    #[case] avg_px: Option<Decimal>,
+    #[case] reason: &str,
+    #[values(None, Some(PositionId::from("P-UNRECOVERED")))] position_id: Option<PositionId>,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        generate_missing_orders,
+        ..Default::default()
+    });
+
+    let instrument_id = test_instrument_id();
+    let account_id = test_account_id();
+
+    if !has_account {
+        ctx.cache.borrow_mut().reset();
+    }
+
+    if has_instrument {
+        ctx.add_instrument(test_instrument());
+    }
+
+    let report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        position_id,
+        avg_px,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_position_reports(vec![report]);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert_eq!(
+        result.unresolved_positions,
+        vec![format!(
+            "account={account_id}, instrument={instrument_id}, venue_position_id={position_id:?}, venue_quantity=5.0: {reason}"
+        )],
+    );
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .positions_open_count(None, None, None, None, None),
+        0
+    );
+}
+
+#[rstest]
+#[case::netting(None)]
+#[case::hedging(Some(PositionId::from("P-RECOVERED")))]
+#[tokio::test]
+async fn test_mass_status_synchronized_position_does_not_require_entry_price(
+    #[case] position_id: Option<PositionId>,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let mut report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        position_id,
+        Some(dec!(3000.50)),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_position_reports(vec![report.clone()]);
+    let recovered = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    assert!(recovered.unresolved_positions.is_empty());
+
+    report.avg_px_open = None;
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_position_reports(vec![report]);
+    let synchronized = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(synchronized.events.is_empty());
+    assert!(synchronized.unresolved_positions.is_empty());
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(5));
+}
+
 #[tokio::test]
 async fn test_reconcile_mass_status_skips_flat_position_report() {
     let mut ctx = TestContext::new();
@@ -11414,6 +11635,7 @@ struct MockExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    oms_type: OmsType,
     handled_venues: Option<IndexSet<Venue>>,
     order_report: RefCell<Option<OrderStatusReport>>,
     order_reports: RefCell<Vec<OrderStatusReport>>,
@@ -11436,6 +11658,7 @@ impl MockExecutionClient {
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
+            oms_type: OmsType::Hedging,
             handled_venues: None,
             order_report: RefCell::new(None),
             order_reports: RefCell::new(order_reports),
@@ -11458,6 +11681,7 @@ impl MockExecutionClient {
             client_id,
             account_id: test_account_id(),
             venue,
+            oms_type: OmsType::Hedging,
             handled_venues: None,
             order_report: RefCell::new(None),
             order_reports: RefCell::new(order_reports),
@@ -11480,6 +11704,7 @@ impl MockExecutionClient {
             client_id,
             account_id: test_account_id(),
             venue,
+            oms_type: OmsType::Hedging,
             handled_venues: None,
             order_report: RefCell::new(None),
             order_reports: RefCell::new(Vec::new()),
@@ -11564,7 +11789,7 @@ impl ExecutionClient for MockExecutionClient {
     }
 
     fn oms_type(&self) -> OmsType {
-        OmsType::Hedging
+        self.oms_type
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -14801,11 +15026,17 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
     );
     mass_status.add_position_reports(vec![drift_report]);
 
+    ctx.exec_engine
+        .borrow_mut()
+        .register_client(Box::new(routing_client))
+        .unwrap();
+
     let result = ctx
         .manager
         .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
+    assert!(result.unresolved_positions.is_empty());
 }
 
 #[cfg_attr(

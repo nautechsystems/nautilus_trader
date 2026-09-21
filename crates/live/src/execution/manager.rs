@@ -468,7 +468,8 @@ impl ExecutionManager {
     /// Reconciles a mass snapshot, applying order events before evaluating positions.
     ///
     /// Publishes raw reports before cache mutation and verifies each historical fill after dispatch.
-    /// Returns the processed events and external orders for the host to register with its client.
+    /// Returns processed events, external orders for client registration, and diagnostics for
+    /// in-scope nonzero venue positions that remain inconsistent with the cache.
     pub fn reconcile_execution_mass_status(
         &mut self,
         mass_status: &ExecutionMassStatus,
@@ -1098,7 +1099,109 @@ impl ExecutionManager {
         ReconciliationResult {
             events,
             external_orders,
+            unresolved_positions: self.unresolved_mass_status_positions(mass_status),
         }
+    }
+
+    fn unresolved_mass_status_positions(&self, mass_status: &ExecutionMassStatus) -> Vec<String> {
+        if self.config.filter_position_reports {
+            return Vec::new();
+        }
+
+        let mut unresolved = Vec::new();
+
+        for (instrument_id, reports) in mass_status.position_reports() {
+            if !self.should_reconcile_instrument(&instrument_id) {
+                continue;
+            }
+
+            if self
+                .netting_position_reports_match((instrument_id, mass_status.account_id), &reports)
+            {
+                continue;
+            }
+
+            for report in reports {
+                if let Some(reason) =
+                    self.unresolved_position_report(&report, mass_status.account_id)
+                {
+                    unresolved.push(reason);
+                }
+            }
+        }
+
+        unresolved
+    }
+
+    fn netting_position_reports_match(
+        &self,
+        key: InstrumentAccountKey,
+        reports: &[PositionStatusReport],
+    ) -> bool {
+        let comparison = self.position_quantity_comparison(key, reports);
+        let cache = self.cache.borrow();
+
+        !comparison.cached_positions.is_empty()
+            && comparison
+                .cached_positions
+                .iter()
+                .all(|position| cache.oms_type(&position.id) == Some(OmsType::Netting))
+            && comparison.quantities_match(self.position_reconciliation_tolerance(key.1))
+    }
+
+    fn unresolved_position_report(
+        &self,
+        report: &PositionStatusReport,
+        account_id: AccountId,
+    ) -> Option<String> {
+        let venue_qty = report.signed_decimal_qty;
+
+        if venue_qty == Decimal::ZERO {
+            return None;
+        }
+
+        let cache = self.cache.borrow();
+        let instrument_id = report.instrument_id;
+
+        let cached_qty = if let Some(position_id) = report.venue_position_id {
+            cache
+                .position(&position_id)
+                .filter(|p| p.account_id == account_id && p.instrument_id == instrument_id)
+                .map_or(Decimal::ZERO, |p| p.signed_decimal_qty())
+        } else {
+            cache
+                .positions_open(None, Some(&instrument_id), None, Some(&account_id), None)
+                .iter()
+                .map(|p| p.signed_decimal_qty())
+                .sum()
+        };
+
+        let matches = if report.venue_position_id.is_some() {
+            cached_qty == venue_qty
+        } else {
+            (cached_qty - venue_qty).abs() <= self.position_reconciliation_tolerance(account_id)
+        };
+
+        if matches {
+            return None;
+        }
+
+        let reason = if cache.instrument(&instrument_id).is_none() {
+            "instrument missing from cache"
+        } else if cache.account(&account_id).is_none() {
+            "account missing from cache"
+        } else if !self.config.generate_missing_orders {
+            "generate_missing_orders is disabled"
+        } else if report.avg_px_open.is_none() && cached_qty == Decimal::ZERO {
+            "missing avg_px_open for position recovery"
+        } else {
+            "position recovery did not restore the reported quantity"
+        };
+
+        Some(format!(
+            "account={account_id}, instrument={instrument_id}, venue_position_id={:?}, venue_quantity={venue_qty}: {reason}",
+            report.venue_position_id,
+        ))
     }
 
     fn retained_fill_state(&self) -> RetainedFillState {

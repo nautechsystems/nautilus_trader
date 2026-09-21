@@ -942,6 +942,12 @@ impl LiveNode {
                         "Execution client {client_id} disappeared during startup reconciliation",
                     );
 
+                    anyhow::ensure!(
+                        result.unresolved_positions.is_empty(),
+                        "Unresolved positions during startup reconciliation for {client_id}: {}",
+                        result.unresolved_positions.join("; "),
+                    );
+
                     if result.events.is_empty() {
                         log_info!(
                             "Reconciliation for {} succeeded",

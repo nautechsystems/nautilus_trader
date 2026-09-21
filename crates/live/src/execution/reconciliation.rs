@@ -86,13 +86,15 @@ pub struct ExternalOrderMetadata {
     pub ts_init: UnixNanos,
 }
 
-/// Result of reconciliation containing events and external order metadata.
+/// Result of reconciliation containing events, external orders, and unresolved position diagnostics.
 #[derive(Debug, Default)]
 pub struct ReconciliationResult {
     /// Order events generated during reconciliation.
     pub events: Vec<OrderEventAny>,
     /// External orders that need to be registered with execution clients.
     pub external_orders: Vec<ExternalOrderMetadata>,
+    /// Diagnostics for in-scope nonzero venue positions unrecovered after event processing.
+    pub unresolved_positions: Vec<String>,
 }
 
 /// Result of inflight order checks containing terminal events and intermediate queries.

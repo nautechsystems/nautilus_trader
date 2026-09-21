@@ -369,7 +369,9 @@ flowchart TD
     Pos --> Match{Positions<br/>match venue?}
     Match -->|Yes| Done[Reconciliation complete<br/>system ready for trading]
     Match -->|No| Gen[Generate missing orders<br/>strategy: EXTERNAL, tag: RECONCILIATION]
-    Gen --> Done
+    Gen --> Recovered{In-scope nonzero<br/>positions recovered?}
+    Recovered -->|Yes| Done
+    Recovered -->|No| Abort[Startup fails<br/>actors and strategies do not start]
 ```
 
 These reports represent external reality. The procedure processes them in the order shown so each
@@ -425,6 +427,31 @@ When generating reconciliation orders, the engine uses this price hierarchy:
 
 The engine uses LIMIT orders when a price can be determined (cases 1-3) to preserve PnL accuracy
 and skips zero quantity differences after precision rounding.
+
+#### Startup position validation
+
+After applying startup reports, the live node checks each **in-scope nonzero venue position**
+against the cache. An unresolved position stops startup **before actor or strategy `on_start`**.
+The error identifies the account, instrument, venue quantity, and recovery failure.
+
+| Position case                              | Cache identity          | Quantity requirement     |
+| ------------------------------------------ | ----------------------- | ------------------------ |
+| HEDGING with venue position IDs            | Exact venue position ID | Exact quantity           |
+| NETTING with or without venue position IDs | Account and instrument  | Within account tolerance |
+| Net reports without position IDs           | Account and instrument  | Within account tolerance |
+
+When the venue reports both long and short positions, both side totals must also match;
+equal net quantities alone are insufficient. A residual difference outside the account tolerance
+remains unresolved even if it rounds to zero at the instrument size precision.
+
+#### Recovery prerequisites and filters
+
+Creating a position in an empty cache from a report without order or fill history requires
+`avg_px_open`. The engine does not invent an entry price.
+
+- **Missing-order generation**: disabling `generate_missing_orders` does not bypass startup validation.
+- **Report scope**: position-report and instrument filters still apply; excluded reports are not checked.
+- **Reconciliation disabled**: disabling reconciliation skips the check entirely.
 
 ### Fill adjustment without an explicit report bound
 
@@ -485,7 +512,8 @@ event, so a failure defers the entire external order. An unavailable responsible
 has the same fail-closed result.
 
 An inferred-fill commission failure while applying an otherwise successful mass status does not
-stop startup. The unresolved work remains pending for a later reconciliation cycle.
+by itself stop startup. Startup still fails if an in-scope nonzero venue position remains unresolved.
+Otherwise, the unresolved work remains pending for a later reconciliation cycle.
 
 If startup reconciliation fails for any other reason, the system logs an error and does not start.
 
