@@ -1,16 +1,17 @@
 # Runtime Conformance Contract
 
 Use this reference to locate implementation boundaries and representative checks for selected
-[design principles](design_principles.md). The original source baseline is commit
-`46f87cd1b7af576495418761bbf11db23e89124c`. The callback and overload sections include subsequent
-runtime integration; use this document's revision for those sections and the original baseline for
-the other entries. Source links are relative to this document's revision.
+[design principles](design_principles.md). Each section records its source baseline separately.
+Source links resolve relative to this document's revision; a baseline identifies the revision used
+for that section's evidence, not a guarantee about later changes.
 
 The entries describe Rust source and test coverage. They do not certify every adapter, Python
 entry point, configuration, or failure mode. The named tests are source references, not a record
 of a test run.
 
 ## Evidence and outcome provenance
+
+Source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
 
 The [execution policies](../concepts/execution/policies.md#terminal-reconciliation-provenance)
 distinguish venue evidence from local policy resolution. In the Rust live execution manager,
@@ -29,6 +30,8 @@ when the configured retry limit expires. Pending updates and cancellations inste
   reason field. Consumers need the associated inputs and logs to retain that distinction.
 
 ## Callback ordering and ownership
+
+Source reviewed at: [16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc](https://github.com/nautechsystems/nautilus_trader/commit/16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc).
 
 The [callback dispatch contract](callback_dispatch.md) requires publication order across recipients
 and exclusive component access. Private Rust primitives reserve publication order and reject
@@ -75,6 +78,8 @@ queued delivery with standalone startup before admitting callbacks. That rejecti
 
 ## Recovery
 
+Source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
+
 For a Rust live node with execution reconciliation enabled, startup performs reconciliation before
 starting trader components. A reconciliation error aborts startup. The startup integration test
 below supplies terminal order and fill reports through a test execution client and checks the
@@ -90,6 +95,8 @@ recovered quantity, price, trade identity, commission, position quantity, and te
   to the [reconciliation policies](../concepts/execution/policies.md#reconciliation-authority).
 
 ## Overload handling
+
+Source reviewed at: [16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc](https://github.com/nautechsystems/nautilus_trader/commit/16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc).
 
 The [live runner](../concepts/live.md#dispatch-priority-and-overload-behavior) uses unbounded message
 channels. Polling priority does not impose producer backpressure or a queue-depth limit. The private

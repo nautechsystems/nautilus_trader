@@ -331,6 +331,8 @@ Use `try_cache_ref()` and `try_clock_mut()` to handle failed native borrows with
 Both return `ComponentAccessError::NotRegistered` when registration has not supplied the resource.
 Import the error type from `nautilus_common::component`. The error identifies the resource and
 attempted operation. Callback reentry can cause a conflict, but a conflict alone does not establish its cause.
+See [reentrancy diagnostics](../developer_guide/callback_dispatch.md#reentrancy-and-dispatch-diagnostics)
+for message meanings and corrective action.
 
 #### `StrategyNative` methods
 
