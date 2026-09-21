@@ -293,10 +293,9 @@ default and converting an already promoted session rewrites the same `ts_init` i
 different filename, which the catalog rejects as non-disjoint.
 
 :::info
-The direct Python `StreamingFeatherWriter.write()` method rejects `CustomData` with an `OSError`.
-Write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data` from Python.
-The Rust Feather writer supports custom data, and `convert_stream_to_data` converts those staged
-Feather streams to Parquet.
+Python `StreamingFeatherWriter.write()` accepts `CustomData` wrappers for registered Arrow-capable
+types, and `convert_stream_to_data` converts those staged Feather streams to Parquet. To skip
+staging, write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data`.
 :::
 
 ## The Arrow C FFI bridge

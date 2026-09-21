@@ -38,8 +38,9 @@ use nautilus_common::{
 use nautilus_core::{UnixNanos, datetime::get_timezone, python::to_pyruntime_err};
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
+        close::InstrumentClose,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -398,6 +399,10 @@ impl PyStreamingFeatherWriter {
 
         if let Ok(close) = data.extract::<InstrumentClose>(py) {
             try_write_data!(Data::InstrumentClose(close), "InstrumentClose");
+        }
+
+        if let Ok(custom) = data.extract::<CustomData>(py) {
+            try_write_data!(Data::Custom(custom), "CustomData");
         }
 
         try_write!(FundingRateUpdate, "FundingRateUpdate");
