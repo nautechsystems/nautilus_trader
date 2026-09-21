@@ -105,7 +105,7 @@ use crate::{
             get_currency, parse_fill_report_sbe, parse_klines_to_binance_bars,
             parse_new_order_response_sbe, parse_order_status_report_sbe,
             parse_spot_instrument_json_with_fees, parse_spot_instrument_sbe_with_fees,
-            parse_spot_trades_sbe,
+            parse_spot_trades_sbe, should_warn_on_instrument_parse_error,
         },
         symbol::format_instrument_id,
         urls::get_http_base_url,
@@ -2710,6 +2710,9 @@ impl BinanceSpotHttpClient {
 
     /// Requests configured Nautilus instruments with populated maker and taker fees.
     ///
+    /// Non-trading symbols are skipped with a debug log unless explicitly
+    /// selected via `load_ids` or the `symbols` filter.
+    ///
     /// # Errors
     ///
     /// Returns an error if configuration, exchange info, or required parsing fails.
@@ -2762,7 +2765,13 @@ impl BinanceSpotHttpClient {
                     ts_init,
                 ) {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => log_instrument_parse_error(config, &symbol.symbol, &e),
+                    Err(e) => log_instrument_parse_error(
+                        config,
+                        &selector,
+                        instrument_id,
+                        &symbol.symbol,
+                        &e,
+                    ),
                 }
             }
             instruments
@@ -2795,7 +2804,13 @@ impl BinanceSpotHttpClient {
                     ts_init,
                 ) {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => log_instrument_parse_error(config, &symbol.symbol, &e),
+                    Err(e) => log_instrument_parse_error(
+                        config,
+                        &selector,
+                        instrument_id,
+                        &symbol.symbol,
+                        &e,
+                    ),
                 }
             }
             instruments
@@ -3723,10 +3738,13 @@ fn decimal_from_mantissa_exponent(mantissa: i64, exponent: i8) -> Decimal {
 
 fn log_instrument_parse_error(
     config: &BinanceInstrumentProviderConfig,
+    selector: &BinanceInstrumentSelector,
+    instrument_id: InstrumentId,
     symbol: &str,
     error: &anyhow::Error,
 ) {
-    if config.log_warnings {
+    let explicit = selector.is_explicit(instrument_id, symbol);
+    if should_warn_on_instrument_parse_error(config.log_warnings, explicit, error) {
         log::warn!("Skipping Binance Spot instrument {symbol}: {error}");
     } else {
         log::debug!("Skipping Binance Spot instrument {symbol}: {error}");

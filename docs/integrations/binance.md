@@ -1528,6 +1528,9 @@ Some Binance instruments cannot be parsed into Nautilus objects if they contain
 field values beyond what the platform handles. These instruments are skipped
 with a warning.
 
+Non-trading symbols are skipped with a debug log during bulk loads. They still
+warn when explicitly selected through `load_ids` or the `symbols` filter.
+
 To suppress these warnings:
 
 ```python

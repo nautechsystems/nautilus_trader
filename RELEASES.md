@@ -78,6 +78,7 @@ Released on TBD (UTC).
 - Fixed Betfair resting SP bets treated as closed before BSP reconciliation
 - Fixed Binance WebSocket subscribe bursts that closed sockets with 1008 (#5014), thanks @costajohnt
 - Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
+- Fixed Binance bulk non-trading instrument skips logged as warnings instead of debug
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Lighter cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects

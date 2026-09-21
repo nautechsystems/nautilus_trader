@@ -100,6 +100,7 @@ use crate::{
         parse::{
             parse_coinm_instrument_with_fees, parse_millis, parse_required_price_at_precision,
             parse_required_quantity_at_precision, parse_usdm_instrument_with_fees,
+            should_warn_on_instrument_parse_error,
         },
         symbol::{format_binance_symbol, format_instrument_id},
         urls::get_http_base_url,
@@ -1830,6 +1831,9 @@ impl BinanceFuturesHttpClient {
 
     /// Fetches, selects, and parses the configured instrument catalog.
     ///
+    /// Non-trading symbols are skipped with a debug log unless explicitly
+    /// selected via `load_ids` or the `symbols` filter.
+    ///
     /// Account-wide Futures VIP rates provide the fallback when credentials are
     /// present. Exact per-symbol commission queries are opt-in.
     ///
@@ -1898,7 +1902,13 @@ impl BinanceFuturesHttpClient {
                             instruments.push(instrument);
                         }
                         Err(e) => {
-                            log_futures_instrument_parse_error(config, &symbol.symbol, &e);
+                            log_futures_instrument_parse_error(
+                                config,
+                                &selector,
+                                instrument_id,
+                                &symbol.symbol,
+                                &e,
+                            );
                         }
                     }
                 }
@@ -1954,7 +1964,13 @@ impl BinanceFuturesHttpClient {
                             instruments.push(instrument);
                         }
                         Err(e) => {
-                            log_futures_instrument_parse_error(config, &symbol.symbol, &e);
+                            log_futures_instrument_parse_error(
+                                config,
+                                &selector,
+                                instrument_id,
+                                &symbol.symbol,
+                                &e,
+                            );
                         }
                     }
                 }
@@ -3465,10 +3481,13 @@ fn validate_reconciliation_instrument(
 
 fn log_futures_instrument_parse_error(
     config: &BinanceInstrumentProviderConfig,
+    selector: &BinanceInstrumentSelector,
+    instrument_id: InstrumentId,
     symbol: &str,
     error: &anyhow::Error,
 ) {
-    if config.log_warnings {
+    let explicit = selector.is_explicit(instrument_id, symbol);
+    if should_warn_on_instrument_parse_error(config.log_warnings, explicit, error) {
         log::warn!("Skipping Binance Futures instrument {symbol}: {error}");
     } else {
         log::debug!("Skipping Binance Futures instrument {symbol}: {error}");

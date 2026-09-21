@@ -63,6 +63,9 @@ pub struct BinanceInstrumentProviderConfig {
     /// applied it and Rust live clients cannot safely invoke arbitrary Python.
     pub filter_callable: Option<String>,
     /// Whether instrument parser failures should be logged as warnings.
+    ///
+    /// Non-trading symbols skipped during bulk loads always log at debug;
+    /// this flag applies to explicitly selected symbols and unexpected failures.
     #[builder(default = true)]
     pub log_warnings: bool,
     /// Whether to query account-specific commission rates for every loaded symbol.

@@ -253,6 +253,33 @@ pub(crate) fn price_at_precision(price: Price, precision: u8) -> Option<Price> {
     Price::from_decimal_dp(price.as_decimal(), precision).ok()
 }
 
+/// Returns whether an instrument parse error reports a non-trading venue status.
+///
+/// Non-trading symbols are routine in full-catalog loads, so callers demote
+/// these skips to debug unless the symbol was explicitly selected.
+#[must_use]
+pub(crate) fn is_not_trading_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("is not trading"))
+}
+
+/// Returns whether an instrument parse failure should be logged as a warning.
+///
+/// Non-trading skips stay at debug during bulk loads; explicitly selected
+/// symbols and unexpected parse failures honor `log_warnings`.
+#[must_use]
+pub(crate) fn should_warn_on_instrument_parse_error(
+    log_warnings: bool,
+    explicit: bool,
+    error: &anyhow::Error,
+) -> bool {
+    if !explicit && is_not_trading_error(error) {
+        return false;
+    }
+    log_warnings
+}
+
 /// Parses a USD-M Futures symbol definition into a Nautilus futures instrument.
 ///
 /// # Errors
@@ -2391,6 +2418,59 @@ mod tests {
 
         assert_eq!(pair.maker_fee, dec!(0.0008));
         assert_eq!(pair.taker_fee, dec!(0.0011));
+    }
+
+    #[rstest]
+    fn test_not_trading_parse_errors_stay_debug_for_bulk_loads() {
+        let mut symbol = sample_spot_symbol_sbe();
+        symbol.status = 3;
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let error = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap_err();
+
+        assert!(is_not_trading_error(&error));
+        assert!(!should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
+    fn test_all_producers_emit_detectable_not_trading_errors() {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let mut sbe = sample_spot_symbol_sbe();
+        sbe.status = 3;
+        let sbe_err = parse_spot_instrument_sbe(&sbe, ts, ts).unwrap_err();
+
+        let json = BinanceSymbolJson {
+            symbol: "ETHUSDT".to_string(),
+            status: "BREAK".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            filters: Vec::new(),
+        };
+        let json_err = parse_spot_instrument_json_with_fees(&json, None, None, ts, ts).unwrap_err();
+
+        let mut usdm = sample_usdm_symbol();
+        usdm.status = BinanceTradingStatus::Halt;
+        let usdm_err = parse_usdm_instrument(&usdm, ts, ts).unwrap_err();
+
+        let mut coinm = sample_coinm_symbol();
+        coinm.contract_status = Some(BinanceContractStatus::TradingHalt);
+        let coinm_err = parse_coinm_instrument(&coinm, ts, ts).unwrap_err();
+
+        for error in [&sbe_err, &json_err, &usdm_err, &coinm_err] {
+            assert!(is_not_trading_error(error), "undetected: {error}");
+        }
+    }
+
+    #[rstest]
+    fn test_unexpected_parse_errors_honor_log_warnings() {
+        let error = anyhow::anyhow!("Missing PRICE_FILTER in symbol filters");
+
+        assert!(!is_not_trading_error(&error));
+        assert!(should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(!should_warn_on_instrument_parse_error(false, true, &error));
     }
 
     #[rstest]
