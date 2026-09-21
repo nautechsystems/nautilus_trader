@@ -547,6 +547,16 @@ pub struct WsBasicOrderData {
     /// Trailing stop parameters if applicable.
     #[serde(rename = "trailingStop")]
     pub trailing_stop: Option<WsTrailingStopData>,
+    /// Order type label, carried by the REST shapes in place of `tpsl` and `isMarket`.
+    ///
+    /// The `frontendOpenOrders` and historical order endpoints describe a conditional order as
+    /// `"Stop Market"`, `"Take Profit Limit"` and so on. Parse it with
+    /// `crate::common::parse::parse_frontend_order_type_label`.
+    #[serde(rename = "orderType", default)]
+    pub order_type: Option<String>,
+    /// Whether the venue marks this REST row as a trigger order.
+    #[serde(rename = "isTrigger", default)]
+    pub is_trigger: Option<bool>,
 }
 
 /// Trailing stop offset type.

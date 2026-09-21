@@ -890,6 +890,69 @@ pub fn parse_trigger_order_type(is_market: bool, tpsl: &HyperliquidTpSl) -> Orde
     }
 }
 
+/// What a Hyperliquid REST row's `orderType` label says about the order.
+///
+/// The frontend REST shapes (`frontendOpenOrders` and the historical order endpoint) describe an
+/// order with a label such as `"Stop Market"` or `"Take Profit Limit"`, where the WebSocket shape
+/// carries `tpsl` and `isMarket` fields. See the venue's info endpoint documentation:
+/// <https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontendOrderTypeLabel {
+    /// A trigger order: the label names both the trigger kind and its execution.
+    Conditional {
+        /// Take-profit or stop-loss.
+        tpsl: HyperliquidTpSl,
+        /// Whether the trigger executes as a market order.
+        is_market: bool,
+        /// The Nautilus order type the label resolves to.
+        order_type: OrderType,
+    },
+    /// An ordinary resting or immediate order, with no trigger.
+    Plain(OrderType),
+    /// A label this adapter cannot express as a Nautilus order type, so the row's own fields are
+    /// left to speak for themselves rather than being forced into the wrong shape.
+    Unsupported,
+}
+
+/// Parses a Hyperliquid REST `orderType` label.
+///
+/// Matching is exact. The venue's documented labels are `Limit`, `Market`, `Stop Market`,
+/// `Stop Limit`, `Take Profit Market`, `Take Profit Limit`, `Trailing Stop Market`, `Scale` and
+/// `TWAP`; prefix matching would fold `Trailing Stop Market` into a stop, and its `Market` suffix
+/// into a market order, neither of which it is.
+///
+/// `Scale` is a ladder of ordinary limit orders, so each row is a limit. `TWAP` and the trailing
+/// stops are [`FrontendOrderTypeLabel::Unsupported`]: this adapter does not carry the trailing
+/// offsets or the TWAP parent, so naming them here would describe an order it cannot rebuild.
+#[must_use]
+pub fn parse_frontend_order_type_label(label: Option<&str>) -> FrontendOrderTypeLabel {
+    match label {
+        Some("Stop Market") => FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Sl,
+            is_market: true,
+            order_type: OrderType::StopMarket,
+        },
+        Some("Stop Limit") => FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Sl,
+            is_market: false,
+            order_type: OrderType::StopLimit,
+        },
+        Some("Take Profit Market") => FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Tp,
+            is_market: true,
+            order_type: OrderType::MarketIfTouched,
+        },
+        Some("Take Profit Limit") => FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Tp,
+            is_market: false,
+            order_type: OrderType::LimitIfTouched,
+        },
+        Some("Market") => FrontendOrderTypeLabel::Plain(OrderType::Market),
+        Some("Limit" | "Scale") => FrontendOrderTypeLabel::Plain(OrderType::Limit),
+        _ => FrontendOrderTypeLabel::Unsupported,
+    }
+}
+
 /// Extracts order status from WebSocket order data.
 ///
 /// # Returns
@@ -1544,6 +1607,63 @@ mod tests {
         assert_eq!(
             parse_trigger_order_type(false, &HyperliquidTpSl::Tp),
             OrderType::LimitIfTouched
+        );
+    }
+
+    #[rstest]
+    #[case(
+        "Stop Market",
+        FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Sl,
+            is_market: true,
+            order_type: OrderType::StopMarket,
+        }
+    )]
+    #[case(
+        "Stop Limit",
+        FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Sl,
+            is_market: false,
+            order_type: OrderType::StopLimit,
+        }
+    )]
+    #[case(
+        "Take Profit Market",
+        FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Tp,
+            is_market: true,
+            order_type: OrderType::MarketIfTouched,
+        }
+    )]
+    #[case(
+        "Take Profit Limit",
+        FrontendOrderTypeLabel::Conditional {
+            tpsl: HyperliquidTpSl::Tp,
+            is_market: false,
+            order_type: OrderType::LimitIfTouched,
+        }
+    )]
+    #[case("Limit", FrontendOrderTypeLabel::Plain(OrderType::Limit))]
+    #[case("Market", FrontendOrderTypeLabel::Plain(OrderType::Market))]
+    // A scale order is a ladder of ordinary limits, so each row is a limit
+    #[case("Scale", FrontendOrderTypeLabel::Plain(OrderType::Limit))]
+    // Not expressible here: the adapter carries neither the trailing offsets nor the TWAP parent,
+    // and prefix matching would have read these as a stop, and their suffix as a market order
+    #[case("Trailing Stop Market", FrontendOrderTypeLabel::Unsupported)]
+    #[case("TWAP", FrontendOrderTypeLabel::Unsupported)]
+    #[case("Something New", FrontendOrderTypeLabel::Unsupported)]
+    fn test_parse_frontend_order_type_label(
+        #[case] label: &str,
+        #[case] expected: FrontendOrderTypeLabel,
+    ) {
+        assert_eq!(parse_frontend_order_type_label(Some(label)), expected);
+    }
+
+    #[rstest]
+    fn test_parse_frontend_order_type_label_without_a_label() {
+        assert_eq!(
+            parse_frontend_order_type_label(None),
+            FrontendOrderTypeLabel::Unsupported
         );
     }
 

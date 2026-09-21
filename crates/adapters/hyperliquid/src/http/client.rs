@@ -71,11 +71,12 @@ use crate::{
             HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType,
         },
         parse::{
-            bar_type_to_interval, cache_alias_for_symbol, clamp_price_to_precision,
-            derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
-            normalize_or_validate_wire_price, order_to_hyperliquid_request_with_optional_decimals,
-            parse_combined_account_balances_and_margins, parse_spot_account_balances,
-            parse_trigger_order_type, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            FrontendOrderTypeLabel, bar_type_to_interval, cache_alias_for_symbol,
+            clamp_price_to_precision, derive_limit_from_trigger, determine_order_list_grouping,
+            extract_inner_error, normalize_or_validate_wire_price,
+            order_to_hyperliquid_request_with_optional_decimals,
+            parse_combined_account_balances_and_margins, parse_frontend_order_type_label,
+            parse_spot_account_balances, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -946,6 +947,69 @@ impl Default for HyperliquidHttpClient {
     fn default() -> Self {
         Self::new(HyperliquidEnvironment::Mainnet, 60, None)
             .expect("Failed to create default Hyperliquid HTTP client")
+    }
+}
+
+/// Fills in what a REST row's `orderType` label says, so a frontend row carries the same trigger
+/// semantics as the WebSocket shape, and drops the venue's `"0.0"` placeholder trigger price.
+///
+/// Returns the parsed label so the caller can settle the order type once the report exists.
+fn normalize_frontend_order(order: &mut WsBasicOrderData) -> FrontendOrderTypeLabel {
+    let label = parse_frontend_order_type_label(order.order_type.as_deref());
+
+    // The venue sends `"triggerPx": "0.0"` on rows that have no trigger at all, which would
+    // otherwise read as a trigger order that triggers at zero.
+    order.trigger_px = order.trigger_px.filter(|price| *price != Decimal::ZERO);
+
+    if let FrontendOrderTypeLabel::Conditional {
+        tpsl,
+        is_market,
+        order_type: _,
+    } = label
+    {
+        if order.tpsl.is_none() {
+            order.tpsl = Some(tpsl);
+        }
+        if order.is_market.is_none() {
+            order.is_market = Some(is_market);
+        }
+    }
+
+    label
+}
+
+/// Applies the order type a REST row's label names, when the report can actually carry it.
+///
+/// A conditional label is only applied when the row also carries a trigger price. A report naming
+/// a stop without one cannot be rebuilt into an order - `trigger_price` is required for a
+/// `StopMarketOrder` - so the engine would drop the order rather than reconcile it.
+fn apply_frontend_order_type(
+    report: &mut OrderStatusReport,
+    order: &WsBasicOrderData,
+    label: FrontendOrderTypeLabel,
+) {
+    match label {
+        FrontendOrderTypeLabel::Conditional { order_type, .. } => {
+            if order.trigger_px.is_some() {
+                report.order_type = order_type;
+            }
+        }
+        FrontendOrderTypeLabel::Plain(order_type) => report.order_type = order_type,
+        FrontendOrderTypeLabel::Unsupported => {}
+    }
+}
+
+/// Applies the order type a historical row's label names.
+///
+/// Unlike a live row, a historical one is not alone: the venue clears `triggerPx` on the filled
+/// row of a stop, and [`deduplicate_historical_order_reports`] merges the trigger price back in
+/// from that order's earlier open row. So the label is taken at its word here, and the trigger
+/// price arrives with the merge.
+fn apply_historical_order_type(report: &mut OrderStatusReport, label: FrontendOrderTypeLabel) {
+    match label {
+        FrontendOrderTypeLabel::Conditional { order_type, .. }
+        | FrontendOrderTypeLabel::Plain(order_type) => report.order_type = order_type,
+        FrontendOrderTypeLabel::Unsupported => {}
     }
 }
 
@@ -2329,6 +2393,9 @@ impl HyperliquidHttpClient {
                     continue;
                 }
 
+                let mut order = order;
+                let label = normalize_frontend_order(&mut order);
+
                 match parse_order_status_report_from_basic(
                     &order,
                     &HyperliquidOrderStatusEnum::Open,
@@ -2336,7 +2403,10 @@ impl HyperliquidHttpClient {
                     account_id,
                     ts_init,
                 ) {
-                    Ok(report) => reports.push(report),
+                    Ok(mut report) => {
+                        apply_frontend_order_type(&mut report, &order, label);
+                        reports.push(report);
+                    }
                     Err(e) => {
                         log::error!("Failed to parse order status report: {e}");
                         complete = false;
@@ -2402,25 +2472,7 @@ impl HyperliquidHttpClient {
                 continue;
             }
 
-            let order_type = entry.order.order_type.as_deref().unwrap_or_default();
-            let tpsl = if order_type.starts_with("Take Profit") {
-                Some(crate::common::enums::HyperliquidTpSl::Tp)
-            } else if order_type.starts_with("Stop") {
-                Some(crate::common::enums::HyperliquidTpSl::Sl)
-            } else {
-                None
-            };
-            let is_market = entry
-                .order
-                .order_type
-                .as_deref()
-                .is_some_and(|label| label.ends_with("Market"));
-            let historical_order_type = match tpsl.as_ref() {
-                Some(tpsl) => parse_trigger_order_type(is_market, tpsl),
-                None if is_market => OrderType::Market,
-                None => OrderType::Limit,
-            };
-            let order = WsBasicOrderData {
+            let mut order = WsBasicOrderData {
                 coin: entry.order.coin,
                 side: entry.order.side,
                 limit_px: entry.order.limit_px,
@@ -2431,15 +2483,15 @@ impl HyperliquidHttpClient {
                 cloid: entry.order.cloid,
                 tif: entry.order.tif,
                 reduce_only: entry.order.reduce_only,
-                trigger_px: entry
-                    .order
-                    .trigger_px
-                    .filter(|price| *price != Decimal::ZERO),
-                is_market: tpsl.is_some().then_some(is_market),
-                tpsl,
+                trigger_px: entry.order.trigger_px,
+                is_market: None,
+                tpsl: None,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: entry.order.order_type,
+                is_trigger: None,
             };
+            let label = normalize_frontend_order(&mut order);
 
             match parse_order_status_report_from_basic(
                 &order,
@@ -2449,7 +2501,7 @@ impl HyperliquidHttpClient {
                 ts_init,
             ) {
                 Ok(mut report) => {
-                    report.order_type = historical_order_type;
+                    apply_historical_order_type(&mut report, label);
                     report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
                     reports.push(report);
                 }
@@ -2508,7 +2560,8 @@ impl HyperliquidHttpClient {
             }
         };
 
-        if let Some(order) = orders.into_iter().find(|o| o.oid == oid) {
+        if let Some(mut order) = orders.into_iter().find(|o| o.oid == oid) {
+            let label = normalize_frontend_order(&mut order);
             let instrument = match self.get_or_create_instrument(&order.coin, None) {
                 Some(inst) => inst,
                 None => {
@@ -2532,6 +2585,10 @@ impl HyperliquidHttpClient {
                 account_id,
                 ts_init,
             )
+            .map(|mut report| {
+                apply_frontend_order_type(&mut report, &order, label);
+                report
+            })
             .map(Some)
             .map_err(|e| {
                 Error::bad_request(format!(
@@ -2577,6 +2634,8 @@ impl HyperliquidHttpClient {
             tpsl: None,
             trigger_activated: None,
             trailing_stop: None,
+            order_type: None,
+            is_trigger: None,
         };
 
         let mut report = parse_order_status_report_from_basic(
@@ -2634,7 +2693,7 @@ impl HyperliquidHttpClient {
             Error::bad_request(format!("Failed to parse open orders response: {e}"))
         })?;
 
-        let order = match orders.into_iter().find(|o| {
+        let mut order = match orders.into_iter().find(|o| {
             o.cloid
                 .as_ref()
                 .is_some_and(|c| cached_cloid_hex.as_ref() == Some(c) || c == &cloid_hex)
@@ -2642,6 +2701,7 @@ impl HyperliquidHttpClient {
             Some(o) => o,
             None => return Ok(None),
         };
+        let label = normalize_frontend_order(&mut order);
 
         let instrument = match self.get_or_create_instrument(&order.coin, None) {
             Some(inst) => inst,
@@ -2667,6 +2727,7 @@ impl HyperliquidHttpClient {
                     ))
                 })?;
 
+        apply_frontend_order_type(&mut report, &order, label);
         report.client_order_id = Some(*client_order_id);
         Ok(Some(report))
     }
