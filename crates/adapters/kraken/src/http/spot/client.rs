@@ -1379,6 +1379,13 @@ pub(crate) type SpotBatchOrder = (
 pub struct KrakenSpotHttpClient {
     pub(crate) inner: Arc<KrakenSpotRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    /// Maps a Kraken `altname` to the `AssetPairs` key used as the instrument `raw_symbol`.
+    ///
+    /// Kraken spells the same pair two ways: `OpenPositions` returns the key (`XXBTZUSD`) while
+    /// `OpenOrders` and `TradesHistory` return the altname (`XBTUSD`). The altname is not derivable
+    /// from a cached instrument, because `normalize_spot_symbol` rewrites Kraken's currency codes,
+    /// so it is captured from `AssetPairs` while the definitions are in hand.
+    pair_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     leverage_tiers_cache: LeverageTiersCache,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
@@ -1389,6 +1396,7 @@ impl Clone for KrakenSpotHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
+            pair_aliases: self.pair_aliases.clone(),
             leverage_tiers_cache: self.leverage_tiers_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
             clock: self.clock,
@@ -1445,6 +1453,7 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            pair_aliases: Arc::new(AtomicMap::new()),
             leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
@@ -1479,6 +1488,7 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            pair_aliases: Arc::new(AtomicMap::new()),
             leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
@@ -1568,11 +1578,46 @@ impl KrakenSpotHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    /// Records the `altname` of each pair against the `AssetPairs` key.
+    ///
+    /// Only differing spellings are stored, so a key is never shadowed by another pair's altname.
+    fn record_pair_aliases(&self, pairs: &AssetPairsResponse) {
+        let aliases: Vec<(Ustr, Ustr)> = pairs
+            .iter()
+            .filter(|(pair_name, definition)| definition.altname.as_str() != pair_name.as_str())
+            .map(|(pair_name, definition)| (definition.altname, Ustr::from(pair_name)))
+            .collect();
+
+        if aliases.is_empty() {
+            return;
+        }
+
+        self.pair_aliases.rcu(|m| {
+            for (altname, pair_name) in &aliases {
+                m.insert(*altname, *pair_name);
+            }
+        });
+    }
+
+    /// Resolves a cached instrument from whichever spelling Kraken used for the pair.
+    ///
+    /// Matches the `AssetPairs` key first so a key always wins, then falls back to the altname
+    /// recorded by [`Self::record_pair_aliases`].
     fn get_instrument_by_raw_symbol(&self, raw_symbol: &str) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .load()
+        let instruments = self.instruments_cache.load();
+
+        if let Some(instrument) = instruments
             .values()
             .find(|inst| inst.raw_symbol().as_str() == raw_symbol)
+        {
+            return Some(instrument.clone());
+        }
+
+        let pair_name = self.pair_aliases.get_cloned(&Ustr::from(raw_symbol))?;
+
+        instruments
+            .values()
+            .find(|inst| inst.raw_symbol().inner() == pair_name)
             .cloned()
     }
 
@@ -1608,6 +1653,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
+        self.record_pair_aliases(&asset_pairs);
         let fee_rates = self.request_fee_rates(&asset_pairs, None).await?;
 
         let mut instruments: Vec<InstrumentAny> = asset_pairs
@@ -1653,6 +1699,7 @@ impl KrakenSpotHttpClient {
                     if !tokenized_pairs.is_empty() {
                         log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                     }
+                    self.record_pair_aliases(&tokenized_pairs);
                     let fee_rates = self
                         .request_fee_rates(
                             &tokenized_pairs,
@@ -2221,12 +2268,19 @@ impl KrakenSpotHttpClient {
                 }
             }
 
-            if let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str()) {
-                match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        log::warn!("Failed to parse order {order_id}: {e}");
-                    }
+            let instrument = self
+                .get_instrument_by_raw_symbol(order.descr.pair.as_str())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenOrders: instrument not in cache for pair {}",
+                        order.descr.pair
+                    )
+                })?;
+
+            match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
+                Ok(report) => all_reports.push(report),
+                Err(e) => {
+                    log::warn!("Failed to parse order {order_id}: {e}");
                 }
             }
         }
@@ -2261,20 +2315,21 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                if let Some(instrument) =
-                    self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
-                {
-                    match parse_order_status_report(
-                        order_id,
-                        order,
-                        &instrument,
-                        account_id,
-                        ts_init,
-                    ) {
-                        Ok(report) => all_reports.push(report),
-                        Err(e) => {
-                            log::warn!("Failed to parse order {order_id}: {e}");
-                        }
+                // A historical record can reference an instrument absent from the current
+                // listing, so warn and keep the rest rather than withholding the whole read.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
+                else {
+                    log::warn!(
+                        "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
+                        order.descr.pair
+                    );
+                    continue;
+                };
+
+                match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
+                    Ok(report) => all_reports.push(report),
+                    Err(e) => {
+                        log::warn!("Failed to parse order {order_id}: {e}");
                     }
                 }
             }
@@ -2324,12 +2379,20 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                if let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str()) {
-                    match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
-                        Ok(report) => all_reports.push(report),
-                        Err(e) => {
-                            log::warn!("Failed to parse trade {trade_id}: {e}");
-                        }
+                // As above: historical fills outlive the listing, so preserve the usable rows.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str())
+                else {
+                    log::warn!(
+                        "TradesHistory: instrument not in cache for pair {}, skipping trade {trade_id}",
+                        trade.pair
+                    );
+                    continue;
+                };
+
+                match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
+                    Ok(report) => all_reports.push(report),
+                    Err(e) => {
+                        log::warn!("Failed to parse trade {trade_id}: {e}");
                     }
                 }
             }
