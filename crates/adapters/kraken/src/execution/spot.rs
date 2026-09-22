@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
+    AtomicMap, DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1348,7 +1348,13 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
 
         let ts_init = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
+        // Saturating arithmetic: an unclamped lookback must not overflow, and a cutoff before the
+        // epoch must not panic converting into `UnixNanos`.
+        let lookback_start = lookback_mins.map(|mins| {
+            let nanos = mins.saturating_mul(60).saturating_mul(1_000_000_000);
+            ts_init.saturating_sub(DurationNanos::new(nanos))
+        });
+        let start = lookback_start.map(Timestamp::from);
 
         let account_id = self.core.account_id;
         let (order_reports, orders_complete) = self
@@ -1386,10 +1392,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         mass_status.add_position_reports(position_reports);
         // One cutoff covers every historical query above, so record it with the completeness of
         // the sources the engine needs to interpret the bounded set.
-        mass_status.set_report_window(
-            start.map(UnixNanos::from),
-            orders_complete && fills_complete,
-        );
+        mass_status.set_report_window(lookback_start, orders_complete && fills_complete);
 
         Ok(Some(mass_status))
     }
