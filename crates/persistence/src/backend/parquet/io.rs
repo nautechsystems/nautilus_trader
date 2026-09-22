@@ -2920,6 +2920,17 @@ mod tests {
     }
 
     #[rstest]
+    fn append_path_to_file_uri_extends_windows_drive_catalog() {
+        assert_eq!(
+            append_path_to_file_uri(
+                "file:///C:/data/catalog",
+                "data/quotes/EURUSD.SIM/file.parquet",
+            ),
+            "file:///C:/data/catalog/data/quotes/EURUSD.SIM/file.parquet",
+        );
+    }
+
+    #[rstest]
     #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_s3() {
         let mut options = AHashMap::new();

@@ -189,11 +189,29 @@ pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
 /// Checks if a path is absolute on any supported platform.
 #[must_use]
 fn is_absolute_path(path: &str) -> bool {
-    path.starts_with('/')
-        || path.starts_with("\\\\")
-        || (path.len() >= 3
-            && path.chars().nth(1) == Some(':')
-            && matches!(path.chars().nth(2), Some('\\' | '/')))
+    path.starts_with('/') || path.starts_with("\\\\") || is_windows_drive_path(path)
+}
+
+/// Returns whether `path` is a Windows drive path such as `C:\data` or `C:/data`.
+#[must_use]
+fn is_windows_drive_path(path: &str) -> bool {
+    path.len() >= 3
+        && path.chars().nth(1) == Some(':')
+        && matches!(path.chars().nth(2), Some('\\' | '/'))
+}
+
+/// Returns a `file://` URI for a local catalog path.
+///
+/// A Windows drive path becomes `file:///C:/...`. UNC paths keep a direct
+/// `file://` join because [`file_uri_to_native_path`] does not restore the
+/// `\\server\share` prefix from `file://server/share`.
+#[must_use]
+pub(crate) fn file_protocol_uri(path: &str) -> String {
+    if is_windows_drive_path(path) {
+        path_to_file_uri(path)
+    } else {
+        format!("file://{path}")
+    }
 }
 
 /// Converts an absolute path to a file:// URI with proper platform handling.
@@ -463,6 +481,23 @@ mod tests {
         assert!(!is_absolute_path("C"));
         assert!(!is_absolute_path("C:"));
         assert!(!is_absolute_path("\\"));
+    }
+
+    #[rstest]
+    fn file_protocol_uri_normalizes_windows_drive_path() {
+        assert_eq!(
+            file_protocol_uri(r"C:\data\catalog"),
+            "file:///C:/data/catalog",
+        );
+        assert_eq!(
+            file_protocol_uri("C:/data/catalog"),
+            "file:///C:/data/catalog"
+        );
+        assert_eq!(file_protocol_uri("/tmp/cat"), "file:///tmp/cat");
+        assert_eq!(
+            file_protocol_uri(r"\\server\share\catalog"),
+            r"file://\\server\share\catalog",
+        );
     }
 
     #[rstest]
