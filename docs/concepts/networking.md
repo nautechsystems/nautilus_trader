@@ -75,9 +75,10 @@ new TCP and TLS handshake for each request.
 
 Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Endpoints
-whose path or query can contain credentials can use the redacted request path, which removes the URL
-from transport errors and logs.
+or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Transport
+error messages carry the request URL without its query string or fragment, so query credentials
+cannot leak through errors. Endpoints whose path can also contain credentials can use the redacted
+request path, which omits the URL from transport errors.
 
 `HttpClient::get_stream` returns status and body chunks without accumulating the complete response
 or applying the buffered size limit. One absolute deadline covers headers and the whole body,

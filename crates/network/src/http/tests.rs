@@ -360,6 +360,52 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
 }
 
 #[tokio::test]
+async fn streamed_truncated_body_error_omits_query_string_by_default() {
+    const QUERY_SECRET: &str = "stream-query-secret";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort")
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let mut response = client
+        .get_stream(format!("http://{addr}/stream?api_key={QUERY_SECRET}"))
+        .await
+        .unwrap();
+
+    let error = loop {
+        match response.chunk().await {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("truncated body must not end successfully"),
+            Err(e) => break e,
+        }
+    };
+
+    peer.await.unwrap();
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains(&format!("for url (http://{addr}/stream)")),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("api_key="), "{rendered}");
+    assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+}
+
+#[tokio::test]
 async fn body_deadline_overrides_default_and_closes_connection() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

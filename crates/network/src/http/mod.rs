@@ -40,8 +40,9 @@
 //! connections, HTTP/2 keepalive while idle, and adaptive HTTP/2 flow control. Buffered responses
 //! retain only configured header fields and reject bodies larger than 100 MiB, including chunked
 //! bodies without a declared length. [`HttpClient::get_stream`] consumes bodies incrementally
-//! without a total size limit. The redacted request path removes credential-bearing URLs from
-//! transport errors and logs.
+//! without a total size limit. Transport error messages carry the request URL without its query
+//! string or fragment, and the `_url_redacted` request methods omit the URL entirely; the client
+//! itself logs request metadata only, never URLs.
 //!
 //! Hyper owns the lifecycle of individual pooled connections, so this client exposes no socket
 //! state sink or explicit reconnect operation. Callers observe connection failure through each

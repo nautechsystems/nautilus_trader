@@ -75,6 +75,10 @@ pub enum HttpRedirectPolicy {
 /// clients can share the same rate limiter when their requests consume one quota budget.
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
 /// HTTPS, explicit proxies, and redirect following are unsupported.
+///
+/// Transport error messages carry the request URL without its query string or fragment, so
+/// credentials passed as query parameters cannot reach logs through errors. Use the
+/// `_url_redacted` request variants to omit the URL entirely.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     pub(crate) client: InnerHttpClient,
@@ -266,7 +270,7 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request while redacting the URL from logs and transport errors.
+    /// Sends an HTTP request while omitting the URL from transport errors.
     ///
     /// Use this for endpoints whose path or other URL components can carry credentials.
     ///
@@ -319,8 +323,8 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request with serializable query parameters while redacting the URL from logs
-    /// and transport errors.
+    /// Sends an HTTP request with serializable query parameters while omitting the URL from
+    /// transport errors.
     ///
     /// Use this for query parameters that can carry credentials.
     ///
@@ -763,6 +767,13 @@ impl InnerHttpClient {
             request.method(),
         );
 
+        let error_url = (!redact_url).then(|| {
+            let mut error_url = url.clone();
+            error_url.set_query(None);
+            error_url.set_fragment(None);
+            error_url
+        });
+
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
         let operation = async {
@@ -773,7 +784,7 @@ impl InnerHttpClient {
             Ok(HttpResponseStream {
                 response,
                 deadline,
-                url: (!redact_url).then(|| url.clone()),
+                url: error_url.clone(),
                 #[cfg(all(feature = "simulation", madsim))]
                 _connection: connection,
             })
@@ -787,7 +798,8 @@ impl InnerHttpClient {
             },
             None => operation.await,
         };
-        result.map_err(|e| response_error(e, (!redact_url).then_some(&url)))
+
+        result.map_err(|e| response_error(e, error_url.as_ref()))
     }
 
     async fn consume_response<B>(
@@ -1896,6 +1908,106 @@ mod tests {
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(!rendered.contains("auth="));
             assert!(!rendered.contains(QUERY_SECRET));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_removes_query_string_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-query-secret";
+        const FRAGMENT_MARKER: &str = "default-fragment-marker";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}#{FRAGMENT_MARKER}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request(Method::GET, url, None, None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+            assert!(!rendered.contains(FRAGMENT_MARKER), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_secret_body_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "secret-body-query-secret";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_secret_body(
+                Method::POST,
+                url,
+                None,
+                None,
+                SecretString::from("credential-body"),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-params-query-secret";
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            auth: &'a str,
+        }
+
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades");
+        let params = Query { auth: QUERY_SECRET };
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("auth="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
         }
     }
 
