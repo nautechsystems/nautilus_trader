@@ -97,6 +97,8 @@ Released on TBD (UTC).
 - Fixed Binance WebSocket subscribe bursts that closed sockets with 1008 (#5014), thanks @costajohnt
 - Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
 - Fixed Binance bulk non-trading instrument skips logged as warnings instead of debug
+- Fixed Binance cancel-all requests ignoring `order_side`
+- Fixed Binance Spot `batch_cancel_orders` using a non-existent batch endpoint
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
@@ -157,6 +159,7 @@ Released on TBD (UTC).
 - Documented shared book snapshot defaults and live validation levels
 - Documented legacy custom data layout discovery and migration
 - Documented Binance custom data catalog persistence
+- Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset
 - Updated Databento and Tardis integration guides with new URL overrides
 

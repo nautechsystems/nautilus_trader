@@ -289,6 +289,13 @@ for that instrument. If all orders are associated with the strategy, a single ca
 call is used. Otherwise, per-strategy cancels are sent (batch for regular
 orders, individual for algo orders) to avoid affecting other strategies.
 
+**Side filter**: A `CancelAllOrders` command with `order_side` set cancels only open
+orders on that side for the instrument. Spot sends one cancel per matching order,
+while Futures batches regular orders and cancels algo orders individually. A
+side-filtered request selects from open orders only, so an inflight (`SUBMITTED`)
+order not yet acknowledged by Binance survives one; use an unfiltered cancel-all
+to include it.
+
 **Futures algo orders**: Conditional order types (`STOP_MARKET`, `STOP_LIMIT`,
 `TAKE_PROFIT`, `TAKE_PROFIT_MARKET`, `TRAILING_STOP_MARKET`) require a
 different cancel endpoint. The adapter routes these through the correct
