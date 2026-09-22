@@ -25,6 +25,8 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
+use super::{AccountId, VenueOrderId};
+
 const EXTERNAL_CLIENT_ORDER_ID: &str = "EXTERNAL";
 
 /// Represents a valid client order ID (assigned by the Nautilus system).
@@ -41,6 +43,23 @@ const EXTERNAL_CLIENT_ORDER_ID: &str = "EXTERNAL";
 pub struct ClientOrderId(Ustr);
 
 impl ClientOrderId {
+    /// Creates an account-scoped identity for a distinct broker order incarnation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the resulting identifier is invalid.
+    pub fn for_duplicate_order(
+        account_id: AccountId,
+        venue_order_id: VenueOrderId,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(format!(
+            "DUP-{}:{}:{}",
+            account_id.as_str().len(),
+            account_id,
+            venue_order_id
+        ))
+    }
+
     /// Creates a new [`ClientOrderId`] instance with correctness checking.
     ///
     /// # Errors

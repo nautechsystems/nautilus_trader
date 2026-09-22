@@ -1165,9 +1165,9 @@ mod tests {
         let account_id = AccountId::from("SIM-001");
 
         let is_initialized = portfolio.is_initialized();
-        let balances_locked = portfolio.balances_locked(&venue);
-        let initial_margins = portfolio.instrument_initial_margins(&venue);
-        let maintenance_margins = portfolio.instrument_maintenance_margins(&venue);
+        let balances_locked = portfolio.balances_locked(&venue, None);
+        let initial_margins = portfolio.instrument_initial_margins(&venue, None);
+        let maintenance_margins = portfolio.instrument_maintenance_margins(&venue, None);
         let unrealized_pnls = portfolio.unrealized_pnls(&venue, None);
         let realized_pnls = portfolio.realized_pnls(&venue, None);
         let net_exposures = portfolio.net_exposures(&venue, None);

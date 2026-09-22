@@ -380,6 +380,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "TD003",
 ] # Optional timer demo is left commented on purpose
 "examples/live/interactive_brokers/_common.py" = ["S603"]
+"examples/live/interactive_brokers/notebooks/**/*.py" = [
+  "ERA001",
+] # Jupytext notebook headers are not commented-out code
 "examples/live/polymarket/updown_smoke_tester.py" = ["TRY004"]
 "tests/**/*.py" = [
   "A002",

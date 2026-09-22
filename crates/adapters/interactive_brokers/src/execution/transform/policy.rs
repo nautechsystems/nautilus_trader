@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers order transformation policies.
+
 use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
     enums::{OrderSide, OrderType as NautilusOrderType, TrailingOffsetType},
@@ -24,16 +26,10 @@ use super::{convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method
 use crate::providers::instruments::InteractiveBrokersInstrumentProvider;
 
 pub(super) fn apply_expire_time_policy(ib_order: &mut IBOrder, order: &OrderAny) {
-    if matches!(ib_order.tif, TimeInForce::GoodTilDate)
+    if matches!(ib_order.tif, TimeInForce::GoodTillDate)
         && let Some(expire) = order.expire_time()
     {
         ib_order.good_till_date = format_ib_datetime(expire);
-    }
-}
-
-pub(super) fn apply_account_policy(ib_order: &mut IBOrder, order: &OrderAny) {
-    if let Some(account_id) = order.account_id() {
-        ib_order.account = account_id.to_string();
     }
 }
 
@@ -84,7 +80,7 @@ pub(super) fn apply_trailing_order_policy(
             Some(TrailingOffsetType::Price) | None => {
                 ib_order.aux_price = Some(trailing_offset_f64);
             }
-            Some(other) => anyhow::bail!("`TrailingOffsetType` {:?} is not supported", other),
+            Some(other) => anyhow::bail!("`TrailingOffsetType` {other:?} is not supported"),
         }
     }
 
@@ -104,9 +100,4 @@ pub(super) fn apply_display_quantity_policy(ib_order: &mut IBOrder, order: &Orde
     if let Some(display_qty) = order.display_qty() {
         ib_order.display_size = Some(display_qty.as_f64() as i32);
     }
-}
-
-pub(super) fn apply_order_list_policy(_ib_order: &mut IBOrder, _order: &OrderAny) {
-    // Order lists only control parent/transmit behavior at the execution client layer.
-    // IB OCA groups must be requested explicitly through IB order tags.
 }

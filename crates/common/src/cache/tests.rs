@@ -5475,6 +5475,26 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_cache_account_for_client_follows_index(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let client_id = ClientId::from("IB_PAPER");
+    cache.add_account(account.clone()).unwrap();
+
+    assert!(cache.account_for_client(&client_id).is_none());
+
+    cache.add_client_account(client_id, account_id);
+
+    assert_eq!(cache.account_id_for_client(&client_id), Some(&account_id));
+    assert_eq!(*cache.account_for_client(&client_id).unwrap(), account);
+
+    cache.remove_client_account(&client_id);
+
+    assert_eq!(cache.account_id_for_client(&client_id), None);
+    assert!(cache.account_for_client(&client_id).is_none());
+}
+
+#[rstest]
 fn test_cache_take_account_returns_none_for_unknown(mut cache: Cache) {
     let result = cache.take_account(&AccountId::test_default());
     assert!(result.is_none());

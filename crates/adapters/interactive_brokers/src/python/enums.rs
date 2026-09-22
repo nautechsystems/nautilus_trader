@@ -11,18 +11,15 @@
 
 use pyo3::prelude::*;
 
-use crate::{
-    common::enums::{
-        IbAction, IbArticleType, IbAuctionStrategy, IbAuctionType, IbBondIdentifierKind,
-        IbBuilderTimeInForce, IbComboLegOpenClose, IbConditionConjunction, IbConditionKind,
-        IbExerciseAction, IbFundAssetType, IbFundDistributionPolicyIndicator, IbHistoricalBarSize,
-        IbHistoricalTickType, IbHistoricalWhatToShow, IbLegAction, IbLiquidity, IbOcaType,
-        IbOptionRight, IbOrderOpenClose, IbOrderOrigin, IbOrderStatus, IbOrderType,
-        IbRealtimeBarSize, IbRealtimeWhatToShow, IbReferencePriceType, IbRiskAversion, IbRule80A,
-        IbSecurityType, IbShortSaleSlot, IbTickType, IbTimeInForce, IbTradingHours,
-        IbTriggerMethod, IbTwapStrategyType, IbVolatilityType,
-    },
-    error::{ErrorCategory, InteractiveBrokersErrorKind},
+use crate::common::enums::{
+    IbAction, IbArticleType, IbAuctionStrategy, IbAuctionType, IbBondIdentifierKind,
+    IbBuilderTimeInForce, IbComboLegOpenClose, IbConditionConjunction, IbConditionKind,
+    IbExerciseAction, IbFundAssetType, IbFundDistributionPolicyIndicator, IbHistoricalBarSize,
+    IbHistoricalTickType, IbHistoricalWhatToShow, IbLegAction, IbLiquidity, IbOcaType,
+    IbOptionRight, IbOrderOpenClose, IbOrderOrigin, IbOrderStatus, IbOrderType, IbRealtimeBarSize,
+    IbRealtimeWhatToShow, IbReferencePriceType, IbRiskAversion, IbRule80A, IbSecurityType,
+    IbShortSaleSlot, IbTickType, IbTimeInForce, IbTradingHours, IbTriggerMethod,
+    IbTwapStrategyType, IbVolatilityType,
 };
 
 #[pymethods]
@@ -227,19 +224,6 @@ macro_rules! py_str_enum {
     };
 }
 
-macro_rules! py_marker_enum {
-    ($ty:ty) => {
-        #[pymethods]
-        #[pyo3_stub_gen::derive::gen_stub_pymethods]
-        impl $ty {
-            #[pyo3(name = "as_str")]
-            fn py_as_str(&self) -> String {
-                format!("{self:?}")
-            }
-        }
-    };
-}
-
 py_i32_enum!(IbTickType);
 
 py_i32_enum!(IbOrderOrigin);
@@ -259,6 +243,3 @@ py_str_enum!(IbLegAction);
 py_str_enum!(IbFundDistributionPolicyIndicator);
 py_str_enum!(IbFundAssetType);
 py_str_enum!(IbBondIdentifierKind);
-
-py_marker_enum!(ErrorCategory);
-py_marker_enum!(InteractiveBrokersErrorKind);
