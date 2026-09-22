@@ -514,9 +514,12 @@ When reconciliation supplies a lookback, both execution clients derive a single 
 to every historical query, then record it on the mass status through `set_report_window`. Using one
 cutoff avoids a report set that never existed at the venue, which a moving cutoff can produce.
 
-The set is reported complete only when every record resolved to an instrument. A record skipped
-because its instrument is not in the cache marks the set incomplete, so the engine applies its
-bounded-history rules instead of treating the shorter set as authoritative.
+Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
+described below qualifies that set rather than gating it.
+
+Order and fill records contribute to the completeness flag: the set is incomplete when a record's
+instrument could not be resolved, or when a record could not be parsed. Position records do not
+currently contribute, and the futures position read still drops an unresolved symbol silently.
 
 ### Spot reconciliation
 
