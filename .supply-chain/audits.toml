@@ -3219,6 +3219,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.4 -> 2.0.1"
 notes = "Reviewed the 2.0 Compio runtime, split-driver, heartbeat, timeout, and API changes. The one added unsafe buffer copy is capacity-bounded before setting initialized length; normal Message UTF-8 validation remains intact, enabled fastrand avoids the non-random masking fallback, and no hidden filesystem, process, credential, or data-exfiltration capability was added."
 
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.0.1 -> 2.1.0"
+notes = "Reviewed the header-aware handshake builder with token/reserved/control-byte validation, rustls provider deselection (ring moved to dev-dependencies), deflate context-takeover fix, incremental UTF-8 validation, streaming frame unmask, lazy heartbeat timer, atomic activity clock, and handshake leftover replay. No new unsafe, dependencies, build script, filesystem, process, or network capability."
+
 [[audits.syn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

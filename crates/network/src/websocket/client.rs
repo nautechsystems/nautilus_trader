@@ -877,9 +877,9 @@ impl WebSocketClientInner {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        // Use one path for uniform error logging and ownership of
-        // stream construction since sockudo's high-level client drops the
-        // handshake leftover.
+        // Use one path for uniform error logging and ownership of stream
+        // construction; sockudo's handshake error drops the rejection status
+        // the retry policy needs.
         let handshake =
             client_handshake_with_headers(&mut stream, &target.host_header, &target.path, headers)
                 .await?;

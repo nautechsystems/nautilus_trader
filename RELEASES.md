@@ -9,6 +9,8 @@ Released on TBD (UTC).
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Added aggregate instrument fan-out across class directories to `list_parquet_files`
 - Added custom data support to `StreamingFeatherWriter` (#4759), thanks for reporting @mystic-io
+- Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
+- Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
@@ -26,10 +28,10 @@ Released on TBD (UTC).
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
 - Changed Rust `ExecutionEngine::register_client` to require explicit venue or default routing setup for commands that relied on automatic venue routing; live-node and backtest automatic routing remain unchanged
-- Changed `ParquetDataCatalog` file operations to take a `data_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings
-- Changed `ParquetDataCatalog.query` to take a `NautilusDataType` in place of a directory-name string
-- Changed `ParquetDataCatalog.delete_data_range` to take a `NautilusDataType`, excluding record selectors and rejecting instrument definitions
-- Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string, where `Instrument` loads every instrument class
+- Changed `ParquetDataCatalog` file operations to take a `data_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings (#5027), thanks @faysou
+- Changed `ParquetDataCatalog.query` to take a `NautilusDataType` in place of a directory-name string (#5027), thanks @faysou
+- Changed `ParquetDataCatalog.delete_data_range` to take a `NautilusDataType`, excluding record selectors and rejecting instrument definitions (#5027), thanks @faysou
+- Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string, where `Instrument` loads every instrument class (#5027), thanks @faysou
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed live node startup to fail when in-scope nonzero venue positions remain unrecovered
@@ -47,6 +49,9 @@ Released on TBD (UTC).
 - Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
 - Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
 - Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
+- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
+- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
+- Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
 
 ### Security
 
@@ -74,6 +79,9 @@ Released on TBD (UTC).
 - Fixed live reconciliation applying report-task results after shutdown (#4982), thanks @folknor
 - Fixed backtest data-type and missing-engine errors to name the valid case (#4977), thanks @abhijeetvichare76
 - Fixed unclear errors for missing local Parquet catalog paths (#4950), thanks for reporting @Artur-Sulej
+- Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
+- Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo
+- Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
@@ -82,7 +90,9 @@ Released on TBD (UTC).
 - Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
 - Fixed Binance bulk non-trading instrument skips logged as warnings instead of debug
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
+- Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
+- Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
 - Fixed Lighter cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
@@ -97,6 +107,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
@@ -122,9 +133,11 @@ Released on TBD (UTC).
 - Upgraded `redb` crate to v4.3.0
 - Upgraded `ruint` crate to v1.20.1
 - Upgraded `smallvec` crate to v1.16.1
+- Upgraded `sockudo-ws` crate to v2.1.0
 - Upgraded `polars` package (test) to v1.44.2
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.8
 - Upgraded `ty` package (dev) to v0.0.80
+- Upgraded `uvicorn` package (test) to v0.53.0
 
 ### Documentation Updates
 
@@ -152,8 +165,6 @@ Released on 15th September 2026 (UTC).
 - Added a `channel` filter to actor `subscribe_queue_state`
 - Added `HttpClient::get_stream` and `HttpResponseStream` for HTTP bodies consumed without full buffering
 - Added `publish_message(...)`, `subscribe_topic(...)`, and `unsubscribe_topic(...)` for Python `DataActor`, `Strategy`, and `ExecutionAlgorithm`
-- Added Parquet catalog migration through `nautilus catalog migrate-parquet`
-- Added shared catalog and streaming writer factories for backtest and live nodes
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
 - Added optional `BinaryOption.event_id` with Python and Arrow support
@@ -200,8 +211,6 @@ Released on 15th September 2026 (UTC).
 - Removed Rust `Response` and `ReqwestError` exports from `nautilus_network::http`
 - Removed `InnerHttpClient::to_response` and `from_reqwest` error conversions; use `HttpClientError`
 - Added the required Rust `Instrument::info` method; custom implementations must return their metadata or `None`
-- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data
-
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
 - Removed public Rust and Python `ForwardPrice` APIs; option chains now fetch reference prices internally
@@ -209,7 +218,6 @@ Released on 15th September 2026 (UTC).
 - Replaced `RetryManager.execute_with_retry*` methods with `invocation(...).execute().await`
 - Replaced the Rust `DurationNanos` `u64` alias with a newtype; use constructors and accessors
 - Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
-- Replaced fixed-depth `OrderBookDepth10` with variable-depth `OrderBookDepth`, retaining a compatibility alias
 - Renamed `nautilus-serialization` Cargo feature `display` to `arrow-display`
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
 - Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
@@ -239,8 +247,6 @@ Released on 15th September 2026 (UTC).
 - Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
 - Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use `OrderStatus::is_inflight()` when a pending venue request must also match
 - Changed Python-controlled allocation sizes to reject values above documented limits; reduce existing oversized configurations before upgrading
-- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs
-- Changed custom data macros to separate model definitions from optional Arrow encoding
 
 ### Security
 

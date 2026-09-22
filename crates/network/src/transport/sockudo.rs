@@ -23,15 +23,16 @@
 //! The `Message` enums are structurally identical: both carry payloads as `bytes::Bytes`
 //! across all five variants, so conversions are zero-copy and infallible.
 //!
-//! sockudo's public HTTP/1.1 client API does not expose custom headers, so this
-//! module provides a handshake path for upgrade requests that need them.
+//! Request bytes come from sockudo's header-aware builder; the response loop stays
+//! local so upgrade rejections map to [`TransportError::UpgradeRejected`] with
+//! host-context logging instead of collapsing into a handshake failure.
 
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use futures_util::{Sink, Stream};
 use sockudo_ws::{
     HandshakeResult,
@@ -66,9 +67,12 @@ const RESERVED_UPGRADE_HEADERS: &[&str] = &[
     "trailer",
 ];
 
-/// Mirror of `sockudo_ws::handshake::client_handshake` (2.0.1) with custom headers.
+/// Performs the client handshake, building the upgrade request with sockudo's
+/// header-aware builder and reading the response locally.
 ///
-/// Caller pre-validates `extra_headers` via [`validate_extra_headers`].
+/// The local response loop preserves the rejection status for
+/// [`TransportError::UpgradeRejected`] and the retry-aware log severity; caller
+/// pre-validates `extra_headers` via [`validate_extra_headers`].
 pub(crate) async fn client_handshake_with_headers<S>(
     stream: &mut S,
     host: &str,
@@ -81,7 +85,8 @@ where
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let key = handshake::generate_key();
-    let request = build_request_with_headers(host, path, &key, extra_headers);
+    let request =
+        handshake::build_request_with_headers(host, path, &key, None, None, Some(extra_headers))?;
 
     stream
         .write_all(&request)
@@ -190,40 +195,6 @@ fn log_handshake_response(host: &str, err: &SockudoError, buf: &BytesMut, status
             "Sockudo handshake failed for {host}: {err}; response bytes={response_bytes}"
         ),
     }
-}
-
-// Mirror of `sockudo_ws::handshake::build_request` (2.0.1) with `extra_headers`
-// appended; caller pre-validates.
-fn build_request_with_headers(
-    host: &str,
-    path: &str,
-    key: &str,
-    extra_headers: &[(String, String)],
-) -> Bytes {
-    let mut buf = BytesMut::with_capacity(512);
-
-    buf.put_slice(b"GET ");
-    buf.put_slice(path.as_bytes());
-    buf.put_slice(b" HTTP/1.1\r\n");
-    buf.put_slice(b"Host: ");
-    buf.put_slice(host.as_bytes());
-    buf.put_slice(b"\r\n");
-    buf.put_slice(b"Upgrade: websocket\r\n");
-    buf.put_slice(b"Connection: Upgrade\r\n");
-    buf.put_slice(b"Sec-WebSocket-Key: ");
-    buf.put_slice(key.as_bytes());
-    buf.put_slice(b"\r\n");
-    buf.put_slice(b"Sec-WebSocket-Version: 13\r\n");
-
-    for (name, value) in extra_headers {
-        buf.put_slice(name.as_bytes());
-        buf.put_slice(b": ");
-        buf.put_slice(value.as_bytes());
-        buf.put_slice(b"\r\n");
-    }
-
-    buf.put_slice(b"\r\n");
-    buf.freeze()
 }
 
 pub(crate) fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), SockudoError> {
