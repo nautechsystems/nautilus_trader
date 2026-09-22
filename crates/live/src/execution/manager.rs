@@ -249,6 +249,10 @@ impl ExecutionManager {
     }
 
     /// Registers an order as inflight for tracking.
+    ///
+    /// Skips filtered orders. With `RetainUnresolved`, preserves an active submission's
+    /// recovery budget and skips `Submitted` orders already confirmed by native state or
+    /// a matching venue report. Pending cancel or update commands use their own recovery budget.
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
         if self
             .config
@@ -539,12 +543,7 @@ impl ExecutionManager {
     /// An active submission's identity and budget survive pre-dispatch cleanup until
     /// native state or a matching venue report acknowledges it, or recovery exhausts its budget.
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
-        if self.submission_recovery_pending(*client_order_id)
-            && !self
-                .config
-                .filtered_client_order_ids
-                .contains(client_order_id)
-        {
+        if self.submission_recovery_pending(*client_order_id) {
             return;
         }
 
@@ -557,10 +556,6 @@ impl ExecutionManager {
             && self
                 .get_order(*client_order_id)
                 .is_some_and(|order| Self::submission_is_unacknowledged(&order))
-            && !self
-                .config
-                .filtered_client_order_ids
-                .contains(client_order_id)
             && let Some(submission) = self.submissions.get_mut(client_order_id)
         {
             // Remember report-only confirmation until native history can prevent re-registration
