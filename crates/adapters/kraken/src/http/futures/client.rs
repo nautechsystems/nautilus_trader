@@ -1812,6 +1812,7 @@ impl KrakenFuturesHttpClient {
                     Err(e) => {
                         let order_id = &order.order_id;
                         log::warn!("Failed to parse futures order {order_id}: {e}");
+                        complete = false;
                     }
                 }
             } else {
@@ -1857,6 +1858,7 @@ impl KrakenFuturesHttpClient {
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
+                            complete = false;
                         }
                     }
                 } else {
@@ -2003,6 +2005,7 @@ impl KrakenFuturesHttpClient {
                     Err(e) => {
                         let fill_id = &fill.fill_id;
                         log::warn!("Failed to parse futures fill {fill_id}: {e}");
+                        complete = false;
                     }
                 }
             } else {

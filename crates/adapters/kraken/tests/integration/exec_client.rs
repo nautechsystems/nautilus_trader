@@ -791,6 +791,51 @@ fn spot_trades_json(pairs: &[&str]) -> String {
     )
 }
 
+fn spot_trades_json_with_unparsable_vol(pair: &str) -> String {
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{"TTRADE-BAD":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"not_a_number","margin":"0.00000","misc":"","trade_id":1,"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}}},"count":1}}}}"#
+    )
+}
+
+/// A historical row that cannot be parsed makes the bounded set incomplete.
+///
+/// The guide counts a required row that cannot be parsed or mapped as incomplete, the same as an
+/// unresolved instrument.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: the same row with a parsable volume reports complete, so the flag below is driven
+    // by the parse failure rather than by the row being rejected for some other reason.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json_with_unparsable_vol("XBTUSDT"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unparsable historical row must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
 /// A bounded mass status must declare the cutoff it applied.
 #[rstest]
 #[tokio::test]

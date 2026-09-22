@@ -2302,6 +2302,7 @@ impl KrakenSpotHttpClient {
                 Ok(report) => all_reports.push(report),
                 Err(e) => {
                     log::warn!("Failed to parse order {order_id}: {e}");
+                    complete = false;
                 }
             }
         }
@@ -2352,6 +2353,7 @@ impl KrakenSpotHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         log::warn!("Failed to parse order {order_id}: {e}");
+                        complete = false;
                     }
                 }
             }
@@ -2432,6 +2434,7 @@ impl KrakenSpotHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         log::warn!("Failed to parse trade {trade_id}: {e}");
+                        complete = false;
                     }
                 }
             }
