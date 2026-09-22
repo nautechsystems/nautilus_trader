@@ -17,14 +17,13 @@
 //!
 //! Drives a simulated-live node (`start`/`stop`/`dispose`) on a current-thread Tokio runtime,
 //! publishes market data through typed message-bus routes plus order events through the
-//! order-event route, then proves the Feather output round-trips through the catalog with
-//! exact row counts. The first test isolates size rotation (auto-flush disabled by an
+//! order-event route, then proves the Feather output converts and round-trips through typed
+//! catalog queries. The first test isolates size rotation (auto-flush disabled by an
 //! unreachable interval) and the second isolates auto-flush (no rotation), so each
 //! boundary is proven to fire synchronously from inside the publish callbacks.
 
 use std::{str::FromStr, time::Duration};
 
-use arrow::array::{Array, TimestampNanosecondArray, UInt64Array};
 use nautilus_common::{
     enums::Environment,
     msgbus::{self, switchboard},
@@ -116,28 +115,6 @@ fn feather_files_under(root: &std::path::Path, family: &str) -> Vec<std::path::P
     }
     files.sort();
     files
-}
-
-fn stream_ts_init(catalog: &mut ParquetDataCatalog, data_type: &CatalogDataType) -> Vec<u64> {
-    let batches = catalog
-        .query_record_batches(data_type, None, None, None, None, false)
-        .unwrap();
-    let mut ts_init = Vec::new();
-    for batch in &batches {
-        let column = batch.column_by_name("ts_init").unwrap();
-        if let Some(stamps) = column.as_any().downcast_ref::<TimestampNanosecondArray>() {
-            ts_init.extend(stamps.values().iter().map(|ts| *ts as u64));
-        } else if let Some(stamps) = column.as_any().downcast_ref::<UInt64Array>() {
-            ts_init.extend(stamps.values().iter().copied());
-        } else {
-            panic!(
-                "unexpected ts_init column type for {data_type}: {}",
-                column.data_type(),
-            );
-        }
-    }
-    ts_init.sort_unstable();
-    ts_init
 }
 
 #[rstest]
@@ -263,9 +240,6 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
         vec![instance_id.to_string()],
     );
 
-    // Timestamps are asserted from raw batches rather than typed rows: the kernel-wired
-    // Feather backend omits Arrow schema metadata, so typed decode cannot reconstruct
-    // precisions.
     for data_type in [
         NautilusDataType::QuoteTick,
         NautilusDataType::TradeTick,
@@ -283,26 +257,28 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             .unwrap();
     }
     assert_eq!(
-        stream_ts_init(&mut catalog, &NautilusDataType::QuoteTick.into()),
-        quotes
-            .iter()
-            .map(|tick| tick.ts_init.as_u64())
-            .collect::<Vec<_>>(),
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap(),
+        quotes,
     );
     assert_eq!(
-        stream_ts_init(&mut catalog, &NautilusDataType::TradeTick.into()),
-        trades
-            .iter()
-            .map(|tick| tick.ts_init.as_u64())
-            .collect::<Vec<_>>(),
+        catalog
+            .query_typed_data::<TradeTick>(None, None, None, None, None, true)
+            .unwrap(),
+        trades,
     );
     assert_eq!(
-        stream_ts_init(&mut catalog, &NautilusDataType::OrderBookDelta.into()),
-        vec![delta.ts_init.as_u64()],
+        catalog
+            .query_typed_data::<OrderBookDelta>(None, None, None, None, None, true)
+            .unwrap(),
+        vec![delta],
     );
     assert_eq!(
-        stream_ts_init(&mut catalog, &NautilusDataType::Bar.into()),
-        vec![bar.ts_init.as_u64()],
+        catalog
+            .query_typed_data::<Bar>(None, None, None, None, None, true)
+            .unwrap(),
+        vec![bar],
     );
 
     for record_type in [
@@ -407,10 +383,9 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         )
         .unwrap();
     assert_eq!(
-        stream_ts_init(&mut catalog, &NautilusDataType::QuoteTick.into()),
-        quotes
-            .iter()
-            .map(|tick| tick.ts_init.as_u64())
-            .collect::<Vec<_>>(),
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap(),
+        quotes,
     );
 }

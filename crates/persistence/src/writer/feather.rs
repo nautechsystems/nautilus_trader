@@ -482,6 +482,20 @@ impl FeatherWriter {
         }
     }
 
+    pub(crate) fn default_per_instrument_types() -> HashSet<String> {
+        HashSet::from([
+            Bar::path_prefix().to_string(),
+            OrderBookDelta::path_prefix().to_string(),
+            OrderBookDepth::path_prefix().to_string(),
+            OptionGreeks::path_prefix().to_string(),
+            QuoteTick::path_prefix().to_string(),
+            TradeTick::path_prefix().to_string(),
+            MarkPriceUpdate::path_prefix().to_string(),
+            IndexPriceUpdate::path_prefix().to_string(),
+            FundingRateUpdate::path_prefix().to_string(),
+        ])
+    }
+
     /// Sets typed record-family filter for subsequent writes.
     #[must_use]
     pub fn with_record_filter(mut self, record_filter: Option<WriterRecordFilter>) -> Self {
@@ -1543,6 +1557,24 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[rstest]
+    fn test_default_per_instrument_types_match_streaming_feather_writer() {
+        assert_eq!(
+            FeatherWriter::default_per_instrument_types(),
+            HashSet::from([
+                "bars".to_string(),
+                "order_book_deltas".to_string(),
+                "order_book_depths".to_string(),
+                "option_greeks".to_string(),
+                "quotes".to_string(),
+                "trades".to_string(),
+                "mark_prices".to_string(),
+                "index_prices".to_string(),
+                "funding_rates".to_string(),
+            ]),
+        );
+    }
 
     #[rstest]
     fn test_subscription_receives_typed_quotes_and_unsubscribes() {

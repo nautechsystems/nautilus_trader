@@ -6415,7 +6415,6 @@ dependencies = [
  "ahash",
  "anyhow",
  "arc-swap",
- "arrow 59.3.0",
  "async-trait",
  "bon",
  "bytes",

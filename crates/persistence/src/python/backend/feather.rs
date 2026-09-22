@@ -262,18 +262,6 @@ impl PyStreamingFeatherWriter {
         let type_filter = include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
         let record_filter = writer_record_filter_from_py(record_types, record_filters)?;
 
-        // Set up per-instrument types (matching Python's _per_instrument_writers)
-        let mut per_instrument_types = HashSet::new();
-        per_instrument_types.insert("bars".to_string());
-        per_instrument_types.insert("order_book_deltas".to_string());
-        per_instrument_types.insert("order_book_depths".to_string());
-        per_instrument_types.insert("option_greeks".to_string());
-        per_instrument_types.insert("quotes".to_string());
-        per_instrument_types.insert("trades".to_string());
-        per_instrument_types.insert("mark_prices".to_string());
-        per_instrument_types.insert("index_prices".to_string());
-        per_instrument_types.insert("funding_rates".to_string());
-
         // Extract Clock from Python wrapper and translate it into the core
         // writer's Send time source (live clocks read the wall clock directly;
         // test clocks are bridged through a shared atomic)
@@ -290,7 +278,7 @@ impl PyStreamingFeatherWriter {
             writer_clock,
             rotation_config,
             type_filter,
-            Some(per_instrument_types),
+            Some(FeatherWriter::default_per_instrument_types()),
             flush_interval_ms, // Auto-flush interval in milliseconds
         )
         .with_record_filter(record_filter);
