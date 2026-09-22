@@ -41,6 +41,7 @@ pub use crate::accounts::{
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
@@ -107,7 +108,7 @@ pub trait Account: 'static + Send {
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>>;
 
-    /// Calculates commission for the order fill parameters.
+    /// Calculates commission for the order fill parameters from explicitly resolved fee rates.
     ///
     /// # Errors
     ///
@@ -118,6 +119,7 @@ pub trait Account: 'static + Send {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        fee_rates: MakerTakerFeeRates,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money>;
 }

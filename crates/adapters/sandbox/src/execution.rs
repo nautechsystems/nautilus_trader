@@ -115,14 +115,22 @@ impl Debug for SandboxExecutionClient {
 }
 
 impl SandboxExecutionClient {
-    /// Creates a new [`SandboxExecutionClient`] instance.
-    #[must_use]
+    /// Creates a new [`SandboxExecutionClient`] with an explicitly configured fee model.
+    ///
+    /// The fee model is resolved once and shared across all matching engines for
+    /// this account, ensuring model state is shared within the account and isolated
+    /// across accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `config.fee_model` is `None`. A deliberate fee choice,
+    /// including an explicit zero-fee model, is required.
     pub fn new(
         core: ExecutionClientCore,
         config: SandboxExecutionClientConfig,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let mut balances = AHashMap::new();
         for money in &config.starting_balances {
             balances.insert(money.currency.code.to_string(), *money);
@@ -133,12 +141,20 @@ impl SandboxExecutionClient {
             .clone()
             .map(FillModelHandle::from)
             .unwrap_or_default();
+
+        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
+            anyhow::anyhow!(
+                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
+            )
+        })?;
+
         let inner = Rc::new_cyclic(|weak: &std::rc::Weak<RefCell<SandboxInner>>| {
             RefCell::new(SandboxInner {
                 clock: clock.clone(),
                 cache: cache.clone(),
                 config: config.clone(),
                 fill_model,
+                fee_model,
                 matching_engines: AHashMap::new(),
                 next_engine_raw_id: 0,
                 balances,
@@ -159,7 +175,7 @@ impl SandboxExecutionClient {
             core.base_currency,
         );
 
-        Self {
+        Ok(Self {
             core: RefCell::new(core),
             factory,
             config,
@@ -167,7 +183,7 @@ impl SandboxExecutionClient {
             handlers: RefCell::new(None),
             clock,
             cache,
-        }
+        })
     }
 
     /// Returns a reference to the configuration.
@@ -870,6 +886,7 @@ struct SandboxInner {
     cache: Rc<RefCell<Cache>>,
     config: SandboxExecutionClientConfig,
     fill_model: FillModelHandle,
+    fee_model: FeeModelHandle,
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
     next_engine_raw_id: u32,
     balances: AHashMap<String, Money>,
@@ -926,12 +943,7 @@ impl SandboxInner {
         if !self.matching_engines.contains_key(&instrument_id) {
             let engine_config = self.config.to_matching_engine_config();
             let fill_model = self.fill_model.clone();
-            let fee_model = self
-                .config
-                .fee_model
-                .clone()
-                .map(FeeModelHandle::from)
-                .unwrap_or_default();
+            let fee_model = self.fee_model.clone();
             let raw_id = self.next_engine_raw_id;
             self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);
 

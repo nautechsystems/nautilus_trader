@@ -442,15 +442,12 @@ fn strike_range(selection_mode: SelectionMode) -> StrikeRange {
 fn option_fee_model() -> anyhow::Result<FeeModelAny> {
     match FEE_MODEL {
         "capped" => Ok(FeeModelAny::CappedOption(CappedOptionFeeModel::new(
-            Some(parse_decimal("0.0003")?),
-            Some(parse_decimal("0.0003")?),
+            parse_decimal("0.0003")?,
+            parse_decimal("0.0003")?,
             None,
         )?)),
         "tiered" => Ok(FeeModelAny::TieredNotionalOption(
-            TieredNotionalOptionFeeModel::new(
-                Some(parse_decimal("0.0002")?),
-                Some(parse_decimal("0.0005")?),
-            )?,
+            TieredNotionalOptionFeeModel::new(parse_decimal("0.0002")?, parse_decimal("0.0005")?)?,
         )),
         other => {
             anyhow::bail!("Invalid FEE_MODEL '{other}', expected 'capped' or 'tiered'")

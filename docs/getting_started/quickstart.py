@@ -128,6 +128,7 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
@@ -217,6 +218,10 @@ engine.add_venue(
     starting_balances=[Money(1_000_000, USD)],
     base_currency=USD,
     default_leverage=Decimal(1),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal(0),
+        taker_rate=Decimal(0),
+    ),
 )
 
 # Add instrument, data, and strategy

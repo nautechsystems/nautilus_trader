@@ -1087,12 +1087,14 @@ mod tests {
         #[case] price: &str,
         #[case] liquidity_side: LiquiditySide,
     ) {
-        let mut binary = binary_option();
-        binary.maker_fee = Decimal::ZERO;
-        binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+        let binary = binary_option();
         let instrument = InstrumentAny::BinaryOption(binary);
         let order = binary_option_fill_order(&instrument, liquidity_side, price);
-        let fee_model = ProbabilityPriceFeeModel;
+
+        let fee_model = ProbabilityPriceFeeModel::new(
+            Decimal::ZERO,
+            Decimal::from_str_exact(taker_fee).unwrap(),
+        );
 
         let commission = fee_model
             .get_commission(

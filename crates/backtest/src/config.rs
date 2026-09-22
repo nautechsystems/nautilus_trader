@@ -292,7 +292,10 @@ pub struct SimulatedVenueConfig {
     #[builder(default)]
     pub fill_model: FillModelHandle,
     /// The model used to calculate trading fees.
-    #[builder(default)]
+    ///
+    /// Must be configured explicitly, including an explicit zero-fee model.
+    /// Missing configuration must not silently turn a fee-paying replay into
+    /// a zero-fee replay.
     pub fee_model: FeeModelHandle,
     /// The optional model used to simulate command latency.
     pub latency_model: Option<LatencyModelHandle>,
@@ -527,6 +530,9 @@ pub struct BacktestVenueConfig {
     /// The latency model for the venue.
     latency_model: Option<LatencyModelAny>,
     /// The fee model for the venue.
+    ///
+    /// Required when building engines from this config, including an explicit
+    /// zero-fee model; node build fails without one.
     fee_model: Option<FeeModelAny>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
@@ -1210,6 +1216,7 @@ impl BacktestRunConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_execution::models::fee::MakerTakerFeeModel;
     use rstest::rstest;
 
     use super::*;
@@ -1286,6 +1293,7 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         };
     }
 
@@ -1519,6 +1527,7 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         };
     }
 
@@ -1536,6 +1545,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build();
         assert!(
             matches!(result, Err(ConfigError::EmptyField { field }) if field == "starting_balances")

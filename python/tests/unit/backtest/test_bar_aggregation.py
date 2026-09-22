@@ -28,6 +28,7 @@ from decimal import Decimal
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Bar
@@ -56,6 +57,10 @@ def _engine(instrument: object) -> BacktestEngine:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     return engine

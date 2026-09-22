@@ -67,6 +67,7 @@ use nautilus_model::{
         account::stubs::cash_account_state_million_usd,
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
+    fees::MakerTakerFeeRates,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
         Symbol, TradeId, TraderId, Venue, VenueOrderId,
@@ -962,8 +963,16 @@ fn order_filled(
         cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
     )));
 
+    let fee_rates = MakerTakerFeeRates::new(instrument.maker_fee(), instrument.taker_fee());
     let commission = account
-        .calculate_commission(instrument, order.quantity(), last_px, liquidity_side, None)
+        .calculate_commission(
+            instrument,
+            order.quantity(),
+            last_px,
+            liquidity_side,
+            fee_rates,
+            None,
+        )
         .unwrap();
 
     OrderFilledSpec::builder()

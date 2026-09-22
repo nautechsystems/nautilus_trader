@@ -633,6 +633,8 @@ def test_cash_account_calculate_commission() -> None:
         last_qty=Quantity.from_int(10_000),
         last_px=Price.from_str("0.80000"),
         liquidity_side=LiquiditySide.TAKER,
+        maker_rate=Decimal("0.00002"),
+        taker_rate=Decimal("0.00002"),
     )
 
     assert isinstance(commission, Money)
@@ -1230,6 +1232,8 @@ def test_margin_account_calculate_commission() -> None:
         last_qty=Quantity.from_int(10_000),
         last_px=Price.from_str("0.80000"),
         liquidity_side=LiquiditySide.TAKER,
+        maker_rate=Decimal("0.00002"),
+        taker_rate=Decimal("0.00002"),
     )
 
     assert isinstance(commission, Money)

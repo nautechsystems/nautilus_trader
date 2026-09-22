@@ -22,6 +22,7 @@
 # %%
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -32,6 +33,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
@@ -179,6 +181,10 @@ venue_configs = [
         book_type=BookType.L1_MBP,
         base_currency=Currency.from_str("USD"),
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     ),
 ]
 

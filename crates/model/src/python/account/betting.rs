@@ -19,11 +19,13 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
 
 use crate::{
     accounts::{Account, BettingAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::AccountId,
     position::Position,
     python::instruments::pyobject_to_instrument_any,
@@ -195,13 +197,16 @@ impl BettingAccount {
     }
 
     #[pyo3(name = "calculate_commission")]
-    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, use_quote_for_inverse=None))]
+    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, maker_rate, taker_rate, use_quote_for_inverse=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_calculate_commission(
         &self,
         instrument: Py<PyAny>,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
@@ -209,11 +214,13 @@ impl BettingAccount {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
         let instrument = pyobject_to_instrument_any(py, instrument)?;
+        let fee_rates = MakerTakerFeeRates::new(maker_rate, taker_rate);
         self.calculate_commission(
             &instrument,
             last_qty,
             last_px,
             liquidity_side,
+            fee_rates,
             use_quote_for_inverse,
         )
         .map_err(to_pyvalue_err)

@@ -20,6 +20,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     identifiers::{AccountId, ClientId, TraderId, Venue},
     types::Money,
@@ -75,6 +76,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             account_id,
             venue: Venue::new(SANDBOX),
             starting_balances: vec![Money::from("100_000 USD")],
+            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
             ..SandboxExecutionClientConfig::default()
         },
     )
@@ -131,6 +133,7 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
                 account_id,
                 venue: Venue::new(SANDBOX),
                 starting_balances: vec![Money::from("100_000 USD")],
+                fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
                 queue_position: true,
                 liquidity_consumption: true,
                 bar_adaptive_high_low_ordering: true,

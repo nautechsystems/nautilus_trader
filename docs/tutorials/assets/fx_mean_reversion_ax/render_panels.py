@@ -32,6 +32,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AssetClass
 from nautilus_trader.model import BarType
@@ -159,6 +160,10 @@ def run_backtest() -> object:
         account_type=AccountType.MARGIN,
         base_currency=USD,
         starting_balances=[Money(100_000, USD)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.0005"),
+        ),
     )
     engine.add_instrument(EURUSD_PERP)
     engine.add_data(ticks)

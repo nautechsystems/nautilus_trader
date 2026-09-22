@@ -15,10 +15,14 @@
 
 //! Python bindings for fee model types.
 
+use std::collections::HashMap;
+
 use nautilus_core::python::{
     clone_py_object, to_pynotimplemented_err, to_pyruntime_err, to_pytype_err,
 };
 use nautilus_model::{
+    fees::MakerTakerFeeRates,
+    identifiers::InstrumentId,
     instruments::InstrumentAny,
     orders::OrderAny,
     python::{
@@ -313,10 +317,27 @@ fn resolve_fixed_fee_charge_commission_once(
     reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
 )]
 impl MakerTakerFeeModel {
+    /// Creates a new `MakerTakerFeeModel` with explicit default rates.
+    ///
+    /// Negative maker rates represent rebates where the venue supports them.
+    /// Use `Self.set_override` for exact per-instrument rates.
     #[new]
     #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
-    fn py_new() -> PyClassInitializer<MakerTakerFeeModel> {
-        PyClassInitializer::from(PyFeeModel).add_subclass(MakerTakerFeeModel)
+    #[pyo3(signature = (maker_rate, taker_rate, overrides=None))]
+    fn py_new(
+        maker_rate: Decimal,
+        taker_rate: Decimal,
+        overrides: Option<HashMap<InstrumentId, (Decimal, Decimal)>>,
+    ) -> PyClassInitializer<MakerTakerFeeModel> {
+        let mut model = MakerTakerFeeModel::new(maker_rate, taker_rate);
+
+        if let Some(overrides) = overrides {
+            for (instrument_id, (maker, taker)) in overrides {
+                model.set_override(instrument_id, MakerTakerFeeRates::new(maker, taker));
+            }
+        }
+
+        PyClassInitializer::from(PyFeeModel).add_subclass(model)
     }
 
     fn __repr__(&self) -> String {
@@ -377,7 +398,7 @@ impl PerContractFeeModel {
 impl ProbabilityPriceFeeModel {
     /// Fee model for probability-priced outcome shares.
     ///
-    /// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+    /// Applies `qty * fee_rate * p * (1 - p)` using the account-owned maker or
     /// taker fee rate. This matches venues that represent outcome shares as
     /// `InstrumentAny.BinaryOption` instruments quoted on a `[0, 1]`
     /// probability scale.
@@ -387,8 +408,21 @@ impl ProbabilityPriceFeeModel {
     /// core execution layer.
     #[new]
     #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
-    fn py_new() -> PyClassInitializer<ProbabilityPriceFeeModel> {
-        PyClassInitializer::from(PyFeeModel).add_subclass(ProbabilityPriceFeeModel)
+    #[pyo3(signature = (maker_rate, taker_rate, overrides=None))]
+    fn py_new(
+        maker_rate: Decimal,
+        taker_rate: Decimal,
+        overrides: Option<HashMap<InstrumentId, (Decimal, Decimal)>>,
+    ) -> PyClassInitializer<ProbabilityPriceFeeModel> {
+        let mut model = ProbabilityPriceFeeModel::new(maker_rate, taker_rate);
+
+        if let Some(overrides) = overrides {
+            for (instrument_id, (maker, taker)) in overrides {
+                model.set_override(instrument_id, MakerTakerFeeRates::new(maker, taker));
+            }
+        }
+
+        PyClassInitializer::from(PyFeeModel).add_subclass(model)
     }
 
     fn __repr__(&self) -> String {
@@ -413,20 +447,30 @@ impl ProbabilityPriceFeeModel {
     reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
 )]
 impl CappedOptionFeeModel {
-    /// Creates a new `CappedOptionFeeModel` instance.
+    /// Creates a new `CappedOptionFeeModel` instance with explicit rates.
     ///
     /// # Errors
     ///
     /// Returns an error if any supplied rate is negative.
     #[new]
     #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
-    #[pyo3(signature = (maker_rate=None, taker_rate=None, cap_rate=None))]
+    #[pyo3(signature = (maker_rate, taker_rate, cap_rate=None, overrides=None))]
     fn py_new(
-        maker_rate: Option<Decimal>,
-        taker_rate: Option<Decimal>,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
         cap_rate: Option<Decimal>,
+        overrides: Option<HashMap<InstrumentId, (Decimal, Decimal)>>,
     ) -> PyResult<PyClassInitializer<CappedOptionFeeModel>> {
-        let model = Self::new(maker_rate, taker_rate, cap_rate).map_err(to_pyruntime_err)?;
+        let mut model = Self::new(maker_rate, taker_rate, cap_rate).map_err(to_pyruntime_err)?;
+
+        if let Some(overrides) = overrides {
+            for (instrument_id, (maker, taker)) in overrides {
+                model
+                    .set_override(instrument_id, MakerTakerFeeRates::new(maker, taker))
+                    .map_err(to_pyruntime_err)?;
+            }
+        }
+
         Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 
@@ -472,19 +516,29 @@ impl CappedOptionFeeModel {
     reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
 )]
 impl TieredNotionalOptionFeeModel {
-    /// Creates a new `TieredNotionalOptionFeeModel` instance.
+    /// Creates a new `TieredNotionalOptionFeeModel` instance with explicit rates.
     ///
     /// # Errors
     ///
     /// Returns an error if any supplied rate is negative.
     #[new]
     #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
-    #[pyo3(signature = (maker_rate=None, taker_rate=None))]
+    #[pyo3(signature = (maker_rate, taker_rate, overrides=None))]
     fn py_new(
-        maker_rate: Option<Decimal>,
-        taker_rate: Option<Decimal>,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
+        overrides: Option<HashMap<InstrumentId, (Decimal, Decimal)>>,
     ) -> PyResult<PyClassInitializer<TieredNotionalOptionFeeModel>> {
-        let model = Self::new(maker_rate, taker_rate).map_err(to_pyruntime_err)?;
+        let mut model = Self::new(maker_rate, taker_rate).map_err(to_pyruntime_err)?;
+
+        if let Some(overrides) = overrides {
+            for (instrument_id, (maker, taker)) in overrides {
+                model
+                    .set_override(instrument_id, MakerTakerFeeRates::new(maker, taker))
+                    .map_err(to_pyruntime_err)?;
+            }
+        }
+
         Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 

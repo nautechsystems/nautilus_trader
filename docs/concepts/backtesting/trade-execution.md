@@ -7,7 +7,10 @@ Set `trade_execution=False` to use trades as strategy data without treating them
 liquidity for ordinary resting orders:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -19,6 +22,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L1_MBP,
     starting_balances=["100_000 USD"],
     trade_execution=False,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -107,6 +114,10 @@ Set `queue_position=True` with `trade_execution=True` to track displayed quantit
 LIMIT order:
 
 ```python
+from decimal import Decimal
+
+from nautilus_trader.execution import MakerTakerFeeModel
+
 venue = BacktestVenueConfig(
     name="SIM",
     oms_type=OmsType.NETTING,
@@ -115,6 +126,10 @@ venue = BacktestVenueConfig(
     starting_balances=["100_000 USD"],
     trade_execution=True,
     queue_position=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -123,7 +138,10 @@ Sandbox paper trading uses the same matching-engine flags. Pass them on
 behavior):
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -135,6 +153,10 @@ config = SandboxExecutionClientConfig(
     trade_execution=True,
     queue_position=True,
     liquidity_consumption=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.001"),
+        taker_rate=Decimal("0.001"),
+    ),
 )
 ```
 

@@ -106,6 +106,7 @@ nautilus-trading = { workspace = true, features = ["examples"] }
 
 criterion = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 
 # Run with `cargo bench -p nautilus-backtest --bench engine`

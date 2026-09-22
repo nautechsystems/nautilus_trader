@@ -39,6 +39,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
         NautilusDataType, QuoteTick,
@@ -109,6 +110,7 @@ fn deribit_venue_config() -> BacktestVenueConfig {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["10 BTC".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap()
 }

@@ -28,6 +28,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::{actor::DataActor, throttler::RateLimit};
 use nautilus_core::DurationNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{NautilusDataType, QuoteTick},
     enums::{AccountType, BookType, OmsType, OrderSide},
@@ -73,6 +74,7 @@ fn xnas_venue_config() -> BacktestVenueConfig {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USD".to_string()])
         .base_currency(Currency::from("USD"))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap()
 }

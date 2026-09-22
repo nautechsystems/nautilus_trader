@@ -28,6 +28,7 @@ use crate::{
     accounts::{Account, BettingAccount, CashAccount, MarginAccount, WalletAccount},
     enums::{AccountType, LiquiditySide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
@@ -152,6 +153,7 @@ impl AccountAny {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        fee_rates: MakerTakerFeeRates,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         Account::calculate_commission(
@@ -160,6 +162,7 @@ impl AccountAny {
             last_qty,
             last_px,
             liquidity_side,
+            fee_rates,
             use_quote_for_inverse,
         )
     }

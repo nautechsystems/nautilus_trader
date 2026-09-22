@@ -116,7 +116,10 @@ expirations) are not delayed, so the model covers the inbound leg only. Without 
 client is unchanged and its events take the runner's execution channel as before.
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -125,6 +128,10 @@ config = SandboxExecutionClientConfig(
     venue=Venue("BINANCE"),
     starting_balances=[Money.from_str("10_000 USDT")],
     latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.001"),
+        taker_rate=Decimal("0.001"),
+    ),
 )
 ```
 

@@ -63,8 +63,11 @@ and normal-liquidity mode.
 Pass a built-in model object directly to `BacktestVenueConfig`:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.execution import DefaultFillModel
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -80,12 +83,19 @@ venue = BacktestVenueConfig(
         prob_slippage=0.5,
         random_seed=42,
     ),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
 Synthetic book models use the same constructor parameters:
 
 ```python
+from decimal import Decimal
+
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import ThreeTierFillModel
 
 venue = BacktestVenueConfig(
@@ -98,6 +108,10 @@ venue = BacktestVenueConfig(
         prob_fill_on_limit=1.0,
         prob_slippage=0.0,
         random_seed=42,
+    ),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
     ),
 )
 ```

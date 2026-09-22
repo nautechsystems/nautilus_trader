@@ -2411,7 +2411,10 @@ mod tests {
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
     };
-    use nautilus_execution::engine::{SnapshotAnchorer, stubs::StubExecutionClient};
+    use nautilus_execution::{
+        engine::{SnapshotAnchorer, stubs::StubExecutionClient},
+        models::fee::{FeeModelAny, MakerTakerFeeModel},
+    };
     use nautilus_model::{
         data::{Data, InstrumentStatus, QuoteTick},
         enums::{
@@ -2553,6 +2556,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         engine.add_venue(venue_config).unwrap();
@@ -2568,6 +2572,7 @@ mod tests {
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .use_message_queue(false)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         engine.add_venue(venue_config).unwrap();
@@ -2659,6 +2664,7 @@ mod tests {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .modules(modules)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap();
             engine.add_venue(venue_config).unwrap();
@@ -2700,6 +2706,7 @@ mod tests {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .liquidation_enabled(enabled)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap();
             engine.add_venue(venue_config).unwrap();
@@ -2948,6 +2955,7 @@ mod tests {
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .use_message_queue(use_message_queue)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         engine.add_venue(venue_config).unwrap();
@@ -3248,6 +3256,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         engine.add_venue(venue_config).unwrap();
@@ -3292,6 +3301,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         assert!(engine.add_venue(duplicate_config).is_err());
@@ -3376,6 +3386,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USD")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         assert!(engine.add_venue(venue_config).is_err());
@@ -3772,6 +3783,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         engine.add_venue(venue_config).unwrap();

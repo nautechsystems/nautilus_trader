@@ -280,6 +280,8 @@ class BettingAccount:
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
         use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_pnls(
@@ -724,6 +726,8 @@ class CashAccount:
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
         use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_pnls(
@@ -2932,6 +2936,8 @@ class MarginAccount:
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
         use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_pnls(
@@ -7603,6 +7609,8 @@ class WalletAccount:
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
         use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_pnls(

@@ -29,8 +29,9 @@ use crate::{
             wallet_account_state,
         },
     },
+    fees::MakerTakerFeeRates,
     identifiers::stubs::{account_id, uuid4},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
@@ -124,7 +125,15 @@ pub fn calculate_commission(
         cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
     };
     let account = cash_account_million_usd(account_state);
+    let fee_rates = MakerTakerFeeRates::new(instrument.maker_fee(), instrument.taker_fee());
     account
-        .calculate_commission(instrument, quantity, price, LiquiditySide::Taker, None)
+        .calculate_commission(
+            instrument,
+            quantity,
+            price,
+            LiquiditySide::Taker,
+            fee_rates,
+            None,
+        )
         .unwrap()
 }

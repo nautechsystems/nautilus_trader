@@ -318,6 +318,7 @@ mod tests {
         accounts::{Account, BettingAccount, stubs::*},
         enums::{AccountType, CurrencyType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
+        fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId},
         instruments::{Instrument, stubs::betting},
         orders::stubs::TestOrderEventStubs,
@@ -589,6 +590,7 @@ mod tests {
             Quantity::from("1"),
             Price::from("1"),
             LiquiditySide::NoLiquiditySide,
+            MakerTakerFeeRates::zero(),
             None,
         );
         assert!(

@@ -42,6 +42,7 @@ from nautilus_trader.backtest import BacktestRunConfig
 from nautilus_trader.backtest import BacktestVenueConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
@@ -75,6 +76,10 @@ def test_node_construction() -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -100,6 +105,10 @@ def test_node_installs_configured_margin_model() -> None:
         base_currency=Currency.from_str("USD"),
         default_leverage=Decimal(10),
         margin_model=StandardMarginModel(),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     config = BacktestRunConfig(
         venues=[venue],
@@ -134,6 +143,10 @@ def test_node_uses_margin_account_default_leverage() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
         base_currency=Currency.from_str("USD"),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     config = BacktestRunConfig(
         venues=[venue],
@@ -170,6 +183,10 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USDT"],
         latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -219,6 +236,10 @@ def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: 
             account_type=AccountType.MARGIN,
             book_type=BookType.L1_MBP,
             starting_balances=["1_000_000 USD"],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal(0),
+                taker_rate=Decimal(0),
+            ),
         ),
         BacktestVenueConfig(
             name="XNAS",
@@ -226,6 +247,10 @@ def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: 
             account_type=AccountType.CASH,
             book_type=BookType.L1_MBP,
             starting_balances=["1_000_000 USD"],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal(0),
+                taker_rate=Decimal(0),
+            ),
         ),
     ]
     data = BacktestDataConfig(
@@ -392,6 +417,10 @@ def test_node_rejects_disposed_execution_algorithm_before_construction(
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     config = BacktestRunConfig(
         venues=[venue],
@@ -558,6 +587,10 @@ def test_node_venue_mismatch_raises() -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -579,6 +612,10 @@ def test_node_repr() -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -600,6 +637,10 @@ def test_node_dispose() -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -636,6 +677,10 @@ def test_node_post_run_inspection_unknown_config_raises(
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     config = BacktestRunConfig(venues=[venue], data=[])
     node = BacktestNode([config])
@@ -665,6 +710,10 @@ def test_node_missing_engine_explains_build_requirement(
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -861,6 +910,10 @@ def _build_component_node(
         account_type="MARGIN",
         starting_balances=["1_000_000 USDT"],
         book_type="L1_MBP",
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
@@ -891,6 +944,10 @@ def _build_ema_cross_node(
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USDT"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,

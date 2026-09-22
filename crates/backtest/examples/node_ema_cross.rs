@@ -31,6 +31,7 @@ use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{NautilusDataType, QuoteTick},
     enums::{AccountType, BookType, OmsType},
@@ -40,6 +41,7 @@ use nautilus_model::{
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_trading::examples::strategies::EmaCross;
+use rust_decimal_macros::dec;
 use tempfile::TempDir;
 use ustr::Ustr;
 
@@ -123,6 +125,10 @@ fn main() -> anyhow::Result<()> {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![STARTING_BALANCE.to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::new(
+            dec!(0.00002),
+            dec!(0.00002),
+        )))
         .build()?;
 
     let data_config = BacktestDataConfig::builder()

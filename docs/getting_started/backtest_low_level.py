@@ -26,6 +26,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import ExecutionAlgorithmConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Bar
@@ -96,6 +97,10 @@ engine.add_venue(
         Money(1_000_000.0, Currency.from_str("USDT")),
         Money(10.0, Currency.from_str("ETH")),
     ],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0001"),
+    ),
 )
 
 # %% [markdown]

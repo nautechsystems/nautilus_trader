@@ -340,6 +340,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
@@ -357,6 +358,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100_000 USD")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()?,
 )?;
 

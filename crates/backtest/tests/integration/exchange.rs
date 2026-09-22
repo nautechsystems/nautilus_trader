@@ -117,7 +117,7 @@ fn get_exchange_with_oms(
         .book_type(book_type)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -319,7 +319,7 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         )
         .default_leverage(Decimal::ONE)
         .liquidation_enabled(true)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -2431,7 +2431,7 @@ fn build_exchange_with_options(
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .defer_option_settlement(false)
         .frozen_account(frozen_account)
         .allow_cash_borrowing(allow_cash_borrowing)
@@ -3651,7 +3651,7 @@ fn get_exchange_with_modules(
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
         .modules(modules)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -3839,7 +3839,7 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
         .starting_balances(vec![Money::from("1000 USD")])
         .default_leverage(Decimal::ONE)
         .modules(modules)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .frozen_account(frozen_account)
         .build()
         .unwrap();

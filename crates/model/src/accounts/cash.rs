@@ -271,11 +271,13 @@ mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, CashAccount, stubs::*},
         enums::{AccountType, CurrencyType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*},
+        fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
             Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
@@ -742,12 +744,14 @@ mod tests {
         cash_account_million_usd: CashAccount,
         xbtusd_bitmex: CryptoPerpetual,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
                 &xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
+                fee_rates,
                 Some(use_quote_for_inverse),
             )
             .unwrap();
@@ -759,12 +763,14 @@ mod tests {
         cash_account_million_usd: CashAccount,
         audusd_sim: CurrencyPair,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(0.00002), dec!(0.00002));
         let result = cash_account_million_usd
             .calculate_commission(
                 &audusd_sim.into_any(),
                 Quantity::from("1500000"),
                 Price::from("0.8005"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();
@@ -776,12 +782,14 @@ mod tests {
         cash_account_million_usd: CashAccount,
         xbtusd_bitmex: CryptoPerpetual,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
                 &xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();
@@ -791,12 +799,14 @@ mod tests {
     #[rstest]
     fn test_calculate_commission_fx_taker(cash_account_million_usd: CashAccount) {
         let instrument = usdjpy_idealpro();
+        let fee_rates = MakerTakerFeeRates::new(dec!(0.00002), dec!(0.00002));
         let result = cash_account_million_usd
             .calculate_commission(
                 &instrument.into_any(),
                 Quantity::from("2200000"),
                 Price::from("120.310"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();

@@ -61,6 +61,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
 use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -663,6 +664,7 @@ fn build_engine_with_data_streams(
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .reject_stop_orders(build_config.reject_stop_orders)
                 .queue_position(true)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .expect("venue config should be valid"),
         )

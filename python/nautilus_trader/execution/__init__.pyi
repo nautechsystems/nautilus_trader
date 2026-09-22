@@ -41,9 +41,11 @@ class BestPriceFillModel:
 class CappedOptionFeeModel(FeeModel):
     def __new__(
         cls,
-        maker_rate: decimal.Decimal | None = None,
-        taker_rate: decimal.Decimal | None = None,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
         cap_rate: decimal.Decimal | None = None,
+        overrides: typing.Mapping[model.InstrumentId, tuple[decimal.Decimal, decimal.Decimal]]
+        | None = None,
     ) -> typing.Self: ...
     def get_commission(
         self,
@@ -186,7 +188,13 @@ class LimitOrderPartialFillModel:
 
 @typing.final
 class MakerTakerFeeModel(FeeModel):
-    def __new__(cls) -> typing.Self: ...
+    def __new__(
+        cls,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
+        overrides: typing.Mapping[model.InstrumentId, tuple[decimal.Decimal, decimal.Decimal]]
+        | None = None,
+    ) -> typing.Self: ...
     def get_commission(
         self,
         order: typing.Any,
@@ -232,7 +240,13 @@ class ProbabilisticFillModel:
 
 @typing.final
 class ProbabilityPriceFeeModel(FeeModel):
-    def __new__(cls) -> typing.Self: ...
+    def __new__(
+        cls,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
+        overrides: typing.Mapping[model.InstrumentId, tuple[decimal.Decimal, decimal.Decimal]]
+        | None = None,
+    ) -> typing.Self: ...
     def get_commission(
         self,
         order: typing.Any,
@@ -266,7 +280,11 @@ class ThreeTierFillModel:
 @typing.final
 class TieredNotionalOptionFeeModel(FeeModel):
     def __new__(
-        cls, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
+        cls,
+        maker_rate: decimal.Decimal,
+        taker_rate: decimal.Decimal,
+        overrides: typing.Mapping[model.InstrumentId, tuple[decimal.Decimal, decimal.Decimal]]
+        | None = None,
     ) -> typing.Self: ...
     def get_commission(
         self,

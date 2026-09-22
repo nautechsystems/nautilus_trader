@@ -47,7 +47,7 @@ use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
     models::{
-        fee::{FeeModelAny, ProbabilityPriceFeeModel},
+        fee::{FeeModelAny, MakerTakerFeeModel, ProbabilityPriceFeeModel},
         fill::{DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
         latency::{LatencyModelAny, StaticLatencyModel},
     },
@@ -123,7 +123,7 @@ fn create_config(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
-        fee_model: None,
+        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
         fill_model: None,
         latency_model: None,
         frozen_account: false,
@@ -198,7 +198,8 @@ fn create_test_context_with(
         cache.clone(),
     );
 
-    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
+
     TestContext {
         client,
         cache,
@@ -608,7 +609,7 @@ fn setup_binary_option_lifecycle_harness(
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
 
     set_exec_event_sender(tx);
@@ -687,7 +688,8 @@ fn setup_pending_resolution_harness(
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+    let mut client =
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone()).unwrap();
 
     cache
         .borrow_mut()
@@ -1127,7 +1129,7 @@ fn setup_engine_harness(
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
     client.start().unwrap();
     engine
         .borrow_mut()
@@ -1444,8 +1446,10 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
     account_id: AccountId,
 ) {
     assert_fee_model_config_drives_sandbox_commission(
-        FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel),
-        taker_fee,
+        FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel::new(
+            Decimal::ZERO,
+            Decimal::from_str_exact(taker_fee).unwrap(),
+        )),
         price,
         expected,
         trader_id,
@@ -1488,13 +1492,12 @@ fn test_python_fee_model_config_drives_sandbox_commission(
     });
 
     assert_fee_model_config_drives_sandbox_commission(
-        fee_model, "0.03", "0.500", expected, trader_id, account_id,
+        fee_model, "0.500", expected, trader_id, account_id,
     );
 }
 
 fn assert_fee_model_config_drives_sandbox_commission(
     fee_model: FeeModelAny,
-    taker_fee: &str,
     price: &str,
     expected: &str,
     trader_id: TraderId,
@@ -1502,9 +1505,7 @@ fn assert_fee_model_config_drives_sandbox_commission(
 ) {
     setup_order_event_handler();
 
-    let mut binary = binary_option();
-    binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
-    let instrument = InstrumentAny::BinaryOption(binary);
+    let instrument = InstrumentAny::BinaryOption(binary_option());
     let venue = instrument.id().venue;
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
@@ -1524,7 +1525,7 @@ fn assert_fee_model_config_drives_sandbox_commission(
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
 
     cache
         .borrow_mut()
@@ -3089,7 +3090,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             default_leverage: Decimal::ONE,
             leverages: ahash::AHashMap::new(),
             book_type: BookType::L1_MBP,
-            fee_model: None,
+            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
             fill_model: None,
             latency_model: None,
             frozen_account: false,
@@ -3118,7 +3119,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             config.base_currency,
             cache.clone(),
         );
-        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
         client.start().unwrap();
 
         let order = OrderTestBuilder::new(OrderType::Market)
@@ -3365,7 +3366,8 @@ fn test_paper_binary_option_multiple_instruments_close_settlement_via_data_engin
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+    let mut client =
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone()).unwrap();
 
     let data_engine = Rc::new(RefCell::new(DataEngine::new(clock, cache.clone(), None)));
     DataEngine::register_msgbus_handlers(&data_engine);
@@ -3728,7 +3730,7 @@ fn test_process_bar_drops_precision_mismatch(
         config.base_currency,
         cache.clone(),
     );
-    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
 
     cache
         .borrow_mut()
@@ -3776,7 +3778,7 @@ fn test_message_handler_drops_precision_mismatched_bar(
         config.base_currency,
         cache.clone(),
     );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
 
     cache
         .borrow_mut()
@@ -4019,7 +4021,7 @@ fn test_cancel_all_orders_routes_by_client_account_and_side(
             config.base_currency,
             cache.clone(),
         );
-        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone())
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone()).unwrap()
     };
     let mut client_a = create_client(client_a_id, account_a_id);
     let mut client_b = create_client(client_b_id, account_b_id);
@@ -4297,7 +4299,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
-        fee_model: None,
+        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
         fill_model: None,
         latency_model,
         frozen_account: false,
@@ -4327,7 +4329,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         cache.clone(),
     );
     let mut sandbox_client =
-        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone()).unwrap();
     sandbox_client.start().unwrap();
     engine
         .borrow_mut()
@@ -6906,4 +6908,29 @@ fn test_cancel_all_after_first_duplicate_submit_receipt(
         .map(|event| (order_event_kind(event), event.client_order_id()))
         .collect();
     assert_eq!(events, vec![("canceled", order.client_order_id())]);
+}
+
+#[rstest]
+fn test_new_rejects_missing_fee_model(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut config = create_config(trader_id, account_id, venue);
+    config.fee_model = None;
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+
+    let err = SandboxExecutionClient::new(core, config, clock, cache).unwrap_err();
+    assert!(
+        err.to_string().contains("explicit fee_model"),
+        "unexpected error: {err}"
+    );
 }

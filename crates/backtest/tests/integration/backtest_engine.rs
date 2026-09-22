@@ -40,7 +40,10 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
-use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
+use nautilus_execution::models::{
+    fee::{FeeModelAny, FeeModelHandle, MakerTakerFeeModel},
+    latency::{LatencyModelHandle, StaticLatencyModel},
+};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -80,6 +83,7 @@ use nautilus_trading::{
 };
 use rstest::*;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 struct EmptyStrategy {
     core: StrategyCore,
@@ -1067,6 +1071,10 @@ fn test_add_strategy_while_running_registers_strategy_and_market_exit_control() 
 }
 
 fn create_engine() -> BacktestEngine {
+    create_engine_with_fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+}
+
+fn create_engine_with_fee_model(fee_model: FeeModelHandle) -> BacktestEngine {
     let config = BacktestEngineConfig::default();
     let mut engine = BacktestEngine::new(config).unwrap();
     let venue_config = SimulatedVenueConfig::builder()
@@ -1075,6 +1083,7 @@ fn create_engine() -> BacktestEngine {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(fee_model)
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1138,6 +1147,7 @@ fn test_add_custom_data_bypasses_market_setup_and_replays_in_order(
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1170,6 +1180,7 @@ fn create_eur_base_margin_engine() -> BacktestEngine {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 EUR")])
         .base_currency(Currency::EUR())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1376,6 +1387,7 @@ fn test_run_rejects_depth_book_without_book_data(crypto_perpetual_ethusdt: Crypt
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1537,6 +1549,7 @@ fn test_run_with_depth_venue_and_typed_book_batch_succeeds(
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1567,6 +1580,7 @@ fn test_run_with_depth_venue_and_book_data_succeeds(crypto_perpetual_ethusdt: Cr
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1598,6 +1612,7 @@ fn test_run_depth_check_fires_on_validate_false_path(crypto_perpetual_ethusdt: C
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1701,6 +1716,7 @@ fn test_add_strategies_stops_at_first_error() {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -1745,7 +1761,9 @@ fn test_run_processes_quote_ticks(crypto_perpetual_ethusdt: CryptoPerpetual) {
 
 #[rstest]
 fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: CryptoPerpetual) {
-    let mut engine = create_engine();
+    let mut engine = create_engine_with_fee_model(
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+    );
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
@@ -2166,6 +2184,7 @@ fn create_inverse_funding_engine() -> (BacktestEngine, InstrumentId) {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100 BTC")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue).unwrap();
@@ -2197,6 +2216,7 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USD")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -2271,6 +2291,7 @@ fn test_option_expiry_uses_same_timestamp_index_price(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -3768,6 +3789,7 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -3781,6 +3803,7 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -4950,6 +4973,7 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -4963,6 +4987,7 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -5007,6 +5032,7 @@ fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -5122,6 +5148,7 @@ fn test_instruments_with_same_expiration_share_expiry_timer() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -5168,6 +5195,7 @@ fn test_instrument_update_cancels_previous_expiry_timer() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -5212,6 +5240,7 @@ fn run_call_option_expiry_timer(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -5269,6 +5298,7 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .queue_position(true)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap(),
     );
@@ -5487,6 +5517,7 @@ fn test_end_reports_simulation_module_diagnostics_error() {
         .modules(vec![SimulationModuleHandle::new(
             FailingDiagnosticsSimulationModule,
         )])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -5524,6 +5555,7 @@ fn test_end_does_not_double_run_modules_at_same_timestamp(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .modules(vec![SimulationModuleHandle::new(module)])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -6098,6 +6130,7 @@ fn test_streaming_end_settles_due_open_before_on_stop(crypto_perpetual_ethusdt: 
                     DurationNanos::default(),
                     DurationNanos::default(),
                 )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -6169,6 +6202,7 @@ fn test_close_all_positions_in_on_stop_is_processed_with_latency(
             DurationNanos::default(),
             DurationNanos::default(),
         )))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -6461,6 +6495,7 @@ fn test_latency_order_settles_on_instrument_data_or_timer(
                     DurationNanos::default(),
                     DurationNanos::default(),
                 )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -6557,6 +6592,7 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
             DurationNanos::default(),
             DurationNanos::default(),
         )))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -6629,6 +6665,7 @@ fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
             DurationNanos::default(),
             DurationNanos::from_millis(1_500),
         )))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -6792,6 +6829,7 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     DurationNanos::default(),
                     DurationNanos::default(),
                 )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -6810,6 +6848,7 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     DurationNanos::default(),
                     DurationNanos::default(),
                 )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )
@@ -6880,6 +6919,7 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .oto_full_trigger(true)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap(),
     );

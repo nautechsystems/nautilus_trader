@@ -230,9 +230,12 @@ book_data = BacktestDataConfig(
 Pass the data configurations to `BacktestRunConfig`:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
@@ -255,6 +258,10 @@ run_config = BacktestRunConfig(
             account_type=AccountType.MARGIN,
             book_type=BookType.L1_MBP,
             starting_balances=["1_000_000 USD"],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0"),
+                taker_rate=Decimal("0"),
+            ),
         ),
     ],
     data=data_configs,

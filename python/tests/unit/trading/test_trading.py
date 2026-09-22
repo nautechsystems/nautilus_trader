@@ -39,6 +39,7 @@ from nautilus_trader.common import SocketStateChanged
 from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
@@ -578,6 +579,10 @@ def test_strategy_order_factory_returns_registered_factory() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -689,6 +694,10 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -735,6 +744,10 @@ def test_strategy_can_recover_order_list_id_from_cache() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
 
@@ -796,6 +809,10 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -932,6 +949,10 @@ def test_strategy_portfolio_accepts_price_and_target_currency_queries() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -998,6 +1019,10 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_data(
@@ -1075,6 +1100,10 @@ def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() 
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_venue(
         venue=other_venue,
@@ -1082,6 +1111,10 @@ def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() 
         account_type=AccountType.MARGIN,
         starting_balances=[Money(500_000.0, eur)],
         base_currency=eur,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_instrument(conversion_instrument)
@@ -1344,6 +1377,10 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
             account_type=AccountType.MARGIN,
             starting_balances=[Money(1_000_000.0, usd)],
             base_currency=usd,
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
 
     for instrument in (*instruments, *eurusd, usdjpy_sim):

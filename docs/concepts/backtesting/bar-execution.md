@@ -72,8 +72,11 @@ the first visited level determines which order can fill first.
 Configure adaptive ordering on the venue:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -86,6 +89,10 @@ engine.add_venue(
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
     bar_adaptive_high_low_ordering=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -107,6 +114,9 @@ timestamp, the engine can release it from the venue's latency queue in two ways:
 Market data for another instrument does not release the delayed command against stale book state.
 
 ```python
+from decimal import Decimal
+
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import StaticLatencyModel
 
 engine.add_venue(
@@ -115,6 +125,10 @@ engine.add_venue(
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
     latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 

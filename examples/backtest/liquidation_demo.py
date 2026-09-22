@@ -25,9 +25,11 @@ Run with:
 
 import json
 import sys
+from decimal import Decimal
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
@@ -144,6 +146,10 @@ def run_demo() -> dict:
         account_type=AccountType.MARGIN,
         base_currency=BTC,
         starting_balances=[Money(STARTING_BTC, BTC)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("-0.00025"),
+            taker_rate=Decimal("0.00075"),
+        ),
         liquidation_enabled=True,
         liquidation_trigger_ratio=1.0,
         liquidation_cancel_open_orders=True,

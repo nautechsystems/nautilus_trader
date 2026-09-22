@@ -239,7 +239,18 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .cloned()
             .unwrap_or_default()
             .into();
-        let fee_model = venue_config.fee_model().cloned().unwrap_or_default().into();
+
+        let fee_model = venue_config
+            .fee_model()
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BacktestVenueConfig for '{}' requires an explicit fee_model, including an explicit zero-fee model",
+                    venue_config.name()
+                )
+            })?
+            .into();
+
         let latency_model = venue_config.latency_model().cloned().map(Into::into);
         let sim_config = SimulatedVenueConfig::builder()
             .venue(Venue::from(venue_config.name().as_str()))
@@ -627,6 +638,7 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "python")]
+    use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
     use nautilus_model::enums::{AccountType, OmsType};
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
@@ -639,10 +651,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::config::MAX_BACKTEST_CHUNK_SIZE;
+    use crate::config::{BacktestVenueConfig, MAX_BACKTEST_CHUNK_SIZE};
     #[cfg(feature = "python")]
     use crate::{
-        config::BacktestVenueConfig,
         modules::SimulationModuleAny,
         python::modules::{PySimulationModule, PythonSimulationModule},
     };
@@ -826,6 +837,7 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec!["1000 USD".to_string()])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
                 .modules(vec![SimulationModuleAny::Python(
                     PythonSimulationModule::new(module.clone().unbind()),
                 )])
@@ -845,5 +857,27 @@ mod tests {
                 1
             );
         });
+    }
+
+    #[rstest]
+    fn test_build_engine_rejects_venue_without_fee_model() {
+        let venue = BacktestVenueConfig::builder()
+            .name("SIM")
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec!["1_000_000 USD".to_string()])
+            .build()
+            .unwrap();
+        let config = BacktestRunConfig::builder()
+            .venues(vec![venue])
+            .data(Vec::new())
+            .build()
+            .unwrap();
+        let err = build_engine(&config).unwrap_err();
+        assert!(
+            err.to_string().contains("explicit fee_model"),
+            "unexpected error: {err}"
+        );
     }
 }

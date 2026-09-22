@@ -224,7 +224,10 @@ def test_maker_taker_fee_model() -> None:
     """
     Test maker taker fee model.
     """
-    model = MakerTakerFeeModel()
+    model = MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0002"),
+    )
 
     assert model is not None
 
@@ -242,7 +245,10 @@ def test_probability_price_fee_model() -> None:
     """
     Test probability price fee model.
     """
-    model = ProbabilityPriceFeeModel()
+    model = ProbabilityPriceFeeModel(
+        maker_rate=Decimal("0.01"),
+        taker_rate=Decimal("0.02"),
+    )
 
     assert model is not None
 
@@ -258,8 +264,9 @@ def test_capped_option_fee_model() -> None:
 
     assert model is not None
     expected = (
-        "CappedOptionFeeModel { maker_rate: Some(0.0003), "
-        "taker_rate: Some(0.0003), cap_rate: 0.125 }"
+        "CappedOptionFeeModel { schedule: MakerTakerFeeSchedule { "
+        "default: MakerTakerFeeRates { maker: 0.0003, taker: 0.0003 }, "
+        "overrides: {} }, cap: 0.125 }"
     )
     assert repr(model) == expected
 
@@ -274,7 +281,11 @@ def test_tiered_notional_option_fee_model() -> None:
     )
 
     assert model is not None
-    expected = "TieredNotionalOptionFeeModel { maker_rate: Some(0.0002), taker_rate: Some(0.0005) }"
+    expected = (
+        "TieredNotionalOptionFeeModel { schedule: MakerTakerFeeSchedule { "
+        "default: MakerTakerFeeRates { maker: 0.0002, taker: 0.0005 }, "
+        "overrides: {} } }"
+    )
     assert repr(model) == expected
 
 
@@ -290,9 +301,15 @@ def test_concrete_fee_models_inherit_fee_model() -> None:
     Test concrete fee models inherit fee model.
     """
     fixed = FixedFeeModel(commission=Money.from_str("5.00 USD"))
-    maker_taker = MakerTakerFeeModel()
+    maker_taker = MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0002"),
+    )
     per_contract = PerContractFeeModel(commission=Money.from_str("1.25 USD"))
-    probability = ProbabilityPriceFeeModel()
+    probability = ProbabilityPriceFeeModel(
+        maker_rate=Decimal("0.01"),
+        taker_rate=Decimal("0.02"),
+    )
     capped = CappedOptionFeeModel(maker_rate=Decimal("0.0003"), taker_rate=Decimal("0.0003"))
     tiered = TieredNotionalOptionFeeModel(
         maker_rate=Decimal("0.0002"),
@@ -372,7 +389,10 @@ def test_fee_model_get_commission_with_context_rejects_non_instrument() -> None:
     """
     Test fee model get commission with context rejects non instrument.
     """
-    model = MakerTakerFeeModel()
+    model = MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0002"),
+    )
 
     with pytest.raises(TypeError, match="instrument"):
         model.get_commission_with_context(
@@ -455,7 +475,10 @@ def test_maker_taker_fee_model_get_commission_direct_call() -> None:
     """
     Test maker taker fee model get commission direct call.
     """
-    model = MakerTakerFeeModel()
+    model = MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0002"),
+    )
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -472,7 +495,10 @@ def test_probability_price_fee_model_get_commission_direct_call() -> None:
     """
     Test probability price fee model get commission direct call.
     """
-    model = ProbabilityPriceFeeModel()
+    model = ProbabilityPriceFeeModel(
+        maker_rate=Decimal("0.01"),
+        taker_rate=Decimal("0.02"),
+    )
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -484,7 +510,10 @@ def test_capped_option_fee_model_get_commission_direct_call() -> None:
     """
     Test capped option fee model get commission direct call.
     """
-    model = CappedOptionFeeModel()
+    model = CappedOptionFeeModel(
+        maker_rate=Decimal("0.0003"),
+        taker_rate=Decimal("0.0003"),
+    )
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -496,7 +525,10 @@ def test_tiered_notional_option_fee_model_get_commission_direct_call() -> None:
     """
     Test tiered notional option fee model get commission direct call.
     """
-    model = TieredNotionalOptionFeeModel()
+    model = TieredNotionalOptionFeeModel(
+        maker_rate=Decimal("0.0002"),
+        taker_rate=Decimal("0.0005"),
+    )
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 

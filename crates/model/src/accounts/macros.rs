@@ -121,6 +121,7 @@ macro_rules! impl_account_base_members {
             last_qty: $crate::types::Quantity,
             last_px: $crate::types::Price,
             liquidity_side: $crate::enums::LiquiditySide,
+            fee_rates: $crate::fees::MakerTakerFeeRates,
             use_quote_for_inverse: Option<bool>,
         ) -> anyhow::Result<$crate::types::Money> {
             self.base_calculate_commission(
@@ -128,6 +129,7 @@ macro_rules! impl_account_base_members {
                 last_qty,
                 last_px,
                 liquidity_side,
+                fee_rates,
                 use_quote_for_inverse,
             )
         }

@@ -272,6 +272,7 @@ mod tests {
         latency::{LatencyModelAny, StaticLatencyModel},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -346,7 +347,9 @@ mod tests {
     #[rstest]
     fn test_exec_config_toml_rejects_serializing_runtime_fee_model() {
         let config = SandboxExecutionClientConfig {
-            fee_model: Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel)),
+            fee_model: Some(FeeModelAny::ProbabilityPrice(
+                ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02)),
+            )),
             ..SandboxExecutionClientConfig::default()
         };
 

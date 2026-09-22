@@ -16,6 +16,8 @@
 Example of model configs.
 """
 
+from decimal import Decimal
+
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
@@ -57,7 +59,10 @@ if __name__ == "__main__":
         cancel_latency_nanos=1_000_000,
     )
 
-    maker_taker_fee_model = MakerTakerFeeModel()
+    maker_taker_fee_model = MakerTakerFeeModel(
+        maker_rate=Decimal("0.0001"),
+        taker_rate=Decimal("0.0002"),
+    )
     fixed_fee_model = FixedFeeModel(
         commission=Money.from_str("1.50 USD"),
         charge_commission_once=True,
