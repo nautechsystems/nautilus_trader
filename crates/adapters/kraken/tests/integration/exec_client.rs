@@ -836,6 +836,68 @@ async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
     assert_eq!(fills, 0);
 }
 
+fn futures_fills_for_symbol(symbol: &str) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-window-1","symbol":"{symbol}","side":"buy","order_id":"V-WINDOW","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-window-001","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+/// A bounded futures mass status must declare the cutoff it applied.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_declares_lookback_window() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot.lookback_start().is_some(),
+        "a bounded mass status must record its cutoff"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// An unresolved futures fill marks the bounded set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    // Control: the same fill on a listed symbol reports complete, so the flag below is driven by
+    // the unresolved symbol rather than by the payload itself.
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_NOTLISTED"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unresolved futures fill must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
 /// A bounded mass status must declare the cutoff it applied.
 #[rstest]
 #[tokio::test]
