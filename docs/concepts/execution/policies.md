@@ -86,6 +86,14 @@ The failure event depends on the command and when the failure becomes definitive
 | Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
 | Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
 
+A submit command is evaluated only against orders that are eligible for it. A cached order is
+ineligible once it has left `INITIALIZED` or `RELEASED`, and while the `ExecutionEngine` has dispatched
+it to an execution client but has not yet applied that client's first status event. A repeated
+`SubmitOrder` for an ineligible order is skipped, and a `SubmitOrderList` naming one is denied
+without reaching the client: `OrderDenied` (`ORDER_LIST_DENIED`) applies only to the list's
+eligible members, while the earlier submission keeps its lifecycle and its later client events
+apply normally.
+
 For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure
 without inventing an outcome.
