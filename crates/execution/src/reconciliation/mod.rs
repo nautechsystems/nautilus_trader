@@ -70,3 +70,8 @@ pub use positions::{
     process_mass_status_for_reconciliation_without_synthetic_reports,
 };
 pub use types::ReconciliationResult;
+
+/// Order tag marking a synthetic order the reconciliation process materializes from a venue
+/// position report (rather than from real fills). A position opened by such an order carries an
+/// authoritative venue quantity that already accounts for executions predating it.
+pub const RECONCILIATION_ORDER_TAG: &str = "RECONCILIATION";

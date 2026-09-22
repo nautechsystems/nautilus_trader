@@ -52,7 +52,7 @@ use nautilus_model::{
         OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
         OrderUpdated, PositionEvent,
     },
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
@@ -78,6 +78,8 @@ pub struct RiskEngine {
     trading_state: TradingState,
     config: RiskEngineConfig,
     max_notional_per_order: AHashMap<InstrumentId, Decimal>,
+    account_routing: AHashMap<Venue, AccountId>,
+    default_account_id: Option<AccountId>,
     throttler_submit: Throttler<TradingCommand, SubmitCommandFn>,
     throttler_modify: Throttler<ModifyOrder, ModifyOrderFn>,
     command_count: u64,
@@ -90,6 +92,8 @@ impl Debug for RiskEngine {
             .field("trading_state", &self.trading_state)
             .field("config", &self.config)
             .field("max_notional_per_order", &self.max_notional_per_order)
+            .field("account_routing", &self.account_routing)
+            .field("default_account_id", &self.default_account_id)
             .field("throttler_submit", &self.throttler_submit)
             .field("throttler_modify", &self.throttler_modify)
             .field("command_count", &self.command_count)
@@ -117,6 +121,8 @@ impl RiskEngine {
             trading_state: TradingState::Active,
             config,
             max_notional_per_order,
+            account_routing: AHashMap::new(),
+            default_account_id: None,
             throttler_submit,
             throttler_modify,
             command_count: 0,
@@ -442,6 +448,20 @@ impl RiskEngine {
         log::info!("Set MAX_NOTIONAL_PER_ORDER: {instrument_id} {new_value_str}");
     }
 
+    /// Routes pre-trade checks for instruments of `venue` to `account_id`, taking precedence over
+    /// the account issued under that venue. Mirrors the execution engine's venue routing.
+    pub fn register_venue_account(&mut self, venue: Venue, account_id: AccountId) {
+        self.account_routing.insert(venue, account_id);
+        log::info!("Set account {account_id} routing for {venue}");
+    }
+
+    /// Sets the fallback account for pre-trade checks when no client, venue account, or venue
+    /// route applies. Mirrors the execution engine's default client.
+    pub fn set_default_account(&mut self, account_id: AccountId) {
+        self.default_account_id = Some(account_id);
+        log::info!("Set account {account_id} as default");
+    }
+
     /// Starts the risk engine.
     pub fn start(&mut self) {
         log::info!("Started");
@@ -641,7 +661,13 @@ impl RiskEngine {
             return; // Denied
         }
 
-        if !self.check_orders_risk(&instrument, &[order], full_position_exit, RiskCheck::Submit) {
+        if !self.check_orders_risk(
+            &instrument,
+            &[order],
+            full_position_exit,
+            RiskCheck::Submit,
+            command.client_id,
+        ) {
             return; // Denied
         }
 
@@ -824,7 +850,13 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_orders_risk(&representative, &orders, false, RiskCheck::Submit) {
+        if !self.check_orders_risk(
+            &representative,
+            &orders,
+            false,
+            RiskCheck::Submit,
+            command.client_id,
+        ) {
             self.deny_order_list(
                 &orders,
                 &OrderDeniedReason::OrderListDenied {
@@ -1099,7 +1131,7 @@ impl RiskEngine {
             return false;
         };
 
-        self.check_orders_risk(&instrument, &orders, false, check)
+        self.check_orders_risk(&instrument, &orders, false, check, commands[0].client_id)
     }
 
     fn check_order(
@@ -1187,6 +1219,7 @@ impl RiskEngine {
         orders: &[OrderAny],
         full_position_exit: bool,
         check: RiskCheck<'_>,
+        client_id: Option<ClientId>,
     ) -> bool {
         let mut orders_by_account: AHashMap<Option<AccountId>, Vec<&OrderAny>> = AHashMap::new();
         for order in orders {
@@ -1201,6 +1234,7 @@ impl RiskEngine {
                 instrument,
                 account_orders,
                 *account_id,
+                client_id,
                 full_position_exit,
                 check,
             ) {
@@ -1220,6 +1254,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         orders: &[&OrderAny],
         account_id: Option<AccountId>,
+        client_id: Option<ClientId>,
         full_position_exit: bool,
         check: RiskCheck<'_>,
     ) -> bool {
@@ -1244,19 +1279,29 @@ impl RiskEngine {
             market_prices.push(price);
         }
 
-        // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
+        // Resolve the account the same way the execution engine resolves the client: explicit
+        // account, selected client, venue route or venue account, then the default account.
         let resolved_account = {
             let cache = self.cache.borrow();
+            let venue = instrument.id().venue;
 
-            if let Some(account_id) = account_id {
-                cache
-                    .account(&account_id)
-                    .map(|account| account.clone_without_events())
-            } else {
-                cache
-                    .account_for_venue(&instrument.id().venue)
-                    .map(|account| account.clone_without_events())
-            }
+            account_id
+                .or_else(|| {
+                    client_id.and_then(|client_id| cache.account_id_for_client(&client_id).copied())
+                })
+                .and_then(|account_id| cache.account(&account_id))
+                .or_else(|| {
+                    self.account_routing
+                        .get(&venue)
+                        .and_then(|account_id| cache.account(account_id))
+                })
+                .or_else(|| cache.account_for_venue(&venue))
+                .or_else(|| {
+                    self.default_account_id
+                        .as_ref()
+                        .and_then(|account_id| cache.account(account_id))
+                })
+                .map(|account| account.clone_without_events())
         };
 
         let Some(account) = resolved_account else {

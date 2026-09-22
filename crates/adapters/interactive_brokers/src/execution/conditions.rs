@@ -44,10 +44,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
     let mut conditions = Vec::new();
 
     for condition_dict in conditions_array {
-        let condition_type = condition_dict
-            .get("type")
-            .and_then(|v| v.as_str())
-            .context("Missing condition type")?;
+        let condition_type = json_str(condition_dict, "type").context("Missing condition type")?;
         let condition_kind = match IbConditionKind::from_str(condition_type) {
             Ok(condition_kind) => condition_kind,
             Err(_) => {
@@ -57,9 +54,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
         };
 
         // Get conjunction (default to "and" = true)
-        let conjunction = condition_dict
-            .get("conjunction")
-            .and_then(|v| v.as_str())
+        let conjunction = json_str(condition_dict, "conjunction")
             .map(IbConditionConjunction::from_str)
             .transpose()?
             .unwrap_or(IbConditionConjunction::And);
@@ -67,151 +62,93 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
 
         let condition = match condition_kind {
             IbConditionKind::Price => {
-                let con_id = condition_dict
-                    .get("conId")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
-                let exchange = condition_dict
-                    .get("exchange")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("SMART");
-                let price = condition_dict
-                    .get("price")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                let is_more = condition_dict
-                    .get("isMore")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                let trigger_method = condition_dict
-                    .get("triggerMethod")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
+                let con_id = json_i32(condition_dict, "conId").unwrap_or(0);
+                let exchange = json_str(condition_dict, "exchange").unwrap_or("SMART");
+                let price = json_f64(condition_dict, "price").unwrap_or(0.0);
+                let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
+                let trigger_method = json_i32(condition_dict, "triggerMethod").unwrap_or(0);
 
                 let mut builder = PriceCondition::builder(con_id, exchange);
 
-                if !is_more {
-                    builder = builder.less_than(price);
-                } else {
+                if is_more {
                     builder = builder.greater_than(price);
+                } else {
+                    builder = builder.less_than(price);
                 }
-                builder = builder
-                    .trigger_method(IbTriggerMethod::from(trigger_method).ibapi_trigger_method());
+                builder = builder.trigger_method(
+                    IbTriggerMethod::try_from(trigger_method)?.ibapi_trigger_method(),
+                );
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Price(builder.build())
             }
             IbConditionKind::Time => {
-                let time = condition_dict
-                    .get("time")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let is_more = condition_dict
-                    .get("isMore")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let time = json_str(condition_dict, "time").unwrap_or("");
+                let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = TimeCondition::builder();
 
-                if !is_more {
-                    builder = builder.less_than(time);
-                } else {
+                if is_more {
                     builder = builder.greater_than(time);
+                } else {
+                    builder = builder.less_than(time);
                 }
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Time(builder.build())
             }
             IbConditionKind::Margin => {
-                let percent = condition_dict
-                    .get("percent")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
-                let is_more = condition_dict
-                    .get("isMore")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let percent = json_i32(condition_dict, "percent").unwrap_or(0);
+                let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = MarginCondition::builder();
 
-                if !is_more {
-                    builder = builder.less_than(percent);
-                } else {
+                if is_more {
                     builder = builder.greater_than(percent);
+                } else {
+                    builder = builder.less_than(percent);
                 }
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Margin(builder.build())
             }
             IbConditionKind::Execution => {
-                let symbol = condition_dict
-                    .get("symbol")
-                    .and_then(|v| v.as_str())
+                let symbol = json_str(condition_dict, "symbol")
                     .context("Missing symbol for execution condition")?;
-                let sec_type = condition_dict
-                    .get("secType")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("STK");
+                let sec_type = json_str(condition_dict, "secType").unwrap_or("STK");
                 let sec_type = IbSecurityType::from_str(sec_type)
                     .map_or_else(|_| sec_type.to_string(), |sec_type| sec_type.to_string());
-                let exchange = condition_dict
-                    .get("exchange")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("SMART");
+                let exchange = json_str(condition_dict, "exchange").unwrap_or("SMART");
 
                 let mut builder = ExecutionCondition::builder(symbol, sec_type.as_str(), exchange);
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Execution(builder.build())
             }
             IbConditionKind::Volume => {
-                let con_id = condition_dict
-                    .get("conId")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
-                let exchange = condition_dict
-                    .get("exchange")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("SMART");
-                let volume = condition_dict
-                    .get("volume")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
-                let is_more = condition_dict
-                    .get("isMore")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let con_id = json_i32(condition_dict, "conId").unwrap_or(0);
+                let exchange = json_str(condition_dict, "exchange").unwrap_or("SMART");
+                let volume = json_i32(condition_dict, "volume").unwrap_or(0);
+                let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = VolumeCondition::builder(con_id, exchange);
 
-                if !is_more {
-                    builder = builder.less_than(volume);
-                } else {
+                if is_more {
                     builder = builder.greater_than(volume);
+                } else {
+                    builder = builder.less_than(volume);
                 }
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Volume(builder.build())
             }
             IbConditionKind::PercentChange => {
-                let con_id = condition_dict
-                    .get("conId")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
-                let exchange = condition_dict
-                    .get("exchange")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("SMART");
-                let change_percent = condition_dict
-                    .get("changePercent")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                let is_more = condition_dict
-                    .get("isMore")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let con_id = json_i32(condition_dict, "conId").unwrap_or(0);
+                let exchange = json_str(condition_dict, "exchange").unwrap_or("SMART");
+                let change_percent = json_f64(condition_dict, "changePercent").unwrap_or(0.0);
+                let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = PercentChangeCondition::builder(con_id, exchange);
 
-                if !is_more {
-                    builder = builder.less_than(change_percent);
-                } else {
+                if is_more {
                     builder = builder.greater_than(change_percent);
+                } else {
+                    builder = builder.less_than(change_percent);
                 }
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::PercentChange(builder.build())
@@ -222,6 +159,25 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
     }
 
     Ok(conditions)
+}
+
+fn json_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn json_i32(value: &Value, key: &str) -> Option<i32> {
+    value
+        .get(key)
+        .and_then(Value::as_i64)
+        .map(|value| value as i32)
+}
+
+fn json_f64(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(Value::as_f64)
+}
+
+fn json_bool(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
 }
 
 #[cfg(test)]

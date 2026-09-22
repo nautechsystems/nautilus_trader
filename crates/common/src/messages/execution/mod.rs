@@ -47,6 +47,9 @@ pub use self::{
 /// Parameter indicating that a conditional order should close the whole position at trigger time.
 pub const PARAMS_CLOSE_POSITION: &str = "close_position";
 
+/// Requests authoritative order status and associated executions in a query response.
+pub const QUERY_INCLUDE_FILLS: &str = "include_fills";
+
 /// Execution report variants for reconciliation.
 #[derive(Clone, Debug)]
 pub enum ExecutionReport {

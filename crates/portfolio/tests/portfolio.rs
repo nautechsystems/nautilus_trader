@@ -481,8 +481,25 @@ fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio
 
 #[rstest]
 fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
-    let result = portfolio.balances_locked(&venue);
+    let result = portfolio.balances_locked(&venue, None);
     assert_eq!(result, IndexMap::new());
+}
+
+#[rstest]
+fn test_balances_locked_with_account_id_ignores_venue(
+    mut portfolio: Portfolio,
+    cash_account_state: AccountState,
+) {
+    portfolio.update_account(&cash_account_state);
+    let balance = &cash_account_state.balances[0];
+    let expected = IndexMap::from([(balance.currency, balance.locked)]);
+
+    let by_account =
+        portfolio.balances_locked(&Venue::from("XCME"), Some(&cash_account_state.account_id));
+    let by_venue = portfolio.balances_locked(&Venue::from("XCME"), None);
+
+    assert_eq!(by_account, expected);
+    assert_eq!(by_venue, IndexMap::new());
 }
 
 #[rstest]
@@ -490,7 +507,7 @@ fn test_instrument_initial_margins_when_no_account_for_venue_returns_none(
     portfolio: Portfolio,
     venue: Venue,
 ) {
-    let result = portfolio.instrument_initial_margins(&venue);
+    let result = portfolio.instrument_initial_margins(&venue, None);
     assert_eq!(result, IndexMap::new());
 }
 
@@ -499,7 +516,7 @@ fn test_instrument_maintenance_margins_when_no_account_for_venue_returns_none(
     portfolio: Portfolio,
     venue: Venue,
 ) {
-    let result = portfolio.instrument_maintenance_margins(&venue);
+    let result = portfolio.instrument_maintenance_margins(&venue, None);
     assert_eq!(result, IndexMap::new());
 }
 
@@ -2397,7 +2414,7 @@ fn test_update_orders_open_cash_account(
 
     assert_eq!(
         portfolio
-            .balances_locked(&Venue::test_default())
+            .balances_locked(&Venue::test_default(), None)
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -2823,7 +2840,7 @@ fn test_update_orders_open_margin_account(
     portfolio.update_quote_tick(&last);
     portfolio.initialize_orders();
 
-    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"));
+    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"), None);
     assert_eq!(
         margins,
         IndexMap::from([(instrument_btcusdt.id(), Money::from("3.50000000 USDT"))])
@@ -2891,7 +2908,7 @@ fn test_order_accept_updates_margin_init(
 
     portfolio.initialize_orders();
 
-    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"));
+    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"), None);
     assert_eq!(
         margins,
         IndexMap::from([(instrument_btcusdt.id(), Money::from("0.50000000 USDT"))])
@@ -3614,7 +3631,7 @@ fn test_opening_several_positions_updates_portfolio(
         dec!(-12.2)
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_gbpusd.id(), Money::from("1128000.00 USD"))])
     );
     assert_eq!(
@@ -3781,7 +3798,7 @@ fn test_modifying_position_updates_portfolio(
         dec!(-12.2)
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_audusd.id(), Money::from("1128000.00 USD"))])
     );
     assert_eq!(
@@ -3972,7 +3989,7 @@ fn test_closing_position_updates_portfolio(
     );
 
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::new()
     ); // No maintenance margins
 
@@ -4576,7 +4593,7 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
             .is_zero(),
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_audusd.id(), Money::from("6000.00 USD"))])
     );
 }

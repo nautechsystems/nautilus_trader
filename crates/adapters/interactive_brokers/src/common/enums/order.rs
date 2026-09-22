@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers order enumerations.
+
 use std::{fmt::Display, str::FromStr};
 
 use nautilus_model::enums::{
@@ -164,10 +166,9 @@ impl IbOrderStatus {
     #[must_use]
     pub const fn nautilus_status(self) -> NautilusOrderStatus {
         match self {
-            Self::ApiPending | Self::PendingSubmit | Self::PreSubmitted => {
-                NautilusOrderStatus::Submitted
-            }
-            Self::Submitted => NautilusOrderStatus::Accepted,
+            Self::ApiPending | Self::PendingSubmit => NautilusOrderStatus::Submitted,
+            // IB accepted the order but holds it, for example until `goodAfterTime`
+            Self::PreSubmitted | Self::Submitted => NautilusOrderStatus::Accepted,
             Self::PendingCancel => NautilusOrderStatus::PendingCancel,
             Self::ApiCancelled | Self::Cancelled => NautilusOrderStatus::Canceled,
             Self::Filled => NautilusOrderStatus::Filled,
@@ -498,12 +499,12 @@ impl IbTimeInForce {
     pub const fn ibapi_time_in_force(self) -> ibapi::orders::TimeInForce {
         match self {
             Self::Day => ibapi::orders::TimeInForce::Day,
-            Self::GoodTilCanceled => ibapi::orders::TimeInForce::GoodTilCanceled,
+            Self::GoodTilCanceled => ibapi::orders::TimeInForce::GoodTillCanceled,
             Self::ImmediateOrCancel => ibapi::orders::TimeInForce::ImmediateOrCancel,
-            Self::GoodTilDate => ibapi::orders::TimeInForce::GoodTilDate,
+            Self::GoodTilDate => ibapi::orders::TimeInForce::GoodTillDate,
             Self::OnOpen => ibapi::orders::TimeInForce::OnOpen,
             Self::FillOrKill => ibapi::orders::TimeInForce::FillOrKill,
-            Self::DayTilCanceled => ibapi::orders::TimeInForce::DayTilCanceled,
+            Self::DayTilCanceled => ibapi::orders::TimeInForce::DayTillCanceled,
             Self::Auction => ibapi::orders::TimeInForce::Auction,
         }
     }
@@ -513,13 +514,22 @@ impl From<ibapi::orders::TimeInForce> for IbTimeInForce {
     fn from(value: ibapi::orders::TimeInForce) -> Self {
         match value {
             ibapi::orders::TimeInForce::Day => Self::Day,
-            ibapi::orders::TimeInForce::GoodTilCanceled => Self::GoodTilCanceled,
+            ibapi::orders::TimeInForce::GoodTillCanceled => Self::GoodTilCanceled,
             ibapi::orders::TimeInForce::ImmediateOrCancel => Self::ImmediateOrCancel,
-            ibapi::orders::TimeInForce::GoodTilDate => Self::GoodTilDate,
+            ibapi::orders::TimeInForce::GoodTillDate => Self::GoodTilDate,
             ibapi::orders::TimeInForce::OnOpen => Self::OnOpen,
             ibapi::orders::TimeInForce::FillOrKill => Self::FillOrKill,
-            ibapi::orders::TimeInForce::DayTilCanceled => Self::DayTilCanceled,
+            ibapi::orders::TimeInForce::DayTillCanceled => Self::DayTilCanceled,
             ibapi::orders::TimeInForce::Auction => Self::Auction,
+            // Decoded as DAY before ibapi 4.2 modeled them
+            ibapi::orders::TimeInForce::GoodTillCrossing => {
+                tracing::warn!("Unsupported IB time in force GTX; reporting DAY");
+                Self::Day
+            }
+            ibapi::orders::TimeInForce::Unknown(raw) => {
+                tracing::warn!("Unknown IB time in force {raw}; reporting DAY");
+                Self::Day
+            }
         }
     }
 }
@@ -598,26 +608,6 @@ impl IbBuilderTimeInForce {
             Self::DayTillCanceled => "DTC",
             Self::Auction => "AUC",
             Self::OpeningAuction => "OPG",
-        }
-    }
-
-    #[must_use]
-    pub fn ibapi_builder_time_in_force(
-        self,
-        good_till_date: Option<String>,
-    ) -> ibapi::orders::builder::TimeInForce {
-        match self {
-            Self::Day => ibapi::orders::builder::TimeInForce::Day,
-            Self::GoodTillCancel => ibapi::orders::builder::TimeInForce::GoodTillCancel,
-            Self::ImmediateOrCancel => ibapi::orders::builder::TimeInForce::ImmediateOrCancel,
-            Self::GoodTillDate => ibapi::orders::builder::TimeInForce::GoodTillDate {
-                date: good_till_date.unwrap_or_default(),
-            },
-            Self::FillOrKill => ibapi::orders::builder::TimeInForce::FillOrKill,
-            Self::GoodTillCrossing => ibapi::orders::builder::TimeInForce::GoodTillCrossing,
-            Self::DayTillCanceled => ibapi::orders::builder::TimeInForce::DayTillCanceled,
-            Self::Auction => ibapi::orders::builder::TimeInForce::Auction,
-            Self::OpeningAuction => ibapi::orders::builder::TimeInForce::OpeningAuction,
         }
     }
 }
@@ -894,16 +884,19 @@ impl IbTriggerMethod {
     }
 }
 
-impl From<i32> for IbTriggerMethod {
-    fn from(value: i32) -> Self {
+impl TryFrom<i32> for IbTriggerMethod {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            1 => Self::DoubleBidAsk,
-            2 => Self::Last,
-            3 => Self::DoubleLast,
-            4 => Self::BidAsk,
-            7 => Self::LastOrBidAsk,
-            8 => Self::Midpoint,
-            _ => Self::Default,
+            0 => Ok(Self::Default),
+            1 => Ok(Self::DoubleBidAsk),
+            2 => Ok(Self::Last),
+            3 => Ok(Self::DoubleLast),
+            4 => Ok(Self::BidAsk),
+            7 => Ok(Self::LastOrBidAsk),
+            8 => Ok(Self::Midpoint),
+            _ => anyhow::bail!("Unknown IB trigger method: {value}"),
         }
     }
 }
@@ -916,7 +909,19 @@ impl From<IbTriggerMethod> for i32 {
 
 impl From<ibapi::orders::conditions::TriggerMethod> for IbTriggerMethod {
     fn from(value: ibapi::orders::conditions::TriggerMethod) -> Self {
-        i32::from(value).into()
+        match value {
+            ibapi::orders::conditions::TriggerMethod::Default => Self::Default,
+            ibapi::orders::conditions::TriggerMethod::DoubleBidAsk => Self::DoubleBidAsk,
+            ibapi::orders::conditions::TriggerMethod::Last => Self::Last,
+            ibapi::orders::conditions::TriggerMethod::DoubleLast => Self::DoubleLast,
+            ibapi::orders::conditions::TriggerMethod::BidAsk => Self::BidAsk,
+            ibapi::orders::conditions::TriggerMethod::LastOrBidAsk => Self::LastOrBidAsk,
+            ibapi::orders::conditions::TriggerMethod::Midpoint => Self::Midpoint,
+            ibapi::orders::conditions::TriggerMethod::Unknown(code) => {
+                tracing::warn!("Unknown IB trigger method {code}; using the default");
+                Self::Default
+            }
+        }
     }
 }
 
@@ -977,13 +982,16 @@ impl IbOcaType {
     }
 }
 
-impl From<i32> for IbOcaType {
-    fn from(value: i32) -> Self {
+impl TryFrom<i32> for IbOcaType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            1 => Self::CancelWithBlock,
-            2 => Self::ReduceWithBlock,
-            3 => Self::ReduceWithoutBlock,
-            _ => Self::None,
+            0 => Ok(Self::None),
+            1 => Ok(Self::CancelWithBlock),
+            2 => Ok(Self::ReduceWithBlock),
+            3 => Ok(Self::ReduceWithoutBlock),
+            _ => anyhow::bail!("Unknown IB OCA type: {value}"),
         }
     }
 }
@@ -996,7 +1004,16 @@ impl From<IbOcaType> for i32 {
 
 impl From<ibapi::orders::OcaType> for IbOcaType {
     fn from(value: ibapi::orders::OcaType) -> Self {
-        i32::from(value).into()
+        match value {
+            ibapi::orders::OcaType::None => Self::None,
+            ibapi::orders::OcaType::CancelWithBlock => Self::CancelWithBlock,
+            ibapi::orders::OcaType::ReduceWithBlock => Self::ReduceWithBlock,
+            ibapi::orders::OcaType::ReduceWithoutBlock => Self::ReduceWithoutBlock,
+            ibapi::orders::OcaType::Unknown(code) => {
+                tracing::warn!("Unknown IB OCA type {code}; reporting no OCA group handling");
+                Self::None
+            }
+        }
     }
 }
 
@@ -1027,6 +1044,8 @@ pub enum IbLiquidity {
     AddedLiquidity,
     RemovedLiquidity,
     LiquidityRoutedOut,
+    /// An unrecognized value received from IB.
+    Unknown,
 }
 
 impl IbLiquidity {
@@ -1038,6 +1057,7 @@ impl IbLiquidity {
             Self::AddedLiquidity => 1,
             Self::RemovedLiquidity => 2,
             Self::LiquidityRoutedOut => 3,
+            Self::Unknown => -1,
         }
     }
 
@@ -1051,10 +1071,14 @@ impl IbLiquidity {
 impl From<i32> for IbLiquidity {
     fn from(value: i32) -> Self {
         match value {
+            0 => Self::None,
             1 => Self::AddedLiquidity,
             2 => Self::RemovedLiquidity,
             3 => Self::LiquidityRoutedOut,
-            _ => Self::None,
+            _ => {
+                tracing::warn!("IB execution used unknown liquidity code {value}");
+                Self::Unknown
+            }
         }
     }
 }
@@ -1066,6 +1090,10 @@ impl From<ibapi::orders::Liquidity> for IbLiquidity {
             ibapi::orders::Liquidity::AddedLiquidity => Self::AddedLiquidity,
             ibapi::orders::Liquidity::RemovedLiquidity => Self::RemovedLiquidity,
             ibapi::orders::Liquidity::LiquidityRoutedOut => Self::LiquidityRoutedOut,
+            ibapi::orders::Liquidity::Unknown(code) => {
+                tracing::warn!("IB execution used unknown liquidity code {code}");
+                Self::Unknown
+            }
         }
     }
 }

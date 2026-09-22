@@ -53,9 +53,12 @@ use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND},
 };
-use nautilus_execution::engine::{
-    ExecutionEngine, PositionStateSnapshot, config::ExecutionEngineConfig,
-    stubs::StubExecutionClient,
+use nautilus_execution::{
+    engine::{
+        ExecutionEngine, PositionStateSnapshot, config::ExecutionEngineConfig,
+        stubs::StubExecutionClient,
+    },
+    reconciliation::RECONCILIATION_ORDER_TAG,
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
@@ -545,6 +548,7 @@ fn test_deregister_client_removes_client(
     stub_client: StubExecutionClient,
 ) {
     let client_id = stub_client.client_id();
+    let account_id = stub_client.account_id();
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
@@ -552,6 +556,13 @@ fn test_deregister_client_removes_client(
     assert!(
         execution_engine.get_client(&client_id).is_some(),
         "Client should be registered initially"
+    );
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .account_id_for_client(&client_id),
+        Some(&account_id)
     );
 
     let result = execution_engine.deregister_client(client_id);
@@ -16473,6 +16484,101 @@ fn test_reconcile_position_report_netting_mode(mut execution_engine: ExecutionEn
 }
 
 #[rstest]
+fn test_reconcile_fill_report_does_not_reopen_snapshot_reconciled_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    // A position reconciled from a venue position report (its opening order tagged
+    // RECONCILIATION) already accounts for the executions that predate it. A venue execution
+    // stream that replays such a fill after startup must update the order without reopening the
+    // position. Regression for an Interactive Brokers restart doubling a filled position.
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let snapshot_client_order_id = ClientOrderId::from("O-SNAPSHOT-1");
+    let snapshot_venue_order_id = VenueOrderId::from("PERM-1");
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+        cache
+            .add_account(cash_account_for(account_id).into())
+            .unwrap();
+    }
+    execution_engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Netting);
+
+    let snapshot_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(StrategyId::from("EXTERNAL"))
+        .instrument_id(instrument.id())
+        .client_order_id(snapshot_client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)])
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            snapshot_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&snapshot_order, account_id);
+    execution_engine.process(&submitted);
+    let accepted =
+        TestOrderEventStubs::accepted(&snapshot_order, account_id, snapshot_venue_order_id);
+    execution_engine.process(&accepted);
+    let snapshot_order = cached_order_or(&execution_engine, &snapshot_order);
+
+    let mut opening_fill = build_order_filled(
+        snapshot_order.trader_id(),
+        snapshot_order.strategy_id(),
+        instrument.id(),
+        snapshot_client_order_id,
+        snapshot_venue_order_id,
+        account_id,
+        TradeId::from("T-SNAPSHOT"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    );
+    opening_fill.ts_event = UnixNanos::from(9_000_000);
+    execution_engine.process(&OrderEventAny::Filled(opening_fill));
+    {
+        let cache = execution_engine.cache().borrow();
+        let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].signed_qty, 100_000.0);
+    }
+
+    // The venue execution stream resends the fill that opened the position; its ts_event
+    // (1_000_000) predates the reconciled position's ts_opened (9_000_000).
+    let replayed = create_fill_report(
+        instrument.id(),
+        None,
+        VenueOrderId::from("PERM-2"),
+        TradeId::from("T-REPLAY"),
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&replayed);
+
+    let cache = execution_engine.cache().borrow();
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_qty, 100_000.0);
+    assert_eq!(positions[0].quantity, Quantity::from(100_000));
+}
+
+#[rstest]
 #[case::long(PositionSide::Long, "LONG")]
 #[case::short(PositionSide::Short, "SHORT")]
 fn test_reconcile_position_report_hedging_mode_position_not_found(
@@ -21534,4 +21640,342 @@ fn test_zero_quantity_fill_does_not_create_external_order(mut execution_engine: 
     let cache = execution_engine.cache().borrow();
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+}
+
+fn broker_client(venue: Venue) -> StubExecutionClient {
+    StubExecutionClient::new(
+        ClientId::from("BROKER"),
+        AccountId::test_default(),
+        venue,
+        OmsType::Netting,
+        None,
+    )
+}
+
+#[rstest]
+fn broker_partial_status_waits_for_actual_executions(mut execution_engine: ExecutionEngine) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            broker_client(instrument.id().venue).with_distinct_order_identity(),
+        ))
+        .unwrap();
+    let id = ClientOrderId::from("O-BROKER");
+    let venue_id = VenueOrderId::from("PERM-101");
+    let mut report = create_order_status_report(
+        Some(id),
+        venue_id,
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+    execution_engine.reconcile_order_status_report(&report);
+    report.order_status = OrderStatus::PartiallyFilled;
+    report.filled_qty = Quantity::from(40_000);
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&id)
+            .unwrap()
+            .filled_qty(),
+        Quantity::from(0)
+    );
+    let fill = create_fill_report(
+        instrument.id(),
+        Some(id),
+        venue_id,
+        TradeId::from("REAL-1"),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&fill);
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&id).unwrap();
+    assert_eq!(
+        order.filled_qty(),
+        Quantity::from(40_000),
+        "{:?}",
+        take_reconciliation_logs()
+    );
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("REAL-1")]);
+}
+
+#[rstest]
+fn duplicate_broker_order_keeps_full_quantity_and_real_fills(
+    mut execution_engine: ExecutionEngine,
+) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            broker_client(instrument.id().venue).with_distinct_order_identity(),
+        ))
+        .unwrap();
+    let parent_id = ClientOrderId::from("O-BROKER");
+    let parent_report = create_order_status_report(
+        Some(parent_id),
+        VenueOrderId::from("PERM-101"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+    execution_engine.reconcile_order_status_report(&parent_report);
+    let sibling_venue = VenueOrderId::from("PERM-202");
+    let child_id =
+        ClientOrderId::for_duplicate_order(AccountId::test_default(), sibling_venue).unwrap();
+    let fill = create_fill_report(
+        instrument.id(),
+        Some(parent_id),
+        sibling_venue,
+        TradeId::from("REAL-SIBLING"),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&fill);
+    assert!(!execution_engine.cache().borrow().order_exists(&child_id));
+    let report = create_order_status_report(
+        Some(parent_id),
+        sibling_venue,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(40_000),
+    );
+    execution_engine.reconcile_order_with_fills(&report, &[fill]);
+    let cache = execution_engine.cache().borrow();
+    let parent = cache.order(&parent_id).unwrap();
+    let child = cache
+        .order(&child_id)
+        .unwrap_or_else(|| panic!("missing child: {:?}", take_reconciliation_logs()));
+    assert_eq!(
+        parent.venue_order_id(),
+        Some(VenueOrderId::from("PERM-101"))
+    );
+    assert_eq!(parent.filled_qty(), Quantity::from(0));
+    assert_eq!(child.quantity(), Quantity::from(100_000));
+    assert_eq!(child.filled_qty(), Quantity::from(40_000));
+    assert_eq!(child.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(child.strategy_id(), parent.strategy_id());
+    assert_eq!(child.trade_ids(), vec![&TradeId::from("REAL-SIBLING")]);
+}
+
+#[rstest]
+fn second_venue_order_id_without_distinct_identity_keeps_one_order(
+    mut execution_engine: ExecutionEngine,
+) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(broker_client(instrument.id().venue)))
+        .unwrap();
+    let parent_id = ClientOrderId::from("O-BROKER");
+    let parent_report = create_order_status_report(
+        Some(parent_id),
+        VenueOrderId::from("PERM-101"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+    execution_engine.reconcile_order_status_report(&parent_report);
+    let sibling_venue = VenueOrderId::from("PERM-202");
+    let child_id =
+        ClientOrderId::for_duplicate_order(AccountId::test_default(), sibling_venue).unwrap();
+    let fill = create_fill_report(
+        instrument.id(),
+        Some(parent_id),
+        sibling_venue,
+        TradeId::from("REAL-SIBLING"),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&fill);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&child_id));
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
+    let parent = cache.order(&parent_id).unwrap();
+    assert_eq!(parent.filled_qty(), Quantity::from(40_000));
+    assert_eq!(parent.trade_ids(), vec![&TradeId::from("REAL-SIBLING")]);
+}
+
+#[rstest]
+#[case::conflicting_instrument(gbpusd_sim().id(), AccountId::test_default())]
+#[case::conflicting_account(audusd_sim().id(), AccountId::from("OTHER-001"))]
+fn distinct_identity_report_conflicting_with_original_creates_no_order(
+    mut execution_engine: ExecutionEngine,
+    #[case] instrument_id: InstrumentId,
+    #[case] account_id: AccountId,
+) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            broker_client(instrument.id().venue).with_distinct_order_identity(),
+        ))
+        .unwrap();
+    let parent_id = ClientOrderId::from("O-BROKER");
+    let parent_report = create_order_status_report(
+        Some(parent_id),
+        VenueOrderId::from("PERM-101"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+    execution_engine.reconcile_order_status_report(&parent_report);
+    let sibling_venue = VenueOrderId::from("PERM-202");
+    let child_id = ClientOrderId::for_duplicate_order(account_id, sibling_venue).unwrap();
+    let fill = create_fill_report_with_account(
+        account_id,
+        instrument_id,
+        Some(parent_id),
+        sibling_venue,
+        TradeId::from("REAL-SIBLING"),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&fill);
+
+    let logs = take_reconciliation_logs();
+    assert_eq!(
+        logs,
+        vec![(
+            Level::Error,
+            "Cannot reconcile fill identity: reported broker incarnation conflicts with its \
+             original order account or instrument"
+                .to_string()
+        )]
+    );
+    let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&child_id));
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
+    assert_eq!(
+        cache.order(&parent_id).unwrap().filled_qty(),
+        Quantity::from(0)
+    );
+}
+
+#[rstest]
+fn repeated_pending_fill_is_retained_once_per_trade_id(mut execution_engine: ExecutionEngine) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            broker_client(instrument.id().venue).with_distinct_order_identity(),
+        ))
+        .unwrap();
+    let id = ClientOrderId::from("O-BROKER");
+    let venue_id = VenueOrderId::from("PERM-101");
+    let trade_id = TradeId::from("REAL-1");
+    let fill = create_fill_report(
+        instrument.id(),
+        Some(id),
+        venue_id,
+        trade_id,
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&fill);
+    execution_engine.reconcile_fill_report(&fill);
+    assert!(!execution_engine.cache().borrow().order_exists(&id));
+
+    let report = create_order_status_report(
+        Some(id),
+        venue_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(40_000),
+    );
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&id)
+        .unwrap_or_else(|| panic!("missing order: {:?}", take_reconciliation_logs()));
+    assert_eq!(order.quantity(), Quantity::from(100_000));
+    assert_eq!(order.filled_qty(), Quantity::from(40_000));
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.trade_ids(), vec![&trade_id]);
+}
+
+#[rstest]
+fn order_status_query_retries_at_client_declared_timeout() {
+    capture_reconciliation_logs();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut execution_engine =
+        ExecutionEngine::new(clock.clone(), Rc::new(RefCell::new(Cache::default())), None);
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let client = broker_client(instrument.id().venue)
+        .with_distinct_order_identity()
+        .with_order_status_query_timeout(DurationNanos::from_secs(5));
+    let queried_order_ids = client.queried_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+    let id = ClientOrderId::from("O-BROKER");
+    let venue_id = VenueOrderId::from("PERM-101");
+    let fill = |trade_id: &str| {
+        create_fill_report(
+            instrument.id(),
+            Some(id),
+            venue_id,
+            TradeId::from(trade_id),
+            Quantity::from(10_000),
+            Price::from("1.00000"),
+        )
+    };
+
+    execution_engine.reconcile_fill_report(&fill("REAL-1"));
+    assert_eq!(*queried_order_ids.borrow(), vec![id]);
+
+    clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(4 * NANOSECONDS_IN_SECOND), true);
+    execution_engine.reconcile_fill_report(&fill("REAL-2"));
+    assert_eq!(*queried_order_ids.borrow(), vec![id]);
+
+    clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(6 * NANOSECONDS_IN_SECOND), true);
+    execution_engine.reconcile_fill_report(&fill("REAL-3"));
+    assert_eq!(*queried_order_ids.borrow(), vec![id, id]);
 }

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers order tag parsing and application.
+
 use std::str::FromStr;
 
 use anyhow::Context;
@@ -195,11 +197,6 @@ fn normalize_order_tag_update(field: &str, value: &Value) -> Option<Vec<(String,
             value,
             &[(0, "None"), (1, "Broker"), (2, "ThirdParty")],
         ),
-        "auction_strategy" => normalize_i32_enum_value(
-            "auction_strategy",
-            value,
-            &[(1, "Match"), (2, "Improvement"), (3, "Transparent")],
-        ),
         "volatility_type" => {
             normalize_i32_enum_value("volatility_type", value, &[(1, "Daily"), (2, "Annual")])
         }
@@ -294,18 +291,7 @@ fn normalize_tif_value(value: &Value) -> Option<Value> {
 }
 
 fn ibapi_tif_serde_value(tif: IbTimeInForce) -> Value {
-    let value = match tif {
-        IbTimeInForce::Day => "Day",
-        IbTimeInForce::GoodTilCanceled => "GoodTilCanceled",
-        IbTimeInForce::ImmediateOrCancel => "ImmediateOrCancel",
-        IbTimeInForce::GoodTilDate => "GoodTilDate",
-        IbTimeInForce::OnOpen => "OnOpen",
-        IbTimeInForce::FillOrKill => "FillOrKill",
-        IbTimeInForce::DayTilCanceled => "DayTilCanceled",
-        IbTimeInForce::Auction => "Auction",
-    };
-
-    Value::String(value.to_string())
+    Value::String(tif.ibapi_time_in_force().as_str().to_string())
 }
 
 fn normalize_i32_enum_value(

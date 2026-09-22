@@ -54,6 +54,18 @@ explicitly routes it. Multiple clients for the same venue require an explicit ve
 default client, even when strategies supply a `client_id` for each command. Duplicate client IDs,
 conflicting venue routes, and multiple defaults fail during node construction.
 
+The risk engine resolves the account for pre-trade checks along the same routes: the command's
+`client_id` selects that client's account, then an explicit venue route, then the account issued
+under the instrument's venue, then the default client's account. An order for a broker-routed
+instrument such as `ESZ6.XCME` on an Interactive Brokers client is therefore checked against the
+`IB` account rather than denied for having no account.
+
+Registering an execution client indexes its account in the cache, so `Cache::account_for_client`
+and `account_id_for_client` return a client's account from its client ID alone. Account-scoped
+portfolio queries such as `balances_locked`, `instrument_initial_margins`, and
+`instrument_maintenance_margins` accept an account ID, which a strategy can obtain that way instead
+of passing the account issuer as the venue.
+
 ### Instrument updates
 
 Instrument updates reach every client whose own venue matches, plus the client routed to that

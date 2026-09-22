@@ -13,29 +13,128 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing utilities for converting Interactive Brokers data to Nautilus types.
+//! Symbology for converting between Interactive Brokers contracts and Nautilus identifiers.
 
 use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 use ibapi::contracts::{Contract, Currency, Exchange, OptionRight, SecurityType, Symbol};
-use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, TradeId, Venue};
+use jiff::{Timestamp, tz::Offset};
+use nautilus_model::identifiers::{
+    InstrumentId, Symbol as NautilusSymbol, Venue, format_futures_symbol, futures_month,
+    futures_month_code, parse_futures_symbol as parse_futures_code, resolve_futures_year,
+};
 
-use crate::common::enums::{IbOptionRight, IbSecurityType};
+use crate::{
+    common::enums::{IbOptionRight, IbSecurityType},
+    config::SymbologyMethod,
+};
+
+/// Converts between IB contracts and Nautilus instrument IDs using one configured method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Symbology {
+    method: SymbologyMethod,
+    futures_year_digits: u8,
+}
+
+impl Symbology {
+    #[must_use]
+    pub const fn new(method: SymbologyMethod) -> Self {
+        Self {
+            method,
+            // Pinned to the venue local symbol; two-digit contract years are not enabled.
+            futures_year_digits: 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn method(self) -> SymbologyMethod {
+        self.method
+    }
+
+    /// Converts an IB contract to a Nautilus instrument ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument ID cannot be constructed.
+    pub fn instrument_id(
+        self,
+        contract: &Contract,
+        venue: Option<Venue>,
+    ) -> anyhow::Result<InstrumentId> {
+        anyhow::ensure!(
+            matches!(self.futures_year_digits, 1 | 2),
+            "`futures_year_digits` must be either 1 or 2"
+        );
+
+        let instrument_id = match self.method {
+            SymbologyMethod::Simplified => {
+                contract_to_instrument_id_simplified(contract, venue, self.futures_year_digits)
+            }
+            SymbologyMethod::Raw => {
+                contract_to_instrument_id_raw(contract, venue, self.futures_year_digits)
+            }
+        };
+        Ok(instrument_id)
+    }
+
+    /// Converts a Nautilus instrument ID to an IB contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identifier format is unsupported.
+    pub fn contract(
+        self,
+        instrument_id: InstrumentId,
+        exchange: Option<&str>,
+    ) -> anyhow::Result<Contract> {
+        self.contract_with_currency(instrument_id, exchange, None)
+    }
+
+    pub(crate) fn contract_with_currency(
+        self,
+        instrument_id: InstrumentId,
+        exchange: Option<&str>,
+        currency: Option<&str>,
+    ) -> anyhow::Result<Contract> {
+        anyhow::ensure!(
+            matches!(self.futures_year_digits, 1 | 2),
+            "`futures_year_digits` must be either 1 or 2"
+        );
+
+        if instrument_id.venue.as_str() == "OPRA" {
+            let symbol = instrument_id
+                .symbol
+                .as_str()
+                .strip_suffix("=OPT")
+                .unwrap_or(instrument_id.symbol.as_str());
+
+            if !is_canonical_occ_option_symbol(symbol) {
+                anyhow::bail!("Invalid OPRA option symbol: {symbol}");
+            }
+        }
+
+        let reference_year = i32::from(Offset::UTC.to_datetime(Timestamp::now()).year());
+        Ok(instrument_id_to_contract(
+            instrument_id,
+            exchange,
+            self.futures_year_digits,
+            reference_year,
+            currency,
+        ))
+    }
+}
+
+impl From<SymbologyMethod> for Symbology {
+    fn from(method: SymbologyMethod) -> Self {
+        Self::new(method)
+    }
+}
 
 fn ib_option_right_to_option_right(right: IbOptionRight) -> OptionRight {
     match right {
         IbOptionRight::Call => OptionRight::Call,
         IbOptionRight::Put => OptionRight::Put,
     }
-}
-
-/// Generate a unique trade ID for Interactive Brokers trades.
-///
-/// This format matches the Python adapter: "{secs}-{price}-{size}"
-pub fn generate_ib_trade_id(ts_event: UnixNanos, price: f64, size: f64) -> TradeId {
-    let ts_secs = ts_event.as_i64() / 1_000_000_000;
-    TradeId::new(format!("{ts_secs}-{price}-{size}"))
 }
 
 /// Convert an IB Contract to an InstrumentId using simplified symbology.
@@ -47,14 +146,11 @@ pub fn generate_ib_trade_id(ts_event: UnixNanos, price: f64, size: f64) -> Trade
 /// - FUT: "ESM23" -> "ESM23.GLOBEX"
 /// - OPT: "AAPL230120C00150000" -> "AAPL230120C00150000.SMART"
 /// - IND: "SPX" -> "^SPX.SMART"
-///
-/// # Errors
-///
-/// Returns an error if the instrument ID cannot be constructed.
-pub fn ib_contract_to_instrument_id_simplified(
+fn contract_to_instrument_id_simplified(
     contract: &Contract,
     venue: Option<Venue>,
-) -> anyhow::Result<InstrumentId> {
+    futures_year_digits: u8,
+) -> InstrumentId {
     let venue = venue.unwrap_or_else(|| {
         // For Index and Future, use contract exchange when set (e.g. ESTX50 -> EUREX, FESX -> EUREX).
         match contract.security_type {
@@ -82,8 +178,8 @@ pub fn ib_contract_to_instrument_id_simplified(
                     Venue::from("SMART")
                 }
             }
-            SecurityType::CFD => Venue::from("SMART"),
-            SecurityType::Commodity => Venue::from("SMART"),
+            SecurityType::CFD => Venue::from("IBCFD"),
+            SecurityType::Commodity => Venue::from("IBCMDTY"),
             SecurityType::Bond => Venue::from("SMART"),
             _ => Venue::from("SMART"),
         }
@@ -137,6 +233,18 @@ pub fn ib_contract_to_instrument_id_simplified(
             NautilusSymbol::from(symbol_str.as_str())
         }
         SecurityType::Future => {
+            if futures_year_digits == 2 {
+                match futures_symbol_from_contract(contract, futures_year_digits) {
+                    Ok(symbol) => {
+                        return InstrumentId::new(NautilusSymbol::from(symbol), venue);
+                    }
+                    Err(e) => tracing::warn!(
+                        "Falling back to legacy futures symbol for local symbol '{}': {e}",
+                        contract.local_symbol
+                    ),
+                }
+            }
+
             // FUT: Use localSymbol if available; else symbol + trading_class + expiry (e.g. ESTX50 FESX 20240315).
             if contract.local_symbol.is_empty() {
                 if !contract.trading_class.is_empty()
@@ -161,6 +269,18 @@ pub fn ib_contract_to_instrument_id_simplified(
             }
         }
         SecurityType::FuturesOption => {
+            if futures_year_digits == 2 {
+                match futures_symbol_from_contract(contract, futures_year_digits) {
+                    Ok(symbol) => {
+                        return InstrumentId::new(NautilusSymbol::from(symbol), venue);
+                    }
+                    Err(e) => tracing::warn!(
+                        "Falling back to legacy futures option symbol for local symbol '{}': {e}",
+                        contract.local_symbol
+                    ),
+                }
+            }
+
             // FOP: Preserve IB local symbol spacing, matching Python simplified symbology.
             if contract.local_symbol.is_empty() {
                 // Fallback construction
@@ -214,7 +334,7 @@ pub fn ib_contract_to_instrument_id_simplified(
         }
     };
 
-    Ok(InstrumentId::new(symbol, venue))
+    InstrumentId::new(symbol, venue)
 }
 
 /// Convert an IB Contract to an InstrumentId using raw symbology.
@@ -224,14 +344,11 @@ pub fn ib_contract_to_instrument_id_simplified(
 /// - "AAPL=STK.SMART"
 /// - "EUR.USD=CASH.IDEALPRO"
 /// - "ESM23=FUT.GLOBEX"
-///
-/// # Errors
-///
-/// Returns an error if the instrument ID cannot be constructed.
-pub fn ib_contract_to_instrument_id_raw(
+fn contract_to_instrument_id_raw(
     contract: &Contract,
     venue: Option<Venue>,
-) -> anyhow::Result<InstrumentId> {
+    futures_year_digits: u8,
+) -> InstrumentId {
     let venue = venue.unwrap_or_else(|| match contract.security_type {
         SecurityType::ForexPair => Venue::from("IDEALPRO"),
         SecurityType::Crypto => derive_crypto_venue(contract),
@@ -240,16 +357,31 @@ pub fn ib_contract_to_instrument_id_raw(
         SecurityType::FuturesOption => Venue::from("SMART"),
         SecurityType::Future => Venue::from("GLOBEX"),
         SecurityType::Index => Venue::from("SMART"),
-        SecurityType::CFD => Venue::from("SMART"),
-        SecurityType::Commodity => Venue::from("SMART"),
+        SecurityType::CFD => Venue::from("IBCFD"),
+        SecurityType::Commodity => Venue::from("IBCMDTY"),
         SecurityType::Bond => Venue::from("SMART"),
         _ => Venue::from("SMART"),
     });
 
-    let local_symbol = if contract.local_symbol.is_empty() {
-        contract.symbol.as_str()
+    let local_symbol = if futures_year_digits == 2
+        && matches!(
+            contract.security_type,
+            SecurityType::Future | SecurityType::FuturesOption
+        ) {
+        match futures_symbol_from_contract(contract, futures_year_digits) {
+            Ok(symbol) => symbol,
+            Err(e) => {
+                tracing::warn!(
+                    "Falling back to legacy futures symbol for local symbol '{}': {e}",
+                    contract.local_symbol
+                );
+                legacy_raw_local_symbol(contract)
+            }
+        }
+    } else if contract.local_symbol.is_empty() {
+        contract.symbol.as_str().to_string()
     } else {
-        contract.local_symbol.as_str()
+        contract.local_symbol.as_str().to_string()
     };
 
     let sec_type_str = IbSecurityType::try_from(&contract.security_type).map_or_else(
@@ -259,19 +391,15 @@ pub fn ib_contract_to_instrument_id_raw(
 
     let symbol_str = format!("{local_symbol}={sec_type_str}");
     let symbol = NautilusSymbol::from(symbol_str.as_str());
-    Ok(InstrumentId::new(symbol, venue))
+    InstrumentId::new(symbol, venue)
 }
 
-/// Convert an IB Contract to an InstrumentId (simple version using contract fields).
-///
-/// This is a convenience wrapper that uses simplified symbology by default.
-/// For more accurate mapping, use the instrument provider which has contract details.
-///
-/// # Errors
-///
-/// Returns an error if the instrument ID cannot be constructed.
-pub fn ib_contract_to_instrument_id_simple(contract: &Contract) -> anyhow::Result<InstrumentId> {
-    ib_contract_to_instrument_id_simplified(contract, None)
+fn legacy_raw_local_symbol(contract: &Contract) -> String {
+    if contract.local_symbol.is_empty() {
+        contract.symbol.as_str().to_string()
+    } else {
+        contract.local_symbol.as_str().to_string()
+    }
 }
 
 /// Venue to IB exchange mappings.
@@ -496,7 +624,6 @@ const FUTURES_MONTH_CODES: &[(char, &str)] = &[
     ('X', "11"),
     ('Z', "12"),
 ];
-
 /// Determine venue from contract using provider configuration.
 ///
 /// This implements the same logic as Python's `determine_venue_from_contract`:
@@ -552,10 +679,8 @@ pub fn determine_venue_from_contract(
         }
     }
 
-    if convert_exchange_to_mic_venue {
-        if let Some(venue) = exchange_to_mic_venue(&exchange) {
-            return venue;
-        }
+    if convert_exchange_to_mic_venue && let Some(venue) = exchange_to_mic_venue(&exchange) {
+        return venue;
     }
 
     exchange
@@ -584,14 +709,13 @@ pub fn exchange_to_mic_venue(exchange: &str) -> Option<String> {
 /// - Commodities (CMDTY)
 /// - Indices (IND)
 /// - Option Spreads (BAG) - requires contract details map
-///
-/// # Errors
-///
-/// Returns an error if the conversion fails (e.g., unsupported instrument type, invalid format).
-pub fn instrument_id_to_ib_contract(
+fn instrument_id_to_contract(
     instrument_id: InstrumentId,
     exchange: Option<&str>,
-) -> anyhow::Result<Contract> {
+    futures_year_digits: u8,
+    reference_year: i32,
+    currency: Option<&str>,
+) -> Contract {
     let venue_str = instrument_id.venue.to_string();
     let derived_exchange = if venue_str == "OPRA" {
         "SMART"
@@ -615,8 +739,14 @@ pub fn instrument_id_to_ib_contract(
     let exchange_str = exchange.unwrap_or(derived_exchange);
     let symbol_str = instrument_id.symbol.as_str();
 
-    if let Some(contract) = instrument_id_to_ib_contract_raw(&instrument_id, exchange) {
-        return Ok(contract);
+    if let Some(contract) = instrument_id_to_ib_contract_raw(
+        &instrument_id,
+        exchange,
+        futures_year_digits,
+        reference_year,
+        currency,
+    ) {
+        return contract;
     }
 
     // Handle spreads (BAG contracts) - requires contract details, so we skip for now
@@ -629,52 +759,44 @@ pub fn instrument_id_to_ib_contract(
     if venue_matches(venue_str.as_str(), VENUES_CASH)
         && let Some(captures) = parse_cash_symbol(symbol_str)
     {
-        return Ok(Contract {
-            contract_id: 0,
+        return Contract {
             symbol: Symbol::from(&captures.base),
             security_type: SecurityType::ForexPair,
             exchange: Exchange::from(exchange_str),
             currency: Currency::from(&captures.quote),
             local_symbol: format!("{}.{}", captures.base, captures.quote),
             ..Default::default()
-        });
+        };
     }
 
     // Handle Crypto
     if venue_matches(venue_str.as_str(), VENUES_CRYPTO)
         && let Some(captures) = parse_crypto_symbol(symbol_str)
     {
-        return Ok(Contract {
-            contract_id: 0,
+        return Contract {
             symbol: Symbol::from(&captures.base),
             security_type: SecurityType::Crypto,
             exchange: Exchange::from(exchange_str),
             currency: Currency::from(&captures.quote),
             local_symbol: format!("{}.{}", captures.base, captures.quote),
             ..Default::default()
-        });
+        };
     }
 
     // Handle Options (OPT)
     if is_option_venue(venue_str.as_str()) {
         if venue_str == "OPRA" {
-            if !is_canonical_occ_option_symbol(symbol_str) {
-                anyhow::bail!("Invalid OPRA option symbol: {symbol_str}");
-            }
-
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 security_type: SecurityType::Option,
                 exchange: Exchange::from(exchange_str),
                 currency: Currency::from("USD"),
                 local_symbol: symbol_str.to_string(),
                 ..Default::default()
-            });
+            };
         }
 
         if let Some(opt) = parse_option_symbol(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 symbol: Symbol::from(&opt.symbol),
                 security_type: SecurityType::Option,
                 exchange: Exchange::from(exchange_str),
@@ -684,12 +806,11 @@ pub fn instrument_id_to_ib_contract(
                 strike: opt.strike_value,
                 right: Some(opt.right),
                 ..Default::default()
-            });
+            };
         }
 
         if let Some(opt) = parse_named_option_symbol(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 symbol: Symbol::from(&opt.trading_class),
                 security_type: SecurityType::Option,
                 exchange: Exchange::from(exchange_str),
@@ -699,15 +820,14 @@ pub fn instrument_id_to_ib_contract(
                 strike: opt.strike_value,
                 right: Some(opt.right),
                 ..Default::default()
-            });
+            };
         }
     }
 
     // Handle Futures and Futures Options
     if venue_matches(venue_str.as_str(), VENUES_FUT) {
         if let Some(fut) = parse_named_futures_symbol(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 symbol: Symbol::from(&fut.underlying),
                 security_type: SecurityType::Future,
                 exchange: Exchange::from(exchange_str),
@@ -715,44 +835,65 @@ pub fn instrument_id_to_ib_contract(
                 trading_class: fut.trading_class,
                 last_trade_date_or_contract_month: fut.expiry,
                 ..Default::default()
-            });
+            };
         }
 
         // Check for continuous futures (underlying only, no expiry)
         // IB uses FUT with no expiry date to represent continuous futures
-        if let Some(underlying) = parse_futures_underlying(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
-                symbol: Symbol::from(&underlying),
+        if is_futures_underlying(symbol_str) {
+            return Contract {
+                symbol: Symbol::from(symbol_str),
                 security_type: SecurityType::ContinuousFuture,
                 exchange: Exchange::from(exchange_str),
                 currency: Currency::from("USD"), // Will be resolved from contract details
                 ..Default::default()
-            });
+            };
+        }
+
+        if futures_year_digits == 2
+            && let Some(contract) = futures_contract_from_symbol(
+                symbol_str,
+                SecurityType::FuturesOption,
+                exchange_str,
+                reference_year,
+                currency,
+            )
+        {
+            return contract;
         }
 
         // Check for Futures Options (FOP)
-        if let Some(local_symbol) = parse_futures_option_symbol(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
+        if validate_futures_option_symbol(symbol_str).is_some() {
+            return Contract {
                 security_type: SecurityType::FuturesOption,
                 exchange: Exchange::from(exchange_str),
                 currency: Currency::from("USD"),
-                local_symbol,
+                local_symbol: symbol_str.to_string(),
                 ..Default::default()
-            });
+            };
+        }
+
+        if futures_year_digits == 2
+            && let Some(contract) = futures_contract_from_symbol(
+                symbol_str,
+                SecurityType::Future,
+                exchange_str,
+                reference_year,
+                currency,
+            )
+        {
+            return contract;
         }
 
         // Check for regular Futures (FUT)
-        if let Some(fut) = parse_futures_symbol(symbol_str) {
-            return Ok(Contract {
-                contract_id: 0,
+        if parse_futures_month_and_year(symbol_str).is_some() {
+            return Contract {
                 security_type: SecurityType::Future,
                 exchange: Exchange::from(exchange_str),
                 currency: Currency::from("USD"),
-                local_symbol: fut.local_symbol,
+                local_symbol: symbol_str.to_string(),
                 ..Default::default()
-            });
+            };
         }
     }
 
@@ -761,71 +902,69 @@ pub fn instrument_id_to_ib_contract(
         if let Some(captures) =
             parse_cash_symbol(symbol_str).or_else(|| parse_cfd_cash_symbol(symbol_str))
         {
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 symbol: Symbol::from(&captures.base),
                 security_type: SecurityType::CFD,
                 exchange: Exchange::from("SMART"),
                 currency: Currency::from(&captures.quote),
                 local_symbol: format!("{}.{}", captures.base, captures.quote),
                 ..Default::default()
-            });
+            };
         } else {
             // CFD with space-separated symbol
             let symbol_clean = symbol_str.replace('-', " ");
-            return Ok(Contract {
-                contract_id: 0,
+            return Contract {
                 symbol: Symbol::from(&symbol_clean),
                 security_type: SecurityType::CFD,
                 exchange: Exchange::from("SMART"),
-                currency: Currency::from("USD"),
+                currency: Currency::from(""),
                 ..Default::default()
-            });
+            };
         }
     }
 
     // Handle Commodities
     if VENUES_CMDTY.contains(&venue_str.as_str()) {
         let symbol_clean = symbol_str.replace('-', " ");
-        return Ok(Contract {
-            contract_id: 0,
+        return Contract {
             symbol: Symbol::from(&symbol_clean),
             security_type: SecurityType::Commodity,
             exchange: Exchange::from("SMART"),
-            currency: Currency::from("USD"),
+            currency: Currency::from(""),
             ..Default::default()
-        });
+        };
     }
 
     // Handle Indices (symbols starting with ^)
     if let Some(local_symbol) = symbol_str.strip_prefix('^') {
-        return Ok(Contract {
-            contract_id: 0,
+        return Contract {
             symbol: Symbol::from(local_symbol),
             security_type: SecurityType::Index,
             exchange: Exchange::from(exchange_str),
             currency: Currency::from("USD"),
             local_symbol: local_symbol.into(),
             ..Default::default()
-        });
+        };
     }
 
     // Default to Stock (STK)
     let symbol_clean = symbol_str.replace('-', " ");
-    Ok(Contract {
-        contract_id: 0,
+    Contract {
         symbol: Symbol::from(&symbol_clean),
         security_type: SecurityType::Stock,
         exchange: Exchange::from("SMART"),
         currency: Currency::from(""), // Will be resolved from contract details
         primary_exchange: Exchange::from(exchange_str),
         ..Default::default()
-    })
+    }
 }
 
 fn instrument_id_to_ib_contract_raw(
     instrument_id: &InstrumentId,
     exchange: Option<&str>,
+    futures_year_digits: u8,
+    reference_year: i32,
+    currency: Option<&str>,
 ) -> Option<Contract> {
     let (local_symbol, sec_type_code) = instrument_id.symbol.as_str().rsplit_once('=')?;
 
@@ -841,9 +980,24 @@ fn instrument_id_to_ib_contract_raw(
         };
     let exchange_str = exchange.unwrap_or(default_exchange);
 
+    if futures_year_digits == 2
+        && matches!(
+            security_type,
+            SecurityType::Future | SecurityType::FuturesOption
+        )
+        && let Some(contract) = futures_contract_from_symbol(
+            local_symbol,
+            security_type.clone(),
+            exchange_str,
+            reference_year,
+            currency,
+        )
+    {
+        return Some(contract);
+    }
+
     let contract = match security_type {
         SecurityType::Stock => Contract {
-            contract_id: 0,
             security_type,
             exchange: Exchange::from("SMART"),
             primary_exchange: Exchange::from(exchange_str),
@@ -851,21 +1005,19 @@ fn instrument_id_to_ib_contract_raw(
             ..Default::default()
         },
         SecurityType::CFD | SecurityType::Commodity => Contract {
-            contract_id: 0,
             security_type,
             exchange: Exchange::from("SMART"),
+            currency: Currency::from(""),
             local_symbol: local_symbol.to_string(),
             ..Default::default()
         },
         SecurityType::Index => Contract {
-            contract_id: 0,
             security_type,
             exchange: Exchange::from(exchange_str),
             local_symbol: local_symbol.to_string(),
             ..Default::default()
         },
         _ => Contract {
-            contract_id: 0,
             security_type,
             exchange: Exchange::from(exchange_str),
             local_symbol: local_symbol.to_string(),
@@ -1055,220 +1207,133 @@ fn format_option_strike(strike: f64) -> String {
     }
 }
 
-/// Futures symbol captures
-struct FuturesSymbol {
-    local_symbol: String,
-}
+fn futures_symbol_from_contract(
+    contract: &Contract,
+    futures_year_digits: u8,
+) -> anyhow::Result<String> {
+    let expiry = contract.last_trade_date_or_contract_month.as_str();
+    let year = expiry
+        .get(..4)
+        .filter(|value| value.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|value| value.parse::<i32>().ok())
+        .ok_or_else(|| anyhow::anyhow!("Invalid futures contract month '{expiry}'"))?;
 
-/// Parse futures underlying (continuous) - just the symbol without expiry
-fn parse_futures_underlying(symbol: &str) -> Option<String> {
-    // If it's just 1-3 characters, it's likely an underlying
-    if symbol.len() <= 3 && symbol.chars().all(|c| c.is_alphabetic()) {
-        Some(symbol.to_string())
+    let (futures_symbol, suffix) = if contract.security_type == SecurityType::FuturesOption {
+        contract
+            .local_symbol
+            .split_once(' ')
+            .map(|(symbol, suffix)| (symbol, Some(suffix)))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid futures option local symbol '{}'",
+                    contract.local_symbol
+                )
+            })?
+    } else if contract.local_symbol.is_empty() {
+        let month = expiry
+            .get(4..6)
+            .and_then(|value| value.parse::<u8>().ok())
+            .and_then(futures_month_code)
+            .ok_or_else(|| anyhow::anyhow!("Invalid futures contract month '{expiry}'"))?;
+        let formatted =
+            format_futures_symbol(contract.symbol.as_str(), month, year, futures_year_digits)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Invalid futures year digit count {futures_year_digits}")
+                })?;
+        return Ok(formatted);
     } else {
-        None
-    }
+        (contract.local_symbol.as_str(), None)
+    };
+
+    let parsed = parse_futures_code(futures_symbol)
+        .ok_or_else(|| anyhow::anyhow!("Invalid futures local symbol '{futures_symbol}'"))?;
+    // The expiry field carries the last-trade date on details responses, which can fall in
+    // the year before the contract month (January contracts such as CLF6 trading last in
+    // December). Resolving the symbol's own year digits against that year is exact because
+    // the contract-month year is never earlier than the last-trade year.
+    let year = resolve_futures_year(parsed.year_digits, year)
+        .ok_or_else(|| anyhow::anyhow!("Invalid futures year digits '{}'", parsed.year_digits))?;
+    let formatted =
+        format_futures_symbol(parsed.root, parsed.month_code, year, futures_year_digits)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Invalid futures year digit count {futures_year_digits}")
+            })?;
+
+    Ok(suffix.map_or(formatted.clone(), |suffix| format!("{formatted} {suffix}")))
 }
 
-fn is_futures_month_code(ch: char) -> bool {
-    matches!(
-        ch,
-        'F' | 'G' | 'H' | 'J' | 'K' | 'M' | 'N' | 'Q' | 'U' | 'V' | 'X' | 'Z'
-    )
-}
+fn futures_contract_from_symbol(
+    symbol: &str,
+    security_type: SecurityType,
+    exchange: &str,
+    reference_year: i32,
+    currency: Option<&str>,
+) -> Option<Contract> {
+    let (futures_symbol, option) = if security_type == SecurityType::FuturesOption {
+        let (futures_symbol, rest) = symbol.split_once(' ')?;
+        let mut chars = rest.chars();
+        let right_char = chars.next()?;
+        let right = IbOptionRight::from_str(&right_char.to_string()).ok()?;
+        let strike = chars.as_str().parse::<f64>().ok()?;
+        (futures_symbol, Some((right, strike)))
+    } else {
+        (symbol, None)
+    };
+    let parsed = parse_futures_code(futures_symbol)?;
+    let year = resolve_futures_year(parsed.year_digits, reference_year)?;
+    let month = futures_month(parsed.month_code)?;
+    let currency = currency.unwrap_or_else(|| {
+        log::warn!("Falling back to USD for unresolved IB futures contract {symbol} on {exchange}");
+        "USD"
+    });
 
-fn parse_futures_month_and_year(symbol: &str) -> Option<(usize, char, String)> {
-    for (month_pos, month_char) in symbol.char_indices().rev() {
-        if !is_futures_month_code(month_char) {
-            continue;
-        }
-
-        let remaining = &symbol[month_pos + month_char.len_utf8()..];
-        if remaining.is_empty() || !remaining.chars().all(|ch| ch.is_ascii_digit()) {
-            continue;
-        }
-
-        let year = match remaining.len() {
-            1 | 2 => remaining.to_string(),
-            4 => remaining[remaining.len() - 2..].to_string(),
-            _ => continue,
-        };
-
-        if month_pos == 0 {
-            continue;
-        }
-
-        return Some((month_pos, month_char, year));
-    }
-
-    None
-}
-
-/// Parse futures symbol like "YMM6", "ESM23", or "ESM2023"
-fn parse_futures_symbol(symbol: &str) -> Option<FuturesSymbol> {
-    parse_futures_month_and_year(symbol).map(|_| FuturesSymbol {
-        local_symbol: symbol.to_string(),
+    Some(Contract {
+        symbol: Symbol::from(parsed.root),
+        trading_class: parsed.root.to_string(),
+        security_type,
+        exchange: Exchange::from(exchange),
+        currency: Currency::from(currency),
+        last_trade_date_or_contract_month: format!("{year:04}{month:02}"),
+        right: option.map(|(right, _)| ib_option_right_to_option_right(right)),
+        strike: option.map_or(0.0, |(_, strike)| strike),
+        ..Default::default()
     })
 }
 
-/// Parse futures option symbol like "YMM6 C4500", "ESM23 C4500", or "ESM2023 C4500"
-fn parse_futures_option_symbol(symbol: &str) -> Option<String> {
-    let (futures_symbol, rest) = symbol.split_once(' ')?;
-    let (month_pos, _, _) = parse_futures_month_and_year(futures_symbol)?;
-    let _fut_symbol = &futures_symbol[..month_pos];
+fn is_futures_underlying(symbol: &str) -> bool {
+    symbol.len() <= 3 && symbol.chars().all(char::is_alphabetic)
+}
 
-    // Parse right and strike
+fn parse_futures_month_and_year(symbol: &str) -> Option<(usize, char, String)> {
+    let parsed = parse_futures_code(symbol)?;
+    Some((
+        parsed.root.len(),
+        parsed.month_code,
+        parsed.year_digits.to_string(),
+    ))
+}
+
+fn validate_futures_option_symbol(symbol: &str) -> Option<()> {
+    let (futures_symbol, rest) = symbol.split_once(' ')?;
+    parse_futures_month_and_year(futures_symbol)?;
+
     let right_char = rest.chars().next()?;
     IbOptionRight::from_str(&right_char.to_string()).ok()?;
 
     let strike_str = &rest[1..];
     strike_str.parse::<f64>().ok()?;
 
-    Some(symbol.to_string())
-}
-
-/// Check if an instrument ID represents a spread.
-///
-/// This checks if the symbol contains the spread format pattern: `(ratio)symbol_` or `((ratio))symbol_`
-#[must_use]
-pub fn is_spread_instrument_id(instrument_id: &InstrumentId) -> bool {
-    let symbol_str = instrument_id.symbol.as_str();
-    // Check if symbol contains spread pattern: (ratio) or ((ratio))
-    symbol_str.contains('(') && symbol_str.contains('_')
-}
-
-/// Create a spread instrument ID from leg tuples.
-///
-/// This implements the same logic as Python's `InstrumentId.new_spread`:
-/// - Creates a symbol string like `(1)SYMBOL1_((2))SYMBOL2`
-/// - Positive ratios: `(ratio)SYMBOL`
-/// - Negative ratios: `((abs(ratio)))SYMBOL`
-/// - Sorts legs alphabetically by symbol
-/// - All legs must have the same venue
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Less than 2 legs provided
-/// - Any ratio is zero
-/// - Venues don't match across legs
-pub fn create_spread_instrument_id(
-    leg_tuples: &[(InstrumentId, i32)],
-) -> anyhow::Result<InstrumentId> {
-    if leg_tuples.len() < 2 {
-        anyhow::bail!("instrument_ratios list needs to have at least 2 legs");
-    }
-
-    let first_venue = leg_tuples[0].0.venue;
-
-    for (instrument_id, ratio) in leg_tuples {
-        if *ratio == 0 {
-            anyhow::bail!("ratio cannot be zero");
-        }
-
-        if instrument_id.venue != first_venue {
-            anyhow::bail!(
-                "All venues must match. Expected {}, was {}",
-                first_venue,
-                instrument_id.venue
-            );
-        }
-    }
-
-    let mut sorted_ratios = leg_tuples.to_vec();
-    sorted_ratios.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
-
-    let symbol_parts = sorted_ratios
-        .iter()
-        .map(|(instrument_id, ratio)| {
-            if *ratio > 0 {
-                format!("({}){}", ratio, instrument_id.symbol.as_str())
-            } else {
-                format!("(({})){}", ratio.abs(), instrument_id.symbol.as_str())
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let composite_symbol = symbol_parts.join("_");
-    let symbol = NautilusSymbol::from(composite_symbol.as_str());
-
-    Ok(InstrumentId::new(symbol, first_venue))
-}
-
-/// Parse a spread instrument ID back into leg tuples.
-///
-/// This implements the same logic as Python's `InstrumentId.to_list()`:
-/// - Parses symbol string like `(1)SYMBOL1_((2))SYMBOL2`
-/// - Positive ratios: `(ratio)SYMBOL`
-/// - Negative ratios: `((abs(ratio)))SYMBOL`
-/// - Returns sorted list of (instrument_id, ratio) tuples
-///
-/// # Errors
-///
-/// Returns an error if the symbol format is invalid.
-pub fn parse_spread_instrument_id_to_legs(
-    instrument_id: &InstrumentId,
-) -> anyhow::Result<Vec<(InstrumentId, i32)>> {
-    let symbol_str = instrument_id.symbol.as_str();
-    let venue = instrument_id.venue;
-
-    let components: Vec<&str> = symbol_str.split('_').collect();
-    let mut result = Vec::new();
-
-    for component in components {
-        if component.is_empty() {
-            continue;
-        }
-
-        // Check for negative ratio: ((ratio))symbol
-        if let Some(rest) = component.strip_prefix("((")
-            && let Some(pos) = rest.find("))")
-        {
-            let ratio_str = &rest[..pos];
-            let symbol_value = &rest[pos + 2..];
-
-            if let Ok(ratio) = ratio_str.parse::<i32>() {
-                let leg_instrument_id =
-                    InstrumentId::new(NautilusSymbol::from(symbol_value), venue);
-                result.push((leg_instrument_id, -ratio));
-                continue;
-            }
-        }
-
-        // Check for positive ratio: (ratio)symbol
-        if let Some(rest) = component.strip_prefix('(')
-            && let Some(pos) = rest.find(')')
-        {
-            let ratio_str = &rest[..pos];
-            let symbol_value = &rest[pos + 1..];
-
-            if let Ok(ratio) = ratio_str.parse::<i32>() {
-                let leg_instrument_id =
-                    InstrumentId::new(NautilusSymbol::from(symbol_value), venue);
-                result.push((leg_instrument_id, ratio));
-                continue;
-            }
-        }
-
-        anyhow::bail!("Invalid spread symbol format for component: {component}");
-    }
-
-    // Sort result alphabetically by symbol
-    result.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
-
-    Ok(result)
+    Some(())
 }
 
 #[cfg(test)]
 mod tests {
     use ibapi::contracts::{Contract, Currency, Exchange, OptionRight, SecurityType, Symbol};
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue};
     use rstest::rstest;
 
-    use super::{
-        exchange_to_mic_venue, ib_contract_to_instrument_id_simplified,
-        instrument_id_to_ib_contract, possible_exchanges_for_venue,
-    };
+    use super::{Symbology, exchange_to_mic_venue, possible_exchanges_for_venue};
+    use crate::config::SymbologyMethod;
 
     #[rstest]
     fn test_ib_contract_to_instrument_id_simplified_normalizes_occ_option_root() {
@@ -1284,7 +1349,9 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(
             instrument_id,
@@ -1307,7 +1374,9 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(
             instrument_id,
@@ -1326,16 +1395,147 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(instrument_id, InstrumentId::from("EX2G3 P4080.NYBOT"));
+    }
+
+    #[rstest]
+    #[case(SecurityType::Future, "ESZ6", "ESZ6.XCME")]
+    #[case(SecurityType::FuturesOption, "ESZ6 P5000", "ESZ6 P5000.XCME")]
+    fn test_ib_contract_to_instrument_id_keeps_the_local_symbol_year(
+        #[case] security_type: SecurityType,
+        #[case] local_symbol: &str,
+        #[case] expected: &str,
+    ) {
+        let contract = Contract {
+            symbol: Symbol::from("ES"),
+            security_type,
+            exchange: Exchange::from("CME"),
+            currency: Currency::from("USD"),
+            local_symbol: local_symbol.to_string(),
+            last_trade_date_or_contract_month: "202612".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, Some(Venue::from("XCME")))
+            .unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
+    #[case(SecurityType::Future, "CLF6", "20251219", "CLF6.XNYM")]
+    #[case(SecurityType::Future, "ESZ6", "20261218", "ESZ6.XNYM")]
+    #[case(
+        SecurityType::FuturesOption,
+        "CLF6 P7000",
+        "20251216",
+        "CLF6 P7000.XNYM"
+    )]
+    fn test_local_symbol_year_is_not_rewritten_from_last_trade_date(
+        #[case] security_type: SecurityType,
+        #[case] local_symbol: &str,
+        #[case] last_trade_date: &str,
+        #[case] expected: &str,
+    ) {
+        let contract = Contract {
+            symbol: Symbol::from("CL"),
+            security_type,
+            exchange: Exchange::from("NYMEX"),
+            currency: Currency::from("USD"),
+            local_symbol: local_symbol.to_string(),
+            last_trade_date_or_contract_month: last_trade_date.to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, Some(Venue::from("XNYM")))
+            .unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
+    fn test_non_grammar_local_symbol_is_emitted_verbatim() {
+        let contract = Contract {
+            symbol: Symbol::from("ZC"),
+            security_type: SecurityType::Future,
+            exchange: Exchange::from("CBOT"),
+            currency: Currency::from("USD"),
+            local_symbol: "ZC   DEC 26".to_string(),
+            last_trade_date_or_contract_month: "20261214".to_string(),
+            ..Default::default()
+        };
+
+        let simplified = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, Some(Venue::from("XCBT")))
+            .unwrap();
+        let raw = Symbology::new(SymbologyMethod::Raw)
+            .instrument_id(&contract, Some(Venue::from("XCBT")))
+            .unwrap();
+
+        assert_eq!(simplified, InstrumentId::from("ZC   DEC 26.XCBT"));
+        assert_eq!(raw, InstrumentId::from("ZC   DEC 26=FUT.XCBT"));
+    }
+
+    #[rstest]
+    fn test_fop_without_local_symbol_falls_back_to_contract_fields() {
+        let contract = Contract {
+            symbol: Symbol::from("ES"),
+            security_type: SecurityType::FuturesOption,
+            exchange: Exchange::from("CME"),
+            currency: Currency::from("USD"),
+            local_symbol: String::new(),
+            last_trade_date_or_contract_month: "20261218".to_string(),
+            right: Some(OptionRight::Put),
+            strike: 5000.0,
+            ..Default::default()
+        };
+
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, Some(Venue::from("XCME")))
+            .unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from("ES20261218 P5000.XCME"));
+    }
+
+    #[rstest]
+    #[case("ESZ6", SecurityType::Future)]
+    #[case("ESZ26", SecurityType::Future)]
+    #[case("ESZ2026", SecurityType::Future)]
+    #[case("ESZ26 P5000", SecurityType::FuturesOption)]
+    fn test_futures_id_keeps_its_symbol_as_the_contract_local_symbol_outbound(
+        #[case] symbol: &str,
+        #[case] security_type: SecurityType,
+    ) {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from(symbol), Venue::from("XCME"));
+
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
+
+        assert_eq!(contract.security_type, security_type);
+        assert_eq!(contract.local_symbol.as_str(), symbol);
+        assert_eq!(contract.exchange.as_str(), "CME");
+        assert_eq!(contract.currency.as_str(), "USD");
+        assert!(contract.symbol.as_str().is_empty());
+        assert!(contract.trading_class.is_empty());
+        assert!(contract.last_trade_date_or_contract_month.is_empty());
+        assert_eq!(contract.right, None);
+        assert_eq!(contract.strike, 0.0);
     }
 
     #[rstest]
     fn test_instrument_id_to_ib_contract_parses_named_option_symbol() {
         let instrument_id = InstrumentId::from("C OESX 20260213 4775.EUREX");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "EUREX");
@@ -1353,7 +1553,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_preserves_occ_local_symbol() {
         let instrument_id = InstrumentId::from("AAPL  230217P00155000.SMART");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1379,7 +1581,9 @@ mod tests {
     fn test_opra_occ_option_default_contract_routes_to_smart() {
         let instrument_id = InstrumentId::from("SPY   240319P00511000.OPRA");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1398,9 +1602,9 @@ mod tests {
 
         assert_eq!(exchanges, vec!["SMART".to_string()]);
 
-        let contract =
-            instrument_id_to_ib_contract(instrument_id, exchanges.first().map(String::as_str))
-                .unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, exchanges.first().map(String::as_str))
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1416,7 +1620,9 @@ mod tests {
     fn test_opra_raw_option_default_contract_routes_to_smart() {
         let instrument_id = InstrumentId::from("SPY   240319P00511000=OPT.OPRA");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Raw)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1429,7 +1635,14 @@ mod tests {
     fn test_opra_option_respects_exchange_override(#[case] value: &str) {
         let instrument_id = InstrumentId::from(value);
 
-        let contract = instrument_id_to_ib_contract(instrument_id, Some("CBOE")).unwrap();
+        let method = if value.contains("=OPT") {
+            SymbologyMethod::Raw
+        } else {
+            SymbologyMethod::Simplified
+        };
+        let contract = Symbology::new(method)
+            .contract(instrument_id, Some("CBOE"))
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Option);
         assert_eq!(contract.exchange.as_str(), "CBOE");
@@ -1442,7 +1655,7 @@ mod tests {
     fn test_invalid_opra_occ_option_returns_error(#[case] value: &str) {
         let instrument_id = InstrumentId::from(value);
 
-        let result = instrument_id_to_ib_contract(instrument_id, None);
+        let result = Symbology::new(SymbologyMethod::Simplified).contract(instrument_id, None);
 
         assert!(result.is_err());
     }
@@ -1456,7 +1669,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_parses_named_futures_symbol() {
         let instrument_id = InstrumentId::from("ESTX50 FESX 20240315.EUREX");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Future);
         assert_eq!(contract.exchange.as_str(), "EUREX");
@@ -1472,7 +1687,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_maps_xcbt_to_cbot_exchange() {
         let instrument_id = InstrumentId::from("YMM6.XCBT");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Future);
         assert_eq!(contract.exchange.as_str(), "CBOT");
@@ -1485,29 +1702,41 @@ mod tests {
     fn test_instrument_id_to_ib_contract_maps_mic_future_to_member_exchange() {
         let instrument_id = InstrumentId::from("OESXH6.XEUR");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Future);
         assert_eq!(contract.exchange.as_str(), "DTB");
         assert_eq!(contract.local_symbol.as_str(), "OESXH6");
+        assert!(contract.symbol.as_str().is_empty());
+        assert!(contract.last_trade_date_or_contract_month.is_empty());
     }
 
     #[rstest]
     fn test_instrument_id_to_ib_contract_parses_futures_option_with_month_code_in_symbol() {
         let instrument_id = InstrumentId::from("YMM6 C45000.XCBT");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::FuturesOption);
         assert_eq!(contract.exchange.as_str(), "CBOT");
         assert_eq!(contract.local_symbol.as_str(), "YMM6 C45000");
+        assert!(contract.symbol.as_str().is_empty());
+        assert!(contract.last_trade_date_or_contract_month.is_empty());
+        assert_eq!(contract.right, None);
+        assert_eq!(contract.strike, 0.0);
     }
 
     #[rstest]
     fn test_instrument_id_to_ib_contract_parses_ibcfd_cash_symbol() {
         let instrument_id = InstrumentId::from("EUR/USD.IBCFD");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::CFD);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1517,10 +1746,69 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        SymbologyMethod::Simplified,
+        SecurityType::CFD,
+        "IBDE30",
+        "EUR",
+        "IBDE30.IBCFD"
+    )]
+    #[case(
+        SymbologyMethod::Raw,
+        SecurityType::CFD,
+        "IBDE30",
+        "EUR",
+        "IBDE30=CFD.IBCFD"
+    )]
+    #[case(
+        SymbologyMethod::Simplified,
+        SecurityType::Commodity,
+        "XAUUSD",
+        "GBP",
+        "XAUUSD.IBCMDTY"
+    )]
+    #[case(
+        SymbologyMethod::Raw,
+        SecurityType::Commodity,
+        "XAUUSD",
+        "GBP",
+        "XAUUSD=CMDTY.IBCMDTY"
+    )]
+    fn test_non_cash_pseudo_venue_round_trip_defers_currency_to_contract_details(
+        #[case] method: SymbologyMethod,
+        #[case] security_type: SecurityType,
+        #[case] symbol: &str,
+        #[case] currency: &str,
+        #[case] expected_instrument_id: &str,
+    ) {
+        let contract = Contract {
+            symbol: Symbol::from(symbol),
+            security_type: security_type.clone(),
+            exchange: Exchange::from("SMART"),
+            currency: Currency::from(currency),
+            local_symbol: symbol.to_string(),
+            ..Default::default()
+        };
+        let symbology = Symbology::new(method);
+
+        let instrument_id = symbology.instrument_id(&contract, None).unwrap();
+        let unresolved = symbology.contract(instrument_id, None).unwrap();
+        let round_trip_id = symbology.instrument_id(&unresolved, None).unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from(expected_instrument_id));
+        assert_eq!(unresolved.security_type, security_type);
+        assert_eq!(unresolved.exchange.as_str(), "SMART");
+        assert!(unresolved.currency.as_str().is_empty());
+        assert_eq!(round_trip_id, instrument_id);
+    }
+
+    #[rstest]
     fn test_instrument_id_to_ib_contract_parses_long_crypto_symbol() {
         let instrument_id = InstrumentId::from("DOGE/USD.PAXOS");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Crypto);
         assert_eq!(contract.exchange.as_str(), "PAXOS");
@@ -1534,7 +1822,9 @@ mod tests {
         // ZEROHASH is one of IB's crypto venues (alongside PAXOS).
         let instrument_id = InstrumentId::from("BTC/USD.ZEROHASH");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Crypto);
         assert_eq!(contract.exchange.as_str(), "ZEROHASH");
@@ -1555,7 +1845,9 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(instrument_id, InstrumentId::from("BTC/USD.ZEROHASH"));
     }
@@ -1572,7 +1864,9 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(instrument_id, InstrumentId::from("DOGE/USD.PAXOS"));
     }
@@ -1582,7 +1876,9 @@ mod tests {
         // PAXOS remains a live IB crypto venue alongside ZEROHASH.
         let instrument_id = InstrumentId::from("BTC/USD.PAXOS");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Crypto);
         assert_eq!(contract.exchange.as_str(), "PAXOS");
@@ -1604,7 +1900,9 @@ mod tests {
             ..Default::default()
         };
 
-        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .instrument_id(&contract, None)
+            .unwrap();
 
         assert_eq!(instrument_id, InstrumentId::from("BTC/USD.PAXOS"));
     }
@@ -1613,7 +1911,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_uses_contfut_for_underlying() {
         let instrument_id = InstrumentId::from("ES.XCME");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::ContinuousFuture);
         assert_eq!(contract.exchange.as_str(), "CME");
@@ -1624,7 +1924,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_parses_raw_stock_symbol() {
         let instrument_id = InstrumentId::from("AAPL=STK.NASDAQ");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Stock);
         assert_eq!(contract.exchange.as_str(), "SMART");
@@ -1637,7 +1939,9 @@ mod tests {
     fn test_instrument_id_to_ib_contract_parses_raw_forex_symbol() {
         let instrument_id = InstrumentId::from("EUR.USD=CASH.IDEALPRO");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::ForexPair);
         assert_eq!(contract.exchange.as_str(), "IDEALPRO");
@@ -1649,18 +1953,24 @@ mod tests {
     fn test_instrument_id_to_ib_contract_raw_respects_exchange_override() {
         let instrument_id = InstrumentId::from("YMM6=FUT.XCBT");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, Some("CBOT")).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, Some("CBOT"))
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Future);
         assert_eq!(contract.exchange.as_str(), "CBOT");
         assert_eq!(contract.local_symbol.as_str(), "YMM6");
+        assert!(contract.symbol.as_str().is_empty());
+        assert!(contract.last_trade_date_or_contract_month.is_empty());
     }
 
     #[rstest]
     fn test_instrument_id_to_ib_contract_default_stock_omits_local_symbol_and_currency() {
         let instrument_id = InstrumentId::from("IUSA.IBIS");
 
-        let contract = instrument_id_to_ib_contract(instrument_id, Some("IBIS")).unwrap();
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, Some("IBIS"))
+            .unwrap();
 
         assert_eq!(contract.security_type, SecurityType::Stock);
         assert_eq!(contract.symbol.as_str(), "IUSA");

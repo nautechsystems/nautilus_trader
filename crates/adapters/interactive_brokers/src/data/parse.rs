@@ -26,19 +26,29 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
+use thiserror::Error;
+
+#[derive(Debug, PartialEq, Error)]
+#[error("quantity size={size} cannot be represented with precision={precision}")]
+struct QuantityPrecisionError {
+    size: f64,
+    precision: u8,
+}
 
 fn checked_quantity(size: f64, precision: u8) -> anyhow::Result<Quantity> {
     let quantity = Quantity::new_checked(size, precision)
         .map_err(|e| anyhow::anyhow!("invalid quantity size={size}: {e}"))?;
     let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
     if (quantity.as_f64() - size).abs() > tolerance {
-        anyhow::bail!(
-            "quantity size={} cannot be represented with precision={}",
-            size,
-            precision
-        );
+        anyhow::bail!(QuantityPrecisionError { size, precision });
     }
     Ok(quantity)
+}
+
+/// Generates the stable fallback trade ID used when IB omits an execution identifier.
+pub(crate) fn generate_ib_trade_id(ts_event: UnixNanos, price: f64, size: f64) -> TradeId {
+    let ts_secs = ts_event.as_i64() / 1_000_000_000;
+    TradeId::new(format!("{ts_secs}-{price}-{size}"))
 }
 
 /// Parse IB tick price and size data into a QuoteTick.
@@ -97,13 +107,13 @@ pub fn parse_trade_tick(
     ts_init: UnixNanos,
     trade_id: Option<TradeId>,
 ) -> anyhow::Result<TradeTick> {
-    let trade_price = Price::new(price, price_precision);
+    let trade_price = Price::new_checked(price, price_precision)
+        .map_err(|e| anyhow::anyhow!("invalid trade price={price}: {e}"))?;
     let trade_size = checked_quantity(size, size_precision)?;
     let aggressor_side = AggressorSide::NoAggressor; // IB doesn't provide this directly
-    let trade_id = trade_id
-        .unwrap_or_else(|| crate::common::parse::generate_ib_trade_id(ts_event, price, size));
+    let trade_id = trade_id.unwrap_or_else(|| generate_ib_trade_id(ts_event, price, size));
 
-    Ok(TradeTick::new(
+    TradeTick::new_checked(
         instrument_id,
         trade_price,
         trade_size,
@@ -111,7 +121,16 @@ pub fn parse_trade_tick(
         trade_id,
         ts_event,
         ts_init,
-    ))
+    )
+    .map_err(|e| anyhow::anyhow!("invalid trade tick: {e}"))
+}
+
+pub(super) fn log_tick_parse_error(kind: &str, instrument_id: InstrumentId, e: &anyhow::Error) {
+    if e.is::<QuantityPrecisionError>() {
+        tracing::debug!("Dropping IB {kind} tick for {instrument_id}: {e}");
+    } else {
+        tracing::warn!("Failed to parse IB {kind} tick for {instrument_id}: {e}");
+    }
 }
 
 /// Parse IB index price data into an [`IndexPriceUpdate`].
@@ -221,12 +240,12 @@ pub fn parse_realtime_bar(
 
 /// Parse IB market depth operation to BookAction.
 #[must_use]
-pub fn parse_market_depth_operation(operation: i32) -> BookAction {
+pub fn parse_market_depth_operation(operation: i32) -> Option<BookAction> {
     match operation {
-        0 => BookAction::Add,
-        1 => BookAction::Update,
-        2 => BookAction::Delete,
-        _ => BookAction::Add, // Default to Add for unknown operations
+        0 => Some(BookAction::Add),
+        1 => Some(BookAction::Update),
+        2 => Some(BookAction::Delete),
+        _ => None,
     }
 }
 
@@ -369,7 +388,53 @@ mod tests {
             None,
         );
 
-        assert!(result.is_err());
+        let e = result.unwrap_err();
+        assert_eq!(
+            e.downcast_ref::<QuantityPrecisionError>(),
+            Some(&QuantityPrecisionError {
+                size: 0.5,
+                precision: 0
+            })
+        );
+    }
+
+    #[rstest]
+    #[case(0.63462, 0)]
+    #[case(1.025, 2)]
+    fn test_quantity_precision_error_preserves_size(#[case] size: f64, #[case] precision: u8) {
+        let e = checked_quantity(size, precision).unwrap_err();
+        assert_eq!(
+            e.downcast_ref::<QuantityPrecisionError>(),
+            Some(&QuantityPrecisionError { size, precision })
+        );
+    }
+
+    #[rstest]
+    #[case(-1.0)]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    fn test_invalid_quantities_are_not_expected_precision_drops(#[case] size: f64) {
+        let e = checked_quantity(size, 0).unwrap_err();
+        assert!(!e.is::<QuantityPrecisionError>());
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_rejects_zero_size() {
+        let result = parse_trade_tick(
+            create_test_instrument_id(),
+            150.25,
+            0.0,
+            2,
+            0,
+            UnixNanos::new(1000),
+            UnixNanos::new(1000),
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "invalid trade tick: invalid `Quantity` for 'size' not positive, was 0",
+        );
     }
 
     #[rstest]
@@ -454,26 +519,25 @@ mod tests {
     #[rstest]
     fn test_parse_market_depth_operation_insert() {
         let action = parse_market_depth_operation(0);
-        assert_eq!(action, BookAction::Add);
+        assert_eq!(action, Some(BookAction::Add));
     }
 
     #[rstest]
     fn test_parse_market_depth_operation_update() {
         let action = parse_market_depth_operation(1);
-        assert_eq!(action, BookAction::Update);
+        assert_eq!(action, Some(BookAction::Update));
     }
 
     #[rstest]
     fn test_parse_market_depth_operation_delete() {
         let action = parse_market_depth_operation(2);
-        assert_eq!(action, BookAction::Delete);
+        assert_eq!(action, Some(BookAction::Delete));
     }
 
     #[rstest]
     fn test_parse_market_depth_operation_unknown() {
         let action = parse_market_depth_operation(99);
-        // Should default to Add for unknown operations
-        assert_eq!(action, BookAction::Add);
+        assert_eq!(action, None);
     }
 
     #[rstest]

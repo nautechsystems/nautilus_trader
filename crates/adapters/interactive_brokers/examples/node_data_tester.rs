@@ -21,10 +21,10 @@
 //! Run embedded config unit tests with:
 //! `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`
 //!
-//! Edit the constants below to change the TWS/Gateway connection, target
-//! instrument, market data type, and data spec profile. The adapter connects to
-//! a locally running TWS or IB Gateway, so no credential environment variables
-//! are required.
+//! Edit the constants below to change the TWS/Gateway connection, market data type,
+//! and data spec profile. The tester streams the live quarterly ES contract so it
+//! works outside stock market hours. The adapter connects to a locally running TWS
+//! or IB Gateway, so no credential environment variables are required.
 
 use std::{collections::HashSet, time::Duration};
 
@@ -44,6 +44,9 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+#[path = "contracts/active_future.rs"]
+mod active_future;
+
 // Each variant is exercised by the tests and selected by editing DATA_SPEC_PROFILE,
 // but only the default is constructed in a non-test build
 #[allow(dead_code)]
@@ -59,15 +62,19 @@ const NODE_NAME: &str = "IB-DATA-TESTER-001";
 const HOST: &str = DEFAULT_HOST;
 const PORT: u16 = DEFAULT_TWS_PORT;
 const CLIENT_ID: i32 = DEFAULT_CLIENT_ID;
-const INSTRUMENT_ID: &str = "AAPL=STK.SMART";
-const MARKET_DATA_TYPE: &str = "realtime";
+// Delayed data streams without a real-time subscription; override with
+// `NAUTILUS_IB_MARKET_DATA_TYPE` when the account is entitled to real-time data.
+const MARKET_DATA_TYPE: &str = "delayed";
 const AUTO_STOP_SECS: u64 = 0;
 const DATA_SPEC_PROFILE: IbDataSpecProfile = IbDataSpecProfile::Supported;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
-    let market_data_type = parse_market_data_type(MARKET_DATA_TYPE);
+    let instrument_id = active_future::es_future_instrument_id();
+    let market_data_type = parse_market_data_type(
+        &std::env::var("NAUTILUS_IB_MARKET_DATA_TYPE")
+            .unwrap_or_else(|_| MARKET_DATA_TYPE.to_string()),
+    );
     let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL").as_str());
 
     let data_config = InteractiveBrokersDataClientConfig {

@@ -16,13 +16,16 @@ import asyncio
 import datetime as dt
 import os
 
+from _common import default_aapl_instrument_id
 from _common import default_stock_contracts
+from _common import env_bool
 from _common import env_int
 from _common import instrument_ids
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 
 from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
 def historical_end() -> dt.datetime:
@@ -43,23 +46,28 @@ async def main() -> None:
     host, port = resolve_ib_endpoint()
     trading_hours = ib.IbTradingHours.EXTENDED
     requested_ids = [
-        os.getenv("IB_V2_HISTORICAL_INSTRUMENT_ID", "AAPL.NASDAQ"),
+        os.getenv("IB_V2_HISTORICAL_INSTRUMENT_ID", default_aapl_instrument_id()),
     ]
     provider_config = instrument_provider_config(load_ids=requested_ids)
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
-    client = ib.HistoricalInteractiveBrokersClient(
-        provider,
-        ib.InteractiveBrokersDataClientConfig(
-            host=host,
-            port=port,
-            client_id=env_int("IB_V2_HIST_CLIENT_ID", 180),
-            connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
-            request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 60),
-            use_regular_trading_hours=trading_hours.use_rth(),
-            instrument_provider=provider_config,
-        ),
+    client_config = ib.InteractiveBrokersDataClientConfig(
+        host=host,
+        port=port,
+        client_id=env_int("IB_V2_HIST_CLIENT_ID", 180),
+        connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
+        request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 60),
+        use_regular_trading_hours=trading_hours.use_rth(),
+        instrument_provider=provider_config,
     )
 
+    if not env_bool("IB_V2_RUN_CLIENT"):
+        print(
+            "Built IB historical client. Set IB_V2_RUN_CLIENT=1 to request data.",
+            flush=True,
+        )
+        return
+
+    client = ib.HistoricalInteractiveBrokersClient(provider, client_config)
     print("Requesting instruments...", flush=True)
     instruments = await client.request_instruments(
         instrument_ids=instrument_ids(requested_ids),
@@ -103,6 +111,12 @@ async def main() -> None:
         timeout=env_int("IB_V2_HISTORICAL_TIMEOUT", 60),
     )
     print(f"Downloaded {len(quote_ticks)} quote tick(s)", flush=True)
+
+    catalog = ParquetDataCatalog("./catalog")
+    catalog.write_instruments(instruments)
+    catalog.write_bars(bars)
+    catalog.write_trade_ticks(trade_ticks)
+    catalog.write_quote_ticks(quote_ticks)
 
 
 if __name__ == "__main__":

@@ -279,59 +279,32 @@ pub fn jiff_to_ib_datetime(dt: &Timestamp) -> OffsetDateTime {
         .unwrap_or_else(|_| OffsetDateTime::now_utc())
 }
 
-/// Calculate duration for IB historical data request.
-///
-/// # Errors
-///
-/// Returns an error if duration calculation fails.
-pub fn calculate_duration(
-    start: Option<Timestamp>,
-    end: Option<Timestamp>,
-) -> anyhow::Result<IBDuration> {
-    match (start, end) {
-        (Some(start_dt), Some(end_dt)) => {
-            let duration = end_dt.duration_since(start_dt);
-            let days = duration.as_secs() / (24 * 60 * 60);
-
-            if days > 0 && days <= i32::MAX as i64 {
-                Ok((days as i32).days())
-            } else {
-                // Fallback to seconds if less than a day or too large
-                let seconds = duration.as_secs();
-                if seconds > 0 && seconds <= i32::MAX as i64 {
-                    Ok((seconds as i32).seconds())
-                } else {
-                    // Default to 1 day if calculation fails
-                    Ok(1.days())
-                }
-            }
-        }
-        (None, Some(_)) => {
-            // Default to 1 day if only end is provided
-            Ok(1.days())
-        }
-        (Some(_), None) => {
-            // Default to 1 day if only start is provided
-            Ok(1.days())
-        }
-        (None, None) => {
-            // Default to 1 day if neither is provided
-            Ok(1.days())
-        }
-    }
-}
-
 /// Calculate duration segments for IB historical data request.
 ///
 /// This is used to break down a large time range into multiple requests
 /// to comply with IB's duration limits for specific bar sizes.
 pub fn calculate_duration_segments(
-    start: Timestamp,
-    end: Timestamp,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
+    duration: Option<IBDuration>,
 ) -> Vec<(Timestamp, IBDuration)> {
+    let end = end.unwrap_or_else(Timestamp::now);
+
+    if let Some(duration) = duration {
+        return vec![(end, duration)];
+    }
+
+    let Some(start) = start else {
+        return vec![(end, 1.days())];
+    };
+
     let mut results = Vec::new();
     let duration = end.duration_since(start);
     let mut total_seconds = duration.as_secs();
+
+    if duration.subsec_nanos() > 0 {
+        total_seconds += 1;
+    }
 
     if total_seconds <= 0 {
         return results;
@@ -361,6 +334,92 @@ pub fn calculate_duration_segments(
     }
 
     results
+}
+
+/// Return whether a backward historical tick request needs another page.
+#[must_use]
+pub(crate) fn should_continue_historical_tick_pagination(
+    current_start_date: Option<Timestamp>,
+    current_end_date: Option<Timestamp>,
+    current_len: usize,
+    limit: Option<usize>,
+) -> bool {
+    limit.is_none_or(|limit| current_len < limit)
+        && current_start_date
+            .zip(current_end_date)
+            .is_none_or(|(start, end)| end > start)
+}
+
+/// Add a historical tick page and advance the next request before its earliest tick.
+#[allow(clippy::too_many_arguments)] // The parameters describe one pagination transition.
+pub(crate) fn extend_historical_tick_batch<T>(
+    all_ticks: &mut Vec<T>,
+    batch_ticks: Vec<T>,
+    current_start_date: Option<Timestamp>,
+    current_end_date: &mut Option<Timestamp>,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+    limit: Option<usize>,
+    ts_event: impl Fn(&T) -> UnixNanos,
+) -> bool {
+    if batch_ticks.is_empty() {
+        return false;
+    }
+
+    // The IB wire encodes the request end at second resolution and treats it as
+    // inclusive, so each page re-delivers ticks from the boundary second that a
+    // previous page already collected. Drop everything at or past the requested
+    // end before extending; an entirely re-delivered page means the end second
+    // cannot retreat (a single second holds a full page) and pagination must stop.
+    let mut batch_ticks = batch_ticks;
+
+    if let Some(end) = *current_end_date {
+        let end_bound_nanos = end.as_nanosecond();
+        batch_ticks.retain(|tick| i128::from(ts_event(tick).as_u64()) <= end_bound_nanos);
+        if batch_ticks.is_empty() {
+            tracing::warn!(
+                "Historical tick pagination pinned at {end}; a single second exceeds the page \
+                 size, earlier ticks within that second cannot be requested"
+            );
+            retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
+            return false;
+        }
+    }
+
+    let Some(min_ts_nanos) = batch_ticks.iter().map(&ts_event).min() else {
+        return false;
+    };
+    let new_end_nanos = min_ts_nanos.as_u64().saturating_sub(1);
+    let Ok(new_end) = Timestamp::from_nanosecond(i128::from(new_end_nanos)) else {
+        return false;
+    };
+    *current_end_date = Some(new_end);
+
+    all_ticks.extend(batch_ticks);
+
+    if current_start_date
+        .zip(*current_end_date)
+        .is_some_and(|(start, end)| end <= start)
+    {
+        retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
+        return false;
+    }
+
+    limit.is_none_or(|limit| all_ticks.len() < limit)
+}
+
+/// Retain historical ticks within the inclusive requested range.
+pub(crate) fn retain_historical_ticks_in_range<T>(
+    ticks: &mut Vec<T>,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+    ts_event: impl Fn(&T) -> UnixNanos,
+) {
+    ticks.retain(|tick| {
+        let ts_event = ts_event(tick);
+        start_nanos.is_none_or(|start| ts_event >= start)
+            && end_nanos.is_none_or(|end| ts_event <= end)
+    });
 }
 
 /// Adapt duration segments for an IB historical bars request.
@@ -740,50 +799,173 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_duration_with_start_and_end() {
+    fn test_calculate_duration_segments_with_start_and_end() {
         let start = "2024-01-01T10:00:00Z".parse::<Timestamp>().unwrap();
         let end = "2024-01-02T10:00:00Z".parse::<Timestamp>().unwrap();
-        let result = calculate_duration(Some(start), Some(end));
-        assert!(result.is_ok());
-        // Should be 1 day
-        let duration = result.unwrap();
-        assert!(duration.to_string().contains("1 D") || duration.to_string().contains("1D"));
+        let result = calculate_duration_segments(Some(start), Some(end), None);
+
+        assert_eq!(result, vec![(end, IBDuration::days(1))]);
     }
 
     #[rstest]
-    fn test_calculate_duration_no_start() {
+    fn test_calculate_duration_segments_without_start_defaults_to_one_day() {
         let end = "2024-01-02T10:00:00Z".parse::<Timestamp>().unwrap();
-        let result = calculate_duration(None, Some(end));
-        assert!(result.is_ok());
-        // Should default to 1 day
-        let duration = result.unwrap();
-        assert!(duration.to_string().contains("1 D") || duration.to_string().contains("1D"));
+        let result = calculate_duration_segments(None, Some(end), None);
+
+        assert_eq!(result, vec![(end, IBDuration::days(1))]);
     }
 
     #[rstest]
-    fn test_calculate_duration_no_end() {
+    fn test_calculate_duration_segments_with_explicit_duration() {
+        let end = "2024-01-02T10:00:00Z".parse::<Timestamp>().unwrap();
+        let result = calculate_duration_segments(None, Some(end), Some(IBDuration::weeks(2)));
+
+        assert_eq!(result, vec![(end, IBDuration::weeks(2))]);
+    }
+
+    #[rstest]
+    fn test_calculate_duration_segments_splits_years_days_and_seconds() {
+        let end = "2025-07-03T10:00:01Z".parse::<Timestamp>().unwrap();
         let start = "2024-01-01T10:00:00Z".parse::<Timestamp>().unwrap();
-        let result = calculate_duration(Some(start), None);
-        assert!(result.is_ok());
-        // Should default to 1 day
-        let duration = result.unwrap();
-        assert!(duration.to_string().contains("1 D") || duration.to_string().contains("1D"));
+        let segments = calculate_duration_segments(Some(start), Some(end), None);
+
+        assert_eq!(
+            segments,
+            vec![
+                (end, IBDuration::years(1)),
+                (
+                    "2024-07-03T10:00:01Z".parse::<Timestamp>().unwrap(),
+                    IBDuration::days(184),
+                ),
+                (
+                    "2024-01-01T10:00:01Z".parse::<Timestamp>().unwrap(),
+                    IBDuration::seconds(1),
+                ),
+            ]
+        );
     }
 
     #[rstest]
-    fn test_calculate_duration_segments() {
-        // Test case: 1.5 years ago to now
-        let now = Timestamp::now();
-        let start = now - jiff::SignedDuration::from_hours(24 * (365 + 182)); // ~1.5 years
-        let segments = calculate_duration_segments(start, now);
+    fn test_calculate_duration_segments_rounds_subsecond_up() {
+        let start = Timestamp::new(1, 0).unwrap();
+        let end = Timestamp::new(1, 1).unwrap();
+        let segments = calculate_duration_segments(Some(start), Some(end), None);
 
-        assert!(!segments.is_empty());
-        // Should have at least one 1Y segment and one D/S segment
-        assert!(segments.len() >= 2);
+        assert_eq!(segments, vec![(end, IBDuration::seconds(1))]);
+    }
 
-        // Check first segment is ~1Y
-        let dur1 = &segments[0].1;
-        assert!(dur1.to_string().contains("1 Y") || dur1.to_string().contains("1Y"));
+    #[rstest]
+    #[case(None, Some(Timestamp::from_second(2).unwrap()), 0, Some(10), true)]
+    #[case(Some(Timestamp::from_second(1).unwrap()), Some(Timestamp::from_second(2).unwrap()), 0, Some(10), true)]
+    #[case(Some(Timestamp::from_second(2).unwrap()), Some(Timestamp::from_second(1).unwrap()), 0, Some(10), false)]
+    #[case(Some(Timestamp::from_second(1).unwrap()), Some(Timestamp::from_second(2).unwrap()), 10, Some(10), false)]
+    #[case(Some(Timestamp::from_second(1).unwrap()), Some(Timestamp::from_second(2).unwrap()), 10, None, true)]
+    fn test_should_continue_historical_tick_pagination(
+        #[case] start: Option<Timestamp>,
+        #[case] end: Option<Timestamp>,
+        #[case] current_len: usize,
+        #[case] limit: Option<usize>,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            should_continue_historical_tick_pagination(start, end, current_len, limit),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_retreats_one_nanosecond() {
+        let mut ticks = vec![UnixNanos::from(30)];
+        let mut end = Some(Timestamp::from_nanosecond(100).unwrap());
+
+        let should_continue = extend_historical_tick_batch(
+            &mut ticks,
+            vec![UnixNanos::from(20), UnixNanos::from(10)],
+            Some(Timestamp::from_nanosecond(1).unwrap()),
+            &mut end,
+            Some(UnixNanos::from(1)),
+            Some(UnixNanos::from(100)),
+            Some(10),
+            |ts| *ts,
+        );
+
+        assert!(should_continue);
+        assert_eq!(
+            ticks,
+            vec![
+                UnixNanos::from(30),
+                UnixNanos::from(20),
+                UnixNanos::from(10)
+            ]
+        );
+        assert_eq!(end, Some(Timestamp::from_nanosecond(9).unwrap()));
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_stops_and_trims_at_start() {
+        let mut ticks = Vec::new();
+        let mut end = Some(Timestamp::from_nanosecond(100).unwrap());
+
+        let should_continue = extend_historical_tick_batch(
+            &mut ticks,
+            vec![UnixNanos::from(20), UnixNanos::from(10)],
+            Some(Timestamp::from_nanosecond(10).unwrap()),
+            &mut end,
+            Some(UnixNanos::from(10)),
+            Some(UnixNanos::from(15)),
+            Some(10),
+            |ts| *ts,
+        );
+
+        assert!(!should_continue);
+        assert_eq!(ticks, vec![UnixNanos::from(10)]);
+        assert_eq!(end, Some(Timestamp::from_nanosecond(9).unwrap()));
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_drops_boundary_duplicates() {
+        let mut ticks = vec![UnixNanos::from(30)];
+        let mut end = Some(Timestamp::from_nanosecond(29).unwrap());
+
+        let should_continue = extend_historical_tick_batch(
+            &mut ticks,
+            vec![
+                UnixNanos::from(35),
+                UnixNanos::from(30),
+                UnixNanos::from(20),
+            ],
+            None,
+            &mut end,
+            None,
+            None,
+            Some(10),
+            |ts| *ts,
+        );
+
+        assert!(should_continue);
+        assert_eq!(ticks, vec![UnixNanos::from(30), UnixNanos::from(20)]);
+        assert_eq!(end, Some(Timestamp::from_nanosecond(19).unwrap()));
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_stops_when_end_cannot_retreat() {
+        let mut ticks = vec![UnixNanos::from(30)];
+        let mut end = Some(Timestamp::from_nanosecond(29).unwrap());
+
+        let should_continue = extend_historical_tick_batch(
+            &mut ticks,
+            vec![UnixNanos::from(35), UnixNanos::from(30)],
+            None,
+            &mut end,
+            None,
+            None,
+            Some(10),
+            |ts| *ts,
+        );
+
+        assert!(!should_continue);
+        assert_eq!(ticks, vec![UnixNanos::from(30)]);
+        assert_eq!(end, Some(Timestamp::from_nanosecond(29).unwrap()));
     }
 
     #[rstest]

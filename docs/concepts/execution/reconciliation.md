@@ -114,6 +114,9 @@ fill application, and then evaluates positions against the updated cache. During
 position checks, the node coordinates authoritative fill queries and dispatch before asking the
 manager to generate synthetic events. Activity revisions detect local changes during requests or
 callbacks; applying authoritative fills defers synthetic reconciliation until a fresh position report.
+A fill the engine does not apply defers it only until `position_check_threshold_ms` has passed since
+the fill's first failed dispatch; later checks skip that fill and reconcile the position
+synthetically.
 
 The manager remains available without the `node` feature. Standalone callers can use its individual
 polling methods and apply the returned events themselves. Standalone position polling directly

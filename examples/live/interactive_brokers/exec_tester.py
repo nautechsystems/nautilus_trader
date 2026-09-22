@@ -30,13 +30,14 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 
+from _common import default_es_future_instrument_id
+
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
-from nautilus_trader.adapters.interactive_brokers import SymbologyMethod
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
@@ -61,7 +62,7 @@ STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
 HOST = "127.0.0.1"
 PORT = 7497
 CLIENT_ID = 101
-INSTRUMENT_ID = InstrumentId.from_str("AAPL=STK.SMART")
+INSTRUMENT_ID = InstrumentId.from_str(default_es_future_instrument_id())
 ORDER_QTY = "1"
 TOB_OFFSET_TICKS = 500
 
@@ -75,7 +76,6 @@ def main() -> None:
         raise SystemExit("TWS_ACCOUNT must be set to the target IB account")
 
     provider_config = InteractiveBrokersInstrumentProviderConfig(
-        symbology_method=SymbologyMethod.RAW,
         load_ids={INSTRUMENT_ID},
     )
 
@@ -111,19 +111,19 @@ def main() -> None:
         "ExecTester",
         ExecTesterConfig(
             strategy_id=STRATEGY_ID,
+            use_uuid_client_order_ids=True,
             instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(IB),
-            external_order_instrument_ids=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
-            subscribe_trades=True,
+            subscribe_trades=False,
             open_position_on_start_qty=Decimal(ORDER_QTY),
             open_position_on_first_quote=True,
             open_position_time_in_force=TimeInForce.IOC,
             enable_limit_buys=True,
             enable_limit_sells=True,
             tob_offset_ticks=TOB_OFFSET_TICKS,
-            use_post_only=True,
+            use_post_only=False,
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,

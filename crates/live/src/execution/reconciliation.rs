@@ -586,6 +586,31 @@ pub(super) fn should_project_fill(
         .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
 }
 
+/// Orders reconciliation events chronologically while keeping each order's events causal.
+///
+/// Fills carry venue execution times, but a report's acceptance time can postdate its own fills
+/// when the venue reports none and the adapter uses the reconciliation time. Each event sorts by
+/// the earliest time among itself and its order's later events, so an order is accepted before
+/// its fills apply while fills across orders keep their venue order.
+pub(super) fn sort_reconciliation_events(events: &mut Vec<OrderEventAny>) {
+    let mut earliest_later: IndexMap<ClientOrderId, UnixNanos> = IndexMap::new();
+    let mut keys = vec![UnixNanos::default(); events.len()];
+
+    for (index, event) in events.iter().enumerate().rev() {
+        let client_order_id = event.client_order_id();
+        let key = earliest_later
+            .get(&client_order_id)
+            .map_or(event.ts_event(), |later| event.ts_event().min(*later));
+        earliest_later.insert(client_order_id, key);
+        keys[index] = key;
+    }
+
+    let mut keyed: Vec<(UnixNanos, OrderEventAny)> =
+        keys.into_iter().zip(events.drain(..)).collect();
+    keyed.sort_by_key(|(key, _)| *key);
+    events.extend(keyed.into_iter().map(|(_, event)| event));
+}
+
 /// Checks active fill history for deterministic inferred reconciliation IDs.
 ///
 /// # Errors
@@ -1510,5 +1535,81 @@ pub(super) mod tests {
             prop_assert!(short >= Decimal::ZERO);
             prop_assert_eq!(reversed, (-net, short, long));
         }
+    }
+
+    #[rstest]
+    fn test_sort_reconciliation_events_accepts_before_earlier_fills() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let account_id = AccountId::from("SIM-001");
+        let first: OrderAny = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-FIRST"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let second: OrderAny = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SECOND"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let accepted = |order: &OrderAny, ts: u64| {
+            let mut event =
+                TestOrderEventStubs::accepted(order, account_id, VenueOrderId::from("V-1"));
+            if let OrderEventAny::Accepted(accepted) = &mut event {
+                accepted.ts_event = UnixNanos::from(ts);
+            }
+            event
+        };
+        let filled = |order: &OrderAny, trade_id: &str, ts: u64| {
+            TestOrderEventStubs::filled(
+                order,
+                &instrument,
+                Some(TradeId::from(trade_id)),
+                None,
+                Some(Price::from("100.00")),
+                Some(Quantity::from("1.000")),
+                None,
+                None,
+                Some(UnixNanos::from(ts)),
+                Some(account_id),
+            )
+        };
+        let mut events = vec![
+            accepted(&second, 900),
+            filled(&second, "T-SECOND", 200),
+            accepted(&first, 900),
+            filled(&first, "T-FIRST", 100),
+            TestOrderEventStubs::canceled(&first, account_id, None),
+        ];
+
+        if let OrderEventAny::Canceled(canceled) = &mut events[4] {
+            canceled.ts_event = UnixNanos::from(950);
+        }
+
+        sort_reconciliation_events(&mut events);
+
+        let sequence: Vec<(ClientOrderId, &str)> = events
+            .iter()
+            .map(|event| {
+                let kind = match event {
+                    OrderEventAny::Accepted(_) => "accepted",
+                    OrderEventAny::Filled(_) => "filled",
+                    OrderEventAny::Canceled(_) => "canceled",
+                    _ => "other",
+                };
+                (event.client_order_id(), kind)
+            })
+            .collect();
+        assert_eq!(
+            sequence,
+            vec![
+                (first.client_order_id(), "accepted"),
+                (first.client_order_id(), "filled"),
+                (second.client_order_id(), "accepted"),
+                (second.client_order_id(), "filled"),
+                (first.client_order_id(), "canceled"),
+            ]
+        );
     }
 }

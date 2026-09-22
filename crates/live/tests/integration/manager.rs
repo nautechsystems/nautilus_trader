@@ -841,6 +841,117 @@ async fn test_reconcile_mass_status_materializes_restored_close_position_order()
 }
 
 #[tokio::test]
+async fn test_reconcile_mass_status_applies_reported_fill_once_when_client_requires_order_status() {
+    // A restart after an IB market order fills: the venue reports the filled order, its
+    // one execution, and the resulting position. The fill must be counted exactly once.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine
+            .register_client(Box::new(
+                MockExecutionClient::new(Vec::new()).with_order_status_required_for_fills(),
+            ))
+            .unwrap();
+    }
+    let client_order_id = ClientOrderId::from("794c5c2e-762e-41d3-8bb0-b7a827c7cc6e");
+    let order_venue_order_id = VenueOrderId::from("PERM-1453381480");
+    let fill_venue_order_id = VenueOrderId::from("PERM-1453381480");
+    let trade_id = TradeId::from("0000e1a7.6ab097b2.01.01");
+    let report = OrderStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        Some(client_order_id),
+        order_venue_order_id,
+        OrderSide::Buy.into(),
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_price(Price::from("0.00")); // IB reports a zero limit price for market orders
+    let fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        fill_venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.000"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    let mut mass_status = create_mass_status(vec![report], vec![fill.clone()]);
+    // IB reports a bounded, complete window: the order-only fill logic runs only with a lookback.
+    mass_status.set_report_window(Some(UnixNanos::from(500_000)), true);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("1.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.04)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let filled_events = result
+        .events
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .count();
+    assert_eq!(filled_events, 1);
+    {
+        let cache = ctx.cache.borrow();
+        let order = ctx.get_order(&client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(order.trade_ids(), vec![&trade_id]);
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].signed_qty, 1.0);
+        assert_eq!(
+            positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
+            vec![trade_id]
+        );
+    }
+
+    // The execution stream replays the same fill after startup. Because the client
+    // requires an order status for fills, the engine must recognize the already
+    // applied trade rather than opening the position a second time.
+    ctx.exec_engine
+        .borrow_mut()
+        .reconcile_execution_report(&ExecutionReport::Fill(Box::new(fill)));
+
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_qty, 1.0);
+    assert_eq!(
+        positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
+        vec![trade_id]
+    );
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+}
+
+#[tokio::test]
 async fn test_reconcile_mass_status_rejects_external_order_with_zero_quantity() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
@@ -12185,6 +12296,7 @@ struct MockExecutionClient {
     order_report_query_count: Cell<usize>,
     fail_order_report: bool,
     fail_order_reports: bool,
+    requires_order_status_for_fill: bool,
     commission: Option<Money>,
     commission_failure: Option<Rc<Cell<bool>>>,
     on_order_report_query: RefCell<Option<Box<dyn FnOnce()>>>,
@@ -12208,6 +12320,7 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: false,
+            requires_order_status_for_fill: false,
             commission: None,
             commission_failure: None,
             on_order_report_query: RefCell::new(None),
@@ -12231,6 +12344,7 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: false,
+            requires_order_status_for_fill: false,
             commission: None,
             commission_failure: None,
             on_order_report_query: RefCell::new(None),
@@ -12254,6 +12368,7 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: true,
+            requires_order_status_for_fill: false,
             commission: None,
             commission_failure: None,
             on_order_report_query: RefCell::new(None),
@@ -12286,6 +12401,11 @@ impl MockExecutionClient {
         self
     }
 
+    fn with_order_status_required_for_fills(mut self) -> Self {
+        self.requires_order_status_for_fill = true;
+        self
+    }
+
     fn with_commission(mut self, commission: Money, failure: Rc<Cell<bool>>) -> Self {
         self.commission = Some(commission);
         self.commission_failure = Some(failure);
@@ -12305,6 +12425,10 @@ impl MockExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for MockExecutionClient {
+    fn requires_order_status_for_fill(&self) -> bool {
+        self.requires_order_status_for_fill
+    }
+
     fn is_connected(&self) -> bool {
         true
     }

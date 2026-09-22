@@ -16,11 +16,9 @@ import os
 from pathlib import Path
 
 from _common import add_strategy_from_config
-from _common import default_cl_future_instrument_id
-from _common import default_es_future_instrument_id
+from _common import databento_instrument_provider_config
 from _common import env_bool
 from _common import env_int
-from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
@@ -56,15 +54,7 @@ def main() -> None:
     host, port = resolve_ib_endpoint()
     trader_id = TraderId.from_str("IB-V2-DATABENTO-001")
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
-    provider_config = instrument_provider_config(
-        load_ids=[
-            "SPY.XNAS",
-            "AAPL.XNAS",
-            "V.XNYS",
-            os.getenv("IB_V2_DATABENTO_CL_INSTRUMENT_ID", default_cl_future_instrument_id()),
-            os.getenv("IB_V2_DATABENTO_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
-        ],
-    )
+    provider_config = databento_instrument_provider_config()
 
     builder = LiveNode.builder(
         "IB-V2-DATABENTO-001",
