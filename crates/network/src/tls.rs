@@ -15,9 +15,20 @@
 
 //! Wraps raw socket streams with TLS encryption and builds `rustls` client configurations from
 //! certificate directories.
+//!
+//! A certificates directory acts as an additional trust store: every certificate that parses
+//! from any file directly inside it, regardless of file name, becomes a trust anchor for each
+//! connection built from the resulting `ClientConfig`, alongside the webpki roots. No CA or
+//! self-signature checks are performed, and a certificate chain matched to a private key in the
+//! directory is used as the client certificate instead. Write access to the directory is
+//! therefore equivalent to control over which servers those connections trust. Each anchor
+//! added this way is logged at INFO with its SHA-256 fingerprint so operators can audit exactly
+//! what became trusted.
 
 use std::{convert::TryFrom, fs::File, path::Path, sync::Arc};
 
+use aws_lc_rs::digest::{SHA256, digest};
+use nautilus_core::hex;
 use nautilus_cryptography::{providers::install_cryptographic_provider, tls::create_tls_config};
 use rustls::{
     ClientConfig,
@@ -159,8 +170,13 @@ pub(crate) fn create_tls_config_from_certs_dir(
 
     for (path, certs) in all_certs {
         for cert in certs {
-            if let Err(e) = root_store.add(cert) {
-                log::warn!("Invalid certificate in {}: {e}", path.display());
+            let fingerprint = fingerprint_sha256(&cert);
+            match root_store.add(cert) {
+                Ok(()) => log::info!(
+                    "Trusting root certificate from {} (SHA-256 fingerprint: {fingerprint})",
+                    path.display()
+                ),
+                Err(e) => log::warn!("Invalid certificate in {}: {e}", path.display()),
             }
         }
     }
@@ -213,10 +229,17 @@ fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     Ok(certs)
 }
 
+fn fingerprint_sha256(cert: &CertificateDer<'_>) -> String {
+    hex::encode(digest(&SHA256, cert.as_ref()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{io::Cursor, sync::Arc};
 
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use log::Level;
     use rstest::rstest;
     use rustls::{
         ClientConnection, Connection, ServerConnection,
@@ -227,6 +250,9 @@ mod tests {
     use tokio_rustls::TlsAcceptor;
 
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use crate::logging::tests::capture_logs_for;
 
     // Test certificates generated with:
     // openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes
@@ -456,6 +482,42 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             result.is_ok(),
             "Should succeed ignoring invalid cert file: {:?}",
             result.err()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[tokio::test]
+    async fn test_dropped_pem_is_surfaced_as_trusted_root() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Any file dropped into the directory that carries a valid PEM certificate becomes a
+        // trust anchor, regardless of name, so the load must be surfaced to the operator
+        let dropped_path = temp_dir.path().join("notes.txt");
+        std::fs::write(&dropped_path, TEST_CERT).unwrap();
+
+        let capture = capture_logs_for(&["nautilus_network::tls"]).await;
+        let config = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap();
+        // The capture buffer is process-global and only target-filtered, so parallel tests
+        // reaching the loader can add records; this test's records are the ones naming the
+        // unique dropped path
+        let dropped = dropped_path.display().to_string();
+        let trust_messages: Vec<String> = capture
+            .messages()
+            .into_iter()
+            .filter(|(level, _)| *level == Level::Info)
+            .filter(|(_, message)| message.contains(&dropped))
+            .map(|(_, message)| message)
+            .collect();
+
+        assert!(!config.client_auth_cert_resolver.has_certs());
+        assert_eq!(
+            trust_messages,
+            vec![format!(
+                "Trusting root certificate from {} (SHA-256 fingerprint: {})",
+                dropped,
+                // SHA-256 of the TEST_CERT DER bytes
+                "e56da924fb335d2e54b94f8fe44a2b4c6dac3ab868bbbd8d41bb0596541019a3",
+            )]
         );
     }
 

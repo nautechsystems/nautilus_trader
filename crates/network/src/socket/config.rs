@@ -112,6 +112,14 @@ pub struct SocketConfig {
     /// interval so a healthy connection cannot trip it.
     pub heartbeat_timeout_secs: Option<u64>,
     /// The path to the certificates directory.
+    ///
+    /// Every certificate that parses from any file directly inside the directory, regardless of
+    /// file name, becomes a trust anchor for the connection alongside the bundled `webpki-roots`
+    /// set. No CA or self-signature checks are performed. A certificate chain matched to a
+    /// private key in the directory is used as the client certificate instead. Write access to
+    /// the directory is therefore equivalent to control over which servers the connection
+    /// trusts. Restrict its contents to intended trust anchors. Each anchor loaded from it is
+    /// logged at INFO with its SHA-256 fingerprint.
     pub certs_dir: Option<String>,
 }
 

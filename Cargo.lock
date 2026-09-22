@@ -6507,6 +6507,7 @@ version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "bon",
