@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed live node startup to fail when in-scope nonzero venue positions remain unrecovered
+- Changed `RiskEngine` to reject orders when accounts, prices, or required funding cannot be established
 - Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
@@ -60,13 +61,15 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
-- Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
-- Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
-- Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
 - Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills
+- Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications
+- Fixed quote-quantity conversion overflow panics during order risk checks
 - Fixed fill OMS resolution to use the owning execution client instead of venue or default routes
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
+- Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
+- Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
+- Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
@@ -119,6 +122,7 @@ Released on TBD (UTC).
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Extracted `CacheApi` and `CacheView` from the cache module
 - Normalized persistence path separators for Windows
+- Refactored `RiskEngine` validation, funding checks, and batch modification rate limiting
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries

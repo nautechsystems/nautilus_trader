@@ -69,7 +69,7 @@ impl Harness {
         let trader_id = TraderId::from(TRADER_ID);
         let account_id = AccountId::from("BETFAIR-001");
         let instrument = InstrumentAny::Betting(betting());
-        let execution =
+        let mut execution =
             ExecutionHarness::new(trader_id, *BETFAIR_CLIENT_ID, account_id, instrument);
         let (addr, mock_state) = start_mock_http().await;
         let (stream_port, listener) = start_mock_stream().await;
@@ -102,6 +102,15 @@ impl Harness {
         )
         .await;
         execution.register_client(Box::new(client)).unwrap();
+
+        assert!(
+            execution
+                .pump_until(Duration::from_secs(2), |cache| cache
+                    .account(&account_id)
+                    .is_some())
+                .await,
+            "Connected account must reach the cache before orders are submitted",
+        );
 
         let manager = RefCell::new(
             ExecutionManager::new(

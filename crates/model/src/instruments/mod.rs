@@ -601,7 +601,10 @@ pub trait Instrument: 'static + Send {
             anyhow::bail!("`last_price` was zero when calculating base quantity");
         }
         let precision = u32::from(self.min_size_increment_precision());
-        let value = (quantity.as_decimal() / last_px)
+        let value = quantity
+            .as_decimal()
+            .checked_div(last_px)
+            .ok_or_else(|| anyhow::anyhow!("Base quantity exceeds Decimal bounds"))?
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
@@ -1391,6 +1394,34 @@ mod tests {
             error.to_string().contains("`last_price` was zero"),
             "{error}"
         );
+    }
+
+    #[rstest]
+    fn base_quantity_out_of_range_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(Quantity::from("1000000000"), Price::from("0.00001"))
+            .unwrap_err();
+
+        let expected = Quantity::from_decimal_dp(
+            dec!(100000000000000),
+            currency_pair_btcusdt.size_precision(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.downcast_ref::<CorrectnessError>(), Some(&expected));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn base_quantity_decimal_overflow_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(
+                Quantity::from("10000000000000"),
+                Price::from("0.0000000000000001"),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Base quantity exceeds Decimal bounds");
     }
 
     #[rstest]
