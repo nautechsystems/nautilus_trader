@@ -101,7 +101,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             ib_config.instrument_provider.clone(),
         ));
-        seed_provider_from_cache(&instrument_provider, &cache);
+        instrument_provider.seed_from_cache(&cache.borrow());
         let client = InteractiveBrokersDataClient::new(
             ClientId::from(name),
             ib_config,
@@ -153,7 +153,7 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
         cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        let mut ib_config = config
+        let ib_config = config
             .as_any()
             .downcast_ref::<InteractiveBrokersExecutionClientConfig>()
             .ok_or_else(|| {
@@ -168,12 +168,11 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
         } else {
             AccountId::from("IB-001")
         };
-        ib_config.account_id = Some(account_id.to_string());
 
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             ib_config.instrument_provider.clone(),
         ));
-        seed_provider_from_cache(&instrument_provider, &cache);
+        instrument_provider.seed_from_cache(&cache.borrow());
 
         let core = ExecutionClientCore::new(
             trader_id,
@@ -208,28 +207,6 @@ fn resolve_account_id(name: &str, account_id: &str) -> anyhow::Result<AccountId>
     let issuer = if name.is_empty() { IB } else { name };
     AccountId::new_checked(format!("{issuer}-{account_id}"))
         .map_err(|e| anyhow::anyhow!("Invalid Interactive Brokers account_id: {e}"))
-}
-
-fn seed_provider_from_cache(
-    instrument_provider: &InteractiveBrokersInstrumentProvider,
-    cache: &CacheView,
-) {
-    let instruments = {
-        let cache = cache.borrow();
-        cache
-            .instrument_ids(None)
-            .into_iter()
-            .filter_map(|instrument_id| cache.instrument(instrument_id).cloned())
-            .collect::<Vec<_>>()
-    };
-
-    let count = instrument_provider.add_cached_instruments(instruments);
-    if count > 0 {
-        tracing::debug!(
-            "Seeded Interactive Brokers instrument provider with {} cached instruments",
-            count
-        );
-    }
 }
 
 #[cfg(test)]
