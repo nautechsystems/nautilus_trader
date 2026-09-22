@@ -92,7 +92,9 @@ it to an execution client but has not yet applied that client's first status eve
 `SubmitOrder` for an ineligible order is skipped, and a `SubmitOrderList` naming one is denied
 without reaching the client: `OrderDenied` (`ORDER_LIST_DENIED`) applies only to the list's
 eligible members, while the earlier submission keeps its lifecycle and its later client events
-apply normally.
+apply normally. The dispatch record behind this rule is process-local: a reset clears it, and it
+is absent after a restart, where a still-`INITIALIZED` dispatched order is treated like any other
+unrouted order until it is resolved by the client's events or a venue cancel or expiry report.
 
 For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure

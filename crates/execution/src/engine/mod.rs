@@ -116,7 +116,9 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 /// cannot distinguish it from an order that has not been routed yet. The engine records each
 /// dispatch until that first status transition, and a later submit command naming the order is
 /// stale for it: the engine neither routes the order to a client again nor denies it when the
-/// later command fails validation.
+/// later command fails validation. The record is process-local: a reset clears it, and it is
+/// absent after a restart, where a still-`Initialized` dispatched order is treated like any other
+/// unrouted order until it is resolved by the client's events or a venue cancel or expiry report.
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
