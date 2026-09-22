@@ -92,9 +92,20 @@ impl DataCommand {
     /// Returns `None` for request and unsubscribe variants.
     pub(crate) fn into_unsubscribe(self, command_id: UUID4, ts_init: UnixNanos) -> Option<Self> {
         match self {
-            Self::Subscribe(command) => Some(Self::Unsubscribe(
-                command.into_unsubscribe(command_id, ts_init, None),
-            )),
+            Self::Subscribe(command) => {
+                let correlation_id = matches!(
+                    command,
+                    SubscribeCommand::BookDeltas(_)
+                        | SubscribeCommand::BookDepth(_)
+                        | SubscribeCommand::BookSnapshots(_)
+                )
+                .then(|| command.command_id());
+                Some(Self::Unsubscribe(command.into_unsubscribe(
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                )))
+            }
             #[cfg(feature = "defi")]
             Self::DefiSubscribe(command) => Some(Self::DefiUnsubscribe(
                 command.into_unsubscribe(command_id, ts_init),

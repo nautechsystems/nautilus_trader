@@ -1179,7 +1179,7 @@ async def test_all_subscription_families_preserve_subscribe_and_unsubscribe_fiel
     if kind in ("book_deltas", "book_depth"):
         assert commands[0].book_type == BookType.L2_MBP
         assert commands[0].managed is False
-        assert commands[0].depth == (7 if kind == "book_deltas" else 10)
+        assert commands[0].depth == (7 if kind == "book_deltas" else None)
 
 
 @pytest.mark.parametrize(

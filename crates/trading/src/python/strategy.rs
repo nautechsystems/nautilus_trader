@@ -2651,16 +2651,24 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "subscribe_book_depth")]
-    #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
     fn py_subscribe_book_depth(
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<usize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         self.ensure_registered()?;
+
+        let depth = depth
+            .map(|value| {
+                NonZeroUsize::new(value).ok_or_else(|| to_pyvalue_err("depth must be positive"))
+            })
+            .transpose()?;
+
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2671,6 +2679,7 @@ impl PyStrategy {
             self.inner_mut(),
             instrument_id,
             book_type,
+            depth,
             client_id,
             managed,
             params_map,
@@ -3710,6 +3719,7 @@ mod tests {
     use std::{
         cell::RefCell,
         collections::{BTreeMap, HashMap},
+        num::NonZeroUsize,
         rc::Rc,
         str::FromStr,
     };
@@ -4605,7 +4615,9 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_python_book_depth_subscription_methods_send_commands() {
+    #[case(None)]
+    #[case(Some(25))]
+    fn test_python_book_depth_subscription_methods_send_commands(#[case] depth: Option<usize>) {
         pyo3::Python::initialize();
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
@@ -4618,7 +4630,14 @@ class IndicatorEventStrategy:
             let instrument_id = sample_instrument().id;
             let client_id = Some(ClientId::new("DEPTH-CLIENT"));
             rust_strategy
-                .py_subscribe_book_depth(instrument_id, BookType::L2_MBP, client_id, true, None)
+                .py_subscribe_book_depth(
+                    instrument_id,
+                    BookType::L2_MBP,
+                    depth,
+                    client_id,
+                    true,
+                    None,
+                )
                 .unwrap();
             rust_strategy
                 .py_unsubscribe_book_depth(instrument_id, client_id, None)
@@ -4635,7 +4654,7 @@ class IndicatorEventStrategy:
 
             assert_eq!(subscribe.instrument_id, instrument_id);
             assert_eq!(subscribe.book_type, BookType::L2_MBP);
-            assert_eq!(subscribe.depth.unwrap().get(), 10);
+            assert_eq!(subscribe.depth.map(NonZeroUsize::get), depth);
             assert_eq!(subscribe.client_id, client_id);
             assert!(subscribe.managed);
             assert_eq!(unsubscribe.instrument_id, instrument_id);

@@ -18,17 +18,60 @@ use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
+    messages::data::{SubscribeBookSnapshots, SubscribeCommand},
     msgbus::{self, Handler, MStr, Topic, switchboard},
     timer::TimeEvent,
 };
 use nautilus_model::{
     data::{OrderBookDeltas, OrderBookDepth, QuoteTick},
-    enums::InstrumentClass,
+    enums::{BookType, InstrumentClass},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::OrderBook,
 };
 use ustr::Ustr;
+
+#[derive(Debug, Default)]
+pub(super) struct BookSubscription {
+    pub(super) owners: Vec<Rc<BookSubscriptionOwner>>,
+}
+
+#[derive(Debug)]
+pub(super) struct BookSubscriptionOwner {
+    pub(super) command: SubscribeCommand,
+    pub(super) client_id: Option<ClientId>,
+    pub(super) targets: Vec<InstrumentId>,
+}
+
+impl BookSubscriptionOwner {
+    pub(super) fn managed(&self) -> bool {
+        match &self.command {
+            SubscribeCommand::BookDeltas(cmd) => cmd.managed,
+            SubscribeCommand::BookDepth(cmd) => cmd.managed,
+            SubscribeCommand::BookSnapshots(_) => true,
+            _ => unreachable!("only book subscriptions are retained"),
+        }
+    }
+
+    pub(super) fn is_depth(&self) -> bool {
+        matches!(self.command, SubscribeCommand::BookDepth(_))
+    }
+
+    pub(super) fn config(&self) -> (BookType, Option<NonZeroUsize>) {
+        match &self.command {
+            SubscribeCommand::BookDeltas(cmd) => (cmd.book_type, cmd.depth),
+            SubscribeCommand::BookDepth(cmd) => (cmd.book_type, cmd.depth),
+            SubscribeCommand::BookSnapshots(cmd) => (cmd.book_type, cmd.depth),
+            _ => unreachable!("only book subscriptions are retained"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BookSnapshotSource {
+    pub(super) command: SubscribeBookSnapshots,
+    pub(super) client_command: SubscribeCommand,
+}
 
 /// Contains information for creating snapshots of specific order books.
 #[derive(Clone, Debug)]

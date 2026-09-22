@@ -45,7 +45,7 @@ mod time_range;
 
 use std::{
     any::{Any, type_name},
-    cell::{Ref, RefCell},
+    cell::RefCell,
     collections::VecDeque,
     fmt::{Debug, Display},
     mem,
@@ -57,10 +57,11 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
-use bar::{BarAggregatorKey, bar_aggregator_key};
+use bar::{BarAggregationSubscription, BarAggregatorKey, bar_aggregator_key};
 use book::{
     BookDeltasKey, BookDeltasUnsubscribeResult, BookSnapshotInfo, BookSnapshotInfos,
-    BookSnapshotKey, BookSnapshotUnsubscribeResult, BookSnapshotter, BookUpdater,
+    BookSnapshotKey, BookSnapshotSource, BookSnapshotUnsubscribeResult, BookSnapshotter,
+    BookSubscription, BookSubscriptionOwner, BookUpdater,
 };
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
@@ -75,9 +76,9 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
-        DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse, QuotesResponse,
-        RequestBars, RequestCommand, RequestJoin, RequestOptionChainReferencePrice, RequestQuotes,
-        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
+        DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse, PARAMS_IS_PARENT,
+        QuotesResponse, RequestBars, RequestCommand, RequestJoin, RequestOptionChainReferencePrice,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
         SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeOptionGreeks,
         SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
         UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
@@ -153,9 +154,11 @@ const OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT_TIMER: &str = "option-chain-reference
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
-    pub(crate) clock: Rc<RefCell<dyn Clock>>,
-    pub(crate) cache: Rc<RefCell<Cache>>,
-    pub(crate) external_clients: AHashSet<ClientId>,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+    config: DataEngineConfig,
+    msgbus_priority: u32,
+    external_clients: AHashSet<ClientId>,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client_id: Option<ClientId>,
@@ -166,8 +169,8 @@ pub struct DataEngine {
     book_deltas_counts: IndexMap<BookDeltasKey, usize>,
     book_depth_counts: IndexMap<BookDeltasKey, usize>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
-    book_deltas_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
-    book_depth_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
+    book_subscriptions: AHashMap<InstrumentId, BookSubscription>,
+    book_subscription_owners: AHashMap<InstrumentId, Vec<Rc<BookSubscriptionOwner>>>,
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
@@ -201,8 +204,6 @@ pub struct DataEngine {
     data_count: u64,
     request_count: u64,
     response_count: u64,
-    pub(crate) msgbus_priority: u32,
-    pub(crate) config: DataEngineConfig,
     #[cfg(feature = "streaming")]
     catalogs: CatalogMap,
     #[cfg(feature = "defi")]
@@ -224,7 +225,6 @@ impl DataEngine {
         config: Option<DataEngineConfig>,
     ) -> Self {
         let config = config.unwrap_or_default();
-
         let external_clients: AHashSet<ClientId> = config
             .external_clients
             .clone()
@@ -235,6 +235,8 @@ impl DataEngine {
         Self {
             clock,
             cache,
+            config,
+            msgbus_priority: 10, // High-priority for built-in component
             external_clients,
             subscriptions_external: SubscriptionRegistry::default(),
             clients: IndexMap::new(),
@@ -246,8 +248,8 @@ impl DataEngine {
             book_deltas_counts: IndexMap::new(),
             book_depth_counts: IndexMap::new(),
             book_updaters: AHashMap::new(),
-            book_deltas_parent_expansions: AHashMap::new(),
-            book_depth_parent_expansions: AHashMap::new(),
+            book_subscriptions: AHashMap::new(),
+            book_subscription_owners: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
@@ -281,8 +283,6 @@ impl DataEngine {
             data_count: 0,
             request_count: 0,
             response_count: 0,
-            msgbus_priority: 10, // High-priority for built-in component
-            config,
             #[cfg(feature = "streaming")]
             catalogs: CatalogMap::new(),
             #[cfg(feature = "defi")]
@@ -294,6 +294,30 @@ impl DataEngine {
             #[cfg(feature = "defi")]
             pool_event_buffers: AHashMap::new(),
         }
+    }
+
+    /// Returns a reference to the clock.
+    #[must_use]
+    pub fn clock(&self) -> &Rc<RefCell<dyn Clock>> {
+        &self.clock
+    }
+
+    /// Returns a reference to the cache.
+    #[must_use]
+    pub fn cache(&self) -> &Rc<RefCell<Cache>> {
+        &self.cache
+    }
+
+    /// Returns a reference to the configuration.
+    #[must_use]
+    pub const fn config(&self) -> &DataEngineConfig {
+        &self.config
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) const fn msgbus_priority(&self) -> u32 {
+        self.msgbus_priority
     }
 
     /// Registers all message bus handlers for the data engine.
@@ -368,6 +392,12 @@ impl DataEngine {
         );
     }
 
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) fn is_external_client(&self, client_id: ClientId) -> bool {
+        self.external_clients.contains(&client_id)
+    }
+
     /// Returns the total count of data commands received by the engine.
     #[must_use]
     pub const fn command_count(&self) -> u64 {
@@ -425,24 +455,6 @@ impl DataEngine {
     #[must_use]
     pub fn pending_join_request_count(&self) -> usize {
         self.pending_join_requests.len()
-    }
-
-    /// Returns a read-only reference to the engines clock.
-    #[must_use]
-    pub fn get_clock(&self) -> Ref<'_, dyn Clock> {
-        self.clock.borrow()
-    }
-
-    /// Returns a read-only reference to the engines cache.
-    #[must_use]
-    pub fn get_cache(&self) -> Ref<'_, Cache> {
-        self.cache.borrow()
-    }
-
-    /// Returns the `Rc<RefCell<Cache>>` used by this engine.
-    #[must_use]
-    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
-        Rc::clone(&self.cache)
     }
 
     /// Registers the `client` with the engine with an optional venue `routing`.
@@ -666,8 +678,8 @@ impl DataEngine {
             msgbus::unsubscribe_book_depth(depth_topic.into(), &depth_handler);
         }
 
-        self.book_deltas_parent_expansions.clear();
-        self.book_depth_parent_expansions.clear();
+        self.book_subscriptions.clear();
+        self.book_subscription_owners.clear();
 
         self.book_deltas_counts.clear();
         self.book_depth_counts.clear();
@@ -1215,6 +1227,16 @@ impl DataEngine {
                     "Skipping unsubscribe command for external client {client_id}: {command:?}",
                 );
             }
+            return Ok(());
+        }
+
+        if matches!(
+            cmd,
+            UnsubscribeCommand::BookDeltas(_)
+                | UnsubscribeCommand::BookDepth(_)
+                | UnsubscribeCommand::BookSnapshots(_)
+        ) && !self.release_book_subscription(cmd)
+        {
             return Ok(());
         }
 
@@ -3113,16 +3135,10 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        // Validate parent shape BEFORE mutating subscription state so a parse
-        // failure leaves the engine bookkeeping unchanged.
-        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
-
         let had_deltas =
             self.has_book_delta_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
 
-        if cmd.managed {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, parent)?;
-        }
+        self.retain_book_subscription(SubscribeCommand::BookDeltas(cmd.clone()))?;
 
         self.increment_book_delta_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
 
@@ -3134,13 +3150,10 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth` data");
         }
 
-        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
         let had_depth =
             self.has_book_depth_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
 
-        if cmd.managed {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
-        }
+        self.retain_book_subscription(SubscribeCommand::BookDepth(cmd.clone()))?;
 
         self.increment_book_depth_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
 
@@ -3156,13 +3169,7 @@ impl DataEngine {
 
         let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
 
-        if !had_snapshots {
-            // Always run setup so the depth handler is registered alongside
-            // the deltas handler when this is the first snapshot for the id;
-            // setup_book_updater is idempotent and the typed router dedups
-            // overlapping subscribes.
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
-        }
+        self.retain_book_subscription(SubscribeCommand::BookSnapshots(cmd.clone()))?;
 
         self.increment_book_snapshot_subscription(cmd, parent);
 
@@ -3510,7 +3517,6 @@ impl DataEngine {
             BookDeltasUnsubscribeResult::Removed => {}
         }
 
-        self.maintain_book_updater(&cmd.instrument_id);
         true
     }
 
@@ -3523,8 +3529,6 @@ impl DataEngine {
             BookDeltasUnsubscribeResult::Decremented => return false,
             BookDeltasUnsubscribeResult::Removed => {}
         }
-
-        self.maintain_book_updater(&cmd.instrument_id);
 
         true
     }
@@ -3542,8 +3546,6 @@ impl DataEngine {
         if self.has_book_snapshot_subscriptions(&cmd.instrument_id) {
             return;
         }
-
-        self.maintain_book_updater(&cmd.instrument_id);
 
         let Some(source) = self.book_snapshot_sources.remove(&cmd.instrument_id) else {
             log::error!(
@@ -4130,97 +4132,165 @@ impl DataEngine {
         }
     }
 
-    fn maintain_book_updater(&mut self, instrument_id: &InstrumentId) {
-        // Determine which per-underlying books this subscription touched, then
-        // for each book check whether any other active subscription still
-        // wants it before unsubscribing/dropping the shared BookUpdater.
-        //
-        // The presence of a memoized expansion identifies a parent teardown.
-        // Concrete subscriptions touch only the exact id.
-        let is_parent = self
-            .book_deltas_parent_expansions
-            .contains_key(instrument_id)
-            || self
-                .book_depth_parent_expansions
-                .contains_key(instrument_id);
-        let target_ids: Vec<InstrumentId> = if is_parent {
-            let mut set: AHashSet<InstrumentId> = AHashSet::new();
-
-            if let Some(expansion) = self.book_deltas_parent_expansions.get(instrument_id) {
-                set.extend(expansion.iter().copied());
-            }
-
-            if let Some(expansion) = self.book_depth_parent_expansions.get(instrument_id) {
-                set.extend(expansion.iter().copied());
-            }
-
-            if set.is_empty() {
-                return;
-            }
-
-            set.into_iter().collect()
-        } else {
-            vec![*instrument_id]
+    fn retain_book_subscription(&mut self, command: SubscribeCommand) -> anyhow::Result<()> {
+        let instrument_id = match &command {
+            SubscribeCommand::BookDeltas(cmd) => cmd.instrument_id,
+            SubscribeCommand::BookDepth(cmd) => cmd.instrument_id,
+            SubscribeCommand::BookSnapshots(cmd) => cmd.instrument_id,
+            _ => unreachable!("only book subscriptions are retained"),
         };
 
-        if is_parent {
-            // Each parent kind (deltas / depth / snapshots) writes its own
-            // memo via setup_book_updater. Keep each memo alive while any
-            // sibling subscription that drives the same handler kind remains
-            // active for this parent id.
-            let parent_still_needs_deltas = self.has_book_delta_subscriptions(instrument_id)
-                || self.has_book_depth_subscriptions(instrument_id)
-                || self.has_book_snapshot_subscriptions(instrument_id);
-            let parent_still_needs_depth = self.has_book_depth_subscriptions(instrument_id)
-                || self.has_book_snapshot_subscriptions(instrument_id);
+        let parent = resolve_parent_components(&instrument_id, command.params())?;
 
-            if !parent_still_needs_deltas {
-                self.book_deltas_parent_expansions.remove(instrument_id);
+        let targets = if let Some((root, class)) = parent {
+            self.cache
+                .borrow()
+                .instruments_by_parent(&instrument_id.venue, &root, class)
+                .iter()
+                .map(|instrument| instrument.id())
+                .collect()
+        } else {
+            vec![instrument_id]
+        };
+
+        let client_id = self
+            .get_command_client(command.client_id(), command.venue())
+            .map(|client| client.client_id);
+
+        let subscription = Rc::new(BookSubscriptionOwner {
+            command,
+            client_id,
+            targets,
+        });
+
+        let mut params = subscription.command.params().cloned().unwrap_or_default();
+        params.shift_remove(PARAMS_IS_PARENT);
+
+        for active in subscription
+            .targets
+            .iter()
+            .filter_map(|id| self.book_subscriptions.get(id))
+            .flat_map(|book| &book.owners)
+        {
+            if !subscription.managed()
+                && !active.managed()
+                && subscription.client_id != active.client_id
+            {
+                continue;
             }
 
-            if !parent_still_needs_depth {
-                self.book_depth_parent_expansions.remove(instrument_id);
+            if subscription.is_depth() != active.is_depth() {
+                anyhow::ensure!(
+                    !subscription.managed() || !active.managed(),
+                    "Conflicting managed book source for {instrument_id}: deltas and depth cannot both manage the same book; use managed=false for the other subscription"
+                );
+                continue;
             }
+
+            let mut active_params = active.command.params().cloned().unwrap_or_default();
+            active_params.shift_remove(PARAMS_IS_PARENT);
+            anyhow::ensure!(
+                subscription.client_id == active.client_id
+                    && subscription.config() == active.config()
+                    && params == active_params,
+                "Conflicting book subscription for {instrument_id}: shared book sources must use the same client, book type, depth, and parameters"
+            );
         }
 
-        for target_id in &target_ids {
-            let wants_deltas = self.is_underlying_wanted_for_deltas(target_id);
-            let wants_depth = self.is_underlying_wanted_for_depth(target_id);
+        if subscription.managed() {
+            self.setup_book_updater(
+                &subscription.targets,
+                subscription.config().0,
+                subscription.is_depth(),
+            )?;
+        }
 
-            let Some(updater) = self.book_updaters.get(target_id).cloned() else {
+        for target_id in &subscription.targets {
+            self.book_subscriptions
+                .entry(*target_id)
+                .or_default()
+                .owners
+                .push(subscription.clone());
+        }
+
+        self.book_subscription_owners
+            .entry(instrument_id)
+            .or_default()
+            .push(subscription);
+        Ok(())
+    }
+
+    fn release_book_subscription(&mut self, command: &UnsubscribeCommand) -> bool {
+        let key = SubscriptionKey::from_unsubscribe(command);
+
+        let instrument_id = match command {
+            UnsubscribeCommand::BookDeltas(cmd) => cmd.instrument_id,
+            UnsubscribeCommand::BookDepth(cmd) => cmd.instrument_id,
+            UnsubscribeCommand::BookSnapshots(cmd) => cmd.instrument_id,
+            _ => unreachable!("only book subscriptions are released"),
+        };
+
+        let Some(owners) = self.book_subscription_owners.get_mut(&instrument_id) else {
+            return false;
+        };
+
+        let index = owners.iter().position(|subscription| {
+            SubscriptionKey::from_subscribe(&subscription.command) == key
+                && subscription.command.client_id() == command.client_id()
+                && subscription.command.venue() == command.venue()
+                && command
+                    .correlation_id()
+                    .is_none_or(|id| subscription.command.command_id() == id)
+        });
+
+        let Some(index) = index else {
+            return false;
+        };
+
+        let subscription = owners.remove(index);
+        if owners.is_empty() {
+            self.book_subscription_owners.remove(&instrument_id);
+        }
+
+        for &target_id in &subscription.targets {
+            let book = self
+                .book_subscriptions
+                .get_mut(&target_id)
+                .expect("retained book subscription");
+            book.owners
+                .retain(|owner| !Rc::ptr_eq(owner, &subscription));
+            let managed = book.owners.iter().any(|owner| owner.managed());
+            if book.owners.is_empty() {
+                self.book_subscriptions.remove(&target_id);
+            }
+
+            if managed {
+                continue;
+            }
+
+            let Some(updater) = self.book_updaters.remove(&target_id) else {
                 continue;
             };
 
             let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
-
-            if !wants_deltas {
-                let topic = switchboard::get_book_deltas_topic(*target_id);
-                msgbus::unsubscribe_book_deltas(topic.into(), &deltas_handler);
-            }
-
-            if !wants_depth {
-                let topic = switchboard::get_book_depth_topic(*target_id);
-                msgbus::unsubscribe_book_depth(topic.into(), &depth_handler);
-            }
-
-            if !wants_deltas && !wants_depth {
-                self.book_updaters.remove(target_id);
-                log::debug!("Removed BookUpdater for instrument ID {target_id}");
-            }
+            msgbus::unsubscribe_book_deltas(
+                switchboard::get_book_deltas_topic(target_id).into(),
+                &deltas_handler,
+            );
+            msgbus::unsubscribe_book_depth(
+                switchboard::get_book_depth_topic(target_id).into(),
+                &depth_handler,
+            );
         }
+
+        true
     }
 
     fn has_book_snapshot_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
         self.book_snapshot_counts
             .keys()
             .any(|(id, _)| id == instrument_id)
-    }
-
-    fn has_book_delta_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
-        self.book_deltas_counts
-            .keys()
-            .any(|(id, _, _)| id == instrument_id)
     }
 
     fn has_book_delta_subscription_key(
@@ -4231,12 +4301,6 @@ impl DataEngine {
     ) -> bool {
         self.book_deltas_counts
             .contains_key(&(instrument_id, client_id, venue))
-    }
-
-    fn has_book_depth_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
-        self.book_depth_counts
-            .keys()
-            .any(|(id, _, _)| id == instrument_id)
     }
 
     fn has_book_depth_subscription_key(
@@ -4607,48 +4671,20 @@ impl DataEngine {
 
     fn setup_book_updater(
         &mut self,
-        instrument_id: &InstrumentId,
+        target_ids: &[InstrumentId],
         book_type: BookType,
-        only_deltas: bool,
-        parent: Option<(Ustr, InstrumentClass)>,
+        depth: bool,
     ) -> anyhow::Result<()> {
-        // One BookUpdater per cache book (keyed by per-underlying id), shared
-        // across overlapping subscriptions. Parent subs are expanded into
-        // their underlyings here; the expansion is memoized so unsubscribe
-        // mirrors the exact set even if the cache composition changes later.
-        let target_ids: Vec<InstrumentId> = if let Some((root, class)) = parent {
-            self.cache
-                .borrow()
-                .instruments_by_parent(&instrument_id.venue, &root, class)
-                .iter()
-                .map(|i| i.id())
-                .collect()
-        } else {
-            vec![*instrument_id]
-        };
-
         {
             let mut cache = self.cache.borrow_mut();
-            for target_id in &target_ids {
+            for target_id in target_ids {
                 if !cache.has_order_book(target_id) {
-                    let book = OrderBook::new(*target_id, book_type);
-                    log::debug!("Created {book}");
-                    cache.add_order_book(book)?;
+                    cache.add_order_book(OrderBook::new(*target_id, book_type))?;
                 }
             }
         }
 
-        if parent.is_some() {
-            self.book_deltas_parent_expansions
-                .insert(*instrument_id, target_ids.clone());
-
-            if !only_deltas {
-                self.book_depth_parent_expansions
-                    .insert(*instrument_id, target_ids.clone());
-            }
-        }
-
-        for target_id in &target_ids {
+        for target_id in target_ids {
             let updater = self
                 .book_updaters
                 .entry(*target_id)
@@ -4661,58 +4697,22 @@ impl DataEngine {
                 })
                 .clone();
 
-            // Subscribe handler to the literal per-underlying topic. The
-            // typed router dedups (pattern, handler_id) pairs, so overlapping
-            // composite + exact subscriptions register exactly one handler
-            // entry per book and a single delta apply per publish.
-            let deltas_topic = switchboard::get_book_deltas_topic(*target_id);
-            let deltas_handler = TypedHandler::new(updater.clone());
-            msgbus::subscribe_book_deltas(
-                deltas_topic.into(),
-                deltas_handler,
-                Some(self.msgbus_priority),
-            );
-
-            if !only_deltas {
-                let depth_topic = switchboard::get_book_depth_topic(*target_id);
-                let depth_handler = TypedHandler::new(updater);
+            if depth {
                 msgbus::subscribe_book_depth(
-                    depth_topic.into(),
-                    depth_handler,
+                    switchboard::get_book_depth_topic(*target_id).into(),
+                    TypedHandler::new(updater),
+                    Some(self.msgbus_priority),
+                );
+            } else {
+                msgbus::subscribe_book_deltas(
+                    switchboard::get_book_deltas_topic(*target_id).into(),
+                    TypedHandler::new(updater),
                     Some(self.msgbus_priority),
                 );
             }
         }
 
         Ok(())
-    }
-
-    fn is_underlying_wanted_for_deltas(&self, target_id: &InstrumentId) -> bool {
-        // Any of {deltas, depth, snapshots} subs causes setup_book_updater to
-        // subscribe the deltas handler (depth/snapshots use only_deltas=false),
-        // so all three keep the per-underlying deltas handler alive.
-        if self.has_book_delta_subscriptions(target_id)
-            || self.has_book_depth_subscriptions(target_id)
-            || self.has_book_snapshot_subscriptions(target_id)
-        {
-            return true;
-        }
-        self.book_deltas_parent_expansions
-            .values()
-            .any(|expansion| expansion.contains(target_id))
-    }
-
-    fn is_underlying_wanted_for_depth(&self, target_id: &InstrumentId) -> bool {
-        // Snapshots use only_deltas=false, so they drive the depth handler
-        // as well as the deltas handler.
-        if self.has_book_depth_subscriptions(target_id)
-            || self.has_book_snapshot_subscriptions(target_id)
-        {
-            return true;
-        }
-        self.book_depth_parent_expansions
-            .values()
-            .any(|expansion| expansion.contains(target_id))
     }
 
     fn create_bar_aggregator(
@@ -5758,18 +5758,6 @@ struct OptionChainGreeksBootstrap {
     client_id: ClientId,
     venue: Venue,
     ownership_handler: TypedHandler<OptionGreeks>,
-}
-
-#[derive(Clone, Debug)]
-struct BookSnapshotSource {
-    command: SubscribeBookSnapshots,
-    client_command: SubscribeCommand,
-}
-
-#[derive(Clone, Debug)]
-struct BarAggregationSubscription {
-    command: SubscribeBars,
-    source: Option<SubscribeCommand>,
 }
 
 #[derive(Debug)]

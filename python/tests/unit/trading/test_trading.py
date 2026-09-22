@@ -1452,6 +1452,7 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
 BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
+    "depth",
     "client_id",
     "managed",
     "params",

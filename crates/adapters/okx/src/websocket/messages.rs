@@ -580,7 +580,8 @@ pub struct OrderBookEntry {
     pub size: String,
     // Spread book levels (`sprd-books5`) are 3-element `[price, size, count]`,
     // omitting the liquidated-orders field standard books carry; default the
-    // trailing counts so both array shapes deserialize. Only price/size are used.
+    // trailing counts so both array shapes deserialize, spread order counts
+    // occupy `liquidated_orders_count`.
     /// Number of liquidated orders.
     #[serde(default)]
     pub liquidated_orders_count: String,

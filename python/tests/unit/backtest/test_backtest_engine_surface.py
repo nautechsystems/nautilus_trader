@@ -21,6 +21,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from strategies.backtest_surface import BookChurn
 from strategies.backtest_surface import DoubleSpawnExecutionAlgorithm
 from strategies.backtest_surface import MarketDataAuditActor
 from strategies.backtest_surface import MarketDataAuditActorConfig
@@ -64,6 +65,7 @@ from nautilus_trader.model import MarketStatusAction
 from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderBookDepth
@@ -464,9 +466,9 @@ def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd: object) -> 
     engine.dispose()
 
 
-def test_importable_actor_receives_quotes_and_depth_snapshot_books() -> None:
+def test_importable_actor_receives_quotes_and_interval_books() -> None:
     """
-    Test importable actor receives quotes and depth snapshot books.
+    Test importable actor receives quotes and interval books.
     """
     MarketDataAuditActor.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -493,7 +495,7 @@ def test_importable_actor_receives_quotes_and_depth_snapshot_books() -> None:
 
     data = []
     data.extend(_crypto_quotes(instrument, count=4, mid_start=Decimal("2000.00")))
-    data.extend(_book_depths(instrument, count=4))
+    data.extend(_book_snapshot_deltas(instrument, count=4))
     engine.add_data(data)
     engine.run()
     result = engine.get_result()
@@ -1137,10 +1139,19 @@ def test_importable_strategy_reruns_after_reset_and_report_generation() -> None:
     engine.dispose()
 
 
-def test_importable_strategy_runs_from_l2_book_deltas() -> None:
+def test_importable_strategy_runs_from_l2_book_deltas(monkeypatch: pytest.MonkeyPatch) -> None:
     """
-    Test importable strategy runs from l2 book deltas.
+    Test importable strategy consumes L2 deltas and interval books.
     """
+    book_sequences = []
+    on_book = BookChurn.on_book
+
+    def record_book(strategy: BookChurn, book: OrderBook) -> None:
+        on_book(strategy, book)
+        book_sequences.append(book.sequence)
+
+    monkeypatch.setattr(BookChurn, "on_book", record_book)
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -1175,6 +1186,7 @@ def test_importable_strategy_runs_from_l2_book_deltas() -> None:
     result = engine.get_result()
 
     assert result.iterations == 5
+    assert book_sequences == [6, 8, 10]
     assert result.total_orders >= 3
     assert result.total_positions >= 1
     assert result.summary["orders.open"] == "0"
@@ -1272,7 +1284,7 @@ def test_add_actor_with_constructed_instance_consumes_quotes() -> None:
 
     data = []
     data.extend(_crypto_quotes(instrument, count=4, mid_start=Decimal("2000.00")))
-    data.extend(_book_depths(instrument, count=4))
+    data.extend(_book_snapshot_deltas(instrument, count=4))
     engine.add_data(data)
     engine.run()
     result = engine.get_result()
@@ -1399,7 +1411,7 @@ def test_add_actors_registers_multiple_constructed_instances() -> None:
 
     data = []
     data.extend(_crypto_quotes(instrument, count=4, mid_start=Decimal("2000.00")))
-    data.extend(_book_depths(instrument, count=4))
+    data.extend(_book_snapshot_deltas(instrument, count=4))
     engine.add_data(data)
     engine.run()
     result = engine.get_result()
@@ -1673,3 +1685,13 @@ def _book_depths(instrument: object, count: int) -> list[OrderBookDepth]:
             ),
         )
     return depths
+
+
+def _book_snapshot_deltas(instrument: object, count: int) -> list[OrderBookDeltas]:
+    book = OrderBook(instrument.id, BookType.L2_MBP)
+    batches = []
+
+    for depth in _book_depths(instrument, count):
+        book.apply_depth(depth)
+        batches.append(book.to_deltas(depth.ts_event, depth.ts_init))
+    return batches

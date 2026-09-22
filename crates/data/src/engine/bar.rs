@@ -15,9 +15,18 @@
 
 use std::fmt::Debug;
 
-use nautilus_common::msgbus::{MStr, Topic, TypedHandler};
+use nautilus_common::{
+    messages::data::{SubscribeBars, SubscribeCommand},
+    msgbus::{MStr, Topic, TypedHandler},
+};
 use nautilus_core::UUID4;
 use nautilus_model::data::{Bar, BarType, QuoteTick, TradeTick};
+
+#[derive(Clone, Debug)]
+pub(super) struct BarAggregationSubscription {
+    pub(super) command: SubscribeBars,
+    pub(super) source: Option<SubscribeCommand>,
+}
 
 /// Identifies a bar aggregator instance.
 ///

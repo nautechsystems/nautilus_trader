@@ -1834,23 +1834,33 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "subscribe_book_depth")]
-    #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
     fn py_subscribe_book_depth(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<usize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         self.ensure_registered()?;
+
+        let depth = depth
+            .map(|value| {
+                NonZeroUsize::new(value).ok_or_else(|| to_pyvalue_err("depth must be positive"))
+            })
+            .transpose()?;
+
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_book_depth(
             self.inner_mut(),
             instrument_id,
             book_type,
+            depth,
             client_id,
             managed,
             params,
@@ -4085,7 +4095,10 @@ class CapturingActor:
     }
 
     #[rstest]
+    #[case(None)]
+    #[case(Some(25))]
     fn test_book_depth_subscription_methods_manage_handler(
+        #[case] depth: Option<usize>,
         clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
@@ -4097,7 +4110,15 @@ class CapturingActor:
 
         Python::attach(|py| {
             actor
-                .py_subscribe_book_depth(py, audusd_sim.id, BookType::L2_MBP, None, false, None)
+                .py_subscribe_book_depth(
+                    py,
+                    audusd_sim.id,
+                    BookType::L2_MBP,
+                    depth,
+                    None,
+                    false,
+                    None,
+                )
                 .unwrap();
             assert_eq!(actor.inner().depth_handler_count(), 1);
 

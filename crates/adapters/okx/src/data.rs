@@ -38,17 +38,17 @@ use nautilus_common::{
             InstrumentsResponse, OptionChainReferencePriceResponse, RequestBars,
             RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestOptionChainReferencePrice, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
+    AtomicMap, AtomicSet, Params, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -102,11 +102,14 @@ use crate::{
         handler::SnapshotGate,
         messages::{NautilusWsMessage, OKXBookMsg, OKXOptionSummaryMsg, OKXWsMessage},
         parse::{
-            extract_fees_from_cached_instrument, parse_book_msg_vec, parse_index_price_msg_vec,
-            parse_option_summary_greeks, parse_rpi_book_msg_vec, parse_ws_message_data,
+            extract_fees_from_cached_instrument, parse_book_depth_msg, parse_book_msg_vec,
+            parse_index_price_msg_vec, parse_option_summary_greeks, parse_rpi_book_msg_vec,
+            parse_ws_message_data,
         },
     },
 };
+
+const BOOK_SNAPSHOT_DEPTH: usize = 5;
 
 #[derive(Debug)]
 pub struct OKXDataClient {
@@ -127,6 +130,8 @@ pub struct OKXDataClient {
     instrument_update_lock: Arc<InstrumentUpdateLock>,
     book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
     book_sync: BookSyncTracker,
+    book_deltas: Arc<AtomicSet<InstrumentId>>,
+    book_depths: Arc<AtomicMap<InstrumentId, usize>>,
     index_ticker_map: Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
     option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
     // `Mutex<AHashMap>` so the spawned subscribe task can roll back the
@@ -250,6 +255,8 @@ impl OKXDataClient {
             instrument_update_lock: Arc::new(InstrumentUpdateLock::default()),
             book_channels: Arc::new(AtomicMap::new()),
             book_sync: BookSyncTracker::default(),
+            book_deltas: Arc::new(AtomicSet::new()),
+            book_depths: Arc::new(AtomicMap::new()),
             index_ticker_map: Arc::new(AtomicMap::new()),
             option_greeks_subs: Arc::new(AtomicMap::new()),
             option_summary_family_subs: Arc::new(parking_lot::Mutex::new(AHashMap::new())),
@@ -283,11 +290,165 @@ impl OKXDataClient {
         }
     }
 
+    fn send_book_depth(
+        messages: &mut [OKXBookMsg],
+        instrument: &InstrumentAny,
+        subscriptions: &AtomicMap<InstrumentId, usize>,
+        sender: &EventSender<DataEvent>,
+        ts_init: UnixNanos,
+        spread: bool,
+    ) {
+        let Some(limit) = subscriptions.get_cloned(&instrument.id()) else {
+            return;
+        };
+
+        let result = messages
+            .iter_mut()
+            .map(|message| {
+                if spread {
+                    for level in message.bids.iter_mut().chain(&mut message.asks) {
+                        level.orders_count = level.liquidated_orders_count.clone();
+                    }
+                }
+
+                let mut depth = parse_book_depth_msg(
+                    message,
+                    instrument.id(),
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                )?;
+                depth.bids.truncate(limit);
+                depth.asks.truncate(limit);
+                depth.bid_counts.truncate(limit);
+                depth.ask_counts.truncate(limit);
+                Ok(Data::BookDepth(Box::new(depth)))
+            })
+            .collect::<anyhow::Result<Vec<_>>>();
+
+        match result {
+            Ok(data) => {
+                for item in data {
+                    Self::send_data(sender, item);
+                }
+            }
+            Err(e) => log::error!("Failed to parse book depth: {e}"),
+        }
+    }
+
+    fn book_channel(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<std::num::NonZeroUsize>,
+        params: Option<&Params>,
+    ) -> OKXBookChannel {
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            // Spreads have no incremental book channel; sprd-books5 pushes a full
+            // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
+            return OKXBookChannel::SprdBooks5;
+        }
+
+        let raw_depth = depth.map_or(0, std::num::NonZero::get);
+        let depth = resolve_book_depth(raw_depth);
+        if depth != raw_depth {
+            log::debug!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
+        }
+
+        let rpi = params
+            .and_then(|params| params.get_bool("rpi"))
+            .unwrap_or(false);
+        let vip = self.vip_level().unwrap_or(OKXVipLevel::Vip0);
+
+        if rpi {
+            OKXBookChannel::BooksRpi
+        } else {
+            let channel = select_book_channel(depth, vip);
+            if depth == 50 && channel == OKXBookChannel::Book {
+                log::debug!(
+                    "VIP level {vip} insufficient for 50-depth channel, falling back to default"
+                );
+            }
+
+            channel
+        }
+    }
+
+    fn unsubscribe_book_channel(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.book_channels.remove(&instrument_id);
+            self.book_sync.remove(instrument_id);
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_book(instrument_id)
+                        .await
+                        .context("spread book unsubscribe")
+                },
+                "spread book unsubscribe",
+            );
+
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
+        let channel = self.book_channels.get_cloned(&instrument_id);
+        self.book_channels.remove(&instrument_id);
+        self.book_sync.remove(instrument_id);
+
+        self.spawn_ws(
+            async move {
+                match channel {
+                    Some(OKXBookChannel::Books50L2Tbt) => ws
+                        .unsubscribe_book50_l2_tbt(instrument_id)
+                        .await
+                        .context("books50-l2-tbt unsubscribe")?,
+                    Some(OKXBookChannel::BookL2Tbt) => ws
+                        .unsubscribe_book_l2_tbt(instrument_id)
+                        .await
+                        .context("books-l2-tbt unsubscribe")?,
+                    Some(OKXBookChannel::Book) => ws
+                        .unsubscribe_book(instrument_id)
+                        .await
+                        .context("book unsubscribe")?,
+                    Some(OKXBookChannel::BooksRpi) => ws
+                        .unsubscribe_book_rpi(instrument_id)
+                        .await
+                        .context("books-rpi unsubscribe")?,
+                    Some(OKXBookChannel::SprdBooks5) => ws
+                        .unsubscribe_book(instrument_id)
+                        .await
+                        .context("book unsubscribe")?,
+                    None => {
+                        log::warn!(
+                            "Book channel not found for {instrument_id}; unsubscribing fallback channel"
+                        );
+                        ws.unsubscribe_book(instrument_id)
+                            .await
+                            .context("book fallback unsubscribe")?;
+                    }
+                }
+
+                Ok(())
+            },
+            "order book unsubscribe",
+        );
+
+        Ok(())
+    }
+
     fn subscribe_book_channel(
         &self,
         instrument_id: InstrumentId,
         channel: OKXBookChannel,
     ) -> anyhow::Result<()> {
+        if let Some(active) = self.book_channels.get_cloned(&instrument_id) {
+            anyhow::ensure!(
+                active == channel,
+                "Conflicting OKX book channel for {instrument_id}: active {active:?}, requested {channel:?}"
+            );
+            return Ok(());
+        }
+
         let ws = if channel == OKXBookChannel::SprdBooks5 {
             self.business_ws()?.clone()
         } else {
@@ -426,6 +587,8 @@ impl OKXDataClient {
         instrument_update_lock: &InstrumentUpdateLock,
         book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
         book_sync: &BookSyncTracker,
+        book_depths: &AtomicMap<InstrumentId, usize>,
+        book_deltas: &AtomicSet<InstrumentId>,
         recovery_ws: Option<&OKXWebSocketClient>,
         business_ws: Option<&OKXWebSocketClient>,
         quote_cache: &mut QuoteCache,
@@ -446,7 +609,11 @@ impl OKXDataClient {
         };
 
         match message {
-            OKXWsMessage::BookData { arg, action, data } => {
+            OKXWsMessage::BookData {
+                arg,
+                action,
+                mut data,
+            } => {
                 let Some(inst_id) = arg.inst_id else {
                     log::warn!("Book data without inst_id");
                     return;
@@ -457,10 +624,35 @@ impl OKXDataClient {
                     return;
                 };
                 let ts_init = clock.get_time_ns();
+
+                if arg.channel == OKXWsChannel::Books5 {
+                    if action == OKXBookAction::Snapshot {
+                        Self::send_book_depth(
+                            &mut data,
+                            instrument,
+                            book_depths,
+                            data_sender,
+                            ts_init,
+                            false,
+                        );
+                    }
+
+                    return;
+                }
+
                 let sequences = data
                     .iter()
                     .map(|msg| (msg.prev_seq_id, msg.seq_id))
                     .collect::<Vec<_>>();
+
+                let data: Vec<_> = data
+                    .into_iter()
+                    .filter(|msg| {
+                        action == OKXBookAction::Snapshot
+                            || !msg.bids.is_empty()
+                            || !msg.asks.is_empty()
+                    })
+                    .collect();
 
                 match parse_book_msg_vec(
                     data,
@@ -496,7 +688,17 @@ impl OKXDataClient {
                             Self::send_data(data_sender, data);
                         }
                     }
-                    Err(e) => log::error!("Failed to parse book data: {e}"),
+                    Err(e) => {
+                        log::error!("Failed to parse book data: {e}");
+                        start_recovery(
+                            instrument.id(),
+                            book_channels,
+                            book_sync,
+                            recovery_ws,
+                            snapshot_timeout,
+                            tasks,
+                        );
+                    }
                 }
             }
             OKXWsMessage::RpiBookData { arg, action, data } => {
@@ -514,6 +716,15 @@ impl OKXDataClient {
                     .iter()
                     .map(|msg| (Some(msg.prev_seq_id), msg.seq_id))
                     .collect::<Vec<_>>();
+
+                let data: Vec<_> = data
+                    .into_iter()
+                    .filter(|msg| {
+                        action == OKXBookAction::Snapshot
+                            || !msg.bids.is_empty()
+                            || !msg.asks.is_empty()
+                    })
+                    .collect();
 
                 match parse_rpi_book_msg_vec(
                     data,
@@ -549,7 +760,17 @@ impl OKXDataClient {
                             Self::send_data(data_sender, data);
                         }
                     }
-                    Err(e) => log::error!("Failed to parse RPI book data: {e}"),
+                    Err(e) => {
+                        log::error!("Failed to parse RPI book data: {e}");
+                        start_recovery(
+                            instrument.id(),
+                            book_channels,
+                            book_sync,
+                            recovery_ws,
+                            snapshot_timeout,
+                            tasks,
+                        );
+                    }
                 }
             }
             OKXWsMessage::ChannelData {
@@ -668,8 +889,24 @@ impl OKXDataClient {
                 let size_precision = instrument.size_precision();
                 let ts_init = clock.get_time_ns();
 
+                if channel == OKXWsChannel::Books5 {
+                    match serde_json::from_value::<Vec<OKXBookMsg>>(data) {
+                        Ok(mut messages) => Self::send_book_depth(
+                            &mut messages,
+                            instrument,
+                            book_depths,
+                            data_sender,
+                            ts_init,
+                            false,
+                        ),
+                        Err(e) => log::error!("Failed to deserialize book depth: {e}"),
+                    }
+
+                    return;
+                }
+
                 if matches!(channel, OKXWsChannel::SprdBooks5) {
-                    let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
+                    let mut msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
                         Ok(m) => m,
                         Err(e) => {
                             log::error!("Failed to deserialize spread book data: {e}");
@@ -677,7 +914,15 @@ impl OKXDataClient {
                         }
                     };
 
-                    // sprd-books5 pushes a full 5-level snapshot each message.
+                    Self::send_book_depth(
+                        &mut msgs,
+                        instrument,
+                        book_depths,
+                        data_sender,
+                        ts_init,
+                        true,
+                    );
+
                     match parse_book_msg_vec(
                         msgs,
                         &instrument_id,
@@ -696,11 +941,25 @@ impl OKXDataClient {
                                 return;
                             }
 
-                            for d in data_vec {
-                                Self::send_data(data_sender, d);
+                            if !book_deltas.contains(&instrument_id) {
+                                return;
+                            }
+
+                            for data in data_vec {
+                                Self::send_data(data_sender, data);
                             }
                         }
-                        Err(e) => log::error!("Failed to parse spread book data: {e}"),
+                        Err(e) => {
+                            log::error!("Failed to parse spread book data: {e}");
+                            start_recovery(
+                                instrument_id,
+                                book_channels,
+                                book_sync,
+                                recovery_ws,
+                                snapshot_timeout,
+                                tasks,
+                            );
+                        }
                     }
 
                     return;
@@ -1028,6 +1287,8 @@ impl OKXDataClient {
             let update_lock = self.instrument_update_lock.clone();
             let book_channels = self.book_channels.clone();
             let book_sync = self.book_sync.clone();
+            let book_depths = self.book_depths.clone();
+            let book_deltas = self.book_deltas.clone();
             let recovery_ws = ws.clone();
             let business_ws = self.ws_business.clone();
             let idx_map = self.index_ticker_map.clone();
@@ -1065,6 +1326,8 @@ impl OKXDataClient {
                                     &update_lock,
                                     &book_channels,
                                     &book_sync,
+                                    &book_depths,
+                                    &book_deltas,
                                     Some(&recovery_ws),
                                     business_ws.as_ref(),
                                     &mut quote_cache,
@@ -1107,6 +1370,8 @@ impl OKXDataClient {
             let update_lock = self.instrument_update_lock.clone();
             let book_channels = self.book_channels.clone();
             let book_sync = self.book_sync.clone();
+            let book_depths = self.book_depths.clone();
+            let book_deltas = self.book_deltas.clone();
             let business_ws = ws.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
@@ -1143,6 +1408,8 @@ impl OKXDataClient {
                                     &update_lock,
                                     &book_channels,
                                     &book_sync,
+                                    &book_depths,
+                                    &book_deltas,
                                     None,
                                     Some(&business_ws),
                                     &mut quote_cache,
@@ -1272,6 +1539,8 @@ impl OKXDataClient {
             Ok(())
         };
 
+        self.book_deltas.store(AHashSet::new());
+        self.book_depths.store(AHashMap::new());
         self.book_channels.store(AHashMap::new());
         self.book_sync.clear();
         self.option_greeks_subs
@@ -1772,6 +2041,8 @@ impl DataClient for OKXDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
         self.begin_generation_shutdown();
+        self.book_deltas.store(AHashSet::new());
+        self.book_depths.store(AHashMap::new());
         self.book_channels.store(AHashMap::new());
         self.book_sync.clear();
         self.option_greeks_subs
@@ -1896,41 +2167,75 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("OKX only supports L2_MBP order book deltas");
-        }
+        anyhow::ensure!(
+            cmd.book_type == BookType::L2_MBP,
+            "OKX only supports L2_MBP order books"
+        );
+        let channel = self.book_channel(cmd.instrument_id, cmd.depth, cmd.params.as_ref());
+        let was_subscribed = self.book_deltas.contains(&cmd.instrument_id);
+        self.book_deltas.insert(cmd.instrument_id);
 
-        if is_okx_spread_symbol(cmd.instrument_id.symbol.as_str()) {
-            // Spreads have no incremental book channel; sprd-books5 pushes a full
-            // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
-            return self.subscribe_book_channel(cmd.instrument_id, OKXBookChannel::SprdBooks5);
-        }
-
-        let raw_depth = cmd.depth.map_or(0, std::num::NonZero::get);
-        let depth = resolve_book_depth(raw_depth);
-        if depth != raw_depth {
-            log::debug!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
-        }
-
-        let rpi = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool("rpi"))
-            .unwrap_or(false);
-        let vip = self.vip_level().unwrap_or(OKXVipLevel::Vip0);
-        let channel = if rpi {
-            OKXBookChannel::BooksRpi
-        } else {
-            let channel = select_book_channel(depth, vip);
-            if depth == 50 && channel == OKXBookChannel::Book {
-                log::debug!(
-                    "VIP level {vip} insufficient for 50-depth channel, falling back to default"
-                );
+        if let Err(e) = self.subscribe_book_channel(cmd.instrument_id, channel) {
+            if !was_subscribed {
+                self.book_deltas.remove(&cmd.instrument_id);
             }
-            channel
-        };
 
-        self.subscribe_book_channel(cmd.instrument_id, channel)
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            cmd.book_type == BookType::L2_MBP,
+            "OKX only supports L2_MBP order books"
+        );
+        let depth = cmd
+            .depth
+            .map_or(BOOK_SNAPSHOT_DEPTH, std::num::NonZero::get);
+        anyhow::ensure!(
+            depth <= BOOK_SNAPSHOT_DEPTH,
+            "OKX depth snapshots support at most {BOOK_SNAPSHOT_DEPTH} levels"
+        );
+        anyhow::ensure!(
+            !cmd.params
+                .as_ref()
+                .and_then(|params| params.get_bool("rpi"))
+                .unwrap_or(false),
+            "OKX native depth snapshots do not support RPI"
+        );
+
+        if let Some(active) = self.book_depths.get_cloned(&cmd.instrument_id) {
+            anyhow::ensure!(
+                active == depth,
+                "Conflicting OKX snapshot depth for {}",
+                cmd.instrument_id
+            );
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            self.book_depths.insert(instrument_id, depth);
+            if let Err(e) = self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5) {
+                self.book_depths.remove(&instrument_id);
+                return Err(e);
+            }
+        } else {
+            let ws = self.public_ws()?.clone();
+            self.book_depths.insert(instrument_id, depth);
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_book_depth5(instrument_id)
+                        .await
+                        .context("book depth subscription")
+                },
+                "book depth subscription",
+            );
+        }
+
+        Ok(())
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
@@ -2134,64 +2439,43 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            let ws = self.business_ws()?.clone();
-            self.book_channels.remove(&instrument_id);
-            self.book_sync.remove(instrument_id);
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_spread_book(instrument_id)
-                        .await
-                        .context("spread book unsubscribe")
-                },
-                "spread book unsubscribe",
-            );
+        if !self.book_deltas.contains(&cmd.instrument_id) {
             return Ok(());
         }
 
-        let ws = self.public_ws()?.clone();
-        let channel = self.book_channels.get_cloned(&instrument_id);
-        self.book_channels.remove(&instrument_id);
-        self.book_sync.remove(instrument_id);
+        if !is_okx_spread_symbol(cmd.instrument_id.symbol.as_str())
+            || !self.book_depths.contains_key(&cmd.instrument_id)
+        {
+            self.unsubscribe_book_channel(cmd.instrument_id)?;
+        }
 
-        self.spawn_ws(
-            async move {
-                match channel {
-                    Some(OKXBookChannel::Books50L2Tbt) => ws
-                        .unsubscribe_book50_l2_tbt(instrument_id)
+        self.book_deltas.remove(&cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        if !self.book_depths.contains_key(&cmd.instrument_id) {
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            if !self.book_deltas.contains(&instrument_id) {
+                self.unsubscribe_book_channel(instrument_id)?;
+            }
+        } else {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_book_depth5(instrument_id)
                         .await
-                        .context("books50-l2-tbt unsubscribe")?,
-                    Some(OKXBookChannel::BookL2Tbt) => ws
-                        .unsubscribe_book_l2_tbt(instrument_id)
-                        .await
-                        .context("books-l2-tbt unsubscribe")?,
-                    Some(OKXBookChannel::Book) => ws
-                        .unsubscribe_book(instrument_id)
-                        .await
-                        .context("book unsubscribe")?,
-                    Some(OKXBookChannel::BooksRpi) => ws
-                        .unsubscribe_book_rpi(instrument_id)
-                        .await
-                        .context("books-rpi unsubscribe")?,
-                    Some(OKXBookChannel::SprdBooks5) => ws
-                        .unsubscribe_book(instrument_id)
-                        .await
-                        .context("book unsubscribe")?,
-                    None => {
-                        log::warn!(
-                            "Book channel not found for {instrument_id}; unsubscribing fallback channel"
-                        );
-                        ws.unsubscribe_book(instrument_id)
-                            .await
-                            .context("book fallback unsubscribe")?;
-                    }
-                }
-                Ok(())
-            },
-            "order book unsubscribe",
-        );
+                        .context("book depth unsubscribe")
+                },
+                "book depth unsubscribe",
+            );
+        }
+
+        self.book_depths.remove(&cmd.instrument_id);
         Ok(())
     }
 
@@ -2904,7 +3188,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         identifiers::Symbol,
-        instruments::stubs::currency_pair_btcusdt,
+        instruments::{CurrencyPair, stubs::currency_pair_btcusdt},
         types::{Price, Quantity},
     };
     use nautilus_network::websocket::TransportBackend;
@@ -2919,6 +3203,109 @@ mod tests {
         },
         websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
     };
+
+    #[rstest]
+    #[case(1, false)]
+    #[case(5, false)]
+    #[case(1, true)]
+    #[case(5, true)]
+    fn native_depth_replaces_snapshots_and_ignores_unsubscribed_data(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] limit: usize,
+        #[case] spread: bool,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
+        let id = instrument.id();
+        let frame: OKXWsFrame =
+            serde_json::from_str(&load_test_json("ws_books_snapshot.json")).unwrap();
+
+        let OKXWsFrame::BookData { mut data, .. } = frame else {
+            panic!("expected book data");
+        };
+
+        if spread {
+            for message in &mut data {
+                for level in message.bids.iter_mut().chain(&mut message.asks) {
+                    level.liquidated_orders_count = level.orders_count.clone();
+                    level.orders_count = String::new();
+                }
+            }
+        }
+
+        let subscriptions = AtomicMap::new();
+        subscriptions.insert(id, limit);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+        OKXDataClient::send_book_depth(
+            &mut data,
+            &instrument,
+            &subscriptions,
+            &sender,
+            UnixNanos::from(103),
+            spread,
+        );
+
+        let DataEvent::Data(Data::BookDepth(initial)) = receiver.try_recv().unwrap() else {
+            panic!("expected depth");
+        };
+
+        assert_eq!(initial.instrument_id, id);
+        assert_eq!(initial.sequence, 123_456);
+        assert_eq!(initial.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(initial.ts_init, UnixNanos::from(103));
+        assert_eq!(initial.bids.len(), limit);
+        assert_eq!(initial.asks.len(), limit);
+        assert_eq!(initial.bid_counts.as_slice(), &[12, 1, 1, 1, 1][..limit]);
+        assert_eq!(initial.ask_counts.as_slice(), &[13, 2, 1, 1, 1][..limit]);
+
+        if spread {
+            data[0].bids[0].liquidated_orders_count = "invalid".to_string();
+        } else {
+            data[0].bids[0].orders_count = "invalid".to_string();
+        }
+
+        OKXDataClient::send_book_depth(
+            &mut data,
+            &instrument,
+            &subscriptions,
+            &sender,
+            UnixNanos::from(107),
+            spread,
+        );
+        assert!(receiver.try_recv().is_err());
+        data[0].bids.clear();
+        data[0].asks.clear();
+        data[0].seq_id = 17;
+        OKXDataClient::send_book_depth(
+            &mut data,
+            &instrument,
+            &subscriptions,
+            &sender,
+            UnixNanos::from(109),
+            spread,
+        );
+
+        let DataEvent::Data(Data::BookDepth(empty)) = receiver.try_recv().unwrap() else {
+            panic!("expected empty depth");
+        };
+
+        assert!(empty.bids.is_empty());
+        assert!(empty.asks.is_empty());
+        assert!(empty.bid_counts.is_empty());
+        assert!(empty.ask_counts.is_empty());
+        assert_eq!(empty.sequence, 17);
+        assert_eq!(empty.ts_init, UnixNanos::from(109));
+        subscriptions.remove(&id);
+        OKXDataClient::send_book_depth(
+            &mut data,
+            &instrument,
+            &subscriptions,
+            &sender,
+            UnixNanos::from(113),
+            spread,
+        );
+        assert!(receiver.try_recv().is_err());
+    }
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
 
@@ -3027,6 +3414,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             None,
             None,
             &mut quote_cache,
@@ -3112,6 +3501,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             None,
             None,
             &mut quote_cache,
@@ -3156,6 +3547,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             None,
             None,
             &mut quote_cache,
@@ -3202,6 +3595,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             None,
             None,
             &mut quote_cache,
@@ -3286,6 +3681,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             None,
             None,
             &mut quote_cache,
@@ -3368,6 +3765,8 @@ mod tests {
                 &update_lock,
                 &book_channels,
                 &book_sync,
+                &AtomicMap::new(),
+                &AtomicSet::new(),
                 None,
                 None,
                 &mut quote_cache,
@@ -3616,6 +4015,8 @@ mod tests {
             &update_lock,
             &book_channels,
             &book_sync,
+            &AtomicMap::new(),
+            &AtomicSet::new(),
             recovery_ws,
             business_ws,
             &mut quote_cache,

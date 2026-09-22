@@ -45,8 +45,8 @@ from nautilus_trader.model import OrderBookDepth
 # Incremental book deltas
 self.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
-# Aggregated depth snapshots (up to 10 levels)
-self.subscribe_book_depth(instrument_id, BookType.L2_MBP)
+# Depth snapshots (adapter default; venue limits apply)
+self.subscribe_book_depth(instrument_id, BookType.L2_MBP, managed=False)
 
 # Full book snapshots at a timed interval
 self.subscribe_book_at_interval(instrument_id, BookType.L2_MBP, interval_ms=1000)
@@ -63,6 +63,28 @@ def on_book_depth(self, depth: OrderBookDepth) -> None: ...
 
 def on_book(self, order_book: OrderBook) -> None: ...
 ```
+
+### Managed books and shared subscriptions
+
+The data engine maintains one cached `OrderBook` per instrument. A managed subscription selects
+its update source: `OrderBookDeltas` or `OrderBookDepth`. Delta and interval subscriptions can
+share a delta-managed book. A managed depth subscription cannot coexist with managed deltas or
+an interval subscription for the same instrument; the engine rejects the conflicting request.
+
+To receive depth callbacks alongside managed deltas or interval books, set `managed=False` on
+the depth subscription, as shown above. Those callbacks do not update the cached book. With a
+depth-only subscription, use `managed=True` to maintain the cached book from depth snapshots.
+
+Consumers sharing a source must agree on client, book type, depth, and subscription parameters.
+`depth=None` selects the adapter default; it does not match an explicit depth as a wildcard.
+Different clients may use different configurations when all consumers of that source are unmanaged.
+Unsubscribing one consumer preserves the source while other consumers still need it.
+
+Interval delivery subscribes to deltas and publishes the cached book on a timer. `OrderBookDepth`
+events do not update that delta-managed book, including during backtests. For depth-only replay,
+use `subscribe_book_depth` and `on_book_depth`. To use interval delivery, supply `OrderBookDeltas`,
+converting depth snapshots to snapshot-flagged deltas before replay when needed. During a feed outage
+or recovery, the interval timer can continue publishing the last cached book.
 
 ## Accessing the book
 

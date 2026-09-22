@@ -5064,7 +5064,7 @@ class ModuleStrategy(Strategy):
             let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id.inner());
             actor.subscribe_data(data_type, None, None);
             actor.subscribe_book_deltas(instrument_id, BookType::L3_MBO, None, None, false, None);
-            actor.subscribe_book_depth(instrument_id, BookType::L2_MBP, None, false, None);
+            actor.subscribe_book_depth(instrument_id, BookType::L2_MBP, None, None, false, None);
         }
 
         // Positive control: without these the checks after retirement would be vacuous
