@@ -11,6 +11,9 @@ Released on TBD (UTC).
 - Added custom data support to `StreamingFeatherWriter` (#4759), thanks for reporting @mystic-io
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
+- Added legacy `custom_<snake_case>` layout discovery to custom data queries
+- Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
+- Added typed Parquet catalog round trips for Binance futures custom data
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
@@ -151,6 +154,8 @@ Released on TBD (UTC).
 - Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
+- Documented legacy custom data layout discovery and migration
+- Documented Binance custom data catalog persistence
 - Documented Hyperliquid inferred-fill commissions as unset
 - Updated Databento and Tardis integration guides with new URL overrides
 

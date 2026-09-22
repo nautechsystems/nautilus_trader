@@ -30,7 +30,10 @@ use super::{
     remote_store_root_url, timestamps_to_filename, urisafe_instrument_id,
 };
 use crate::{
-    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
+    catalog::types::{
+        CatalogDataType, custom_data_read_prefixes, custom_type_name,
+        parquet_catalog_data_type_path_prefixes,
+    },
     common::paths::normalize_path_separators,
 };
 
@@ -258,6 +261,17 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if directory listing fails.
     pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
+        if let Some(type_name) = custom_type_name(data_type) {
+            let mut instruments = Vec::new();
+            for prefix in custom_data_read_prefixes(type_name) {
+                instruments.extend(self.list_prefix_instruments(prefix.as_ref())?);
+            }
+
+            instruments.sort();
+            instruments.dedup();
+            return Ok(instruments);
+        }
+
         let mut instruments = Vec::new();
         for data_type in parquet_catalog_data_type_path_prefixes(data_type) {
             instruments.extend(self.list_prefix_instruments(data_type.as_ref())?);
@@ -271,16 +285,20 @@ impl ParquetDataCatalog {
 
     fn list_prefix_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
         self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("data/{data_type}/"));
-            let mut stream = self.object_store.list(Some(&prefix));
+            let prefix = format!("data/{data_type}/");
+            let object_prefix = ObjectPath::from(prefix.as_str());
+            let mut stream = self.object_store.list(Some(&object_prefix));
             let mut instruments = HashSet::new();
 
             while let Some(object) = stream.next().await {
                 let object = object?;
                 let path = object.location.as_ref();
-                let parts: Vec<&str> = path.split('/').collect();
-                if parts.len() >= 3 {
-                    instruments.insert(parts[2].to_string());
+                // First segment below the prefix, covering nested `custom/{TypeName}` paths
+                if let Some(rest) = path.strip_prefix(prefix.as_str())
+                    && let Some(identifier) = rest.split('/').next()
+                    && !identifier.is_empty()
+                {
+                    instruments.insert(identifier.to_string());
                 }
             }
             Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
@@ -313,6 +331,22 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
+        if let Some(type_name) = custom_type_name(data_type) {
+            let mut all_files = Vec::new();
+            for prefix in custom_data_read_prefixes(type_name) {
+                all_files.extend(self.list_prefix_files_with_criteria(
+                    prefix.as_ref(),
+                    identifiers,
+                    start,
+                    end,
+                )?);
+            }
+
+            all_files.sort();
+            all_files.dedup();
+            return Ok(all_files);
+        }
+
         let mut all_files = Vec::new();
         for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
             all_files.extend(self.list_prefix_files_with_criteria(

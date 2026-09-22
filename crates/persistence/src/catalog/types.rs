@@ -21,7 +21,7 @@ use std::{
     fmt::Display,
 };
 
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
@@ -531,6 +531,29 @@ pub fn parquet_catalog_data_type_path_prefixes(
     }
 }
 
+/// Returns the custom type name when the catalog type is custom data.
+#[must_use]
+pub fn custom_type_name(data_type: &CatalogDataType) -> Option<&str> {
+    match data_type {
+        CatalogDataType::Data(NautilusDataType::Custom { type_name }) => Some(type_name),
+        _ => None,
+    }
+}
+
+/// Returns the Parquet directory prefixes a custom type covers for reads.
+///
+/// Reads fan out across the current `custom/{TypeName}` layout and the legacy Python-written
+/// `custom_<snake_case>` layout (e.g. `custom_binance_bar`). Maintenance operations that map
+/// intervals back to filenames (`delete_data_range`, period consolidation) stay on the canonical
+/// prefix only; migrate legacy layouts with `migrate-parquet` for full maintenance support.
+#[must_use]
+pub fn custom_data_read_prefixes(type_name: &str) -> [Cow<'static, str>; 2] {
+    [
+        Cow::Owned(format!("custom/{type_name}")),
+        Cow::Owned(format!("custom_{}", to_snake_case(type_name))),
+    ]
+}
+
 /// Maps a Rust built-in data type to its semantic catalog data type.
 pub trait HasCatalogDataType {
     fn catalog_data_type() -> NautilusDataType;
@@ -776,5 +799,21 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(prefixes, INSTRUMENT_PATH_PREFIXES);
+    }
+
+    #[rstest]
+    fn custom_data_read_prefixes_cover_canonical_and_legacy_layouts() {
+        assert_eq!(
+            custom_data_read_prefixes("BinanceBar").as_slice(),
+            [
+                Cow::Owned::<str>("custom/BinanceBar".to_string()),
+                Cow::Owned::<str>("custom_binance_bar".to_string()),
+            ]
+            .as_slice(),
+        );
+        assert_eq!(
+            custom_data_read_prefixes("RustTestCustomData")[1].as_ref(),
+            "custom_rust_test_custom_data",
+        );
     }
 }

@@ -117,6 +117,13 @@ The integration includes several custom data types:
 
 See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) for full definitions.
 
+`BinanceBar`, `BinanceFuturesTicker`, `BinanceFuturesOpenInterest`, and
+`BinanceFuturesLiquidation` support Arrow/Parquet catalog persistence under
+`data/custom/{TypeName}/{identifier}`. Reads also discover the legacy Python-written
+`data/custom_<snake_case>` layout (for example `data/custom_binance_bar`); migrate the catalog
+with [nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md) to move legacy
+files to the canonical layout.
+
 ## Symbology
 
 Native Binance symbols are used where possible for spot and futures contracts.

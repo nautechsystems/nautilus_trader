@@ -2809,6 +2809,339 @@ fn test_make_path_custom_data_roundtrip() {
 }
 
 #[rstest]
+fn test_custom_data_query_discovers_legacy_snake_case_layout() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.LEGACY");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    let item = RustTestCustomData {
+        instrument_id,
+        value: 1.25,
+        flag: true,
+        ts_event: UnixNanos::from(10),
+        ts_init: UnixNanos::from(11),
+    };
+
+    catalog
+        .write_custom_data_batch(
+            vec![CustomData::new(Arc::new(item), data_type)],
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let canonical_dir = temp_dir
+        .path()
+        .join("data/custom/RustTestCustomData/RUST.LEGACY");
+    let file_name = fs::read_dir(&canonical_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .file_name();
+    let legacy_dir = temp_dir
+        .path()
+        .join("data/custom_rust_test_custom_data/RUST.LEGACY");
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::rename(canonical_dir.join(&file_name), legacy_dir.join(&file_name)).unwrap();
+
+    let rows = catalog
+        .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+
+    let Data::Custom(custom) = &rows[0] else {
+        panic!("Expected custom data");
+    };
+
+    let decoded = custom
+        .data
+        .as_any()
+        .downcast_ref::<RustTestCustomData>()
+        .unwrap();
+    assert_eq!(decoded.value, 1.25);
+
+    let files = catalog
+        .query_files(
+            &NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }
+            .into(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(files.len(), 1);
+    assert!(files[0].contains("data/custom_rust_test_custom_data/RUST.LEGACY"));
+}
+
+#[rstest]
+fn test_custom_data_query_unions_canonical_and_legacy_layouts() {
+    use nautilus_persistence::catalog::types::CatalogDataType;
+
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let (staging_dir, mut staging) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.BOTH");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    // Share one filename across layouts, so the query must return each
+    // layout's own rows rather than reading one file twice.
+    for (target, value) in [(&mut catalog, 7.5), (&mut staging, 8.5)] {
+        let item = RustTestCustomData {
+            instrument_id,
+            value,
+            flag: false,
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(11),
+        };
+
+        target
+            .write_custom_data_batch(
+                vec![CustomData::new(Arc::new(item), data_type.clone())],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+    }
+
+    let canonical_dir = temp_dir
+        .path()
+        .join("data/custom/RustTestCustomData/RUST.BOTH");
+    let file_name = fs::read_dir(&canonical_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .file_name();
+    let staged_file = staging_dir
+        .path()
+        .join("data/custom/RustTestCustomData/RUST.BOTH")
+        .join(&file_name);
+    assert!(staged_file.exists());
+    let legacy_dir = temp_dir
+        .path()
+        .join("data/custom_rust_test_custom_data/RUST.BOTH");
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::copy(staged_file, legacy_dir.join(&file_name)).unwrap();
+
+    let rows = catalog
+        .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
+        .unwrap();
+
+    let mut values: Vec<f64> = rows
+        .iter()
+        .map(|row| {
+            let Data::Custom(custom) = row else {
+                panic!("Expected custom data");
+            };
+
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .unwrap()
+                .value
+        })
+        .collect();
+
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(values, vec![7.5, 8.5]);
+
+    let custom = CatalogDataType::Data(NautilusDataType::Custom {
+        type_name: "RustTestCustomData".to_string(),
+    });
+
+    let files = catalog.get_file_list_from_data_cls(&custom).unwrap();
+    assert_eq!(files.len(), 2);
+
+    let instruments = catalog.list_instruments(&custom).unwrap();
+    assert_eq!(instruments, vec!["RUST.BOTH".to_string()]);
+}
+
+#[rstest]
+fn test_custom_data_query_fails_fast_on_legacy_schema_files() {
+    use arrow::{
+        array::{Float64Array, UInt64Array},
+        datatypes::{DataType as ArrowDataType, Field, Schema},
+        record_batch::RecordBatch,
+    };
+    use parquet::arrow::arrow_writer::ArrowWriter;
+
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+
+    // A genuine v1 file: UInt64 timestamps, no schema metadata
+    let legacy_dir = temp_dir
+        .path()
+        .join("data/custom_rust_test_custom_data/RUST.LEGACY");
+    fs::create_dir_all(&legacy_dir).unwrap();
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("value", ArrowDataType::Float64, false),
+        Field::new("ts_event", ArrowDataType::UInt64, false),
+        Field::new("ts_init", ArrowDataType::UInt64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        Arc::clone(&schema),
+        vec![
+            Arc::new(Float64Array::from(vec![1.25])),
+            Arc::new(UInt64Array::from(vec![11])),
+            Arc::new(UInt64Array::from(vec![13])),
+        ],
+    )
+    .unwrap();
+    let file = legacy_dir.join("11-13-0.parquet");
+    let mut writer = ArrowWriter::try_new(fs::File::create(&file).unwrap(), schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let error = catalog
+        .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
+        .unwrap_err();
+    assert!(error.to_string().contains("migrate-parquet"), "{error}",);
+}
+
+#[rstest]
+fn test_delete_data_range_leaves_legacy_layout_untouched() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.BOTH");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    let item = RustTestCustomData {
+        instrument_id,
+        value: 7.5,
+        flag: false,
+        ts_event: UnixNanos::from(10),
+        ts_init: UnixNanos::from(11),
+    };
+
+    catalog
+        .write_custom_data_batch(
+            vec![CustomData::new(Arc::new(item), data_type)],
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let canonical_dir = temp_dir
+        .path()
+        .join("data/custom/RustTestCustomData/RUST.BOTH");
+    let file_name = fs::read_dir(&canonical_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .file_name();
+    let legacy_dir = temp_dir
+        .path()
+        .join("data/custom_rust_test_custom_data/RUST.BOTH");
+    fs::create_dir_all(&legacy_dir).unwrap();
+    let legacy_file = legacy_dir.join(&file_name);
+    fs::copy(canonical_dir.join(&file_name), &legacy_file).unwrap();
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            },
+            Some("RUST.BOTH"),
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(100)),
+        )
+        .unwrap();
+
+    // The canonical data is gone but the legacy file survives and still queries
+    assert!(legacy_file.exists());
+    let rows = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.BOTH".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+}
+
+#[rstest]
+fn test_delete_data_range_on_custom_type_path() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.DELETE");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+    for (value, ts) in [(1.0, 10_u64), (2.0, 20_u64), (3.0, 30_u64)] {
+        let item = RustTestCustomData {
+            instrument_id,
+            value,
+            flag: true,
+            ts_event: UnixNanos::from(ts),
+            ts_init: UnixNanos::from(ts),
+        };
+
+        catalog
+            .write_custom_data_batch(
+                vec![CustomData::new(Arc::new(item), data_type.clone())],
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            },
+            Some("RUST.DELETE"),
+            Some(UnixNanos::from(15)),
+            Some(UnixNanos::from(25)),
+        )
+        .unwrap();
+
+    let rows = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.DELETE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    let values: Vec<f64> = rows
+        .iter()
+        .map(|row| {
+            let Data::Custom(custom) = row else {
+                panic!("Expected custom data");
+            };
+
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .unwrap()
+                .value
+        })
+        .collect();
+
+    assert_eq!(values, vec![1.0, 3.0]);
+}
+
+#[rstest]
 fn test_group_contiguous_intervals_moved() {
     let tmp = tempfile::tempdir().unwrap();
     let base_dir = tmp.path().join("catalog");

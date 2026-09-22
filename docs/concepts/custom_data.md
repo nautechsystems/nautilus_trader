@@ -298,6 +298,12 @@ types, and `convert_stream_to_data` converts those staged Feather streams to Par
 staging, write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data`.
 :::
 
+Reads also discover the legacy Python-written `data/custom_<snake_case>` layout (for example
+`data/custom_binance_bar`). Range deletion and period consolidation stay on the canonical layout;
+migrate the catalog to a new destination with
+[nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md) and point readers at the
+result for full maintenance support.
+
 ## The Arrow C FFI bridge
 
 Pure Python custom data does not provide native Rust Arrow encode logic. For

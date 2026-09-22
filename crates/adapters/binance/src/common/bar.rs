@@ -310,4 +310,60 @@ mod tests {
         let restored_bar = restored.as_any().downcast_ref::<BinanceBar>().unwrap();
         assert_eq!(restored_bar, &bar);
     }
+
+    #[rstest]
+    fn test_binance_bar_catalog_round_trip() {
+        use std::sync::Arc;
+
+        use nautilus_model::data::{CustomData as CatalogCustomData, Data, DataType};
+        use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+        use nautilus_serialization::ensure_custom_data_registered;
+        use tempfile::TempDir;
+
+        ensure_custom_data_registered::<BinanceBar>();
+        let temp_dir = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = catalog;
+        let bar = stub_binance_bar();
+        let bar_type_str = bar.bar_type.to_string();
+        let data_type = DataType::new("BinanceBar", None, Some(bar_type_str.clone()));
+
+        let path = catalog
+            .write_custom_data_batch(
+                vec![CatalogCustomData::new(Arc::new(bar.clone()), data_type)],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+        assert!(
+            path.to_string_lossy()
+                .contains("data/custom/BinanceBar/BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL")
+        );
+
+        let rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceBar",
+                Some(&[bar_type_str]),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+
+        match &rows[0] {
+            Data::Custom(custom) => {
+                let row = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceBar>()
+                    .expect("expected BinanceBar");
+                assert_eq!(row, &bar);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+    }
 }

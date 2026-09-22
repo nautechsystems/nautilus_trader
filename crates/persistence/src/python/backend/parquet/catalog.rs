@@ -54,7 +54,10 @@ use crate::{
     backend::{migration::build_catalog_migration_plan, parquet::catalog::ParquetDataCatalog},
     catalog::{
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
-        types::{HasCatalogDataType, parquet_catalog_data_type_path_prefixes},
+        types::{
+            HasCatalogDataType, custom_data_read_prefixes, custom_type_name,
+            parquet_catalog_data_type_path_prefixes,
+        },
     },
     python::backend::{
         PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
@@ -959,6 +962,19 @@ impl PyParquetDataCatalog {
     ) -> PyResult<Vec<String>> {
         let data_type = data_type.into_inner();
         let mut files = Vec::new();
+
+        if let Some(type_name) = custom_type_name(&data_type) {
+            for prefix in custom_data_read_prefixes(type_name) {
+                let directory = format!("data/{prefix}/{instrument_id}");
+                files.extend(self.inner.list_parquet_files(&directory).map_err(|e| {
+                    PyIOError::new_err(format!("Failed to list parquet files: {e}"))
+                })?);
+            }
+
+            files.sort();
+            files.dedup();
+            return Ok(files);
+        }
 
         for prefix in parquet_catalog_data_type_path_prefixes(&data_type) {
             let prefix = prefix.as_ref();

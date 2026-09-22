@@ -101,10 +101,18 @@ including `quote_tick`, `order_book_depth10`, per-class instrument directories, 
 | Instruments with `class` metadata              | Decode and re-encode into the per-class string schema                  |
 | Known legacy status, funding, and close shapes | Convert through the three registered transcoders                       |
 | Final-format custom data with `type_name`      | Pass through; rename `custom_<type>` to `custom/<type>`                |
+| Legacy custom data without `type_name`         | Infer the type from the `custom_<type>` directory and rename           |
 | Empty coverage files                           | Copy as empty files under the renamed layout                           |
 
 Custom-data `ts_event` and `ts_init` columns stored as `uint64` nanoseconds convert to
 `timestamp("ns", tz="UTC")`. Other supported custom-data columns pass through unchanged.
+Custom files whose timestamps are already nanosecond Arrow timestamps pass through unchanged.
+Files whose timestamps use any other physical type (notably `int64` from older pandas-written
+catalogs) fail preflight: recast them to `uint64` nanoseconds before migrating.
+
+Type-name inference from `custom_<type>` directories is a best-effort snake_case to PascalCase
+conversion: acronyms do not survive it, so verify the inferred destination directories before
+cutover.
 
 Fixed-depth source formats omit order IDs, and the migration retains the zero IDs their reader returns. The
 destination format preserves order IDs for subsequent writes.
@@ -115,8 +123,10 @@ destination format preserves order IDs for subsequent writes.
   through the [streaming workflow](stream_parquet_catalog.md) instead.
 - **Unmigrated paths.** `portfolio_snapshot` directories, non-Parquet leaves, and unrecognized catalog directories
   are reported as unmigrated and never converted.
-- **Preflight failures.** Schema conflicts, missing `type_name` or `class` metadata, fixed-binary custom columns, and
-  unknown fingerprints fail preflight with every problem listed, before any destination write.
+- **Preflight failures.** Schema conflicts, missing `type_name` metadata outside legacy `custom_<type>`
+  directories, missing `class` metadata, fixed-binary custom columns, custom timestamps that are neither `uint64`
+  nor nanosecond Arrow timestamps, and unknown fingerprints fail preflight with every problem listed, before any
+  destination write.
 
 ### Sources to validate before cutover
 
@@ -124,7 +134,7 @@ The conversions above are exercised against catalogs written by the current deve
 carefully when the source contains:
 
 - Data written by an older Nautilus release.
-- Adapter custom data types with Arrow support, such as Betfair, Deribit, and Hyperliquid.
+- Adapter custom data types with Arrow support, such as Betfair, Binance, Deribit, and Hyperliquid.
 - Deltas, mark and index prices, closes, Greeks, current-shape funding, or record families other than
   `account_state`.
 

@@ -24,7 +24,7 @@ use std::{
 use arrow::{
     array::UInt32Array,
     compute::take,
-    datatypes::{DataType as ArrowDataType, Schema},
+    datatypes::{DataType as ArrowDataType, Schema, TimeUnit},
     record_batch::RecordBatch,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -470,6 +470,7 @@ pub fn read_planned_migration_file(
     let mut transcoded = Vec::new();
 
     for batch in record_batches_with_schema(batches, &schema)? {
+        let batch = with_inferred_custom_type_name(file, batch)?;
         let batch = normalize_legacy_parquet_columns(&batch)?;
         let result = transcode_legacy_record_batch_with_state(
             &file.target_type_name,
@@ -647,6 +648,65 @@ fn classify_source_path(path: &str) -> SourceClassification {
     SourceClassification::Unmigrated(reason.to_string())
 }
 
+/// Infers a custom type name from a legacy `custom_<snake_case>` directory.
+///
+/// Old Python-written catalogs stored custom data under `data/custom_<snake_case>` without
+/// `type_name` schema metadata. Best-effort reversal to PascalCase; acronyms do not survive
+/// the round trip, but the known legacy layouts (e.g. `custom_binance_bar` -> `BinanceBar`)
+/// map exactly. Returns `None` for the canonical `custom` directory, which carries no name.
+fn legacy_custom_type_name(source_type_name: &str) -> Option<String> {
+    let legacy = source_type_name.strip_prefix("custom_")?;
+    let mut pascal = String::with_capacity(legacy.len());
+    for part in legacy.split('_') {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            pascal.extend(first.to_uppercase());
+            pascal.extend(chars);
+        }
+    }
+
+    (!pascal.is_empty()).then_some(pascal)
+}
+
+/// Returns true when a custom schema can migrate: timestamp normalization converts
+/// `UInt64` `ts_event`/`ts_init` and passes timestamps through, so any other
+/// physical type (notably legacy `Int64`) has no transcoder.
+fn custom_timestamps_convertible(schema: &Schema) -> bool {
+    ["ts_event", "ts_init"].iter().all(|name| {
+        schema.field_with_name(name).is_ok_and(|field| {
+            matches!(
+                field.data_type(),
+                ArrowDataType::UInt64 | ArrowDataType::Timestamp(TimeUnit::Nanosecond, _)
+            )
+        })
+    })
+}
+
+/// Attaches a custom `type_name` to a schema that lacks it, leaving other
+/// schemas untouched.
+fn inject_type_name_metadata(schema: &Schema, type_name: &str) -> Schema {
+    if schema.metadata().contains_key("type_name") {
+        return schema.clone();
+    }
+
+    let mut metadata = schema.metadata().clone();
+    metadata.insert("type_name".to_string(), type_name.to_string());
+    Schema::new_with_metadata(
+        schema.fields().iter().cloned().collect::<Vec<_>>(),
+        metadata,
+    )
+}
+
+/// Attaches the planned custom `type_name` to a preflight schema that lacks it,
+/// mirroring the execution-time injection so fingerprints match written output.
+fn with_target_custom_type_name(candidate: &SchemaCandidate, schema: &Schema) -> Schema {
+    let Some(type_name) = candidate.target_type_name.strip_prefix("custom/") else {
+        return schema.clone();
+    };
+
+    inject_type_name_metadata(schema, type_name)
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Preflight resolves every candidate before assembling the migration plan"
@@ -676,6 +736,13 @@ fn resolve_candidate_schemas(
 
     for (mut candidate, schema) in resolved {
         if candidate.object.size == 0 {
+            // Mirror the data-file inference so markers land beside their data files
+            if candidate.target_type_name == "custom"
+                && let Some(inferred) = legacy_custom_type_name(&candidate.source_type_name)
+            {
+                candidate.target_type_name = format!("custom/{inferred}");
+            }
+
             let fingerprint = schema_fingerprint(&Schema::empty());
             files.push(ResolvedCandidate {
                 target_table: candidate.target_type_name.clone(),
@@ -688,9 +755,15 @@ fn resolve_candidate_schemas(
             });
             continue;
         }
-        let schema = normalize_legacy_parquet_schema(&schema);
+
+        // Resolve the custom target before normalization, so the preflight fingerprint
+        // reflects the same type_name the execution path injects.
         if candidate.target_type_name == "custom" {
-            let Some(type_name) = schema.metadata().get("type_name") else {
+            if let Some(type_name) = schema.metadata().get("type_name") {
+                candidate.target_type_name = format!("custom/{type_name}");
+            } else if let Some(inferred) = legacy_custom_type_name(&candidate.source_type_name) {
+                candidate.target_type_name = format!("custom/{inferred}");
+            } else {
                 unresolved.push(UnresolvedSchema {
                     path: candidate.relative_path.clone(),
                     message: format!(
@@ -699,9 +772,34 @@ fn resolve_candidate_schemas(
                     ),
                 });
                 continue;
-            };
-            candidate.target_type_name = format!("custom/{type_name}");
+            }
         }
+
+        // Custom targets skip fingerprint validation, so reject unconvertible
+        // timestamps here instead of migrating to an unreadable destination.
+        if candidate.target_type_name.starts_with("custom/")
+            && !custom_timestamps_convertible(&schema)
+        {
+            let detail = if schema.metadata().contains_key("type_name") {
+                "has non-UInt64 timestamps with no transcoder"
+            } else {
+                "is missing type_name metadata and has non-UInt64 timestamps with no transcoder"
+            };
+
+            unresolved.push(UnresolvedSchema {
+                path: candidate.relative_path.clone(),
+                message: format!(
+                    "Parquet custom data file {} {detail}",
+                    candidate.relative_path
+                ),
+            });
+
+            continue;
+        }
+
+        let schema = with_target_custom_type_name(&candidate, &schema);
+        let schema = normalize_legacy_parquet_schema(&schema);
+
         let target_table = if candidate.target_type_name == "instruments" {
             let Some(class) = schema.metadata().get("class") else {
                 unresolved.push(UnresolvedSchema {
@@ -985,6 +1083,23 @@ fn record_batches_with_schema(
             RecordBatch::try_new(schema.clone(), batch.columns().to_vec()).map_err(Into::into)
         })
         .collect()
+}
+
+/// Attaches the planned custom `type_name` to batches that lack it.
+///
+/// Legacy Python-written custom files predate `type_name` schema metadata. Timestamp
+/// normalization keys off that metadata, so without it `uint64` timestamps would pass
+/// through unconverted. Files that already carry `type_name` are returned unchanged.
+fn with_inferred_custom_type_name(
+    file: &PlannedMigrationFile,
+    batch: RecordBatch,
+) -> anyhow::Result<RecordBatch> {
+    let Some(type_name) = file.target_type_name.strip_prefix("custom/") else {
+        return Ok(batch);
+    };
+
+    let schema = Arc::new(inject_type_name_metadata(&batch.schema(), type_name));
+    Ok(RecordBatch::try_new(schema, batch.columns().to_vec())?)
 }
 
 #[cfg(test)]
