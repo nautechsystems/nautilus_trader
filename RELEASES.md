@@ -65,8 +65,8 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
-- Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills
-- Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications
+- Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills, thanks for reporting @kta1kri
+- Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications, thanks for reporting @kta1kri
 - Fixed quote-quantity conversion overflow panics during order risk checks
 - Fixed fill OMS resolution to use the owning execution client instead of venue or default routes
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
