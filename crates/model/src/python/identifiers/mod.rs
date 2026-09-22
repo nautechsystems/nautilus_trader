@@ -27,7 +27,10 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 
-use crate::identifier_for_python;
+use crate::{
+    identifier_for_python,
+    identifiers::{InstrumentId, new_generic_spread_id as new_generic_spread_id_rust},
+};
 
 identifier_for_python!(crate::identifiers::ActorId);
 identifier_for_python!(crate::identifiers::AccountId);
@@ -41,3 +44,15 @@ identifier_for_python!(crate::identifiers::StrategyId);
 identifier_for_python!(crate::identifiers::TraderId);
 identifier_for_python!(crate::identifiers::Venue);
 identifier_for_python!(crate::identifiers::VenueOrderId);
+
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 extracts Python sequences into owned Vec arguments"
+)]
+pub fn new_generic_spread_id(
+    instrument_ratios: Vec<(InstrumentId, i64)>,
+) -> PyResult<InstrumentId> {
+    new_generic_spread_id_rust(&instrument_ratios).map_err(to_pyvalue_err)
+}

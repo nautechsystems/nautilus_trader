@@ -15,14 +15,24 @@
 
 //! Python bindings for Interactive Brokers configuration types.
 
+use std::str::FromStr;
+
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use pyo3::prelude::*;
 
-use crate::config::{
-    DockerizedIBGatewayConfig, InteractiveBrokersDataClientConfig,
-    InteractiveBrokersExecutionClientConfig, InteractiveBrokersInstrumentProviderConfig,
-    MarketDataType, TradingMode,
+use crate::{
+    common::{
+        consts::{DEFAULT_CLIENT_ID, DEFAULT_HOST, DEFAULT_PORT},
+        contracts::parse_configured_contract_from_json,
+        enums::IbSecurityType,
+    },
+    config::{
+        DockerizedIBGatewayConfig, InteractiveBrokersDataClientConfig,
+        InteractiveBrokersExecutionClientConfig, InteractiveBrokersInstrumentProviderConfig,
+        MarketDataType, SymbologyMethod, TradingMode,
+    },
+    python::conversion::py_list_to_json_values,
 };
 
 fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
@@ -40,7 +50,7 @@ fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
 impl InteractiveBrokersDataClientConfig {
     /// Creates a new `InteractiveBrokersDataClientConfig` instance.
     #[new]
-    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None, instrument_provider=None, dockerized_gateway=None))]
+    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None, instrument_provider=None, dockerized_gateway=None, all_last_trades=None, subscription_idle_timeout_secs=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         host: Option<String>,
@@ -55,6 +65,8 @@ impl InteractiveBrokersDataClientConfig {
         batch_quotes: Option<bool>,
         instrument_provider: Option<InteractiveBrokersInstrumentProviderConfig>,
         dockerized_gateway: Option<&DockerizedIBGatewayConfig>,
+        all_last_trades: Option<bool>,
+        subscription_idle_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         if dockerized_gateway.is_some() {
             return Err(to_pyvalue_err(
@@ -62,12 +74,12 @@ impl InteractiveBrokersDataClientConfig {
             ));
         }
 
-        let host = host.unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string());
-        let port = port.unwrap_or(crate::common::consts::DEFAULT_PORT);
-        let client_id = client_id.unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID);
+        let host = host.unwrap_or_else(|| DEFAULT_HOST.to_string());
+        let port = port.unwrap_or(DEFAULT_PORT);
+        let client_id = client_id.unwrap_or(DEFAULT_CLIENT_ID);
         let request_timeout = request_timeout.unwrap_or(60);
 
-        Ok(Self {
+        let config = Self {
             host,
             port,
             client_id,
@@ -78,8 +90,12 @@ impl InteractiveBrokersDataClientConfig {
             request_timeout,
             handle_revised_bars: handle_revised_bars.unwrap_or(false),
             batch_quotes: batch_quotes.unwrap_or(true),
+            all_last_trades: all_last_trades.unwrap_or_else(|| Self::default().all_last_trades),
+            subscription_idle_timeout_secs,
             instrument_provider: instrument_provider.unwrap_or_default(),
-        })
+        };
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 
     /// Returns the host.
@@ -142,6 +158,18 @@ impl InteractiveBrokersDataClientConfig {
         self.batch_quotes
     }
 
+    /// Returns whether tick-by-tick subscriptions include special-condition trades.
+    #[getter]
+    fn all_last_trades(&self) -> bool {
+        self.all_last_trades
+    }
+
+    /// Returns the optional subscription idle interval in seconds.
+    #[getter]
+    fn subscription_idle_timeout_secs(&self) -> Option<u64> {
+        self.subscription_idle_timeout_secs
+    }
+
     /// Returns the instrument provider configuration.
     #[getter]
     fn instrument_provider(&self) -> InteractiveBrokersInstrumentProviderConfig {
@@ -183,9 +211,9 @@ impl InteractiveBrokersExecutionClientConfig {
             ));
         }
 
-        let host = host.unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string());
-        let port = port.unwrap_or(crate::common::consts::DEFAULT_PORT);
-        let client_id = client_id.unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID);
+        let host = host.unwrap_or_else(|| DEFAULT_HOST.to_string());
+        let port = port.unwrap_or(DEFAULT_PORT);
+        let client_id = client_id.unwrap_or(DEFAULT_CLIENT_ID);
         validate_order_id_client_slot(client_id)?;
         let request_timeout = request_timeout.unwrap_or(60);
 
@@ -221,7 +249,7 @@ impl InteractiveBrokersExecutionClientConfig {
         self.client_id
     }
 
-    /// Returns the account ID.
+    /// Returns the raw IB account code.
     #[getter]
     fn account_id(&self) -> Option<String> {
         self.account_id.clone()
@@ -276,7 +304,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         py: Python<'_>,
-        symbology_method: Option<crate::config::SymbologyMethod>,
+        symbology_method: Option<SymbologyMethod>,
         load_ids: Option<std::collections::HashSet<InstrumentId>>,
         load_contracts: Option<Py<pyo3::types::PyList>>,
         min_expiry_days: Option<u32>,
@@ -294,7 +322,17 @@ impl InteractiveBrokersInstrumentProviderConfig {
             symbology_method: symbology_method.unwrap_or_default(),
             load_ids: load_ids.unwrap_or_default(),
             load_contracts: if let Some(c) = load_contracts {
-                crate::python::conversion::py_list_to_json_values(c.bind(py))?
+                py_list_to_json_values(c.bind(py))?
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        parse_configured_contract_from_json(value).map_err(|e| {
+                            to_pyvalue_err(format!(
+                                "Invalid load_contracts entry at index {index}: {e}"
+                            ))
+                        })
+                    })
+                    .collect::<PyResult<Vec<_>>>()?
             } else {
                 Vec::new()
             },
@@ -305,7 +343,11 @@ impl InteractiveBrokersInstrumentProviderConfig {
             cache_validity_days,
             convert_exchange_to_mic_venue: convert_exchange_to_mic_venue.unwrap_or(false),
             symbol_to_mic_venue: symbol_to_mic_venue.unwrap_or_default(),
-            filter_sec_types: filter_sec_types.unwrap_or_default(),
+            filter_sec_types: filter_sec_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(|value| IbSecurityType::from_str(&value).map_err(to_pyvalue_err))
+                .collect::<PyResult<_>>()?,
             filter_callable,
             cache_path,
         })
@@ -313,7 +355,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
 
     /// Returns the symbology method.
     #[getter]
-    fn symbology_method(&self) -> crate::config::SymbologyMethod {
+    fn symbology_method(&self) -> SymbologyMethod {
         self.symbology_method
     }
 
@@ -329,8 +371,8 @@ impl InteractiveBrokersInstrumentProviderConfig {
         let json_mod = py.import("json")?;
         let list = pyo3::types::PyList::empty(py);
 
-        for value in &self.load_contracts {
-            let json_str = value.to_string();
+        for contract in &self.load_contracts {
+            let json_str = contract.to_json_value().to_string();
             let dict = json_mod.call_method1("loads", (json_str,))?;
             list.append(dict)?;
         }
@@ -382,7 +424,10 @@ impl InteractiveBrokersInstrumentProviderConfig {
     /// Returns the filter security types.
     #[getter]
     fn filter_sec_types(&self) -> Vec<String> {
-        self.filter_sec_types.iter().cloned().collect()
+        self.filter_sec_types
+            .iter()
+            .map(ToString::to_string)
+            .collect()
     }
 
     /// Returns the custom instrument filter callable path.

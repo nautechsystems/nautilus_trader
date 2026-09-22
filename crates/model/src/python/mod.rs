@@ -220,6 +220,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::identifiers::Venue>()?;
     m.add_class::<crate::identifiers::VenueOrderId>()?;
     m.add_class::<crate::identifiers::OptionSeriesId>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::identifiers::new_generic_spread_id,
+        m
+    )?)?;
     // Orders
     m.add_class::<crate::orders::LimitOrder>()?;
     m.add_class::<crate::orders::LimitIfTouchedOrder>()?;
