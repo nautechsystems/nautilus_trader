@@ -129,6 +129,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
 
+arrow = { workspace = true }
 bytes = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }

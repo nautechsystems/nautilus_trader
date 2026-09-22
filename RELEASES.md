@@ -118,6 +118,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
+- Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
