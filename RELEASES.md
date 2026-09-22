@@ -59,6 +59,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
 - Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo

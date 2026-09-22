@@ -80,7 +80,7 @@ use crate::{
         cache::PyCache,
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
-        logging::PyLogger,
+        logging::{PyLogger, format_exception},
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
     runner::SystemChannel,
@@ -261,13 +261,16 @@ impl PyDataActorInner {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
                 let order = DataActor::cache(self).try_order(&cmd.client_order_id)?;
-                self.dispatch_on_order(order)
-                    .map_err(|e| anyhow::anyhow!("Python on_order failed: {e}"))
+                self.dispatch_on_order(order).map_err(|e| {
+                    anyhow::anyhow!("Python on_order failed:\n{}", format_exception(&e))
+                })
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 let orders = self.orders_for_list(&cmd.order_list)?;
                 self.dispatch_on_order_list(cmd.order_list.clone(), orders)
-                    .map_err(|e| anyhow::anyhow!("Python on_order_list failed: {e}"))
+                    .map_err(|e| {
+                        anyhow::anyhow!("Python on_order_list failed:\n{}", format_exception(&e))
+                    })
             }
             _ => {
                 log::warn!("Unhandled command type: {command}");
@@ -1018,52 +1021,52 @@ pub fn register_python_exec_algorithm_endpoint(exec_algorithm_id: ExecAlgorithmI
 impl DataActor for PyDataActorInner {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_start()
-            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_stop()
-            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed:\n{}", format_exception(&e)))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_resume()
-            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed:\n{}", format_exception(&e)))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_reset()
-            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed:\n{}", format_exception(&e)))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_dispose()
-            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed:\n{}", format_exception(&e)))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_degrade()
-            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed:\n{}", format_exception(&e)))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_fault()
-            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed:\n{}", format_exception(&e)))
     }
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.dispatch_on_save()
-            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_save failed:\n{}", format_exception(&e)))
     }
 
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.dispatch_on_load(&state)
-            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_load failed:\n{}", format_exception(&e)))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         self.dispatch_on_time_event(event.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_time_event failed:\n{}", format_exception(&e)))
     }
 
     #[allow(unused_variables)]
@@ -1071,133 +1074,156 @@ impl DataActor for PyDataActorInner {
         Python::attach(|py| {
             let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
+                .map_err(|e| anyhow::anyhow!("Python on_data failed:\n{}", format_exception(&e)))
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
-            .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_signal failed:\n{}", format_exception(&e)))
     }
 
     fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_queue_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed:\n{}", format_exception(&e)))
     }
 
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
-        self.dispatch_on_socket_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
+        self.dispatch_on_socket_state(event).map_err(|e| {
+            anyhow::anyhow!("Python on_socket_state failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
-            self.dispatch_on_instrument(py_instrument)
-                .map_err(|e| anyhow::anyhow!("Python on_instrument failed: {e}"))
+            self.dispatch_on_instrument(py_instrument).map_err(|e| {
+                anyhow::anyhow!("Python on_instrument failed:\n{}", format_exception(&e))
+            })
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         self.dispatch_on_quote(*quote)
-            .map_err(|e| anyhow::anyhow!("Python on_quote failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_quote failed:\n{}", format_exception(&e)))
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         self.dispatch_on_trade(*tick)
-            .map_err(|e| anyhow::anyhow!("Python on_trade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_trade failed:\n{}", format_exception(&e)))
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         self.dispatch_on_bar(*bar)
-            .map_err(|e| anyhow::anyhow!("Python on_bar failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_bar failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.dispatch_on_book_deltas(deltas.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.dispatch_on_book_depth(depth)
-            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed:\n{}", format_exception(&e)))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
-            .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book failed:\n{}", format_exception(&e)))
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_mark_price(*mark_price)
-            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_index_price(*index_price)
-            .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_index_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        self.dispatch_on_funding_rate(*funding_rate)
-            .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
+        self.dispatch_on_funding_rate(*funding_rate).map_err(|e| {
+            anyhow::anyhow!("Python on_funding_rate failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_status(*data)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_status failed: {e}"))
+        self.dispatch_on_instrument_status(*data).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_status failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_close(*update)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+        self.dispatch_on_instrument_close(*update).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_close failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
-        self.dispatch_on_option_greeks(*greeks)
-            .map_err(|e| anyhow::anyhow!("Python on_option_greeks failed: {e}"))
+        self.dispatch_on_option_greeks(*greeks).map_err(|e| {
+            anyhow::anyhow!("Python on_option_greeks failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
-        self.dispatch_on_option_chain(slice.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+        self.dispatch_on_option_chain(slice.clone()).map_err(|e| {
+            anyhow::anyhow!("Python on_option_chain failed:\n{}", format_exception(&e))
+        })
     }
 
     #[cfg(feature = "defi")]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.dispatch_on_block(block.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_block failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_block failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
         self.dispatch_on_pool(pool.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.dispatch_on_pool_swap(swap.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.dispatch_on_pool_liquidity_update(update.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_pool_liquidity_update failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.dispatch_on_pool_fee_collect(collect.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_fee_collect failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_pool_fee_collect failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
         self.dispatch_on_pool_flash(flash.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_flash failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool_flash failed:\n{}", format_exception(&e)))
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
@@ -1209,29 +1235,54 @@ impl DataActor for PyDataActorInner {
             } else {
                 anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
-            self.dispatch_on_historical_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+
+            self.dispatch_on_historical_data(py_data).map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_data failed:\n{}",
+                    format_exception(&e)
+                )
+            })
         })
     }
 
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_deltas(deltas.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_deltas failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_deltas failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_depth(depths.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_depth failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_depth failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_quotes(quotes.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_quotes failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_trades(trades.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_trades failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_funding_rates(
@@ -1239,17 +1290,32 @@ impl DataActor for PyDataActorInner {
         funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_funding_rates failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         self.dispatch_on_historical_bars(bars.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_bars failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_mark_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_index_prices(
@@ -1257,7 +1323,12 @@ impl DataActor for PyDataActorInner {
         index_prices: &[IndexPriceUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_index_prices(index_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_index_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 }
 
@@ -4527,9 +4598,12 @@ class TrackingActor:
 
     def __init__(self):
         self.calls = []
+        self.raises = False
 
     def _record(self, method_name, *args):
         self.calls.append((method_name, args))
+        if self.raises:
+            raise RuntimeError("actor callback failure")
 
     def was_called(self, method_name):
         return any(call[0] == method_name for call in self.calls)
@@ -4710,6 +4784,24 @@ class IndicatorEventActor:
         assert_eq!(python_method_call_count(&py_actor, py, method_name), 1);
 
         py_actor
+    }
+
+    #[rstest]
+    fn test_python_actor_callback_exception_preserves_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let tracker = create_tracking_python_actor(py).unwrap();
+            tracker.setattr(py, "raises", true).unwrap();
+            let mut actor = PyDataActor::new(None);
+            actor.set_python_instance(tracker.bind(py)).unwrap();
+            let error = DataActor::on_bar(actor.inner_mut(), &sample_bar()).unwrap_err();
+            let message = error.to_string();
+
+            assert_eq!(python_method_call_count(&tracker, py, "on_bar"), 1);
+            assert!(message.contains("Python on_bar failed:"));
+            assert!(message.contains("in _record"));
+            assert!(message.contains("RuntimeError: actor callback failure"));
+        });
     }
 
     #[rstest]

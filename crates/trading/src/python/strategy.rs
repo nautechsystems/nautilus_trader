@@ -43,7 +43,7 @@ use nautilus_common::{
         clock::PyClock,
         config_error_to_pyvalue_err,
         indicators::{registered_python_indicators, wrap_python_indicator},
-        logging::PyLogger,
+        logging::{PyLogger, format_exception},
         order_factory::PyOrderFactory,
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
@@ -959,99 +959,145 @@ impl Strategy for PyStrategyInner {
     }
 
     fn on_market_exit(&mut self) {
-        let _ = self.dispatch_on_market_exit();
+        self.logger
+            .log_callback_error("on_market_exit", self.dispatch_on_market_exit());
     }
 
     fn post_market_exit(&mut self) {
-        let _ = self.dispatch_post_market_exit();
+        self.logger
+            .log_callback_error("post_market_exit", self.dispatch_post_market_exit());
     }
 
     fn on_order_initialized(&mut self, event: OrderInitialized) {
-        let _ = self.dispatch_on_order_initialized(event);
+        self.logger.log_callback_error(
+            "on_order_initialized",
+            self.dispatch_on_order_initialized(event),
+        );
     }
 
     fn on_order_event(&mut self, event: OrderEventAny) {
-        let _ = self.dispatch_on_order_event(event);
+        self.logger
+            .log_callback_error("on_order_event", self.dispatch_on_order_event(event));
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
-        let _ = self.dispatch_on_order_denied(event);
+        self.logger
+            .log_callback_error("on_order_denied", self.dispatch_on_order_denied(event));
     }
 
     fn on_order_emulated(&mut self, event: OrderEmulated) {
-        let _ = self.dispatch_on_order_emulated(event);
+        self.logger
+            .log_callback_error("on_order_emulated", self.dispatch_on_order_emulated(event));
     }
 
     fn on_order_released(&mut self, event: OrderReleased) {
-        let _ = self.dispatch_on_order_released(event);
+        self.logger
+            .log_callback_error("on_order_released", self.dispatch_on_order_released(event));
     }
 
     fn on_order_submitted(&mut self, event: OrderSubmitted) {
-        let _ = self.dispatch_on_order_submitted(event);
+        self.logger.log_callback_error(
+            "on_order_submitted",
+            self.dispatch_on_order_submitted(event),
+        );
     }
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
-        let _ = self.dispatch_on_order_rejected(event);
+        self.logger
+            .log_callback_error("on_order_rejected", self.dispatch_on_order_rejected(event));
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
-        let _ = self.dispatch_on_order_accepted(event);
+        self.logger
+            .log_callback_error("on_order_accepted", self.dispatch_on_order_accepted(event));
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
-        let _ = self.dispatch_on_order_expired(event);
+        self.logger
+            .log_callback_error("on_order_expired", self.dispatch_on_order_expired(event));
     }
 
     fn on_order_triggered(&mut self, event: OrderTriggered) {
-        let _ = self.dispatch_on_order_triggered(event);
+        self.logger.log_callback_error(
+            "on_order_triggered",
+            self.dispatch_on_order_triggered(event),
+        );
     }
 
     fn on_order_pending_update(&mut self, event: OrderPendingUpdate) {
-        let _ = self.dispatch_on_order_pending_update(event);
+        self.logger.log_callback_error(
+            "on_order_pending_update",
+            self.dispatch_on_order_pending_update(event),
+        );
     }
 
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {
-        let _ = self.dispatch_on_order_pending_cancel(event);
+        self.logger.log_callback_error(
+            "on_order_pending_cancel",
+            self.dispatch_on_order_pending_cancel(event),
+        );
     }
 
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
-        let _ = self.dispatch_on_order_modify_rejected(event);
+        self.logger.log_callback_error(
+            "on_order_modify_rejected",
+            self.dispatch_on_order_modify_rejected(event),
+        );
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
-        let _ = self.dispatch_on_order_cancel_rejected(event);
+        self.logger.log_callback_error(
+            "on_order_cancel_rejected",
+            self.dispatch_on_order_cancel_rejected(event),
+        );
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        let _ = self.dispatch_on_order_updated(&event);
+        self.logger
+            .log_callback_error("on_order_updated", self.dispatch_on_order_updated(&event));
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) {
-        let _ = self.dispatch_on_order_canceled(*event);
+        self.logger
+            .log_callback_error("on_order_canceled", self.dispatch_on_order_canceled(*event));
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        let _ = self.dispatch_on_order_filled(event);
+        self.logger
+            .log_callback_error("on_order_filled", self.dispatch_on_order_filled(event));
     }
 
     fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
-        let _ = self.dispatch_on_order_fill_voided(event);
+        self.logger.log_callback_error(
+            "on_order_fill_voided",
+            self.dispatch_on_order_fill_voided(event),
+        );
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
-        let _ = self.dispatch_on_position_opened(event);
+        self.logger.log_callback_error(
+            "on_position_opened",
+            self.dispatch_on_position_opened(event),
+        );
     }
 
     fn on_position_event(&mut self, event: PositionEvent) {
-        let _ = self.dispatch_on_position_event(event);
+        self.logger
+            .log_callback_error("on_position_event", self.dispatch_on_position_event(event));
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
-        let _ = self.dispatch_on_position_changed(event);
+        self.logger.log_callback_error(
+            "on_position_changed",
+            self.dispatch_on_position_changed(event),
+        );
     }
 
     fn on_position_closed(&mut self, event: PositionClosed) {
-        let _ = self.dispatch_on_position_closed(event);
+        self.logger.log_callback_error(
+            "on_position_closed",
+            self.dispatch_on_position_closed(event),
+        );
     }
 }
 
@@ -1059,53 +1105,53 @@ impl DataActor for PyStrategyInner {
     fn on_start(&mut self) -> anyhow::Result<()> {
         Strategy::on_start(self)?;
         self.dispatch_on_start()
-            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_stop()
-            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed:\n{}", format_exception(&e)))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_resume()
-            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed:\n{}", format_exception(&e)))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_reset()
-            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed:\n{}", format_exception(&e)))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_dispose()
-            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed:\n{}", format_exception(&e)))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_degrade()
-            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed:\n{}", format_exception(&e)))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_fault()
-            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed:\n{}", format_exception(&e)))
     }
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.dispatch_on_save()
-            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_save failed:\n{}", format_exception(&e)))
     }
 
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.dispatch_on_load(&state)
-            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_load failed:\n{}", format_exception(&e)))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         route_time_event(self, event);
         self.dispatch_on_time_event(event)
-            .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_time_event failed:\n{}", format_exception(&e)))
     }
 
     #[allow(unused_variables)]
@@ -1113,97 +1159,110 @@ impl DataActor for PyStrategyInner {
         Python::attach(|py| {
             let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
+                .map_err(|e| anyhow::anyhow!("Python on_data failed:\n{}", format_exception(&e)))
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
-            .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_signal failed:\n{}", format_exception(&e)))
     }
 
     fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_queue_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed:\n{}", format_exception(&e)))
     }
 
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
-        self.dispatch_on_socket_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
+        self.dispatch_on_socket_state(event).map_err(|e| {
+            anyhow::anyhow!("Python on_socket_state failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
-            self.dispatch_on_instrument(py_instrument)
-                .map_err(|e| anyhow::anyhow!("Python on_instrument failed: {e}"))
+            self.dispatch_on_instrument(py_instrument).map_err(|e| {
+                anyhow::anyhow!("Python on_instrument failed:\n{}", format_exception(&e))
+            })
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         self.dispatch_on_quote(*quote)
-            .map_err(|e| anyhow::anyhow!("Python on_quote failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_quote failed:\n{}", format_exception(&e)))
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         self.dispatch_on_trade(*tick)
-            .map_err(|e| anyhow::anyhow!("Python on_trade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_trade failed:\n{}", format_exception(&e)))
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         self.dispatch_on_bar(*bar)
-            .map_err(|e| anyhow::anyhow!("Python on_bar failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_bar failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.dispatch_on_book_deltas(deltas)
-            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.dispatch_on_book_depth(depth)
-            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed:\n{}", format_exception(&e)))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
-            .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book failed:\n{}", format_exception(&e)))
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_mark_price(*mark_price)
-            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_index_price(*index_price)
-            .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_index_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        self.dispatch_on_funding_rate(*funding_rate)
-            .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
+        self.dispatch_on_funding_rate(*funding_rate).map_err(|e| {
+            anyhow::anyhow!("Python on_funding_rate failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_status(*data)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_status failed: {e}"))
+        self.dispatch_on_instrument_status(*data).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_status failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_close(*update)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+        self.dispatch_on_instrument_close(*update).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_close failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
-        self.dispatch_on_option_greeks(*greeks)
-            .map_err(|e| anyhow::anyhow!("Python on_option_greeks failed: {e}"))
+        self.dispatch_on_option_greeks(*greeks).map_err(|e| {
+            anyhow::anyhow!("Python on_option_greeks failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
-        self.dispatch_on_option_chain(slice)
-            .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+        self.dispatch_on_option_chain(slice).map_err(|e| {
+            anyhow::anyhow!("Python on_option_chain failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
@@ -1215,29 +1274,54 @@ impl DataActor for PyStrategyInner {
             } else {
                 anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
-            self.dispatch_on_historical_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+
+            self.dispatch_on_historical_data(py_data).map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_data failed:\n{}",
+                    format_exception(&e)
+                )
+            })
         })
     }
 
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_deltas(deltas.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_deltas failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_deltas failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_depth(depths.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_depth failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_depth failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_quotes(quotes.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_quotes failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_trades(trades.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_trades failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_funding_rates(
@@ -1245,17 +1329,32 @@ impl DataActor for PyStrategyInner {
         funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_funding_rates failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         self.dispatch_on_historical_bars(bars.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_bars failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_mark_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_index_prices(
@@ -1263,7 +1362,12 @@ impl DataActor for PyStrategyInner {
         index_prices: &[IndexPriceUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_index_prices(index_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_index_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 }
 
@@ -3618,6 +3722,10 @@ mod tests {
         component::{Component, get_component},
         enums::ComponentState,
         live::runner::replace_system_command_sender,
+        logging::{
+            arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+            take_shutdown_on_error_trigger,
+        },
         messages::{
             SystemCommand,
             data::{
@@ -3657,7 +3765,7 @@ mod tests {
             OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
             OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
             OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
-            order::spec::OrderFilledSpec,
+            order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, OptionSeriesId,
@@ -3742,6 +3850,7 @@ class TrackingStrategy:
         "on_order_updated",
         "on_order_canceled",
         "on_order_filled",
+        "on_order_fill_voided",
         "on_position_opened",
         "on_position_event",
         "on_position_changed",
@@ -3750,9 +3859,18 @@ class TrackingStrategy:
 
     def __init__(self):
         self.calls = []
+        self.raise_on = None
 
     def _record(self, method_name, *args):
         self.calls.append((method_name, args))
+        if self.raise_on == method_name:
+            self.fail_callback()
+
+    def fail_callback(self):
+        try:
+            raise ValueError("callback cause")
+        except ValueError as e:
+            raise RuntimeError("callback failure") from e
 
     def was_called(self, method_name):
         return any(call[0] == method_name for call in self.calls)
@@ -4752,6 +4870,138 @@ class IndicatorEventStrategy:
         py_strategy
     }
 
+    fn assert_python_callback<F>(
+        py: Python<'_>,
+        method_name: &str,
+        raises: bool,
+        shutdown: bool,
+        invoke: F,
+    ) -> Py<PyAny>
+    where
+        F: Fn(&mut PyStrategy) -> anyhow::Result<()>,
+    {
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+        if raises {
+            py_strategy.setattr(py, "raise_on", method_name).unwrap();
+        }
+
+        arm_shutdown_on_error(shutdown);
+        let result = invoke(&mut rust_strategy);
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        assert!(result.is_ok());
+        assert_eq!(python_method_call_count(&py_strategy, py, method_name), 1);
+
+        if raises && shutdown {
+            let trigger = trigger.expect("Python callback failure must request shutdown");
+            assert_eq!(
+                trigger.component.as_str(),
+                rust_strategy.inner().core.actor.actor_id.as_str()
+            );
+            assert!(
+                trigger
+                    .message
+                    .contains(&format!("Python {method_name} failed:"))
+            );
+            assert!(trigger.message.contains("in fail_callback"));
+            assert!(trigger.message.contains("ValueError: callback cause"));
+            assert!(trigger.message.contains("RuntimeError: callback failure"));
+        } else {
+            assert_eq!(trigger, None);
+        }
+
+        py_strategy
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_python_timer_callback_exception_requests_shutdown(#[case] shutdown: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (tracker, strategy) = create_registered_tracking_strategy(py);
+            strategy.register_in_global_registries().unwrap();
+            Component::start(strategy.inner_mut()).unwrap();
+            tracker.setattr(py, "raise_on", "on_time_event").unwrap();
+            let clock = DataActorNative::clock_rc(strategy.inner());
+            clock
+                .borrow_mut()
+                .set_time_alert_ns("CALLBACK", UnixNanos::from(10), None, None)
+                .unwrap();
+            arm_shutdown_on_error(shutdown);
+            let dispatched = dispatch_time_events(&clock, UnixNanos::from(10));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            assert_eq!(dispatched, 1);
+            assert_eq!(python_method_call_count(&tracker, py, "on_time_event"), 1);
+            assert_eq!(Component::state(strategy.inner()), ComponentState::Running);
+
+            if shutdown {
+                let trigger = trigger.expect("strategy timer exception must request shutdown");
+                assert!(trigger.message.contains("Python on_time_event failed:"));
+                assert!(trigger.message.contains("in fail_callback"));
+                assert!(trigger.message.contains("RuntimeError: callback failure"));
+            } else {
+                assert_eq!(trigger, None);
+            }
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_data_callback_exception_preserves_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let (tracker, strategy) = create_registered_tracking_strategy(py);
+            tracker.setattr(py, "raise_on", "on_bar").unwrap();
+            let error = DataActor::on_bar(strategy.inner_mut(), &sample_bar()).unwrap_err();
+            let message = error.to_string();
+
+            assert_eq!(python_method_call_count(&tracker, py, "on_bar"), 1);
+            assert!(message.contains("Python on_bar failed:"));
+            assert!(message.contains("in fail_callback"));
+            assert!(message.contains("ValueError: callback cause"));
+            assert!(message.contains("RuntimeError: callback failure"));
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_market_exit")]
+    #[case("post_market_exit")]
+    fn test_python_dispatch_market_exit_callback_errors(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            assert_python_callback(py, method_name, raises, shutdown, |strategy| {
+                match method_name {
+                    "on_market_exit" => Strategy::on_market_exit(strategy.inner_mut()),
+                    "post_market_exit" => Strategy::post_market_exit(strategy.inner_mut()),
+                    _ => unreachable!(),
+                }
+
+                Ok(())
+            });
+        });
+    }
+
     #[rstest::rstest]
     #[case("on_start")]
     #[case("on_stop")]
@@ -5692,118 +5942,165 @@ class IndicatorEventStrategy:
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
     #[case("on_order_filled")]
-    fn test_python_dispatch_order_callback_matrix(#[case] method_name: &str) {
+    #[case("on_order_fill_voided")]
+    fn test_python_dispatch_order_callback_matrix(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
         pyo3::Python::initialize();
         Python::attach(|py| {
-            assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
-                "on_order_initialized" => {
-                    Strategy::on_order_initialized(
-                        rust_strategy.inner_mut(),
-                        OrderInitialized::default(),
-                    );
-                    Ok(())
+            assert_python_callback(py, method_name, raises, shutdown, |rust_strategy| {
+                match method_name {
+                    "on_order_initialized" => {
+                        Strategy::on_order_initialized(
+                            rust_strategy.inner_mut(),
+                            OrderInitialized::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_event" => {
+                        Strategy::on_order_event(
+                            rust_strategy.inner_mut(),
+                            OrderEventAny::Accepted(OrderAccepted::default()),
+                        );
+                        Ok(())
+                    }
+                    "on_order_denied" => {
+                        Strategy::on_order_denied(
+                            rust_strategy.inner_mut(),
+                            OrderDenied::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_emulated" => {
+                        Strategy::on_order_emulated(
+                            rust_strategy.inner_mut(),
+                            OrderEmulated::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_released" => {
+                        Strategy::on_order_released(
+                            rust_strategy.inner_mut(),
+                            OrderReleased::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_submitted" => {
+                        Strategy::on_order_submitted(
+                            rust_strategy.inner_mut(),
+                            OrderSubmitted::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_rejected" => {
+                        Strategy::on_order_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_accepted" => {
+                        Strategy::on_order_accepted(
+                            rust_strategy.inner_mut(),
+                            OrderAccepted::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_expired" => {
+                        Strategy::on_order_expired(
+                            rust_strategy.inner_mut(),
+                            OrderExpired::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_triggered" => {
+                        Strategy::on_order_triggered(
+                            rust_strategy.inner_mut(),
+                            OrderTriggered::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_pending_update" => {
+                        Strategy::on_order_pending_update(
+                            rust_strategy.inner_mut(),
+                            OrderPendingUpdate::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_pending_cancel" => {
+                        Strategy::on_order_pending_cancel(
+                            rust_strategy.inner_mut(),
+                            OrderPendingCancel::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_modify_rejected" => {
+                        Strategy::on_order_modify_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderModifyRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_cancel_rejected" => {
+                        Strategy::on_order_cancel_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderCancelRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_updated" => {
+                        Strategy::on_order_updated(
+                            rust_strategy.inner_mut(),
+                            OrderUpdated::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_canceled" => {
+                        let event = OrderCanceled::default();
+                        Strategy::on_order_canceled(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    "on_order_filled" => {
+                        let event = OrderFilledSpec::builder().build();
+                        Strategy::on_order_filled(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    "on_order_fill_voided" => {
+                        let event = OrderFillVoidedSpec::builder().build();
+                        Strategy::on_order_fill_voided(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    _ => unreachable!("unhandled order callback case: {method_name}"),
                 }
-                "on_order_event" => {
-                    Strategy::on_order_event(
-                        rust_strategy.inner_mut(),
-                        OrderEventAny::Accepted(OrderAccepted::default()),
-                    );
-                    Ok(())
-                }
-                "on_order_denied" => {
-                    Strategy::on_order_denied(rust_strategy.inner_mut(), OrderDenied::default());
-                    Ok(())
-                }
-                "on_order_emulated" => {
-                    Strategy::on_order_emulated(
-                        rust_strategy.inner_mut(),
-                        OrderEmulated::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_released" => {
-                    Strategy::on_order_released(
-                        rust_strategy.inner_mut(),
-                        OrderReleased::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_submitted" => {
-                    Strategy::on_order_submitted(
-                        rust_strategy.inner_mut(),
-                        OrderSubmitted::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_rejected" => {
-                    Strategy::on_order_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_accepted" => {
-                    Strategy::on_order_accepted(
-                        rust_strategy.inner_mut(),
-                        OrderAccepted::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_expired" => {
-                    Strategy::on_order_expired(rust_strategy.inner_mut(), OrderExpired::default());
-                    Ok(())
-                }
-                "on_order_triggered" => {
-                    Strategy::on_order_triggered(
-                        rust_strategy.inner_mut(),
-                        OrderTriggered::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_pending_update" => {
-                    Strategy::on_order_pending_update(
-                        rust_strategy.inner_mut(),
-                        OrderPendingUpdate::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_pending_cancel" => {
-                    Strategy::on_order_pending_cancel(
-                        rust_strategy.inner_mut(),
-                        OrderPendingCancel::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_modify_rejected" => {
-                    Strategy::on_order_modify_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderModifyRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_cancel_rejected" => {
-                    Strategy::on_order_cancel_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderCancelRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_updated" => {
-                    Strategy::on_order_updated(rust_strategy.inner_mut(), OrderUpdated::default());
-                    Ok(())
-                }
-                "on_order_canceled" => {
-                    let event = OrderCanceled::default();
-                    Strategy::on_order_canceled(rust_strategy.inner_mut(), &event);
-                    Ok(())
-                }
-                "on_order_filled" => {
-                    let event = OrderFilledSpec::builder().build();
-                    Strategy::on_order_filled(rust_strategy.inner_mut(), &event);
-                    Ok(())
-                }
-                _ => unreachable!("unhandled order callback case: {method_name}"),
             });
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_order_filled")]
+    #[case("on_order_event")]
+    fn test_python_order_event_callback_exception_continues_dispatch(
+        #[case] method_name: &str,
+        #[values(false, true)] shutdown: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let tracker = assert_python_callback(py, method_name, true, shutdown, |strategy| {
+                Component::start(strategy.inner_mut()).unwrap();
+                Strategy::handle_order_event(
+                    strategy.inner_mut(),
+                    OrderEventAny::Filled(OrderFilledSpec::builder().build()),
+                );
+                assert_eq!(Component::state(strategy.inner()), ComponentState::Running);
+                Ok(())
+            });
+
+            assert_eq!(
+                python_method_call_names(&tracker, py),
+                ["on_start", "on_order_filled", "on_order_event"],
+            );
         });
     }
 
@@ -5840,39 +6137,45 @@ class IndicatorEventStrategy:
     #[case("on_position_opened")]
     #[case("on_position_changed")]
     #[case("on_position_closed")]
-    fn test_python_dispatch_position_callback_matrix(#[case] method_name: &str) {
+    fn test_python_dispatch_position_callback_matrix(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
         pyo3::Python::initialize();
         Python::attach(|py| {
-            assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
-                "on_position_event" => {
-                    Strategy::on_position_event(
-                        rust_strategy.inner_mut(),
-                        PositionEvent::PositionOpened(sample_position_opened()),
-                    );
-                    Ok(())
+            assert_python_callback(py, method_name, raises, shutdown, |rust_strategy| {
+                match method_name {
+                    "on_position_event" => {
+                        Strategy::on_position_event(
+                            rust_strategy.inner_mut(),
+                            PositionEvent::PositionOpened(sample_position_opened()),
+                        );
+                        Ok(())
+                    }
+                    "on_position_opened" => {
+                        Strategy::on_position_opened(
+                            rust_strategy.inner_mut(),
+                            sample_position_opened(),
+                        );
+                        Ok(())
+                    }
+                    "on_position_changed" => {
+                        Strategy::on_position_changed(
+                            rust_strategy.inner_mut(),
+                            sample_position_changed(),
+                        );
+                        Ok(())
+                    }
+                    "on_position_closed" => {
+                        Strategy::on_position_closed(
+                            rust_strategy.inner_mut(),
+                            sample_position_closed(),
+                        );
+                        Ok(())
+                    }
+                    _ => unreachable!("unhandled position callback case: {method_name}"),
                 }
-                "on_position_opened" => {
-                    Strategy::on_position_opened(
-                        rust_strategy.inner_mut(),
-                        sample_position_opened(),
-                    );
-                    Ok(())
-                }
-                "on_position_changed" => {
-                    Strategy::on_position_changed(
-                        rust_strategy.inner_mut(),
-                        sample_position_changed(),
-                    );
-                    Ok(())
-                }
-                "on_position_closed" => {
-                    Strategy::on_position_closed(
-                        rust_strategy.inner_mut(),
-                        sample_position_closed(),
-                    );
-                    Ok(())
-                }
-                _ => unreachable!("unhandled position callback case: {method_name}"),
             });
         });
     }

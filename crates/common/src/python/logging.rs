@@ -445,6 +445,18 @@ impl PyLogger {
         }
     }
 
+    /// Logs a failed Python callback with its traceback and component identity.
+    pub fn log_callback_error(&self, method: &str, result: PyResult<()>) {
+        if let Err(e) = result {
+            let exception = format_exception(&e);
+            self.log_message(
+                LogLevel::Error,
+                Some(LogColor::Red),
+                &format!("Python {method} failed:\n{exception}"),
+            );
+        }
+    }
+
     fn log_message(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
         let color = color.unwrap_or(LogColor::Normal);
         logger::log(level, color, self.name, message);
@@ -533,5 +545,87 @@ impl PyLogger {
     #[pyo3(signature = (level, color=None, message=""))]
     fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
         self.log_message(level, color, message);
+    }
+}
+
+/// Formats a Python exception, including its traceback and chained exceptions.
+///
+/// Falls back to the exception type and message if traceback formatting fails.
+#[must_use]
+pub fn format_exception(e: &PyErr) -> String {
+    Python::attach(|py| {
+        py.import("traceback")
+            .and_then(|module| {
+                module.call_method1(
+                    "format_exception",
+                    (e.get_type(py), e.value(py), e.traceback(py)),
+                )
+            })
+            .and_then(|lines| lines.extract::<Vec<String>>())
+            .map_or_else(|_| e.to_string(), |lines| lines.concat())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::python::to_pyruntime_err;
+    use pyo3::ffi::c_str;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_format_exception_traceback_and_cause() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+def callback():
+    try:
+        fail()
+    except ValueError as e:
+        raise RuntimeError("callback failure") from e
+
+def fail():
+    raise ValueError("original failure")
+"#
+                ),
+                c_str!("strategy_callback.py"),
+                c_str!("strategy_callback"),
+            )
+            .unwrap();
+            let e = module.call_method0("callback").unwrap_err();
+            let formatted = format_exception(&e);
+
+            assert!(formatted.contains("File \"strategy_callback.py\", line 9, in fail"));
+            assert!(formatted.contains("File \"strategy_callback.py\", line 6, in callback"));
+            assert!(formatted.contains("ValueError: original failure"));
+            assert!(formatted.contains("The above exception was the direct cause"));
+            assert!(formatted.ends_with("RuntimeError: callback failure\n"));
+        });
+    }
+
+    #[rstest]
+    fn test_format_exception_without_traceback() {
+        Python::initialize();
+        let e = to_pyruntime_err("callback failure");
+        assert_eq!(format_exception(&e), "RuntimeError: callback failure\n");
+    }
+
+    #[rstest]
+    fn test_format_exception_fallback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let traceback = py.import("traceback").unwrap();
+            let original = traceback.getattr("format_exception").unwrap();
+            traceback.setattr("format_exception", py.None()).unwrap();
+            let e = to_pyruntime_err("callback failure");
+            let formatted = format_exception(&e);
+            traceback.setattr("format_exception", original).unwrap();
+
+            assert_eq!(formatted, "RuntimeError: callback failure");
+        });
     }
 }

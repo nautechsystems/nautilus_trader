@@ -23,7 +23,12 @@ use nautilus_common::{
     component::Component,
     enums::ComponentState,
     messages::system::{QueueStateChanged, SocketStateChanged},
-    python::{cache::PyCache, clock::PyClock, logging::PyLogger, wrappers::get_python_message_bus},
+    python::{
+        cache::PyCache,
+        clock::PyClock,
+        logging::{PyLogger, format_exception},
+        wrappers::get_python_message_bus,
+    },
     runner::SystemChannel,
     signal::Signal,
     timer::TimeEvent,
@@ -391,7 +396,7 @@ impl ExecutionAlgorithmNative for PyExecutionAlgorithm {
 impl ExecutionAlgorithm for PyExecutionAlgorithm {
     fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
         self.dispatch_on_order(order)
-            .map_err(|e| anyhow::anyhow!("Python on_order failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_order failed:\n{}", format_exception(&e)))
     }
 
     fn on_order_list(
@@ -399,13 +404,14 @@ impl ExecutionAlgorithm for PyExecutionAlgorithm {
         order_list: OrderList,
         orders: Vec<OrderAny>,
     ) -> anyhow::Result<()> {
-        if self
-            .has_python_override("on_order_list")
-            .map_err(|e| anyhow::anyhow!("Python override lookup failed: {e}"))?
-        {
+        if self.has_python_override("on_order_list").map_err(|e| {
+            anyhow::anyhow!("Python override lookup failed:\n{}", format_exception(&e))
+        })? {
             return self
                 .dispatch_on_order_list(order_list, orders)
-                .map_err(|e| anyhow::anyhow!("Python on_order_list failed: {e}"));
+                .map_err(|e| {
+                    anyhow::anyhow!("Python on_order_list failed:\n{}", format_exception(&e))
+                });
         }
 
         for order in orders {
@@ -434,110 +440,178 @@ impl ExecutionAlgorithm for PyExecutionAlgorithm {
     }
 
     fn on_order_initialized(&mut self, event: OrderInitialized) {
-        let _ =
+        let result =
             self.dispatch_order_event("on_order_initialized", OrderEventAny::Initialized(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_initialized", result);
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
-        let _ = self.dispatch_order_event("on_order_denied", OrderEventAny::Denied(event));
+        let result = self.dispatch_order_event("on_order_denied", OrderEventAny::Denied(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_denied", result);
     }
 
     fn on_order_emulated(&mut self, event: OrderEmulated) {
-        let _ = self.dispatch_order_event("on_order_emulated", OrderEventAny::Emulated(event));
+        let result = self.dispatch_order_event("on_order_emulated", OrderEventAny::Emulated(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_emulated", result);
     }
 
     fn on_order_released(&mut self, event: OrderReleased) {
-        let _ = self.dispatch_order_event("on_order_released", OrderEventAny::Released(event));
+        let result = self.dispatch_order_event("on_order_released", OrderEventAny::Released(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_released", result);
     }
 
     fn on_order_submitted(&mut self, event: OrderSubmitted) {
-        let _ = self.dispatch_order_event("on_order_submitted", OrderEventAny::Submitted(event));
+        let result =
+            self.dispatch_order_event("on_order_submitted", OrderEventAny::Submitted(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_submitted", result);
     }
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
-        let _ = self.dispatch_order_event("on_order_rejected", OrderEventAny::Rejected(event));
+        let result = self.dispatch_order_event("on_order_rejected", OrderEventAny::Rejected(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_rejected", result);
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
-        let _ = self.dispatch_order_event("on_order_accepted", OrderEventAny::Accepted(event));
+        let result = self.dispatch_order_event("on_order_accepted", OrderEventAny::Accepted(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_accepted", result);
     }
 
     fn on_algo_order_canceled(&mut self, event: OrderCanceled) {
-        let _ = self.dispatch_order_event("on_order_canceled", OrderEventAny::Canceled(event));
+        let result = self.dispatch_order_event("on_order_canceled", OrderEventAny::Canceled(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_canceled", result);
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
-        let _ = self.dispatch_order_event("on_order_expired", OrderEventAny::Expired(event));
+        let result = self.dispatch_order_event("on_order_expired", OrderEventAny::Expired(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_expired", result);
     }
 
     fn on_order_triggered(&mut self, event: OrderTriggered) {
-        let _ = self.dispatch_order_event("on_order_triggered", OrderEventAny::Triggered(event));
+        let result =
+            self.dispatch_order_event("on_order_triggered", OrderEventAny::Triggered(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_triggered", result);
     }
 
     fn on_order_pending_update(&mut self, event: OrderPendingUpdate) {
-        let _ = self.dispatch_order_event(
+        let result = self.dispatch_order_event(
             "on_order_pending_update",
             OrderEventAny::PendingUpdate(event),
         );
+        self.inner()
+            .logger
+            .log_callback_error("on_order_pending_update", result);
     }
 
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {
-        let _ = self.dispatch_order_event(
+        let result = self.dispatch_order_event(
             "on_order_pending_cancel",
             OrderEventAny::PendingCancel(event),
         );
+        self.inner()
+            .logger
+            .log_callback_error("on_order_pending_cancel", result);
     }
 
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
-        let _ = self.dispatch_order_event(
+        let result = self.dispatch_order_event(
             "on_order_modify_rejected",
             OrderEventAny::ModifyRejected(event),
         );
+        self.inner()
+            .logger
+            .log_callback_error("on_order_modify_rejected", result);
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
-        let _ = self.dispatch_order_event(
+        let result = self.dispatch_order_event(
             "on_order_cancel_rejected",
             OrderEventAny::CancelRejected(event),
         );
+        self.inner()
+            .logger
+            .log_callback_error("on_order_cancel_rejected", result);
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        let _ = self.dispatch_order_event("on_order_updated", OrderEventAny::Updated(event));
+        let result = self.dispatch_order_event("on_order_updated", OrderEventAny::Updated(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_updated", result);
     }
 
     fn on_algo_order_filled(&mut self, event: OrderFilled) {
-        let _ = self.dispatch_order_event("on_order_filled", OrderEventAny::Filled(event));
+        let result = self.dispatch_order_event("on_order_filled", OrderEventAny::Filled(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_filled", result);
     }
 
     fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
-        let _ = self.dispatch_order_event(
+        let result = self.dispatch_order_event(
             "on_order_fill_voided",
             OrderEventAny::FillVoided(event.clone()),
         );
+        self.inner()
+            .logger
+            .log_callback_error("on_order_fill_voided", result);
     }
 
     fn on_order_event(&mut self, event: OrderEventAny) {
-        let _ = self.dispatch_order_event("on_order_event", event);
+        let result = self.dispatch_order_event("on_order_event", event);
+        self.inner()
+            .logger
+            .log_callback_error("on_order_event", result);
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
-        let _ = self
+        let result = self
             .dispatch_position_event("on_position_opened", PositionEvent::PositionOpened(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_position_opened", result);
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
-        let _ = self
+        let result = self
             .dispatch_position_event("on_position_changed", PositionEvent::PositionChanged(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_position_changed", result);
     }
 
     fn on_position_closed(&mut self, event: PositionClosed) {
-        let _ = self
+        let result = self
             .dispatch_position_event("on_position_closed", PositionEvent::PositionClosed(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_position_closed", result);
     }
 
     fn on_position_event(&mut self, event: PositionEvent) {
-        let _ = self.dispatch_position_event("on_position_event", event);
+        let result = self.dispatch_position_event("on_position_event", event);
+        self.inner()
+            .logger
+            .log_callback_error("on_position_event", result);
     }
 }
 
@@ -545,61 +619,62 @@ impl DataActor for PyExecutionAlgorithm {
     fn on_start(&mut self) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_start(self)?;
         self.dispatch_no_args("on_start")
-            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_stop(self)?;
         self.dispatch_no_args("on_stop")
-            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed:\n{}", format_exception(&e)))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_resume(self)?;
         self.dispatch_no_args("on_resume")
-            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed:\n{}", format_exception(&e)))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_reset(self)?;
         self.dispatch_no_args("on_reset")
-            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed:\n{}", format_exception(&e)))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         self.dispatch_no_args("on_dispose")
-            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed:\n{}", format_exception(&e)))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         self.dispatch_no_args("on_degrade")
-            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed:\n{}", format_exception(&e)))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_no_args("on_fault")
-            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed:\n{}", format_exception(&e)))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_time_event(self, event)?;
         self.dispatch_time_event(event)
-            .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_time_event failed:\n{}", format_exception(&e)))
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
-            .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_signal failed:\n{}", format_exception(&e)))
     }
 
     fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_queue_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed:\n{}", format_exception(&e)))
     }
 
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
-        self.dispatch_on_socket_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
+        self.dispatch_on_socket_state(event).map_err(|e| {
+            anyhow::anyhow!("Python on_socket_state failed:\n{}", format_exception(&e))
+        })
     }
 }
 
@@ -1520,6 +1595,10 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::{Clock, VirtualClock},
+        logging::{
+            arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+            take_shutdown_on_error_trigger,
+        },
         messages::system::{
             QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
         },
@@ -1531,10 +1610,14 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderType, TriggerType},
+        events::order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         identifiers::{
-            ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, Venue,
+            ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TraderId,
+            Venue,
         },
+        instruments::{InstrumentAny, stubs::audusd_sim},
         orders::OrderTestBuilder,
+        position::Position,
         types::{Price, Quantity},
     };
     use pyo3::{
@@ -1913,5 +1996,233 @@ class OrderListTracker:
                 "an unregistered ExecutionAlgorithm must be collected once its last Python owner is dropped",
             );
         });
+    }
+
+    #[rstest]
+    #[case("on_order_initialized")]
+    #[case("on_order_denied")]
+    #[case("on_order_emulated")]
+    #[case("on_order_released")]
+    #[case("on_order_submitted")]
+    #[case("on_order_rejected")]
+    #[case("on_order_accepted")]
+    #[case("on_order_canceled")]
+    #[case("on_order_expired")]
+    #[case("on_order_triggered")]
+    #[case("on_order_pending_update")]
+    #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_rejected")]
+    #[case("on_order_updated")]
+    #[case("on_order_filled")]
+    #[case("on_order_fill_voided")]
+    #[case("on_order_event")]
+    #[case("on_position_opened")]
+    #[case("on_position_changed")]
+    #[case("on_position_closed")]
+    #[case("on_position_event")]
+    fn test_python_callback_errors(
+        #[case] method: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let fill = OrderFilledSpec::builder()
+                .position_id(PositionId::from("P-001"))
+                .build();
+            let position = Position::new(&InstrumentAny::CurrencyPair(audusd_sim()), fill.clone());
+            let tracker = create_callback_algorithm(py, raises);
+            let mut algorithm = PyExecutionAlgorithm::new(None);
+            algorithm.set_python_instance(tracker.bind(py)).unwrap();
+            arm_shutdown_on_error(shutdown);
+
+            match method {
+                "on_order_initialized" => ExecutionAlgorithm::on_order_initialized(
+                    &mut algorithm,
+                    OrderInitialized::default(),
+                ),
+                "on_order_denied" => {
+                    ExecutionAlgorithm::on_order_denied(&mut algorithm, OrderDenied::default());
+                }
+                "on_order_emulated" => {
+                    ExecutionAlgorithm::on_order_emulated(&mut algorithm, OrderEmulated::default());
+                }
+                "on_order_released" => {
+                    ExecutionAlgorithm::on_order_released(&mut algorithm, OrderReleased::default());
+                }
+                "on_order_submitted" => ExecutionAlgorithm::on_order_submitted(
+                    &mut algorithm,
+                    OrderSubmitted::default(),
+                ),
+                "on_order_rejected" => {
+                    ExecutionAlgorithm::on_order_rejected(&mut algorithm, OrderRejected::default());
+                }
+                "on_order_accepted" => {
+                    ExecutionAlgorithm::on_order_accepted(&mut algorithm, OrderAccepted::default());
+                }
+                "on_order_canceled" => ExecutionAlgorithm::on_algo_order_canceled(
+                    &mut algorithm,
+                    OrderCanceled::default(),
+                ),
+                "on_order_expired" => {
+                    ExecutionAlgorithm::on_order_expired(&mut algorithm, OrderExpired::default());
+                }
+                "on_order_triggered" => ExecutionAlgorithm::on_order_triggered(
+                    &mut algorithm,
+                    OrderTriggered::default(),
+                ),
+                "on_order_pending_update" => ExecutionAlgorithm::on_order_pending_update(
+                    &mut algorithm,
+                    OrderPendingUpdate::default(),
+                ),
+                "on_order_pending_cancel" => ExecutionAlgorithm::on_order_pending_cancel(
+                    &mut algorithm,
+                    OrderPendingCancel::default(),
+                ),
+                "on_order_modify_rejected" => ExecutionAlgorithm::on_order_modify_rejected(
+                    &mut algorithm,
+                    OrderModifyRejected::default(),
+                ),
+                "on_order_cancel_rejected" => ExecutionAlgorithm::on_order_cancel_rejected(
+                    &mut algorithm,
+                    OrderCancelRejected::default(),
+                ),
+                "on_order_updated" => {
+                    ExecutionAlgorithm::on_order_updated(&mut algorithm, OrderUpdated::default());
+                }
+                "on_order_filled" => ExecutionAlgorithm::on_algo_order_filled(
+                    &mut algorithm,
+                    OrderFilledSpec::builder().build(),
+                ),
+                "on_order_fill_voided" => ExecutionAlgorithm::on_order_fill_voided(
+                    &mut algorithm,
+                    &OrderFillVoidedSpec::builder().build(),
+                ),
+                "on_order_event" => ExecutionAlgorithm::on_order_event(
+                    &mut algorithm,
+                    OrderEventAny::Accepted(OrderAccepted::default()),
+                ),
+                "on_position_opened" => ExecutionAlgorithm::on_position_opened(
+                    &mut algorithm,
+                    PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::default()),
+                ),
+                "on_position_changed" => ExecutionAlgorithm::on_position_changed(
+                    &mut algorithm,
+                    PositionChanged::create(&position, &fill, UUID4::new(), UnixNanos::default()),
+                ),
+                "on_position_closed" => ExecutionAlgorithm::on_position_closed(
+                    &mut algorithm,
+                    PositionClosed::create(&position, &fill, UUID4::new(), UnixNanos::default()),
+                ),
+                "on_position_event" => ExecutionAlgorithm::on_position_event(
+                    &mut algorithm,
+                    PositionEvent::PositionOpened(PositionOpened::create(
+                        &position,
+                        &fill,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                    )),
+                ),
+                _ => unreachable!(),
+            }
+
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+            let calls = tracker
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+
+            assert_eq!(calls, [method]);
+
+            if raises && shutdown {
+                let trigger = trigger.expect("Python callback failure must request shutdown");
+                assert_eq!(
+                    trigger.component.as_str(),
+                    algorithm.inner().core.actor.actor_id.as_str()
+                );
+                assert!(
+                    trigger
+                        .message
+                        .contains(&format!("Python {method} failed:"))
+                );
+                assert!(trigger.message.contains("in callback"));
+                assert!(
+                    trigger
+                        .message
+                        .contains("RuntimeError: algorithm callback failure")
+                );
+            } else {
+                assert_eq!(trigger, None);
+            }
+        });
+    }
+
+    #[rstest]
+    fn test_python_algorithm_callback_exception_preserves_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let tracker = create_callback_algorithm(py, true);
+            let mut algorithm = PyExecutionAlgorithm::new(None);
+            algorithm.set_python_instance(tracker.bind(py)).unwrap();
+
+            let event = TimeEvent::new(
+                "ALERT".into(),
+                UUID4::new(),
+                UnixNanos::from(10),
+                UnixNanos::from(11),
+            );
+            let error = DataActor::on_time_event(&mut algorithm, &event).unwrap_err();
+            let message = error.to_string();
+            let calls = tracker
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+
+            assert_eq!(calls, ["on_time_event"]);
+            assert!(message.contains("Python on_time_event failed:"));
+            assert!(message.contains("in callback"));
+            assert!(message.contains("RuntimeError: algorithm callback failure"));
+        });
+    }
+
+    fn create_callback_algorithm(py: Python<'_>, raises: bool) -> Py<PyAny> {
+        let module = PyModule::from_code(
+            py,
+            c_str!(
+                r#"
+class CallbackAlgorithm:
+    def __init__(self, raises):
+        self.raises = raises
+        self.calls = []
+
+    def __getattr__(self, name):
+        def callback(event):
+            self.calls.append(name)
+            if self.raises:
+                raise RuntimeError("algorithm callback failure")
+        return callback
+"#
+            ),
+            c_str!("algorithm_callback.py"),
+            c_str!("algorithm_callback"),
+        )
+        .unwrap();
+        module
+            .getattr("CallbackAlgorithm")
+            .unwrap()
+            .call1((raises,))
+            .unwrap()
+            .unbind()
     }
 }
