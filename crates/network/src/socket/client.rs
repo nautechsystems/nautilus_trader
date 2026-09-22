@@ -51,6 +51,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
@@ -173,8 +174,7 @@ impl SocketClientInner {
                 Ok(Err(e)) => {
                     let error = e.to_string();
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {} failed: {error}",
-                        config.url,
+                        "Socket connection attempt {attempt}/{max_retries} to {REDACTED} failed: {error}"
                     );
                     error
                 }
@@ -184,8 +184,7 @@ impl SocketClientInner {
                         connect_timeout.as_secs_f64()
                     );
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {} timed out",
-                        config.url,
+                        "Socket connection attempt {attempt}/{max_retries} to {REDACTED} timed out"
                     );
                     error
                 }
@@ -193,11 +192,8 @@ impl SocketClientInner {
 
             if attempt >= max_retries {
                 anyhow::bail!(
-                    "Failed to connect to {} after {} attempts: {}. \
-                    If this is a DNS error, check your network configuration and DNS settings.",
-                    config.url,
-                    max_retries,
-                    last_error,
+                    "Failed to connect to {REDACTED} after {max_retries} attempts: {last_error}. \
+                    If this is a DNS error, check your network configuration and DNS settings."
                 );
             }
 
@@ -331,7 +327,7 @@ impl SocketClientInner {
         mode: Mode,
         connector: Option<Arc<rustls::ClientConfig>>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
-        log::debug!("Connecting to {url}");
+        log::debug!("Connecting to {REDACTED}");
 
         let (socket_addr, request_url) = Self::parse_socket_url(url, mode)?;
         let tcp_result = TcpStream::connect(&socket_addr).await;
@@ -1736,6 +1732,90 @@ mod tests {
         assert!(
             client_res.is_err(),
             "Should fail quickly with no server listening"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_connect_failure_redacts_url_from_logs_and_error() {
+        const ENDPOINT_PATH_SECRET: &str = "unique-endpoint-path-secret";
+        const ENDPOINT_QUERY_SECRET: &str = "unique-endpoint-query-secret";
+
+        let (port, listener) = bind_test_server().await;
+        drop(listener); // We drop it immediately -> no server is listening
+
+        // Wait until port is truly unavailable (OS has released it)
+        wait_until_async(
+            || async {
+                TcpStream::connect(format!("127.0.0.1:{port}"))
+                    .await
+                    .is_err()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let capture = capture_logs_for(&["nautilus_network::socket::client"]).await;
+        let config = SocketConfig {
+            url: format!(
+                "ws://127.0.0.1:{port}/{ENDPOINT_PATH_SECRET}?api_key={ENDPOINT_QUERY_SECRET}"
+            ),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
+            certs_dir: None,
+        };
+
+        let error = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .expect_err("connection should fail with no server listening");
+
+        let error_message = error.to_string();
+        assert!(
+            error_message.starts_with(&format!("Failed to connect to {REDACTED}")),
+            "connect error omitted the redaction placeholder: {error_message}"
+        );
+        assert!(
+            !error_message.contains(ENDPOINT_PATH_SECRET)
+                && !error_message.contains(ENDPOINT_QUERY_SECRET),
+            "connect error exposed the secret marker: {error_message}"
+        );
+
+        let messages = capture.messages();
+        // Asserted positively so the blanket secret assertion below cannot pass vacuously by
+        // capturing no warning at all.
+        let (_, attempt_warning) = messages
+            .iter()
+            .find(|(level, message)| {
+                *level == Level::Warn && message.starts_with("Socket connection attempt 1/1 ")
+            })
+            .expect("connect-failure warning was not captured");
+        assert!(
+            attempt_warning.contains(REDACTED),
+            "connect-failure warning omitted the redaction placeholder: {attempt_warning}"
+        );
+        assert!(
+            messages.iter().any(|(level, message)| {
+                *level == Level::Debug && *message == format!("Connecting to {REDACTED}")
+            }),
+            "connect debug log should redact the endpoint, was {messages:?}"
+        );
+        assert!(
+            messages.iter().all(|(_, message)| {
+                !message.contains(ENDPOINT_PATH_SECRET) && !message.contains(ENDPOINT_QUERY_SECRET)
+            }),
+            "socket client logs exposed the secret marker: {messages:?}"
         );
     }
 

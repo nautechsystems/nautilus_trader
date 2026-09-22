@@ -30,6 +30,7 @@
 
 use std::fmt::Debug;
 
+use nautilus_core::string::secret::REDACTED;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use super::types::TcpMessageHandler;
@@ -223,7 +224,7 @@ impl SocketConfig {
 impl Debug for SocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(SocketConfig))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field("mode", &self.mode)
             .field("suffix", &self.suffix)
             .field(
@@ -382,5 +383,20 @@ mod tests {
                 panic!("expected Multiple, was {other:?}")
             }
         }
+    }
+
+    #[rstest]
+    fn test_debug_redacts_endpoint_credentials() {
+        const ENDPOINT_PATH_SECRET: &str = "unique-endpoint-path-secret";
+        const ENDPOINT_QUERY_SECRET: &str = "unique-endpoint-query-secret";
+        let mut config = valid_config();
+        config.url =
+            format!("wss://rpc.example.com/{ENDPOINT_PATH_SECRET}?api_key={ENDPOINT_QUERY_SECRET}");
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("url: \"<redacted>\""));
+        assert!(!debug.contains(ENDPOINT_PATH_SECRET));
+        assert!(!debug.contains(ENDPOINT_QUERY_SECRET));
     }
 }

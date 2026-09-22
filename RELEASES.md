@@ -60,6 +60,7 @@ Released on TBD (UTC).
 ### Security
 
 - Fixed adapter HTTP redirect leaks of credentials and signed payloads, thanks for reporting @seungpyoson
+- Fixed socket client URL credential leaks into logs, errors, and `Debug` output
 
 ### Fixes
 
