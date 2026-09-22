@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 
 from _common import default_stock_contracts
+from _common import env_bool
 from _common import env_int
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
@@ -30,18 +31,23 @@ async def main() -> None:
     host, port = resolve_ib_endpoint()
     provider_config = instrument_provider_config()
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
-    client = ib.HistoricalInteractiveBrokersClient(
-        provider,
-        ib.InteractiveBrokersDataClientConfig(
-            host=host,
-            port=port,
-            client_id=env_int("IB_V2_CONTRACT_CLIENT_ID", 181),
-            connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
-            request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 30),
-            instrument_provider=provider_config,
-        ),
+    client_config = ib.InteractiveBrokersDataClientConfig(
+        host=host,
+        port=port,
+        client_id=env_int("IB_V2_CONTRACT_CLIENT_ID", 181),
+        connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
+        request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 30),
+        instrument_provider=provider_config,
     )
 
+    if not env_bool("IB_V2_RUN_CLIENT"):
+        print(
+            "Built IB contract client. Set IB_V2_RUN_CLIENT=1 to request contracts.",
+            flush=True,
+        )
+        return
+
+    client = ib.HistoricalInteractiveBrokersClient(provider, client_config)
     print("Requesting contracts...", flush=True)
     instruments = await client.request_instruments(contracts=default_stock_contracts())
     print(f"Loaded {len(instruments)} instrument(s)", flush=True)

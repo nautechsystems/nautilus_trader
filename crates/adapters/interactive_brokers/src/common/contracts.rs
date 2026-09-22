@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use anyhow::Context;
 use ibapi::contracts::{
     Contract, Currency as IBCurrency, Exchange as IBExchange, OptionRight, SecurityIdType,
     SecurityType, Symbol,
@@ -25,6 +26,101 @@ use nautilus_core::Params;
 use serde_json::Value;
 
 use crate::common::enums::{IbOptionRight, IbSecurityType};
+
+pub(crate) const KEY_BUILD_OPTIONS_CHAIN: &str = "build_options_chain";
+pub(crate) const KEY_BUILD_FUTURES_CHAIN: &str = "build_futures_chain";
+pub(crate) const KEY_MIN_EXPIRY_DAYS: &str = "min_expiry_days";
+pub(crate) const KEY_MAX_EXPIRY_DAYS: &str = "max_expiry_days";
+pub(crate) const KEY_OPTIONS_CHAIN_EXCHANGE: &str = "options_chain_exchange";
+pub(crate) const KEY_OPTIONS_CHAIN_EXCHANGE_ALT: &str = "optionsChainExchange";
+
+/// A configured IB contract with optional per-contract chain-building settings.
+#[derive(Clone, Debug)]
+pub struct ConfiguredContract {
+    /// The IB contract to load.
+    pub contract: Contract,
+    /// Whether to build the options chain for this contract, overriding the global flag.
+    pub build_options_chain: Option<bool>,
+    /// Whether to build the futures chain for this contract, overriding the global flag.
+    pub build_futures_chain: Option<bool>,
+    /// Minimum expiry days for this contract's chains, overriding the global value.
+    pub min_expiry_days: Option<u32>,
+    /// Maximum expiry days for this contract's chains, overriding the global value.
+    pub max_expiry_days: Option<u32>,
+    /// Exchange override for options chain lookups.
+    pub options_chain_exchange: Option<String>,
+}
+
+impl From<Contract> for ConfiguredContract {
+    fn from(contract: Contract) -> Self {
+        Self {
+            contract,
+            build_options_chain: None,
+            build_futures_chain: None,
+            min_expiry_days: None,
+            max_expiry_days: None,
+            options_chain_exchange: None,
+        }
+    }
+}
+
+impl ConfiguredContract {
+    /// Convert to the JSON representation used in configuration files.
+    #[must_use]
+    pub fn to_json_value(&self) -> Value {
+        let mut json = contract_to_json_value(&self.contract);
+
+        if let Value::Object(map) = &mut json {
+            for (key, value) in self.chain_entries() {
+                map.insert(key.to_string(), value);
+            }
+        }
+
+        json
+    }
+
+    /// Chain-building spec for `load_contract_spec`, when any per-contract setting is present.
+    #[must_use]
+    pub fn chain_spec_json(&self) -> Option<Value> {
+        let entries = self.chain_entries();
+
+        if entries.is_empty() {
+            return None;
+        }
+
+        let mut map = serde_json::Map::new();
+        for (key, value) in entries {
+            map.insert(key.to_string(), value);
+        }
+        Some(Value::Object(map))
+    }
+
+    fn chain_entries(&self) -> Vec<(&'static str, Value)> {
+        let mut entries = Vec::new();
+
+        if let Some(value) = self.build_options_chain {
+            entries.push((KEY_BUILD_OPTIONS_CHAIN, Value::from(value)));
+        }
+
+        if let Some(value) = self.build_futures_chain {
+            entries.push((KEY_BUILD_FUTURES_CHAIN, Value::from(value)));
+        }
+
+        if let Some(value) = self.min_expiry_days {
+            entries.push((KEY_MIN_EXPIRY_DAYS, Value::from(value)));
+        }
+
+        if let Some(value) = self.max_expiry_days {
+            entries.push((KEY_MAX_EXPIRY_DAYS, Value::from(value)));
+        }
+
+        if let Some(value) = &self.options_chain_exchange {
+            entries.push((KEY_OPTIONS_CHAIN_EXCHANGE, Value::from(value.as_str())));
+        }
+
+        entries
+    }
+}
 
 /// Convert an IB contract into JSON metadata suitable for instrument `info["contract"]`.
 #[must_use]
@@ -155,6 +251,155 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
     })
 }
 
+/// Parse a configured IB contract with strict field and enum validation.
+///
+/// # Errors
+///
+/// Returns an error when a known field has the wrong JSON type, a numeric field is out of
+/// range, or an enum value is unknown.
+pub fn parse_configured_contract_from_json(json: &Value) -> anyhow::Result<ConfiguredContract> {
+    let obj = json
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Expected JSON object for configured contract"))?;
+
+    for key in [
+        "symbol",
+        "lastTradeDateOrContractMonth",
+        "multiplier",
+        "exchange",
+        "currency",
+        "localSymbol",
+        "primaryExchange",
+        "tradingClass",
+        "secId",
+        "issuerId",
+        "description",
+        "comboLegsDescrip",
+    ] {
+        if let Some(value) = obj.get(key)
+            && !value.is_string()
+        {
+            anyhow::bail!("Configured contract field '{key}' must be a string");
+        }
+    }
+
+    for key in ["strike"] {
+        if let Some(value) = obj.get(key)
+            && !value.is_number()
+        {
+            anyhow::bail!("Configured contract field '{key}' must be a number");
+        }
+    }
+
+    if let Some(value) = obj.get("includeExpired")
+        && !value.is_boolean()
+    {
+        anyhow::bail!("Configured contract field 'includeExpired' must be a boolean");
+    }
+
+    let mut contract_id = 0;
+
+    if let Some(value) = obj.get("conId") {
+        let raw_contract_id = value
+            .as_i64()
+            .context("Configured contract field 'conId' must be an integer")?;
+        contract_id = i32::try_from(raw_contract_id)
+            .context("Configured contract field 'conId' exceeds i32")?;
+    }
+
+    match obj.get("secType").and_then(Value::as_str) {
+        Some(security_type) => {
+            IbSecurityType::from_str(security_type)?;
+        }
+        None if contract_id > 0 => {} // IB resolves the contract by conId
+        None => anyhow::bail!(
+            "Configured contract requires 'secType' as a known IB security type string, or a positive 'conId'"
+        ),
+    }
+
+    if let Some(value) = obj.get("right")
+        && !value.is_null()
+    {
+        let right = value
+            .as_str()
+            .context("Configured contract field 'right' must be a string")?;
+        IbOptionRight::from_str(right)?;
+    }
+
+    if let Some(value) = obj.get("secIdType")
+        && !value.is_null()
+    {
+        let security_id_type = value
+            .as_str()
+            .context("Configured contract field 'secIdType' must be a string")?;
+
+        if !matches!(
+            security_id_type.to_ascii_uppercase().as_str(),
+            "CUSIP" | "ISIN" | "SEDOL" | "RIC" | "FIGI"
+        ) {
+            anyhow::bail!("Unknown IB security ID type: {security_id_type}");
+        }
+    }
+
+    let build_options_chain = configured_bool(obj, KEY_BUILD_OPTIONS_CHAIN)?;
+    let build_futures_chain = configured_bool(obj, KEY_BUILD_FUTURES_CHAIN)?;
+    let min_expiry_days = configured_u32(obj, KEY_MIN_EXPIRY_DAYS)?;
+    let max_expiry_days = configured_u32(obj, KEY_MAX_EXPIRY_DAYS)?;
+    let options_chain_exchange = match configured_string(obj, KEY_OPTIONS_CHAIN_EXCHANGE)? {
+        Some(exchange) => Some(exchange),
+        None => configured_string(obj, KEY_OPTIONS_CHAIN_EXCHANGE_ALT)?,
+    };
+
+    Ok(ConfiguredContract {
+        contract: parse_contract_from_json(json)?,
+        build_options_chain,
+        build_futures_chain,
+        min_expiry_days,
+        max_expiry_days,
+        options_chain_exchange,
+    })
+}
+
+fn configured_bool(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> anyhow::Result<Option<bool>> {
+    obj.get(key)
+        .map(|value| {
+            value
+                .as_bool()
+                .with_context(|| format!("Configured contract field '{key}' must be a boolean"))
+        })
+        .transpose()
+}
+
+fn configured_u32(obj: &serde_json::Map<String, Value>, key: &str) -> anyhow::Result<Option<u32>> {
+    obj.get(key)
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|days| u32::try_from(days).ok())
+                .with_context(|| {
+                    format!("Configured contract field '{key}' must be a non-negative integer")
+                })
+        })
+        .transpose()
+}
+
+fn configured_string(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> anyhow::Result<Option<String>> {
+    obj.get(key)
+        .map(|value| {
+            value
+                .as_str()
+                .map(ToString::to_string)
+                .with_context(|| format!("Configured contract field '{key}' must be a string"))
+        })
+        .transpose()
+}
+
 /// Parse multiple IB contracts from JSON array.
 ///
 /// # Errors
@@ -180,5 +425,3 @@ pub fn parse_contracts_from_json_array(json_str: &str) -> anyhow::Result<Vec<Con
 
     Ok(contracts)
 }
-
-use anyhow::Context;

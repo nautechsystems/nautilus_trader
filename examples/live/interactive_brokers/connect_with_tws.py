@@ -16,6 +16,7 @@ import os
 
 from _common import add_strategy_from_config
 from _common import build_ib_live_node
+from _common import default_spx_index_instrument_id
 from _common import env_bool
 from _common import env_int
 from _common import instrument_provider_config
@@ -30,7 +31,10 @@ def main() -> None:
     host, port = resolve_ib_endpoint()
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
     os.environ.setdefault("IB_V2_SUBSCRIBE_INDEX_PRICES", "1")
-    subscription_id = os.getenv("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", "^SPX.CBOE")
+    subscription_id = os.getenv(
+        "IB_V2_SUBSCRIPTION_INSTRUMENT_ID",
+        default_spx_index_instrument_id(),
+    )
     provider_config = instrument_provider_config(
         load_ids=[
             subscription_id,
@@ -52,9 +56,15 @@ def main() -> None:
         "ib_v2_order_strategies:IbV2SubscriptionStrategy",
     )
 
-    print(f"Running v2 IB node against {host}:{port}; press Ctrl+C to stop.", flush=True)
-    schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 0))
-    node.run()
+    if env_bool("IB_V2_RUN_NODE"):
+        print(
+            f"Running v2 IB node against {host}:{port}; press Ctrl+C to stop.",
+            flush=True,
+        )
+        schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 0))
+        node.run()
+    else:
+        print("Built v2 IB TWS node. Set IB_V2_RUN_NODE=1 to connect.", flush=True)
 
 
 if __name__ == "__main__":

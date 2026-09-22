@@ -36,6 +36,7 @@ pub mod client_id;
 pub mod client_order_id;
 pub mod component_id;
 pub mod exec_algorithm_id;
+pub mod futures;
 pub mod instrument_id;
 pub mod option_series_id;
 pub mod order_list_id;
@@ -58,6 +59,10 @@ pub use crate::identifiers::{
     client_order_id::ClientOrderId,
     component_id::ComponentId,
     exec_algorithm_id::ExecAlgorithmId,
+    futures::{
+        FuturesSymbol, format_futures_symbol, futures_month, futures_month_code,
+        parse_futures_symbol, resolve_futures_year,
+    },
     instrument_id::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, InstrumentIdError},
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
