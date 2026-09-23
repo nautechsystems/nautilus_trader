@@ -40,8 +40,7 @@ impl DydxHttpClient {
     /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
     ///
     /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
-    /// into the Nautilus domain model, following the two-layer pattern established
-    /// in OKX, Bybit, and BitMEX adapters.
+    /// into the Nautilus domain model, following the standardized two-layer pattern.
     ///
     /// **Architecture:**
     /// - **Raw client** (`DydxRawHttpClient`): Low-level HTTP methods matching dYdX Indexer API endpoints.

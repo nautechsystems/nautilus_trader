@@ -5583,52 +5583,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-bitmex"
-version = "0.65.0"
-dependencies = [
- "ahash",
- "anyhow",
- "arc-swap",
- "async-stream",
- "async-trait",
- "aws-lc-rs",
- "axum",
- "bon",
- "dashmap",
- "derive_builder",
- "dotenvy",
- "futures-util",
- "jiff",
- "log",
- "nautilus-common",
- "nautilus-core",
- "nautilus-live",
- "nautilus-model",
- "nautilus-network",
- "nautilus-system",
- "nautilus-testkit",
- "nautilus-trading",
- "parking_lot",
- "pyo3",
- "pyo3-async-runtimes",
- "pyo3-stub-gen",
- "rstest",
- "rust_decimal",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "strum 0.28.0",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "toml 1.1.6+spec-1.1.0",
- "ustr",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "nautilus-blockchain"
 version = "0.65.0"
 dependencies = [
@@ -6747,7 +6701,6 @@ dependencies = [
  "nautilus-backtest",
  "nautilus-betfair",
  "nautilus-binance",
- "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-bybit",
  "nautilus-coinbase",

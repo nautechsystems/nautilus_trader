@@ -128,7 +128,7 @@ pub fn ethbtc_quanto(
 }
 
 #[fixture]
-pub fn xbtusd_inverse_perp(
+pub fn btcusd_inverse_perp(
     // One-decimal tick (0.5 USD) and integer contract size
     #[default(1)] price_precision: u8,
     #[default(0)] size_precision: u8,
@@ -136,9 +136,9 @@ pub fn xbtusd_inverse_perp(
     #[default(Quantity::from("1"))] size_increment: Quantity,
 ) -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        // BitMEX uses XBT for BTC; keep the "-PERP" suffix for clarity
-        .instrument_id(InstrumentId::from("XBTUSD-PERP.BITMEX"))
-        .raw_symbol(Symbol::from("XBTUSD"))
+        // Bybit lists inverse contracts as BTCUSD; keep the "-PERP" suffix for clarity
+        .instrument_id(InstrumentId::from("BTCUSD-PERP.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
         // base
         .base_currency(Currency::BTC())
         // quote
@@ -225,10 +225,10 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
 }
 
 #[fixture]
-pub fn xbtusd_bitmex() -> CryptoPerpetual {
+pub fn btcusd_bybit() -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        .instrument_id(InstrumentId::from("BTCUSDT.BITMEX"))
-        .raw_symbol(Symbol::from("XBTUSD"))
+        .instrument_id(InstrumentId::from("BTCUSD.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
         .base_currency(Currency::BTC())
         .quote_currency(Currency::USD())
         .settlement_currency(Currency::BTC())
@@ -250,9 +250,9 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
 }
 
 #[fixture]
-pub fn ethusdt_bitmex() -> CryptoPerpetual {
+pub fn ethusd_bybit() -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        .instrument_id(InstrumentId::from("ETHUSD.BITMEX"))
+        .instrument_id(InstrumentId::from("ETHUSD.BYBIT"))
         .raw_symbol(Symbol::from("ETHUSD"))
         .base_currency(Currency::ETH())
         .quote_currency(Currency::USD())

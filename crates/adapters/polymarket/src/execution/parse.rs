@@ -713,8 +713,7 @@ const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 /// Converts a raw micro-pUSD balance from the Polymarket API into an [`AccountBalance`].
 ///
 /// The API returns balances as integer micro-pUSD (e.g. `20000000` = 20 pUSD).
-/// This divides by 10^6 and constructs Money via `Money::from_decimal`, matching
-/// the pattern used by dYdX, Deribit, OKX, and other adapters.
+/// This divides by 10^6 and constructs Money via `Money::from_decimal`.
 pub fn parse_balance_allowance(
     balance_raw: Decimal,
     currency: Currency,

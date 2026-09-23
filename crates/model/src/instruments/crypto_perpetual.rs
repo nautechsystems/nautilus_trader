@@ -462,12 +462,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_inverse_perp_accessors(xbtusd_bitmex: CryptoPerpetual) {
-        assert!(xbtusd_bitmex.is_inverse());
-        assert_eq!(xbtusd_bitmex.base_currency(), Some(Currency::BTC()));
-        assert_eq!(xbtusd_bitmex.quote_currency(), Currency::USD());
-        assert_eq!(xbtusd_bitmex.settlement_currency(), Currency::BTC());
-        assert_eq!(xbtusd_bitmex.cost_currency(), Currency::BTC());
+    fn test_inverse_perp_accessors(btcusd_bybit: CryptoPerpetual) {
+        assert!(btcusd_bybit.is_inverse());
+        assert_eq!(btcusd_bybit.base_currency(), Some(Currency::BTC()));
+        assert_eq!(btcusd_bybit.quote_currency(), Currency::USD());
+        assert_eq!(btcusd_bybit.settlement_currency(), Currency::BTC());
+        assert_eq!(btcusd_bybit.cost_currency(), Currency::BTC());
     }
 
     #[rstest]

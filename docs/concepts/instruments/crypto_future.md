@@ -129,7 +129,6 @@ btcusdt_future = CryptoFuture(
 
 Representative adapters that create or consume `CryptoFuture` instruments include:
 
-- [BitMEX](../../integrations/bitmex.md) for inverse and linear dated futures.
 - [Bybit](../../integrations/bybit.md) for crypto futures markets.
 - [Deribit](../../integrations/deribit.md) for dated crypto futures.
 - [OKX](../../integrations/okx.md) for dated crypto futures.

@@ -49,8 +49,8 @@ use nautilus_model::{
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
-            audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex, futures_spread_es,
-            xbtusd_bitmex,
+            audusd_sim, btcusd_bybit, currency_pair_btcusdt, default_fx_ccy, ethusd_bybit,
+            futures_spread_es,
         },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
@@ -136,8 +136,8 @@ fn instrument_btcusdt(currency_pair_btcusdt: CurrencyPair) -> InstrumentAny {
 }
 
 #[fixture]
-fn instrument_ethusdt(ethusdt_bitmex: CryptoPerpetual) -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(ethusdt_bitmex)
+fn instrument_ethusdt(ethusd_bybit: CryptoPerpetual) -> InstrumentAny {
+    InstrumentAny::CryptoPerpetual(ethusd_bybit)
 }
 
 #[fixture]
@@ -3324,7 +3324,7 @@ fn test_opening_positions_with_multi_asset_account(
     instrument_btcusdt: InstrumentAny,
     instrument_ethusdt: InstrumentAny,
 ) {
-    let account_state = get_margin_account(Some("BITMEX-01234"));
+    let account_state = get_margin_account(Some("BYBIT-01234"));
     portfolio.update_account(&account_state);
 
     let last_ethusd = get_quote_tick(&instrument_ethusdt, 376.05, 377.10, 16.0, 25.0);
@@ -3350,7 +3350,7 @@ fn test_opening_positions_with_multi_asset_account(
         .quantity(Quantity::from("10000"))
         .build();
 
-    let account_id = AccountId::new("BITMEX-01234");
+    let account_id = AccountId::new("BYBIT-01234");
 
     let filled = build_order_filled(
         order.trader_id(),
@@ -3383,7 +3383,7 @@ fn test_opening_positions_with_multi_asset_account(
 
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("BITMEX"), None, None)
+            .net_exposures(&Venue::from("BYBIT"), None, None)
             .unwrap()
             .get(&Currency::ETH())
             .unwrap()
@@ -3392,7 +3392,7 @@ fn test_opening_positions_with_multi_asset_account(
     );
     assert!(
         portfolio
-            .unrealized_pnls(&Venue::from("BITMEX"), None, None)
+            .unrealized_pnls(&Venue::from("BYBIT"), None, None)
             .unwrap()
             .get(&Currency::ETH())
             .unwrap()
@@ -3413,7 +3413,7 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     instrument_btcusdt: InstrumentAny,
     instrument_ethusdt: InstrumentAny,
 ) {
-    let account_state = get_margin_account(Some("BITMEX-01234"));
+    let account_state = get_margin_account(Some("BYBIT-01234"));
     portfolio.update_account(&account_state);
 
     // Create Order
@@ -3442,7 +3442,7 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     );
 
     let last_ethusd = get_quote_tick(&instrument_ethusdt, 376.05, 377.10, 16.0, 25.0);
-    let last_xbtusd = get_quote_tick(&instrument_btcusdt, 50000.00, 50000.00, 1.0, 1.0);
+    let last_btcusd = get_quote_tick(&instrument_btcusdt, 50000.00, 50000.00, 1.0, 1.0);
 
     let position = Position::new(&instrument_ethusdt, filled);
     let position_opened = get_open_position(&position);
@@ -3464,14 +3464,14 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     portfolio
         .cache()
         .borrow_mut()
-        .add_quote(last_xbtusd)
+        .add_quote(last_btcusd)
         .unwrap();
     portfolio.update_quote_tick(&last_ethusd);
-    portfolio.update_quote_tick(&last_xbtusd);
+    portfolio.update_quote_tick(&last_btcusd);
 
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("BITMEX"), None, None)
+            .net_exposures(&Venue::from("BYBIT"), None, None)
             .unwrap()
             .get(&Currency::ETH())
             .unwrap()
@@ -7347,7 +7347,7 @@ fn test_equity_multi_currency_cash_broker_routed_counts_credited_asset_once(
 
 #[rstest]
 fn test_equity_multi_currency_cash_retains_inverse_mark(mut portfolio: Portfolio) {
-    let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
     portfolio
         .cache()
         .borrow_mut()
@@ -7386,7 +7386,7 @@ fn test_equity_multi_currency_cash_retains_inverse_mark(mut portfolio: Portfolio
 
 #[rstest]
 fn test_equity_marks_inverse_zero_price_unpriced(mut portfolio: Portfolio) {
-    let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
     portfolio
         .cache()
         .borrow_mut()
@@ -8565,13 +8565,13 @@ fn test_equity_margin_account_with_unrealized_pnl(
 
 #[rstest]
 fn test_equity_margin_account_marks_inverse_zero_price_unpriced(mut portfolio: Portfolio) {
-    let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
     portfolio
         .cache()
         .borrow_mut()
         .add_instrument(instrument.clone())
         .unwrap();
-    let account_id = AccountId::new("BITMEX-001");
+    let account_id = AccountId::new("BYBIT-001");
     portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
 
     let quote = get_quote_tick(&instrument, 0.0, 0.0, 1.0, 1.0);

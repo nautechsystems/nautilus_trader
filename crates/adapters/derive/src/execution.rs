@@ -15,8 +15,7 @@
 
 //! Live execution client implementation for the Derive adapter.
 //!
-//! Mirrors the Hyperliquid adapter's structural pattern: an
-//! [`ExecutionClientCore`] holds identity and connection state, an
+//! An [`ExecutionClientCore`] holds identity and connection state, an
 //! [`ExecutionEventEmitter`] publishes order/account events back to the live
 //! engine, and the venue clients ([`DeriveHttpClient`], [`DeriveWebSocketClient`])
 //! handle the wire. All state-changing requests are EIP-712 typed-data signed

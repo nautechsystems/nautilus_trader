@@ -120,7 +120,7 @@ mod tests {
         },
         instruments::{
             Instrument, InstrumentAny,
-            stubs::{audusd_sim, xbtusd_bitmex},
+            stubs::{audusd_sim, btcusd_bybit},
         },
         position::Position,
         types::{Currency, Money, Price, Quantity},
@@ -218,7 +218,7 @@ mod tests {
 
     #[rstest]
     fn test_position_opened_realized_pnl_uses_settlement_currency() {
-        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
         let fill = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
             .position_id(PositionId::from("P-001"))

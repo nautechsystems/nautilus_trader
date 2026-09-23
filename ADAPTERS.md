@@ -83,7 +83,6 @@ The following adapters are maintained in the core repository:
 | Betfair             | Data/Execution |
 | Binance             | Data/Execution |
 | Blockchain          | Data           |
-| BitMEX              | Data/Execution |
 | Bybit               | Data/Execution |
 | Coinbase            | Data/Execution |
 | Databento           | Data           |

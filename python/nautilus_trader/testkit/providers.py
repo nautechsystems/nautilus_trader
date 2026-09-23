@@ -259,13 +259,13 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xbtusd_bitmex() -> CryptoPerpetual:
+    def btcusd_bybit() -> CryptoPerpetual:
         """
-        Return the XBTUSD BitMEX perpetual instrument.
+        Return the BTCUSD Bybit inverse perpetual instrument.
         """
         return CryptoPerpetual(
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BITMEX")),
-            raw_symbol=Symbol("XBTUSD"),
+            instrument_id=InstrumentId(Symbol("BTCUSD"), Venue("BYBIT")),
+            raw_symbol=Symbol("BTCUSD"),
             base_currency=Currency.from_str("BTC"),
             quote_currency=Currency.from_str("USD"),
             settlement_currency=Currency.from_str("BTC"),

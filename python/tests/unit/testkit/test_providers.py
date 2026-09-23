@@ -34,15 +34,15 @@ from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
-def test_xbtusd_bitmex_matches_rust_fixture() -> None:
+def test_btcusd_bybit_matches_rust_fixture() -> None:
     """
-    Test xbtusd bitmex matches rust fixture.
+    Test btcusd bybit matches rust fixture.
     """
-    # Mirrors the `xbtusd_bitmex` fixture in `crates/model/src/instruments/stubs.rs`
-    instrument = TestInstrumentProvider.xbtusd_bitmex()
+    # Mirrors the `btcusd_bybit` fixture in `crates/model/src/instruments/stubs.rs`
+    instrument = TestInstrumentProvider.btcusd_bybit()
 
-    assert instrument.id == InstrumentId.from_str("BTCUSDT.BITMEX")
-    assert instrument.raw_symbol == Symbol("XBTUSD")
+    assert instrument.id == InstrumentId.from_str("BTCUSD.BYBIT")
+    assert instrument.raw_symbol == Symbol("BTCUSD")
     assert instrument.base_currency == Currency.from_str("BTC")
     assert instrument.quote_currency == Currency.from_str("USD")
     assert instrument.settlement_currency == Currency.from_str("BTC")

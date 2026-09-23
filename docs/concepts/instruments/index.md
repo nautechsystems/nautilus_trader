@@ -19,9 +19,9 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model`.
 | [`TokenizedAsset`](tokenized_asset.md)            | `SPOT`            | Tokenized asset on a crypto venue.                   | Kraken.                         |
 | [`FuturesContract`](futures_contract.md)          | `FUTURE`          | Dated futures contract.                              | Databento, Interactive Brokers. |
 | [`FuturesSpread`](futures_spread.md)              | `FUTURES_SPREAD`  | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
-| [`CryptoFuture`](crypto_future.md)                | `FUTURE`          | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
+| [`CryptoFuture`](crypto_future.md)                | `FUTURE`          | Dated crypto futures contract.                       | Bybit, Deribit, OKX.            |
 | [`CryptoFuturesSpread`](crypto_futures_spread.md) | `FUTURES_SPREAD`  | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
-| [`CryptoPerpetual`](crypto_perpetual.md)          | `SWAP`            | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
+| [`CryptoPerpetual`](crypto_perpetual.md)          | `SWAP`            | Crypto perpetual futures contract.                   | Binance, Bybit, dYdX.           |
 | [`PerpetualContract`](perpetual_contract.md)      | `SWAP`            | Perpetual futures contract across asset classes.     | Architect AX, Binance.          |
 | [`OptionContract`](option_contract.md)            | `OPTION`          | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
 | [`OptionSpread`](option_spread.md)                | `OPTION_SPREAD`   | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |

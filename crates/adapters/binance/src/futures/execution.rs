@@ -4182,8 +4182,8 @@ mod tests {
         events::OrderEventAny,
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
         instruments::stubs::{
-            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-            perpetual_contract_eurusd, xbtusd_bitmex,
+            btcusd_bybit, crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            perpetual_contract_eurusd,
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
@@ -4631,7 +4631,7 @@ mod tests {
     fn test_instrument_product_matching_distinguishes_futures_products_from_spot() {
         let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let generic_perpetual = InstrumentAny::PerpetualContract(perpetual_contract_eurusd());
-        let coinm = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let coinm = InstrumentAny::CryptoPerpetual(btcusd_bybit());
         let delivery =
             || crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
         let usdm_delivery = InstrumentAny::CryptoFuture(delivery());

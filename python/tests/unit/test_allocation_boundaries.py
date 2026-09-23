@@ -22,9 +22,6 @@ from pathlib import Path
 
 import pytest
 
-from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
-from nautilus_trader.adapters.bitmex import CancelBroadcaster
-from nautilus_trader.adapters.bitmex import SubmitBroadcaster
 from nautilus_trader.adapters.tardis import stream_tardis_batched_deltas
 from nautilus_trader.adapters.tardis import stream_tardis_deltas
 from nautilus_trader.adapters.tardis import stream_tardis_depth_from_snapshot5
@@ -48,7 +45,6 @@ from tests.providers import TestInstrumentProvider
 
 PRICE_LIST_TICKS_MAX = 100_000
 TARDIS_CHUNK_SIZE_MAX = 1_000_000
-BITMEX_POOL_SIZE_MAX = 16
 BACKTEST_CHUNK_SIZE_MAX = 1_000_000
 CACHE_DATA_CAPACITY_MAX = 1_000_000
 HURST_VPIN_WINDOW_MAX = 16_384
@@ -139,56 +135,6 @@ def test_tardis_quote_stream_accepts_supported_chunk_sizes(tmp_path: Path, chunk
     assert len(next(stream)) == 1
 
 
-@pytest.mark.parametrize("broadcaster", [SubmitBroadcaster, CancelBroadcaster])
-def test_bitmex_broadcaster_pool_boundaries(broadcaster: type) -> None:
-    """
-    Test direct BitMEX broadcaster pool boundaries.
-    """
-    minimum = broadcaster(1, api_key="test", api_secret="test")
-    normal = broadcaster(8, api_key="test", api_secret="test")
-    maximum = broadcaster(BITMEX_POOL_SIZE_MAX, api_key="test", api_secret="test")
-
-    assert minimum.get_metrics()["total_clients"] == 1
-    assert normal.get_metrics()["total_clients"] == 8
-    assert maximum.get_metrics()["total_clients"] == BITMEX_POOL_SIZE_MAX
-    for value in (0, BITMEX_POOL_SIZE_MAX + 1, sys.maxsize, USIZE_MAX):
-        with pytest.raises(ValueError, match="pool_size"):
-            broadcaster(value)
-    for value in (-1, USIZE_MAX + 1):
-        with pytest.raises(OverflowError):
-            broadcaster(value)
-
-
-def test_bitmex_execution_pool_boundaries() -> None:
-    """
-    Test BitMEX execution broadcaster pool boundaries.
-    """
-    for submitter_pool_size, canceller_pool_size in (
-        (1, 1),
-        (8, 8),
-        (BITMEX_POOL_SIZE_MAX - 1, 1),
-        (1, BITMEX_POOL_SIZE_MAX - 1),
-    ):
-        config = BitmexExecutionClientConfig(
-            submitter_pool_size=submitter_pool_size,
-            canceller_pool_size=canceller_pool_size,
-        )
-        assert config.submitter_pool_size == submitter_pool_size
-        assert config.canceller_pool_size == canceller_pool_size
-    for field in ("submitter_pool_size", "canceller_pool_size"):
-        for value in (0, BITMEX_POOL_SIZE_MAX + 1, sys.maxsize, USIZE_MAX):
-            with pytest.raises(ValueError, match=field):
-                BitmexExecutionClientConfig(**{field: value})
-        for value in (-1, USIZE_MAX + 1):
-            with pytest.raises(OverflowError):
-                BitmexExecutionClientConfig(**{field: value})
-    with pytest.raises(ValueError, match="combined_pool_size"):
-        BitmexExecutionClientConfig(
-            submitter_pool_size=BITMEX_POOL_SIZE_MAX,
-            canceller_pool_size=1,
-        )
-
-
 def test_backtest_chunk_size_boundaries() -> None:
     """
     Test backtest streaming chunk size boundaries.
@@ -249,7 +195,6 @@ def test_invalid_allocation_sizes_do_not_abort_subprocess() -> None:
     """
     code = """
 import sys
-from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
 from nautilus_trader.adapters.tardis import stream_tardis_quotes
 from nautilus_trader.config import BacktestRunConfig, CacheConfig
 from nautilus_trader.model import BarType, InstrumentId, Quantity
@@ -259,7 +204,6 @@ from nautilus_trader.trading import HurstVpinDirectionalConfig
 calls = (
     lambda: TestInstrumentProvider.audusd_sim().next_bid_prices(1.0, sys.maxsize),
     lambda: stream_tardis_quotes('missing.csv', chunk_size=sys.maxsize),
-    lambda: BitmexExecutionClientConfig(submitter_pool_size=sys.maxsize),
     lambda: BacktestRunConfig(venues=[], data=[], chunk_size=sys.maxsize),
     lambda: CacheConfig(tick_capacity=sys.maxsize),
     lambda: HurstVpinDirectionalConfig(

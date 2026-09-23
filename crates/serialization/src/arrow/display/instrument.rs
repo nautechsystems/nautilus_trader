@@ -278,11 +278,11 @@ mod tests {
         instruments::{
             InstrumentAny,
             stubs::{
-                betting, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
-                crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-                equity_aapl, futures_contract_es, futures_spread_es, index_instrument_spx,
-                option_contract_appl, option_spread, perpetual_contract_eurusd,
-                tokenized_asset_aaplx, xbtusd_bitmex,
+                betting, binary_option, btcusd_bybit, cfd_gold, commodity_gold,
+                crypto_future_btcusdt, crypto_option_btc_deribit, crypto_perpetual_ethusdt,
+                currency_pair_btcusdt, equity_aapl, futures_contract_es, futures_spread_es,
+                index_instrument_spx, option_contract_appl, option_spread,
+                perpetual_contract_eurusd, tokenized_asset_aaplx,
             },
         },
         types::{Price, Quantity},
@@ -508,7 +508,7 @@ mod tests {
 
     #[rstest]
     fn test_encode_instruments_inverse_perpetual() {
-        let instruments = vec![InstrumentAny::CryptoPerpetual(xbtusd_bitmex())];
+        let instruments = vec![InstrumentAny::CryptoPerpetual(btcusd_bybit())];
         let batch = encode_instruments(&instruments).unwrap();
 
         let instrument_type_col = batch

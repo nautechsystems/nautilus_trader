@@ -75,8 +75,8 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es, gbpusd_sim,
-            xbtusd_bitmex,
+            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es,
+            gbpusd_sim,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1964,11 +1964,11 @@ fn test_process_funding_rate_returns_instrument_boundary() {
 
 #[rstest]
 fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
-    let inverse = xbtusd_bitmex();
+    let inverse = btcusd_bybit();
     let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());
-    let account_id = AccountId::from("BITMEX-001");
+    let account_id = AccountId::from("BYBIT-001");
     let mut cache = Cache::default();
-    pre_populate_margin_account_with_balance(&mut cache, "BITMEX-001", Money::from("100 BTC"));
+    pre_populate_margin_account_with_balance(&mut cache, "BYBIT-001", Money::from("100 BTC"));
     cache.add_instrument(instrument.clone()).unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -2007,7 +2007,7 @@ fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
         None,
     );
     let exchange = build_exchange_with_options(
-        Venue::new("BITMEX"),
+        Venue::new("BYBIT"),
         AccountType::Margin,
         false,
         false,

@@ -158,7 +158,6 @@ testers:
 | Architect AX        | `crates/adapters/architect_ax/examples/`        |
 | Betfair             | `crates/adapters/betfair/examples/`             |
 | Binance             | `crates/adapters/binance/examples/`             |
-| BitMEX              | `crates/adapters/bitmex/examples/`              |
 | Blockchain          | `crates/adapters/blockchain/examples/`          |
 | Bybit               | `crates/adapters/bybit/examples/`               |
 | Coinbase            | `crates/adapters/coinbase/examples/`            |

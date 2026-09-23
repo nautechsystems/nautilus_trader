@@ -1703,30 +1703,30 @@ mod tests {
     }
 
     #[rstest]
-    fn notional_inverse_base(xbtusd_inverse_perp: CryptoPerpetual) {
-        let quantity = xbtusd_inverse_perp.make_qty(100.0, None);
-        let price = xbtusd_inverse_perp.make_price(50_000.0);
-        let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(false));
+    fn notional_inverse_base(btcusd_inverse_perp: CryptoPerpetual) {
+        let quantity = btcusd_inverse_perp.make_qty(100.0, None);
+        let price = btcusd_inverse_perp.make_price(50_000.0);
+        let notional = btcusd_inverse_perp.calculate_notional_value(quantity, price, Some(false));
         let expected = Money::new(
-            100.0 * xbtusd_inverse_perp.multiplier().as_f64() * (1.0 / 50_000.0),
-            xbtusd_inverse_perp.base_currency().unwrap(),
+            100.0 * btcusd_inverse_perp.multiplier().as_f64() * (1.0 / 50_000.0),
+            btcusd_inverse_perp.base_currency().unwrap(),
         );
         assert_eq!(notional, expected);
     }
 
     #[rstest]
-    fn notional_inverse_quote_use_quote(xbtusd_inverse_perp: CryptoPerpetual) {
-        let quantity = xbtusd_inverse_perp.make_qty(100.0, None);
-        let price = xbtusd_inverse_perp.make_price(50_000.0);
-        let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
-        let expected = Money::new(100.0, xbtusd_inverse_perp.quote_currency());
+    fn notional_inverse_quote_use_quote(btcusd_inverse_perp: CryptoPerpetual) {
+        let quantity = btcusd_inverse_perp.make_qty(100.0, None);
+        let price = btcusd_inverse_perp.make_price(50_000.0);
+        let notional = btcusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
+        let expected = Money::new(100.0, btcusd_inverse_perp.quote_currency());
         assert_eq!(notional, expected);
     }
 
     #[rstest]
-    fn try_notional_inverse_zero_price_returns_error(xbtusd_inverse_perp: CryptoPerpetual) {
-        let result = xbtusd_inverse_perp.try_calculate_notional_value(
-            xbtusd_inverse_perp.make_qty(100.0, None),
+    fn try_notional_inverse_zero_price_returns_error(btcusd_inverse_perp: CryptoPerpetual) {
+        let result = btcusd_inverse_perp.try_calculate_notional_value(
+            btcusd_inverse_perp.make_qty(100.0, None),
             Price::new(0.0, 1),
             Some(false),
         );

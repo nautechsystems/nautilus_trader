@@ -1499,8 +1499,8 @@ mod tests {
 
     #[rstest]
     fn test_roundtrip_crypto_perpetual_inverse() {
-        use nautilus_model::instruments::stubs::xbtusd_bitmex;
-        roundtrip_case(&InstrumentAny::CryptoPerpetual(xbtusd_bitmex()));
+        use nautilus_model::instruments::stubs::btcusd_bybit;
+        roundtrip_case(&InstrumentAny::CryptoPerpetual(btcusd_bybit()));
     }
 
     #[rstest]

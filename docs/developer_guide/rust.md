@@ -295,7 +295,7 @@ Choose the error type at the API boundary:
 
 ```rust
 parse_timestamp(value).context("failed to parse timestamp")?;
-connect().context("BitMEX websocket did not become active")?;
+connect().context("Bybit websocket did not become active")?;
 ```
 
 ### Panic policy

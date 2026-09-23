@@ -588,11 +588,11 @@ mod tests {
         #[case] use_quote_for_inverse: bool,
         #[case] expected: Money,
         cash_account_million_usd: CashAccount,
-        xbtusd_inverse_perp: CryptoPerpetual,
+        btcusd_inverse_perp: CryptoPerpetual,
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                &xbtusd_inverse_perp.into_any(),
+                &btcusd_inverse_perp.into_any(),
                 OrderSide::Buy,
                 Quantity::from("100"),
                 Price::from("50000"),
@@ -742,12 +742,12 @@ mod tests {
         #[case] use_quote_for_inverse: bool,
         #[case] expected: Money,
         cash_account_million_usd: CashAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
@@ -780,12 +780,12 @@ mod tests {
     #[rstest]
     fn test_calculate_commission_crypto_taker(
         cash_account_million_usd: CashAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,

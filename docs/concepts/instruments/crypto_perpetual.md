@@ -4,7 +4,7 @@
 perpetual swap. It has no expiry, tracks a crypto base asset, and settles in a crypto,
 stablecoin, or other venue-defined settlement currency.
 
-Examples include `ETHUSDT-PERP.BINANCE`, `XBTUSD.BITMEX`, and `BTC-USD-SWAP.OKX`.
+Examples include `ETHUSDT-PERP.BINANCE`, `BTCUSD.BYBIT`, and `BTC-USD-SWAP.OKX`.
 
 ## Fields
 
@@ -135,7 +135,6 @@ ethusdt_perp = CryptoPerpetual(
 Representative adapters that create or consume `CryptoPerpetual` instruments include:
 
 - [Binance](../../integrations/binance.md) for USD-M and COIN-M perpetual futures.
-- [BitMEX](../../integrations/bitmex.md) for inverse and linear perpetual contracts.
 - [Bybit](../../integrations/bybit.md) for linear and inverse perpetual products.
 - [dYdX](../../integrations/dydx.md) for perpetual markets.
 - [Hyperliquid](../../integrations/hyperliquid.md) for perpetual markets.

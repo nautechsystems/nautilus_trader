@@ -1561,12 +1561,12 @@ mod tests {
 
     #[rstest]
     fn test_calculate_balance_locked_buy_inverse_locks_base_currency(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let wallet_account = wallet_with_total(Currency::BTC(), Money::from("100 BTC").raw());
         let balance_locked = wallet_account
             .calculate_balance_locked(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 OrderSide::Buy,
                 Quantity::from("100000"),
                 Price::from("10000.0"),

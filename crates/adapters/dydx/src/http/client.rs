@@ -17,7 +17,7 @@
 //! <https://docs.dydx.xyz/indexer-client/http>.
 //!
 //! This module exports two complementary HTTP clients following the standardized
-//! two-layer architecture pattern established in OKX, Bybit, and BitMEX adapters:
+//! two-layer architecture pattern:
 //!
 //! - [`DydxRawHttpClient`]: Low-level HTTP methods matching dYdX Indexer API endpoints.
 //! - [`DydxHttpClient`]: High-level methods using Nautilus domain types with instrument caching.
@@ -683,8 +683,7 @@ impl DydxRawHttpClient {
 /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
 ///
 /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
-/// into the Nautilus domain model, following the two-layer pattern established
-/// in OKX, Bybit, and BitMEX adapters.
+/// into the Nautilus domain model, following the standardized two-layer pattern.
 ///
 /// **Architecture:**
 /// - **Raw client** (`DydxRawHttpClient`): Low-level HTTP methods matching dYdX Indexer API endpoints.

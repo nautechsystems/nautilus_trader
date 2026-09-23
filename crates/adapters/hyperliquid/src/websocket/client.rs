@@ -117,7 +117,7 @@ pub(super) enum AssetContextDataType {
     OpenInterest,
 }
 
-/// Hyperliquid WebSocket client following the BitMEX pattern.
+/// Hyperliquid WebSocket client.
 ///
 /// Orchestrates WebSocket connection and subscriptions using a command-based architecture,
 /// where the inner FeedHandler owns the WebSocketClient and handles all I/O.

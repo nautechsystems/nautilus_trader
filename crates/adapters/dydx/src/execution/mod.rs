@@ -142,9 +142,6 @@ const DYDX_INDEXER_REPORT_LIMIT: u32 = 1_000;
 /// The client follows a two-layer execution model:
 /// 1. **Synchronous validation** - Immediate checks and event generation.
 /// 2. **Async submission** - Non-blocking gRPC calls via `TransactionManager`, `TxBroadcaster`, and `OrderMessageBuilder`.
-///
-/// This matches the pattern used in OKX and other exchange adapters, ensuring
-/// consistent behavior across the Nautilus ecosystem.
 #[derive(Debug)]
 pub struct DydxExecutionClient {
     core: ExecutionClientCore,

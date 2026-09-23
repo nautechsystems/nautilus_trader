@@ -4776,7 +4776,7 @@ mod tests {
         identifiers::{Symbol, Venue},
         instruments::{
             CurrencyPair, Instrument,
-            stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
+            stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{AccountBalance, Currency, MarginBalance, Money},
@@ -6370,7 +6370,7 @@ mod tests {
         let included_id = ClientOrderId::from("O-REPORT-001");
         let excluded_id = ClientOrderId::from("O-REPORT-002");
         let included_instrument_id = crypto_perpetual_ethusdt().id();
-        let excluded_instrument_id = xbtusd_bitmex().id();
+        let excluded_instrument_id = btcusd_bybit().id();
 
         cache
             .borrow_mut()
@@ -6378,7 +6378,7 @@ mod tests {
             .unwrap();
         cache
             .borrow_mut()
-            .add_instrument(InstrumentAny::CryptoPerpetual(xbtusd_bitmex()))
+            .add_instrument(InstrumentAny::CryptoPerpetual(btcusd_bybit()))
             .unwrap();
         insert_accepted_limit_order(
             &cache,
@@ -6392,7 +6392,7 @@ mod tests {
             excluded_id,
             VenueOrderId::from("V-REPORT-002"),
             excluded_instrument_id,
-            ClientId::from("BITMEX"),
+            ClientId::from("BYBIT"),
         );
         clock
             .borrow_mut()
@@ -6429,7 +6429,7 @@ mod tests {
         .expect("valid config");
 
         let included_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let excluded_instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let excluded_instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
 
         cache
             .borrow_mut()

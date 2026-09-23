@@ -79,7 +79,7 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt, xbtusd_bitmex},
+        stubs::{btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -235,11 +235,11 @@ fn test_instrument_id() -> InstrumentId {
 }
 
 fn test_instrument2() -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(xbtusd_bitmex())
+    InstrumentAny::CryptoPerpetual(btcusd_bybit())
 }
 
 fn test_instrument_id2() -> InstrumentId {
-    xbtusd_bitmex().id()
+    btcusd_bybit().id()
 }
 
 fn test_account_id() -> AccountId {
@@ -10266,7 +10266,7 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         Some(dec!(3050.00)),
     );
 
-    // Instrument 2 (XBTUSD) - position of 100, fills sum to 100 (complete history)
+    // Instrument 2 (BTCUSD) - position of 100, fills sum to 100 (complete history)
     let venue_order_id2a = VenueOrderId::from("V-BTC-001");
     let venue_order_id2b = VenueOrderId::from("V-BTC-002");
 
@@ -10379,11 +10379,11 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         .iter()
         .filter(|f| f.instrument_id == instrument_id2)
         .collect();
-    assert_eq!(btc_fills.len(), 2, "Expected 2 fills for XBTUSD");
+    assert_eq!(btc_fills.len(), 2, "Expected 2 fills for BTCUSD");
     let btc_total_qty: f64 = btc_fills.iter().map(|f| f.last_qty.as_f64()).sum();
     assert!(
         (btc_total_qty - 100.0).abs() < 0.001,
-        "XBTUSD total qty should be 100.0, was {btc_total_qty}"
+        "BTCUSD total qty should be 100.0, was {btc_total_qty}"
     );
 }
 
@@ -12757,7 +12757,7 @@ fn test_check_open_order_queries_filters_reconciliation_instruments() {
         excluded_id,
         VenueOrderId::from("V-QUERY-010"),
         test_instrument_id2(),
-        ClientId::from("BITMEX"),
+        ClientId::from("BYBIT"),
     );
 
     let queries = ctx.manager.check_open_order_queries();
@@ -13933,8 +13933,8 @@ async fn test_check_open_orders_failed_client_does_not_advance_missing_retries()
     let healthy_order_id = ClientOrderId::from("O-HEALTHY-MISSING");
     let failed_order_id = ClientOrderId::from("O-FAILED-VENUE");
     let healthy_client_id = test_client_id();
-    let failed_client_id = ClientId::from("BITMEX");
-    let failed_venue = Venue::from("BITMEX");
+    let failed_client_id = ClientId::from("BYBIT");
+    let failed_venue = Venue::from("BYBIT");
 
     insert_accepted_limit_order(
         &ctx,

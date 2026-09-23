@@ -6470,7 +6470,7 @@ fn dispatch_tracked_order_event(
 }
 
 /// Synthesize an `OrderAccepted` event if one has not yet been emitted for
-/// `cloid`. Mirrors the BitMEX dispatch function of the same name.
+/// `cloid`. Synthesizes the accepted event the venue does not emit.
 #[expect(
     clippy::too_many_arguments,
     reason = "synthesized events need the full identity context to populate the event"

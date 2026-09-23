@@ -1250,11 +1250,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_init_with_no_leverage_for_inverse(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result_use_quote_inverse_true = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(false),
@@ -1263,7 +1263,7 @@ mod tests {
         assert_eq!(result_use_quote_inverse_true, Money::from("0.08700494 BTC"));
         let result_use_quote_inverse_false = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(true),
@@ -1275,11 +1275,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_no_leverage(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 None,
@@ -1308,12 +1308,12 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_leverage_inverse_instrument(
         mut margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         margin_account.set_default_leverage(Decimal::from(10));
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("100000.00"),
                 None,

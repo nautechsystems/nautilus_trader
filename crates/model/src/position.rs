@@ -3936,15 +3936,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_pnl_for_inverse1(xbtusd_bitmex: CryptoPerpetual) {
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+    fn test_calculate_pnl_for_inverse1(btcusd_bybit: CryptoPerpetual) {
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100000"))
             .build();
         let commission = calculate_commission(
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             order.quantity(),
             Price::from("10000.0"),
             None,
@@ -3952,7 +3952,7 @@ mod tests {
         );
         let fill = TestOrderEventStubs::filled(
             &order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10000.0")),
@@ -3962,7 +3962,7 @@ mod tests {
             None,
             None,
         );
-        let position = Position::new(&xbtusd_bitmex, fill.into());
+        let position = Position::new(&btcusd_bybit, fill.into());
         let pnl = position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0"));
         assert_eq!(pnl, Money::from("-0.90909091 BTC"));
         assert_eq!(
@@ -3978,19 +3978,19 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_scales_by_contract_multiplier(
-        mut xbtusd_bitmex: CryptoPerpetual,
+        mut btcusd_bybit: CryptoPerpetual,
         mut crypto_perpetual_ethusdt: CryptoPerpetual,
     ) {
-        xbtusd_bitmex.multiplier = Quantity::from(10);
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        btcusd_bybit.multiplier = Quantity::from(10);
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let inverse_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100000"))
             .build();
         let inverse_fill = TestOrderEventStubs::filled(
             &inverse_order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             None,
             Some(PositionId::from("P-MULTIPLIER-INVERSE")),
             Some(Price::from("10000.0")),
@@ -4000,7 +4000,7 @@ mod tests {
             None,
             None,
         );
-        let inverse_position = Position::new(&xbtusd_bitmex, inverse_fill.into());
+        let inverse_position = Position::new(&btcusd_bybit, inverse_fill.into());
 
         assert_eq!(
             inverse_position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0")),
@@ -4035,18 +4035,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_try_notional_value_for_inverse_zero_price_returns_error(
-        xbtusd_bitmex: CryptoPerpetual,
-    ) {
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+    fn test_try_notional_value_for_inverse_zero_price_returns_error(btcusd_bybit: CryptoPerpetual) {
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100000"))
             .build();
         let fill = TestOrderEventStubs::filled(
             &order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             None,
             Some(PositionId::from("P-ZERO-PRICE")),
             Some(Price::from("10000.0")),
@@ -4056,7 +4054,7 @@ mod tests {
             None,
             None,
         );
-        let mut position = Position::new(&xbtusd_bitmex, fill.into());
+        let mut position = Position::new(&btcusd_bybit, fill.into());
 
         let result = position.try_notional_value(Price::new(0.0, 1));
 
@@ -4090,7 +4088,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "inverse position BTCUSDT.BITMEX has no base currency"
+            "inverse position BTCUSD.BYBIT has no base currency"
         );
         assert!(position.try_unrealized_pnl(Price::from("10000.0")).is_err());
     }
@@ -4132,16 +4130,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_points_inverse_rejects_non_positive_prices(xbtusd_bitmex: CryptoPerpetual) {
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+    fn test_calculate_points_inverse_rejects_non_positive_prices(btcusd_bybit: CryptoPerpetual) {
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100000"))
             .build();
         let fill = TestOrderEventStubs::filled(
             &order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             None,
             Some(PositionId::from("P-INVERSE-GUARD")),
             Some(Price::from("10000.0")),
@@ -4151,7 +4149,7 @@ mod tests {
             None,
             None,
         );
-        let position = Position::new(&xbtusd_bitmex, fill.into());
+        let position = Position::new(&btcusd_bybit, fill.into());
 
         assert_eq!(
             position
@@ -4174,15 +4172,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_pnl_for_inverse2(ethusdt_bitmex: CryptoPerpetual) {
-        let ethusdt_bitmex = InstrumentAny::CryptoPerpetual(ethusdt_bitmex);
+    fn test_calculate_pnl_for_inverse2(ethusd_bybit: CryptoPerpetual) {
+        let ethusd_bybit = InstrumentAny::CryptoPerpetual(ethusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(ethusdt_bitmex.id())
+            .instrument_id(ethusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100000"))
             .build();
         let commission = calculate_commission(
-            &ethusdt_bitmex,
+            &ethusd_bybit,
             order.quantity(),
             Price::from("375.95"),
             None,
@@ -4190,7 +4188,7 @@ mod tests {
         );
         let fill = TestOrderEventStubs::filled(
             &order,
-            &ethusdt_bitmex,
+            &ethusd_bybit,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("375.95")),
@@ -4200,7 +4198,7 @@ mod tests {
             None,
             None,
         );
-        let position = Position::new(&ethusdt_bitmex, fill.into());
+        let position = Position::new(&ethusd_bybit, fill.into());
 
         assert_eq!(
             position.unrealized_pnl(Price::from("370.00")),
@@ -4348,15 +4346,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_unrealized_pnl_for_long_inverse(xbtusd_bitmex: CryptoPerpetual) {
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+    fn test_calculate_unrealized_pnl_for_long_inverse(btcusd_bybit: CryptoPerpetual) {
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("100000"))
             .build();
         let commission = calculate_commission(
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             order.quantity(),
             Price::from("10500.0"),
             None,
@@ -4364,7 +4362,7 @@ mod tests {
         );
         let fill = TestOrderEventStubs::filled(
             &order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             Some(TradeId::new("1")),
             Some(PositionId::new("P-123456")),
             Some(Price::from("10500.00")),
@@ -4375,7 +4373,7 @@ mod tests {
             None,
         );
 
-        let position = Position::new(&xbtusd_bitmex, fill.into());
+        let position = Position::new(&btcusd_bybit, fill.into());
         let pnl = position.unrealized_pnl(Price::from("11505.60"));
         assert_eq!(pnl, Money::from("0.83238969 BTC"));
         assert_eq!(position.realized_pnl, Some(Money::from("-0.00714286 BTC")));
@@ -4383,15 +4381,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_unrealized_pnl_for_short_inverse(xbtusd_bitmex: CryptoPerpetual) {
-        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+    fn test_calculate_unrealized_pnl_for_short_inverse(btcusd_bybit: CryptoPerpetual) {
+        let btcusd_bybit = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_bitmex.id())
+            .instrument_id(btcusd_bybit.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("1250000"))
             .build();
         let commission = calculate_commission(
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             order.quantity(),
             Price::from("15500.00"),
             None,
@@ -4399,7 +4397,7 @@ mod tests {
         );
         let fill = TestOrderEventStubs::filled(
             &order,
-            &xbtusd_bitmex,
+            &btcusd_bybit,
             Some(TradeId::new("1")),
             Some(PositionId::new("P-123456")),
             Some(Price::from("15500.00")),
@@ -4409,7 +4407,7 @@ mod tests {
             None,
             None,
         );
-        let position = Position::new(&xbtusd_bitmex, fill.into());
+        let position = Position::new(&btcusd_bybit, fill.into());
         let pnl = position.unrealized_pnl(Price::from("12506.65"));
 
         assert_eq!(pnl, Money::from("19.30166700 BTC"));

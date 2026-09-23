@@ -17,8 +17,7 @@
 //!
 //! # Conditional Order Support
 //!
-//! This module implements conditional order support for Hyperliquid,
-//! following patterns established in the OKX, Bybit, and BitMEX adapters.
+//! This module implements conditional order support for Hyperliquid.
 //!
 //! ## Supported Order Types
 //!

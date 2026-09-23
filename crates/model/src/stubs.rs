@@ -235,7 +235,7 @@ mod tests {
     use crate::{
         instruments::{
             CryptoPerpetual,
-            stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
+            stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
         orderbook::BookLevel,
         types::Currency,
@@ -311,12 +311,12 @@ mod tests {
     #[case(None)]
     #[case(Some(false))]
     fn test_calculate_commission_charges_inverse_instruments_in_base_currency(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
         #[case] use_quote_for_inverse: Option<bool>,
     ) {
         // Inverse: 100,000 USD @ 50,000.00 = 2 BTC notional, taker 0.00075 -> 0.0015 BTC.
         // `Some(false)` must behave like `None`, not like `Some(true)`.
-        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
 
         let commission = calculate_commission(
             &instrument,
@@ -332,9 +332,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_commission_uses_quote_currency_when_requested_for_inverse(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
-        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
 
         let commission = calculate_commission(
             &instrument,

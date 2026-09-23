@@ -31,6 +31,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed the BitMEX adapter from Rust and Python following the exchange closure on 23 September 2026 (#4552)
 - Removed `nautilus_trader.persistence.NautilusDataType` - import from `nautilus_trader.model`
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
@@ -189,10 +190,6 @@ Released on TBD (UTC).
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset
 - Updated Databento and Tardis integration guides with new URL overrides
-
-### Deprecations
-
-- Deprecated BitMEX adapter due to exchange decommissioning; 2.0.0rc6 is the last release with support (#4552)
 
 ---
 

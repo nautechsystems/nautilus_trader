@@ -2175,11 +2175,11 @@ fn test_reset_cancels_funding_timer() {
 
 fn create_inverse_funding_engine() -> (BacktestEngine, InstrumentId) {
     let instrument =
-        InstrumentAny::CryptoPerpetual(nautilus_model::instruments::stubs::xbtusd_bitmex());
+        InstrumentAny::CryptoPerpetual(nautilus_model::instruments::stubs::btcusd_bybit());
     let instrument_id = instrument.id();
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let venue = SimulatedVenueConfig::builder()
-        .venue(Venue::from("BITMEX"))
+        .venue(Venue::from("BYBIT"))
         .oms_type(OmsType::Netting)
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
@@ -3798,7 +3798,7 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
     engine
         .add_venue(
             SimulatedVenueConfig::builder()
-                .venue(Venue::from("BITMEX"))
+                .venue(Venue::from("BYBIT"))
                 .oms_type(OmsType::Netting)
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
@@ -3813,13 +3813,13 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let eth_id = eth.id();
     engine.add_instrument(&eth).unwrap();
 
-    let btc = InstrumentAny::CryptoPerpetual(nautilus_model::instruments::stubs::xbtusd_bitmex());
+    let btc = InstrumentAny::CryptoPerpetual(nautilus_model::instruments::stubs::btcusd_bybit());
     let btc_id = btc.id();
     engine.add_instrument(&btc).unwrap();
 
     // Interleave quotes from both venues (respecting instrument precision)
     // ETHUSDT-PERP.BINANCE: price_prec=2, size_prec=3
-    // BTCUSDT.BITMEX: price_prec=1, size_prec=0
+    // BTCUSD.BYBIT: price_prec=1, size_prec=0
     let quotes = vec![
         quote(eth_id, "1000.00", "1000.10", 1_000_000_000),
         quote_with_size(btc_id, "50000.5", "50001.0", "1", 2_000_000_000),
@@ -4982,7 +4982,7 @@ fn test_list_venues_multiple() {
     engine
         .add_venue(
             SimulatedVenueConfig::builder()
-                .venue(Venue::from("BITMEX"))
+                .venue(Venue::from("BYBIT"))
                 .oms_type(OmsType::Netting)
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
@@ -4996,7 +4996,7 @@ fn test_list_venues_multiple() {
     let venues = engine.list_venues();
     assert_eq!(venues.len(), 2);
     assert_eq!(venues[0], Venue::from("BINANCE"));
-    assert_eq!(venues[1], Venue::from("BITMEX"));
+    assert_eq!(venues[1], Venue::from("BYBIT"));
 }
 
 #[rstest]

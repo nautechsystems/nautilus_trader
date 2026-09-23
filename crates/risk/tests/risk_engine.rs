@@ -80,9 +80,9 @@ use nautilus_model::{
         Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
         OptionSpread, PerpetualContract,
         stubs::{
-            audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-            default_fx_ccy, futures_spread_es, gbpusd_sim, option_spread,
-            perpetual_contract_eurusd, xbtusd_bitmex,
+            audusd_sim, betting, btcusd_bybit, commodity_gold, crypto_perpetual_ethusdt,
+            currency_pair_btcusdt, default_fx_ccy, futures_spread_es, gbpusd_sim, option_spread,
+            perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -363,7 +363,7 @@ fn config_fixture(
 }
 
 #[fixture]
-pub fn bitmex_cash_account_state_multi() -> AccountState {
+pub fn bybit_cash_account_state_multi() -> AccountState {
     let btc_account_balance = AccountBalance::new(
         Money::from("10 BTC"),
         Money::from("0 BTC"),
@@ -375,7 +375,7 @@ pub fn bitmex_cash_account_state_multi() -> AccountState {
         Money::from("20 ETH"),
     );
     AccountState::new(
-        AccountId::from("BITMEX-001"),
+        AccountId::from("BYBIT-001"),
         AccountType::Cash,
         vec![btc_account_balance, eth_account_balance],
         vec![],
@@ -424,8 +424,8 @@ fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentA
 }
 
 #[fixture]
-fn instrument_xbtusd_bitmex(xbtusd_bitmex: CryptoPerpetual) -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(xbtusd_bitmex)
+fn instrument_btcusd_bybit(btcusd_bybit: CryptoPerpetual) -> InstrumentAny {
+    InstrumentAny::CryptoPerpetual(btcusd_bybit)
 }
 
 #[fixture]
@@ -449,11 +449,11 @@ fn instrument_commodity(commodity_gold: Commodity) -> InstrumentAny {
 }
 
 #[fixture]
-pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
+pub fn instrument_btcusd_with_high_size_precision() -> InstrumentAny {
     InstrumentAny::CryptoPerpetual(
         CryptoPerpetual::builder()
-            .instrument_id(InstrumentId::from("BTCUSDT.BITMEX"))
-            .raw_symbol(Symbol::from("XBTUSD"))
+            .instrument_id(InstrumentId::from("BTCUSD.BYBIT"))
+            .raw_symbol(Symbol::from("BTCUSD"))
             .base_currency(Currency::BTC())
             .quote_currency(Currency::USD())
             .settlement_currency(Currency::BTC())
@@ -3494,25 +3494,25 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_with_high_size_precision: InstrumentAny,
+    instrument_btcusd_with_high_size_precision: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     consume_fixture(execute_order_event_handler);
     simple_cache
-        .add_instrument(instrument_xbtusd_with_high_size_precision.clone())
+        .add_instrument(instrument_btcusd_with_high_size_precision.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
     let quote = QuoteTick::new(
-        instrument_xbtusd_with_high_size_precision.id(),
+        instrument_btcusd_with_high_size_precision.id(),
         Price::from("0.075000"),
         Price::from("0.075005"),
         Quantity::from("50000"),
@@ -3527,7 +3527,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
     let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_with_high_size_precision.id())
+        .instrument_id(instrument_btcusd_with_high_size_precision.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("0.9").unwrap())
         .build();
@@ -3542,7 +3542,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_with_high_size_precision.id(),
+        instrument_btcusd_with_high_size_precision.id(),
         order.client_order_id(),
         order.init_event().clone(),
         None,
@@ -3734,15 +3734,15 @@ fn test_submit_close_position_exempts_placeholder_bound(
     client_id_binance: ClientId,
     trader_id: TraderId,
     instrument_eth_usdt: InstrumentAny,
-    mut xbtusd_bitmex: CryptoPerpetual,
+    mut btcusd_bybit: CryptoPerpetual,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
     mut simple_cache: Cache,
 ) {
     let mut instrument = if matches!(bound, ClosePositionBound::MaxQuantityCoinM) {
-        xbtusd_bitmex.id = InstrumentId::from("BTCUSD_PERP.BINANCE");
-        xbtusd_bitmex.raw_symbol = Symbol::from("BTCUSD_PERP");
-        InstrumentAny::CryptoPerpetual(xbtusd_bitmex)
+        btcusd_bybit.id = InstrumentId::from("BTCUSD_PERP.BINANCE");
+        btcusd_bybit.raw_symbol = Symbol::from("BTCUSD_PERP");
+        InstrumentAny::CryptoPerpetual(btcusd_bybit)
     } else {
         instrument_eth_usdt
     };
@@ -3937,7 +3937,7 @@ fn test_submit_invalid_close_position_shape_is_denied(
     match &mut instrument {
         InstrumentAny::CryptoPerpetual(instrument) => {
             if matches!(shape, InvalidClosePositionShape::OtherVenue) {
-                instrument.id = InstrumentId::from("ETHUSDT-PERP.BITMEX");
+                instrument.id = InstrumentId::from("ETHUSDT-PERP.BYBIT");
             }
             instrument.min_quantity = None;
             instrument.max_quantity = Some(Quantity::from("1"));
@@ -4665,23 +4665,23 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
+    instrument_btcusd_bybit: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
+        .add_instrument(instrument_btcusd_bybit.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
     let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Price::from("7.5000"),
         Price::from("7.5005"),
         Quantity::from("50000"),
@@ -4695,12 +4695,12 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
     risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Decimal::from_i64(100_000_000).unwrap(),
     );
 
     let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("10000001").unwrap())
         .build();
@@ -4715,7 +4715,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         order.client_order_id(),
         order.init_event().clone(),
         None,
@@ -6029,25 +6029,25 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
+    instrument_btcusd_bybit: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     consume_fixture(process_order_event_handler);
     simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
+        .add_instrument(instrument_btcusd_bybit.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
     let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Price::from("0.075000"),
         Price::from("0.075005"),
         Quantity::from("50000"),
@@ -6061,10 +6061,10 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
+    risk_engine.set_max_notional_per_order(instrument_btcusd_bybit.id(), dec!(10000));
 
     let long = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
@@ -6079,7 +6079,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         long.client_order_id(),
         long.init_event().clone(),
         None,
@@ -6094,13 +6094,13 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     risk_engine.set_trading_state(TradingState::Reducing);
 
     let entry = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
 
     let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .trigger_price(Price::new(1.1, 1))
@@ -6108,7 +6108,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
 
     // TODO: attempt to add with overflow
     // let take_profit = OrderTestBuilder::new(OrderType::Limit)
-    //     .instrument_id(instrument_xbtusd_bitmex.id())
+    //     .instrument_id(instrument_btcusd_bybit.id())
     //     .side(OrderSide::Buy)
     //     .quantity(Quantity::from_str("100").unwrap())
     //     .price(Price::new(1.2, 1))
@@ -6129,7 +6129,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
 
     let bracket = OrderList::new(
         OrderListId::new("1"),
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         StrategyId::new("S-001"),
         vec![orders[0].client_order_id(), orders[1].client_order_id()],
         risk_engine.clock().borrow().timestamp_ns(),
@@ -6169,25 +6169,25 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
+    instrument_btcusd_bybit: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     consume_fixture(process_order_event_handler);
     simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
+        .add_instrument(instrument_btcusd_bybit.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
     let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Price::from("0.075000"),
         Price::from("0.075005"),
         Quantity::from("50000"),
@@ -6201,10 +6201,10 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
+    risk_engine.set_max_notional_per_order(instrument_btcusd_bybit.id(), dec!(10000));
 
     let short = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
@@ -6219,7 +6219,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         short.client_order_id(),
         short.init_event().clone(),
         None,
@@ -6234,20 +6234,20 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     risk_engine.set_trading_state(TradingState::Reducing);
 
     let entry = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
 
     let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from_str("100").unwrap())
         .trigger_price(Price::new(1.1, 1))
         .build();
 
     let take_profit = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from_str("100").unwrap())
         .price(Price::new(1.2, 1))
@@ -6273,7 +6273,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
 
     let bracket = OrderList::new(
         OrderListId::new("1"),
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         StrategyId::new("S-001"),
         vec![
             orders[0].client_order_id(),
@@ -10329,14 +10329,14 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
+    instrument_btcusd_bybit: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Price::from(bid),
         Price::from(ask),
         Quantity::from("1000"),
@@ -10346,12 +10346,12 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     );
 
     simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
+        .add_instrument(instrument_btcusd_bybit.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
@@ -10360,7 +10360,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
     let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("440").unwrap())
         .build();
@@ -10375,7 +10375,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         order.client_order_id(),
         order.init_event().clone(),
         None,
@@ -10418,7 +10418,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         assert_eq!(saved_execute_messages.len(), 1);
         assert_eq!(
             saved_execute_messages[0].instrument_id(),
-            instrument_xbtusd_bitmex.id()
+            instrument_btcusd_bybit.id()
         );
     }
 }
@@ -10444,15 +10444,15 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
+    instrument_btcusd_bybit: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    bitmex_cash_account_state_multi: AccountState,
+    bybit_cash_account_state_multi: AccountState,
     mut simple_cache: Cache,
 ) {
     consume_fixture((process_order_event_handler, execute_order_event_handler));
     let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         Price::from("0.6109"),
         Price::from("0.6110"),
         Quantity::from("1000"),
@@ -10462,12 +10462,12 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
     );
 
     simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
+        .add_instrument(instrument_btcusd_bybit.clone())
         .unwrap();
 
     simple_cache
         .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
+            bybit_cash_account_state_multi,
         )))
         .unwrap();
 
@@ -10477,7 +10477,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
 
     let mut risk_engine = get_risk_engine(Some(cache), None, None, false);
     let order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_xbtusd_bitmex.id())
+        .instrument_id(instrument_btcusd_bybit.id())
         .side(OrderSide::Buy)
         .price(Price::from("100_000.0"))
         .quantity(Quantity::from_str("440").unwrap())
@@ -10495,7 +10495,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
         trader_id,
         Some(client_id_binance),
         strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
+        instrument_btcusd_bybit.id(),
         order.client_order_id(),
         order.init_event().clone(),
         None,

@@ -115,7 +115,7 @@ const MAX_PRICE_LIST_TICKS: usize = 100_000;
 ///
 /// Callers must only pass fields that are guaranteed to hold crypto assets (the
 /// underlying of a derivative); `quote_currency` and `settlement_currency` can
-/// legitimately be fiat (e.g. inverse perps on BitMEX quoted in USD) and must
+/// legitimately be fiat (e.g. inverse perpetuals quoted in USD) and must
 /// stay on the strict deserialization path.
 ///
 /// Codes are trimmed before lookup; empty or whitespace-only values are skipped
