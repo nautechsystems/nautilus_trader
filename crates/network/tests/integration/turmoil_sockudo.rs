@@ -101,6 +101,8 @@ fn websocket_config() -> WebSocketConfig {
         idle_timeout_ms: None,
         backend: TransportBackend::Sockudo,
         proxy_url: None,
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     }
 }
 

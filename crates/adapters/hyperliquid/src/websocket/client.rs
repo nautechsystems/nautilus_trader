@@ -315,6 +315,8 @@ impl HyperliquidWebSocketClient {
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([self.rate_limits.connection_key()]);
         let client_result = WebSocketClient::builder()

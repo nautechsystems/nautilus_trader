@@ -361,6 +361,7 @@ impl From<SockudoError> for TransportError {
 pub struct SockudoTransport<S> {
     inner: WebSocketStream<S>,
     pending_flush: bool,
+    max_message_size_bytes: Option<usize>,
 }
 
 impl<S> SockudoTransport<S> {
@@ -371,7 +372,13 @@ impl<S> SockudoTransport<S> {
         Self {
             inner,
             pending_flush: false,
+            max_message_size_bytes: None,
         }
+    }
+
+    pub(crate) const fn with_max_message_size(mut self, limit: Option<usize>) -> Self {
+        self.max_message_size_bytes = limit;
+        self
     }
 
     /// Consumes the adapter and returns the underlying stream.
@@ -413,7 +420,15 @@ where
         }
 
         let result = match Pin::new(&mut self.inner).poll_next(cx) {
-            Poll::Ready(Some(Ok(msg))) => Poll::Ready(Some(Ok(Message::from(msg)))),
+            Poll::Ready(Some(Ok(msg))) => {
+                let message = Message::from(msg);
+                // A finished single-frame message bypasses Sockudo's fragment-only message cap
+                if exceeds_message_cap(self.max_message_size_bytes, &message) {
+                    Poll::Ready(Some(Err(TransportError::MessageTooLarge)))
+                } else {
+                    Poll::Ready(Some(Ok(message)))
+                }
+            }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(TransportError::from(e)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => return Poll::Pending,
@@ -430,6 +445,19 @@ where
 
         result
     }
+}
+
+fn exceeds_message_cap(limit: Option<usize>, message: &Message) -> bool {
+    let Some(limit) = limit else {
+        return false;
+    };
+
+    let len = match message {
+        Message::Text(bytes) | Message::Binary(bytes) => bytes.len(),
+        Message::Ping(_) | Message::Pong(_) | Message::Close(_) => return false,
+    };
+
+    len > limit
 }
 
 impl<S> Sink<Message> for SockudoTransport<S>

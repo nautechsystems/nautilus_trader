@@ -203,6 +203,20 @@ A recognized SOCKS proxy URL logs a warning and **connects directly** because We
 tunneling is not implemented. Malformed proxy URLs and other unsupported schemes return an error.
 :::
 
+### Inbound size limits
+
+`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound
+message and frame payload sizes for one connection. Leave them unset to pass each backend's current
+default config: 64 MiB per message and 16 MiB per frame. The frame cap bounds memory for one
+inbound frame. Both backends apply the message cap after that frame payload is read, so a lower
+message cap does not shrink the buffer. A zero value is rejected on the builder
+and on both handler and stream connect paths. A message that exceeds the message cap and fits in
+the frame cap fails the read with `MessageTooLarge`. On Sockudo, a frame that exceeds the frame cap
+fails first with `FrameTooLarge`. Sockudo applies its message cap to fragmented messages, and to a
+finished single-frame message only when `max_message_size_bytes` is set. Its small-frame parser
+skips the frame cap when the whole frame of 125 bytes or less is already buffered, so that case is
+not a reliable rejection. Tungstenite reports every frame breach as `MessageTooLarge`.
+
 ### Liveness and recovery
 
 The configured heartbeat sends either an RFC 6455 Ping or a venue-specific text message at a fixed

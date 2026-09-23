@@ -438,6 +438,8 @@ impl PolymarketWebSocketClient {
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.as_ref().map(|url| url.expose().to_string()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         }
     }
 

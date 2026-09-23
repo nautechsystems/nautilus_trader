@@ -228,6 +228,8 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
         idle_timeout_ms: None,
         backend,
         proxy_url: Some(proxy_url),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let client = WebSocketClient::builder()
@@ -283,6 +285,8 @@ async fn websocket_client_without_proxy_connects_directly(#[case] backend: Trans
         idle_timeout_ms: None,
         backend,
         proxy_url: None,
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
@@ -337,6 +341,8 @@ async fn websocket_client_invalid_proxy_error_redacts_credentials(
         idle_timeout_ms: None,
         backend,
         proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
@@ -384,6 +390,8 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials(
         idle_timeout_ms: None,
         backend,
         proxy_url: Some(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
@@ -435,6 +443,8 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: 
         idle_timeout_ms: None,
         backend,
         proxy_url: Some("socks5://127.0.0.1:1080".to_string()),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
@@ -537,6 +547,8 @@ async fn websocket_client_emits_proxy_authorization_header(#[case] backend: Tran
         idle_timeout_ms: None,
         backend,
         proxy_url: Some(proxy_url),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
@@ -590,6 +602,8 @@ async fn websocket_client_reuses_proxy_url_on_reconnect(#[case] backend: Transpo
         idle_timeout_ms: None,
         backend,
         proxy_url: Some(format!("http://{proxy_addr}")),
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let handler: MessageHandler = Arc::new(|_| {});

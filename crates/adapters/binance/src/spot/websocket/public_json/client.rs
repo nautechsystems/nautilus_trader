@@ -522,6 +522,8 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
         let keyed_quotas = vec![(

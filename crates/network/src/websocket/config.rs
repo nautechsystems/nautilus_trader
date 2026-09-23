@@ -16,8 +16,8 @@
 //! Static transport and lifecycle configuration for WebSocket connections.
 //!
 //! [`WebSocketConfig`] selects the endpoint, upgrade headers, heartbeat and idle detection,
-//! reconnect policy, transport backend, and optional proxy. Runtime handlers and rate limiting are
-//! supplied through the client builders instead.
+//! reconnect policy, inbound size limits, transport backend, and optional proxy. Runtime handlers
+//! and rate limiting are supplied through the client builders instead.
 //!
 //! # Reconnection strategy
 //!
@@ -218,6 +218,25 @@ pub struct WebSocketConfig {
     /// `http://` and `https://` schemes; SOCKS schemes are not yet supported.
     #[serde(default)]
     pub proxy_url: Option<String>,
+    /// Maximum size in bytes of one inbound WebSocket message.
+    ///
+    /// `None` passes the selected backend's default message cap of 64 MiB. Sockudo applies that
+    /// default only while reassembling fragments; a finished single-frame message is bounded by the
+    /// frame cap unless this field is set. `Some(0)` is rejected. A message that exceeds this cap
+    /// and fits in the frame cap fails the read with `MessageTooLarge`. This cap does not bound
+    /// per-frame memory: both backends apply it after the frame payload is read. Set
+    /// `max_frame_size_bytes` for that bound.
+    #[serde(default)]
+    pub max_message_size_bytes: Option<usize>,
+    /// Maximum size in bytes of one inbound WebSocket frame payload, excluding the frame header.
+    ///
+    /// `None` keeps the selected backend's default of 16 MiB. `Some(0)` is rejected. Sockudo reports
+    /// a frame larger than 125 bytes that exceeds the cap as `FrameTooLarge`. Its small-frame parser
+    /// skips the cap when the whole frame is already buffered, so a shorter frame is not reliably
+    /// rejected. Tungstenite uses one capacity error for both limits, so every frame breach is
+    /// `MessageTooLarge`. On Sockudo, a frame that exceeds this cap fails before the message cap.
+    #[serde(default)]
+    pub max_frame_size_bytes: Option<usize>,
 }
 
 impl Debug for WebSocketConfig {
@@ -243,6 +262,8 @@ impl Debug for WebSocketConfig {
             .field("idle_timeout_ms", &self.idle_timeout_ms)
             .field("backend", &self.backend)
             .field("proxy_url", &self.proxy_url.as_ref().map(|_| REDACTED))
+            .field("max_message_size_bytes", &self.max_message_size_bytes)
+            .field("max_frame_size_bytes", &self.max_frame_size_bytes)
             .finish()
     }
 }
@@ -266,9 +287,10 @@ impl WebSocketConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
-    /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
-    /// `[1.0, 100.0]`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
+    /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval, a
+    /// reconnection timing field, or an inbound size limit is not positive,
+    /// `reconnect_backoff_factor` is outside `[1.0, 100.0]`, or `reconnect_delay_initial_ms`
+    /// exceeds `reconnect_delay_max_ms`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
 
@@ -310,6 +332,20 @@ impl WebSocketConfig {
             ("reconnect_delay_max_ms", self.reconnect_delay_max_ms),
             ("heartbeat_timeout_secs", self.heartbeat_timeout_secs),
             ("idle_timeout_ms", self.idle_timeout_ms),
+        ] {
+            if let Some(value) = value
+                && value == 0
+            {
+                errors.push(NetworkConfigError::invalid(
+                    field,
+                    format!("must be positive, was {value}"),
+                ));
+            }
+        }
+
+        for (field, value) in [
+            ("max_message_size_bytes", self.max_message_size_bytes),
+            ("max_frame_size_bytes", self.max_frame_size_bytes),
         ] {
             if let Some(value) = value
                 && value == 0
@@ -424,6 +460,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_websocket_config_defaults_inbound_size_limits() {
+        let config = serde_json::from_value::<WebSocketConfig>(json!({
+            "url": "wss://example.com/ws",
+        }))
+        .unwrap();
+
+        assert_eq!(config.max_message_size_bytes, None);
+        assert_eq!(config.max_frame_size_bytes, None);
+    }
+
+    #[rstest]
+    fn test_validate_accepts_positive_inbound_size_limits() {
+        let mut config = valid_config();
+        config.max_message_size_bytes = Some(1);
+        config.max_frame_size_bytes = Some(1);
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
     fn test_validate_accepts_zero_jitter() {
         let mut config = valid_config();
         config.reconnect_jitter_ms = Some(0);
@@ -440,6 +496,8 @@ mod tests {
     #[case::reconnect_delay_max(|c: &mut WebSocketConfig| c.reconnect_delay_max_ms = Some(0), "reconnect_delay_max_ms")]
     #[case::heartbeat_timeout_zero(|c: &mut WebSocketConfig| c.heartbeat_timeout_secs = Some(0), "heartbeat_timeout_secs")]
     #[case::idle_timeout(|c: &mut WebSocketConfig| c.idle_timeout_ms = Some(0), "idle_timeout_ms")]
+    #[case::message_size(|c: &mut WebSocketConfig| c.max_message_size_bytes = Some(0), "max_message_size_bytes")]
+    #[case::frame_size(|c: &mut WebSocketConfig| c.max_frame_size_bytes = Some(0), "max_frame_size_bytes")]
     fn test_validate_rejects_invalid_field(
         #[case] mutate: fn(&mut WebSocketConfig),
         #[case] expected_field: &str,
