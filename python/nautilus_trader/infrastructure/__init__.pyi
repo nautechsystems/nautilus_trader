@@ -24,6 +24,7 @@ class PostgresCacheConfig:
         username: str | None = None,
         password: str | None = None,
         database: str | None = None,
+        all_traders: bool = False,
     ) -> None: ...
     @property
     def host(self) -> str | None: ...
@@ -35,6 +36,8 @@ class PostgresCacheConfig:
     def password(self) -> str | None: ...
     @property
     def database(self) -> str | None: ...
+    @property
+    def all_traders(self) -> bool: ...
 
 @typing.final
 class PostgresConnectOptions:
