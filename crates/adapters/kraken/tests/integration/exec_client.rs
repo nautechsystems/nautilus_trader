@@ -65,7 +65,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -381,6 +381,8 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             state
                 .batch_cancel_request_count
                 .fetch_add(1, Ordering::Relaxed);
+            *state.last_batch_cancel_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
 
             match state.command_responses.lock().await.batch_cancel {
                 BatchCancelResponse::Success => json_response(
@@ -988,12 +990,28 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
+    add_futures_limit_order_to_cache(
+        cache,
+        client_order_id,
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+    )
+}
+
+fn add_futures_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    strategy_id: StrategyId,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
+        strategy_id,
+        instrument_id,
         client_order_id,
-        OrderSide::Buy,
+        side,
         Quantity::from("1"),
         Price::from("50000"),
         TimeInForce::Gtc,
@@ -1576,6 +1594,25 @@ async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
     }
 
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+/// Applies an `OrderSubmitted`, mirroring an order the venue may already hold while the cache
+/// still records it as submitted.
+fn mark_cached_order_submitted(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    let submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
 }
 
 /// Applies an `OrderAccepted` carrying the venue order ID, mirroring how the
@@ -2710,6 +2747,146 @@ async fn test_futures_cancel_all_side_filter_uses_batch_path() {
         0,
         "side-filtered cancellation must not send per-order cancels"
     );
+}
+
+/// Cancel-all must reach an order the venue may already hold while the cache still records it
+/// as submitted, without widening beyond the requested instrument.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_includes_submitted_orders_within_instrument_scope() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    // Submitted, so not open: the venue may already hold it.
+    let submitted = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("submitted-001"));
+    mark_cached_order_submitted(&cache, &submitted);
+
+    // Submitted on another instrument, which the request never named.
+    let other = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        ClientOrderId::new("submitted-other"),
+        InstrumentId::from("ETH/USDT.KRAKEN"),
+    );
+    mark_cached_order_submitted(&cache, &other);
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(
+        body.contains("submitted-001"),
+        "a submitted order must still be cancelled: {body}"
+    );
+    assert!(
+        !body.contains("submitted-other"),
+        "another instrument must stay untouched: {body}"
+    );
+}
+
+/// Futures side-filtered cancellation submits the matching IDs only, and a per-order rejection
+/// carries the strategy that owns the order.
+#[rstest]
+#[tokio::test]
+async fn test_futures_cancel_all_submits_ids_and_preserves_owning_strategy() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+
+    let strategy_ok = StrategyId::from("S-101");
+    let strategy_rejected = StrategyId::from("S-202");
+
+    // Two buy orders on the requested instrument, owned by different strategies. The mock
+    // cancels V-BATCH-OK and rejects V-BATCH-REJECT.
+    let ok = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-ok-001"),
+        test_instrument_id(),
+        OrderSide::Buy,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &ok, "V-BATCH-OK");
+
+    let rejected = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-reject-001"),
+        test_instrument_id(),
+        OrderSide::Buy,
+        strategy_rejected,
+    );
+    set_venue_order_id_on_cached_order(&cache, &rejected, "V-BATCH-REJECT");
+
+    // Opposite side on the same instrument.
+    let sell = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-sell-001"),
+        test_instrument_id(),
+        OrderSide::Sell,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &sell, "V-FUT-SELL");
+
+    // A different instrument.
+    let other = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-other-001"),
+        InstrumentId::from("PI_ETHUSD.KRAKEN"),
+        OrderSide::Buy,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &other, "V-FUT-OTHER");
+
+    client
+        .cancel_all_orders(cancel_all_orders_command_with_side(Some(OrderSide::Buy)))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(body.contains("V-BATCH-OK"), "body: {body}");
+    assert!(body.contains("V-BATCH-REJECT"), "body: {body}");
+    assert!(
+        !body.contains("V-FUT-SELL"),
+        "the opposite side must be untouched: {body}"
+    );
+    assert!(
+        !body.contains("V-FUT-OTHER"),
+        "another instrument must be untouched: {body}"
+    );
+
+    let event = recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected))
+                if rejected.client_order_id == ClientOrderId::new("fut-reject-001")
+        )
+    })
+    .await;
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+            assert_eq!(
+                rejected.strategy_id, strategy_rejected,
+                "the rejection must carry the strategy that owns the order"
+            );
+        }
+        other => panic!("expected a cancel rejection, was {other:?}"),
+    }
 }
 
 /// An unsided cancel-all must stay scoped to the instrument it names.

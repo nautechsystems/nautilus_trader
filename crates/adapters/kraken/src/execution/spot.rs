@@ -1624,13 +1624,20 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         // matching open orders and cancel them by explicit venue id instead.
         let cancels: Vec<CancelOrder> = {
             let cache = self.core.cache();
-            let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
             let ts_init = self.clock.get_time_ns();
             let correlation_id = cmd.correlation_id.or(Some(cmd.command_id));
 
-            open_orders
+            // In-flight orders are included because the venue can have accepted an order the
+            // cache still records as `Submitted`. The venue-wide cancellation this replaced
+            // reached those, so selecting only open orders would silently stop covering them.
+            let mut seen = HashSet::new();
+
+            cache
+                .orders_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
+                .chain(cache.orders_inflight(None, Some(&instrument_id), None, None, None))
                 .filter(|order| cmd.order_side.is_none_or(|side| order.order_side() == side))
+                .filter(|order| seen.insert(order.client_order_id()))
                 .map(|order| {
                     CancelOrder::new(
                         cmd.trader_id,

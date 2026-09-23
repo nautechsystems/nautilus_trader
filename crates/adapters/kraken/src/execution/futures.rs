@@ -16,6 +16,7 @@
 //! Kraken Futures execution client implementation.
 
 use std::{
+    collections::HashSet,
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -1217,13 +1218,19 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // HTTP cancel per order.
         let cancels: Vec<CancelOrder> = {
             let cache = self.core.cache();
-            let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
             let ts_init = self.clock.get_time_ns();
             let correlation_id = cmd.correlation_id.or(Some(cmd.command_id));
 
-            open_orders
+            // As for spot: the venue can have accepted an order the cache still records as
+            // `Submitted`, so in-flight orders are selected alongside open ones.
+            let mut seen = HashSet::new();
+
+            cache
+                .orders_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
+                .chain(cache.orders_inflight(None, Some(&instrument_id), None, None, None))
                 .filter(|order| Some(order.order_side()) == cmd.order_side)
+                .filter(|order| seen.insert(order.client_order_id()))
                 .map(|order| {
                     CancelOrder::new(
                         cmd.trader_id,
