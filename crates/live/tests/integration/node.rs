@@ -1486,6 +1486,7 @@ pub(crate) mod serial_tests {
             // test asserting fill application must respond inside the window.
             if self.fill_reports_at_window_end {
                 let window_end = cmd.end.unwrap_or(cmd.ts_init);
+
                 for report in &mut reports {
                     report.ts_event = window_end;
                     report.ts_init = window_end;
@@ -1655,6 +1656,7 @@ pub(crate) mod serial_tests {
 
     fn apply_reconciliation_events(node: &mut LiveNode, events: &[OrderEventAny]) {
         let exec_engine = node.kernel().exec_engine().clone();
+
         for event in events {
             exec_engine.borrow_mut().process(event);
             if let OrderEventAny::Filled(fill) = event {
@@ -5438,6 +5440,7 @@ pub(crate) mod serial_tests {
             [vec![first_fill.clone(), second_fill]],
             Some(fill_release.clone()),
         );
+
         factory = if targeted {
             factory
                 .with_order_reports(Vec::new())
@@ -5447,6 +5450,7 @@ pub(crate) mod serial_tests {
         };
 
         let mut config = reconciliation_node_config(1);
+
         if timeout_retry {
             config.timeout_reconciliation = Duration::from_millis(100);
         }
@@ -5905,6 +5909,7 @@ pub(crate) mod serial_tests {
             .await;
             let sender = get_exec_event_sender();
             let mut sample = SEED;
+
             for index in 0..EXEC_BACKLOG {
                 sample ^= sample << 13;
                 sample ^= sample >> 7;

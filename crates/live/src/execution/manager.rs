@@ -1824,6 +1824,7 @@ impl ExecutionManager {
             }
 
             let threshold = Duration::from(self.config.open_check_threshold_ns);
+
             if let Some(elapsed) = self.order_activity.elapsed_at(&client_order_id, now)
                 && elapsed < threshold
             {
@@ -1924,6 +1925,7 @@ impl ExecutionManager {
 
             // Check for recent local activity to avoid race conditions with in-flight fills
             let threshold = Duration::from(self.config.open_check_threshold_ns);
+
             if let Some(elapsed) = self.order_activity.elapsed(&client_order_id)
                 && elapsed < threshold
             {
@@ -2284,6 +2286,7 @@ impl ExecutionManager {
             .collect();
 
         let mut activity_revisions = self.position_activity_revisions.clone();
+
         for key in &position_keys {
             activity_revisions
                 .entry(*key)
@@ -4069,6 +4072,7 @@ impl ExecutionManager {
             || is_snapshot
                 && (report.order_status == OrderStatus::Voided
                     || report.filled_qty < working.filled_qty());
+
         if !requires_snapshot_projection {
             match self.reconcile_order_report(&working, report, instrument, commission_client) {
                 Ok(order_events) => events.extend(order_events),
@@ -4501,6 +4505,7 @@ impl ExecutionManager {
 
             let fill_queue =
                 fill_queue.expect("fill queue availability was checked before cache mutation");
+
             for (fill_event, fill_key) in prepared_fills {
                 fill_queue.push(&mut order_events, fill_event, fill_key);
             }
@@ -5249,6 +5254,7 @@ mod tests {
             Some(&failing_client),
         );
         let mut working = order;
+
         for event in &first_events {
             working
                 .apply(event.clone())
@@ -5489,6 +5495,7 @@ mod tests {
         let events = manager
             .reconcile_order_report(&order, &report, Some(&instrument), Some(&client))
             .unwrap();
+
         for event in &events {
             order.apply(event.clone()).unwrap();
         }
@@ -6797,6 +6804,7 @@ mod tests {
             None,
         );
         let mut projected = order;
+
         for event in &events {
             projected.apply(event.clone()).unwrap();
         }

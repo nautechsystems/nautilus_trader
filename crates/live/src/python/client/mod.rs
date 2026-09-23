@@ -1141,6 +1141,7 @@ impl PythonClients {
                 kwargs.set_item("config", &config.0)?;
                 kwargs.set_item("cache", PyClientCache { id: cache_id })?;
                 kwargs.set_item("clock", PyClock::from_rc(clock.clone()))?;
+
                 if let Some(trader_id) = trader_id {
                     kwargs.set_item("trader_id", trader_id)?;
                 }
@@ -1160,6 +1161,7 @@ impl PythonClients {
                 let base = py
                     .import("nautilus_trader.live.clients")?
                     .getattr(base_name)?;
+
                 if !client.bind(py).is_instance(&base)? {
                     return Err(to_pytype_err(format!("Factory must return a {base_name}")));
                 }
@@ -2325,6 +2327,7 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let mut expected = order_report();
+
         if result_kind == "foreign" {
             expected.account_id = AccountId::from("OTHER-001");
         }
@@ -2402,6 +2405,7 @@ class Runtime:
     fn test_output_rebinding_is_rejected(#[case] disposed: bool) {
         Python::initialize();
         let output = ClientOutput::py_new();
+
         if disposed {
             output.invalidate();
         } else {
@@ -2899,6 +2903,7 @@ class Runtime:
         let commission = Money::from("0.17 USD");
         Python::attach(|py| {
             let runtime = client.client.runtime.bind(py);
+
             if mode == "money" {
                 runtime.setattr("result", commission).unwrap();
             } else if mode == "exception" {
@@ -3204,6 +3209,7 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let account = AccountId::from("OTHER-001");
+
         if kind == "order" {
             order_report.account_id = account;
         }

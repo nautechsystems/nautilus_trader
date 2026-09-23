@@ -113,6 +113,7 @@ fn feather_files_under(root: &std::path::Path, family: &str) -> Vec<std::path::P
             }
         }
     }
+
     files.sort();
     files
 }
@@ -135,6 +136,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
         false,
         RotationConfig::Size { max_size: 1 },
     );
+
     let config = LiveNodeConfig {
         environment: Environment::Live,
         instance_id: Some(instance_id),
@@ -163,6 +165,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
         trade(instrument_id, "3000.12", 4_000),
         trade(instrument_id, "3000.18", 5_000),
     ];
+
     let delta = OrderBookDelta::new(
         instrument_id,
         BookAction::Add,
@@ -194,15 +197,19 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
     // Typed routes only: the typed publish fns deliver exclusively to typed handlers, so every
     // captured row proves typed-route delivery with no drops or duplicates.
     let quotes_topic = switchboard::get_quotes_topic(instrument_id);
+
     for tick in &quotes {
         msgbus::publish_quote(quotes_topic, tick);
         std::thread::sleep(Duration::from_millis(2));
     }
+
     let trades_topic = switchboard::get_trades_topic(instrument_id);
+
     for tick in &trades {
         msgbus::publish_trade(trades_topic, tick);
         std::thread::sleep(Duration::from_millis(2));
     }
+
     msgbus::publish_deltas(switchboard::get_book_deltas_topic(instrument_id), &deltas);
     std::thread::sleep(Duration::from_millis(2));
     msgbus::publish_bar(switchboard::get_bars_topic(bar_type), &bar);
@@ -256,6 +263,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             )
             .unwrap();
     }
+
     assert_eq!(
         catalog
             .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
@@ -335,6 +343,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         false,
         RotationConfig::NoRotation,
     );
+
     let config = LiveNodeConfig {
         environment: Environment::Live,
         instance_id: Some(instance_id),
@@ -359,6 +368,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         quote(instrument_id, "3000.05", "3000.15", 2_000),
     ];
     let quotes_topic = switchboard::get_quotes_topic(instrument_id);
+
     for tick in &quotes {
         msgbus::publish_quote(quotes_topic, tick);
         std::thread::sleep(Duration::from_millis(2));

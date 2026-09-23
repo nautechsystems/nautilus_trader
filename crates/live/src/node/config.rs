@@ -304,6 +304,7 @@ pub(crate) fn validate_max_notional_per_order(
 
     for (instrument_id, notional) in max_notional_per_order {
         let entry_path = format!("{field}[{instrument_id}]");
+
         if let Err(e) = InstrumentId::from_str(instrument_id) {
             collector.push(ConfigError::invalid_reference(
                 entry_path.clone(),

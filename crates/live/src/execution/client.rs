@@ -168,6 +168,7 @@ impl LiveExecutionClient {
 
         let count = pending.len();
         let mut client = self.client.borrow_mut();
+
         while let Some(instrument) = pending.pop_front() {
             client.on_instrument(instrument);
         }

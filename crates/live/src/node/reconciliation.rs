@@ -183,6 +183,7 @@ impl LiveNode {
                     .map(|client| client as &dyn ExecutionClient)
                     .collect::<Vec<_>>();
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+
                 match dst::time::timeout(
                     remaining,
                     request_targeted_order_reports(queries, &client_refs, query_delay),
@@ -301,6 +302,7 @@ impl LiveNode {
             successful_keys,
         } = result;
         let mut venue_reports = IndexMap::new();
+
         for report in &position_result.reports {
             venue_reports
                 .entry((report.instrument_id, report.account_id))

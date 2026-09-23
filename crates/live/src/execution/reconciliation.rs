@@ -1030,6 +1030,7 @@ pub(super) mod tests {
     fn test_create_orphan_fill_order_report_rejects_aggregate_quantity_overflow() {
         let (instrument, mut fills) = orphan_fill_fixtures();
         let max_qty = Quantity::new(QUANTITY_MAX, 0);
+
         for fill in &mut fills {
             fill.last_qty = max_qty;
             fill.last_px = Price::from("1.00");

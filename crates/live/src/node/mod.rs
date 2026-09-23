@@ -2166,6 +2166,7 @@ impl LiveNode {
                 .borrow()
                 .order(client_order_id)
                 .is_some_and(|order| order.is_closed());
+
             if is_closed {
                 self.exec_manager
                     .clear_recon_tracking(client_order_id, true);
@@ -2491,6 +2492,7 @@ impl LiveNode {
         self.handle.set_stopped();
 
         let mut errors = Vec::new();
+
         if let Err(e) = disconnect_result {
             errors.push(e.to_string());
         }
@@ -3761,6 +3763,7 @@ mod tests {
         let expected = transitions
             .into_iter()
             .filter(|transition| channel.is_none_or(|channel| channel == transition.channel));
+
         for (event, transition) in events.iter().zip(expected) {
             assert_eq!(event.trader_id, TraderId::from("QUEUE-001"));
             assert_eq!(event.channel, transition.channel);
@@ -4841,6 +4844,7 @@ mod tests {
             .queried_clients
             .insert(ClientId::from("SECOND"));
         let mut successful_keys = IndexSet::from([active_key]);
+
         if local_activity {
             successful_keys.insert(deferred_key);
             node.exec_manager
@@ -8703,6 +8707,7 @@ mod tests {
 
         let results = std::thread::spawn(move || {
             let mut results = Vec::new();
+
             for event in pending.data_evts {
                 results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                     || event.dispatch(drop),

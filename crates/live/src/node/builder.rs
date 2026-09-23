@@ -615,6 +615,7 @@ impl LiveNodeBuilder {
                 .with_clock_factory(self.clock_factory.clone())
                 .with_event_store_factory(self.event_store_factory.take()),
         )?;
+
         #[cfg(feature = "python")]
         if let Some(controller) = self.config.controller.as_ref() {
             Trader::add_controller_from_importable_config(&kernel.trader, controller)?;
@@ -932,6 +933,7 @@ mod tests {
         let mut builder =
             LiveNodeBuilder::new(TraderId::test_default(), Environment::Live).unwrap();
         let mut indices: Vec<_> = (0..count).collect();
+
         if reverse {
             indices.reverse();
         }

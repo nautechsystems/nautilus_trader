@@ -2927,6 +2927,7 @@ async fn test_retained_fill_projects_missing_order_without_reapplying(
         Some(dec!(3000.00)),
     );
     mass_status.add_order_reports(vec![order_report]);
+
     if include_fill_report {
         mass_status.add_fill_reports(vec![fill_report]);
     }
@@ -4182,6 +4183,7 @@ async fn test_incomplete_bounded_reports_project_fills_order_only(#[case] has_fi
     );
     mass_status.set_report_window(Some(cutoff), false);
     mass_status.add_order_reports(vec![order_report]);
+
     if has_fill_report {
         mass_status.add_fill_reports(vec![fill_report]);
     }
@@ -4675,6 +4677,7 @@ async fn test_bounded_interleaved_multi_fill_orders_reconcile_explicit_flat() {
     assert_eq!(result.external_orders.len(), 2);
 
     let cache = ctx.cache.borrow();
+
     for venue_order_id in [opening_venue_order_id, closing_venue_order_id] {
         let order = cache
             .order(&ClientOrderId::from(venue_order_id.as_str()))
@@ -4803,6 +4806,7 @@ async fn test_bounded_same_timestamp_orders_reconcile_explicit_flat() {
     assert_eq!(result.external_orders.len(), 2);
 
     let cache = ctx.cache.borrow();
+
     for venue_order_id in [opening_venue_order_id, closing_venue_order_id] {
         let order = cache
             .order(&ClientOrderId::from(venue_order_id.as_str()))
@@ -6449,6 +6453,7 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
         Quantity::from("3.0"), // Less than our 5
     );
     mass_status.add_order_reports(vec![report]);
+
     if echo_cached_fill {
         mass_status.add_fill_reports(vec![create_fill_report(
             client_order_id,
@@ -10752,6 +10757,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
             None,
         )
     };
+
     let mut mass_status = create_mass_status(
         vec![
             create_order_status_report(
@@ -10842,6 +10848,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
             _ => None,
         })
         .collect();
+
     assert!(
         accepted.contains(&ClientOrderId::from("C-009")),
         "working order not adopted, events: {:?}",
@@ -10875,6 +10882,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     assert_eq!(synthetic.last_qty, Quantity::from("1.000"));
     assert!(result.unresolved_positions.is_empty());
     let cache = ctx.cache.borrow();
+
     if terminal_report {
         let terminal = cache.order(&ClientOrderId::from("C-003")).unwrap();
         assert_eq!(terminal.status(), OrderStatus::Filled);
@@ -14582,6 +14590,7 @@ async fn test_position_check_respects_disabled_order_generation(
     let position_id = PositionId::from("P-GENERATION-DISABLED");
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "3.0", "3000.00");
     ctx.add_instrument(instrument);
+
     if has_position {
         ctx.add_position(&position);
     }
@@ -15991,6 +16000,7 @@ async fn test_position_check_matching_hedge_reports_is_order_invariant(
         dec!(3100.00),
     );
     let mut reports = vec![report_long, report_short];
+
     if reverse_reports {
         reports.reverse();
     }
