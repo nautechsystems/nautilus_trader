@@ -30,8 +30,10 @@ use nautilus_architect_ax::{
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    types::Currency,
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -296,7 +298,7 @@ async fn handle_empty_open_orders_page() -> Json<serde_json::Value> {
     }))
 }
 
-fn create_router() -> Router {
+fn create_base_router() -> Router {
     Router::new()
         .route(
             "/instruments",
@@ -373,8 +375,55 @@ fn create_router() -> Router {
         .route("/funding-slots", get(handle_funding_slots))
 }
 
+fn create_router() -> Router {
+    create_base_router().route(
+        "/risk-snapshot",
+        get(|| async { Json(load_test_data("http_get_risk_snapshot.json")) }),
+    )
+}
+
 async fn start_test_server() -> SocketAddr {
     let addr = start_server(create_router()).await;
+    wait_for_server(addr, "/instruments").await;
+    addr
+}
+
+async fn start_test_server_without_risk_snapshot() -> SocketAddr {
+    let router = create_base_router().route(
+        "/risk-snapshot",
+        get(|| async {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "risk engine unavailable"})),
+            )
+        }),
+    );
+
+    let addr = start_server(router).await;
+    wait_for_server(addr, "/instruments").await;
+    addr
+}
+
+async fn start_test_server_with_rejected_order_status() -> SocketAddr {
+    let router = create_base_router().route(
+        "/order-status",
+        get(|| async {
+            Json(json!({
+                "status": {
+                    "symbol": "EURUSD-PERP",
+                    "order_id": "O-REJECTED-1",
+                    "state": "REJECTED",
+                    "clord_id": null,
+                    "filled_quantity": 0,
+                    "remaining_quantity": 100,
+                    "reject_reason": "PRICE_OUT_OF_BOUNDS",
+                    "reject_message": null
+                }
+            }))
+        }),
+    );
+
+    let addr = start_server(router).await;
     wait_for_server(addr, "/instruments").await;
     addr
 }
@@ -557,6 +606,97 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
     let instruments = client.request_instruments().await.unwrap();
 
     assert_eq!(instruments.len(), 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_state_applies_risk_snapshot() {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let state = client
+        .request_account_state(AccountId::from("AX-001"))
+        .await
+        .unwrap();
+
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.total.currency == Currency::USD())
+        .unwrap();
+    assert_eq!(usd.total.as_decimal(), dec!(100000.50));
+    assert_eq!(usd.locked.as_decimal(), dec!(7000.00));
+    assert_eq!(usd.free.as_decimal(), dec!(93000.50));
+
+    assert_eq!(state.margins.len(), 1);
+    assert_eq!(state.margins[0].initial.as_decimal(), dec!(7000.00));
+    assert_eq!(state.margins[0].maintenance.as_decimal(), dec!(3500.00));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_state_falls_back_without_risk_snapshot() {
+    let addr = start_test_server_without_risk_snapshot().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 0, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let state = client
+        .request_account_state(AccountId::from("AX-001"))
+        .await
+        .unwrap();
+
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.total.currency == Currency::USD())
+        .unwrap();
+    assert_eq!(usd.total.as_decimal(), dec!(100000.50));
+    assert_eq!(usd.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(usd.free.as_decimal(), dec!(100000.50));
+    assert!(state.margins.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_order_status_carries_reject_reason() {
+    let addr = start_test_server_with_rejected_order_status().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(
+        Some(base_url.clone()),
+        Some(base_url),
+        60,
+        0,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let report = client
+        .request_order_status(
+            AccountId::from("AX-001"),
+            InstrumentId::from("EURUSD-PERP.AX"),
+            None,
+            Some(VenueOrderId::from("O-REJECTED-1")),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(report.order_status, OrderStatus::Rejected);
+    assert_eq!(
+        report.cancel_reason,
+        Some("PRICE_OUT_OF_BOUNDS".to_string())
+    );
 }
 
 #[rstest]

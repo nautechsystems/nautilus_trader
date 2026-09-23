@@ -356,7 +356,28 @@ state.
 AX open and historical order payloads do not expose a stop order type or trigger price.
 REST-derived reconciliation therefore reports every visible external order as a limit order. The
 adapter does not submit venue-native conditional orders.
+
+Historical order reports carry the venue reject reason (`r`, falling back to `txt`), so
+reconciled `OrderRejected` events keep the same reason strings as their real-time counterparts;
+reconciled `OrderCanceled` events can also carry the venue reason where a live cancel carries
+none.
+
+Startup mass-status reconciliation bounds its `/orders` and `/fills` requests by
+`reconciliation_lookback_mins`, and positions are always reported as a current snapshot. A
+lookback longer than seven days still yields only seven days of fills, and the declared
+window is floored at that cap. With a bounded window, fills for instruments that reconcile
+flat apply to their orders without materializing positions, so round trips completed inside
+the window do not open phantom positions on restart. Without a bound, every historical order
+on the account is fetched and reconciled at startup.
 :::
+
+### Account state
+
+The `/balances` endpoint carries no margin data, so account state also requests `/risk-snapshot`:
+its USD `initial_margin_required_total` populates the USD balance's locked funds, capped at the
+USD balance, and a USD `MarginBalance` entry pairs initial with maintenance margin. When
+`/risk-snapshot` fails, account state falls back to balances-only with zero locked margin and a
+warning.
 
 ## Authentication
 

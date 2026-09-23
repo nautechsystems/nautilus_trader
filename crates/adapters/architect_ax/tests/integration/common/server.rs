@@ -649,6 +649,10 @@ async fn handle_get_balances() -> Json<serde_json::Value> {
     Json(load_test_data("http_get_balances.json"))
 }
 
+async fn handle_get_risk_snapshot() -> Json<serde_json::Value> {
+    Json(load_test_data("http_get_risk_snapshot.json"))
+}
+
 async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::response::Response {
     state.whoami_count.fetch_add(1, Ordering::Relaxed);
     if state.whoami_fail.load(Ordering::Relaxed) {
@@ -884,6 +888,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/instruments", get(handle_get_instruments))
         .route("/instrument", get(handle_get_instrument))
         .route("/balances", get(handle_get_balances))
+        .route("/risk-snapshot", get(handle_get_risk_snapshot))
         .route("/whoami", get(handle_get_whoami))
         .route("/positions", get(handle_positions))
         .route("/cancel-all-orders", post(handle_cancel_all_orders))

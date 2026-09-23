@@ -23,6 +23,7 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -61,11 +62,12 @@ use super::{
         AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
         AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxFundingSlotsResponse,
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
-        AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
-        AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse,
-        AxTransactionsResponse, AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest,
-        PlaceOrderRequest, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
+        AxOpenOrdersResponse, AxOrderRejectReason, AxOrderStatusQueryResponse, AxOrdersResponse,
+        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
+        AxReplaceOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickerResponse,
+        AxTickersResponse, AxTradesResponse, AxTransactionsResponse, AxWhoAmI,
+        CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
@@ -1808,14 +1810,38 @@ impl AxHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let response = self
-            .inner
-            .get_balances()
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        // Time-bound the snapshot so a hung /risk-snapshot cannot stall connect
+        const RISK_SNAPSHOT_TIMEOUT_SECS: u64 = 10;
+
+        let (balances, risk) = tokio::join!(
+            self.inner.get_balances(),
+            tokio::time::timeout(
+                Duration::from_secs(RISK_SNAPSHOT_TIMEOUT_SECS),
+                self.inner.get_risk_snapshot(),
+            ),
+        );
+
+        let response = balances.map_err(|e| anyhow::anyhow!(e))?;
+
+        let risk = match risk {
+            Ok(Ok(snapshot)) => Some(snapshot.risk_snapshot),
+            Ok(Err(e)) => {
+                log::warn!(
+                    "AX risk snapshot unavailable, account state reports zero locked margin: {e}"
+                );
+                None
+            }
+            Err(_) => {
+                log::warn!(
+                    "AX risk snapshot timed out after {RISK_SNAPSHOT_TIMEOUT_SECS}s, \
+                     account state reports zero locked margin"
+                );
+                None
+            }
+        };
 
         let ts_init = self.generate_ts_init();
-        parse_account_state(&response, account_id, ts_init, ts_init)
+        parse_account_state(&response, risk.as_ref(), account_id, ts_init, ts_init)
     }
 
     /// Checks the initial margin requirement for a proposed order.
@@ -1882,7 +1908,7 @@ impl AxHttpClient {
 
         let resolved_coid = client_order_id.or_else(|| detail.clord_id.map(cid_to_client_order_id));
 
-        Ok(OrderStatusReport::new(
+        let mut report = OrderStatusReport::new(
             account_id,
             instrument_id,
             resolved_coid,
@@ -1897,7 +1923,15 @@ impl AxHttpClient {
             ts_init,
             ts_init,
             Some(UUID4::new()),
-        ))
+        );
+
+        if let Some(reason) =
+            AxOrderRejectReason::reason_str(detail.reject_reason, detail.reject_message.as_deref())
+        {
+            report = report.with_cancel_reason(reason);
+        }
+
+        Ok(report)
     }
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].

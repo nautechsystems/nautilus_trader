@@ -668,6 +668,58 @@ async fn test_cancel_all_orders_with_side_and_empty_cache_sends_nothing() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_mass_status_declares_bounded_lookback_window() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+    *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+    *state.fills_payload.lock().await = Some(serde_json::json!({ "fills": [] }));
+    *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [] }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let before = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .expect("mass status");
+
+    let lookback_start = mass_status
+        .lookback_start()
+        .expect("bounded lookback must be declared on the mass status");
+    let after = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    // A one-hour lookback must not be floored to the fills coverage cap
+    let hour_ns = 60 * 60 * 1_000_000_000;
+    assert!(lookback_start.as_i64() > after.as_i64() - hour_ns - 5_000_000_000);
+    assert!(lookback_start.as_i64() < before.as_i64());
+
+    // A lookback past the fills cap declares that cap
+    let mass_status = client
+        .generate_mass_status(Some(60 * 24 * 30))
+        .await
+        .unwrap()
+        .expect("mass status");
+
+    let lookback_start = mass_status
+        .lookback_start()
+        .expect("bounded lookback must be declared on the mass status");
+    let fills_cap_ns = 7 * 24 * 60 * 60 * 1_000_000_000;
+    assert!(
+        lookback_start.as_i64() > after.as_i64() - fills_cap_ns - 5_000_000_000,
+        "declared window must not precede the fills coverage floor"
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_restores_historical_terminal_orders() {
     let (addr, state) = start_test_server().await.unwrap();
     *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));

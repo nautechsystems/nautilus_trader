@@ -63,8 +63,8 @@ use crate::{
     common::{
         auth::run_auth_token_refresh,
         consts::{
-            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS, AX_POST_ONLY_REJECT,
-            AX_VENUE,
+            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS,
+            AX_FILLS_MAX_LOOKBACK_DAYS, AX_POST_ONLY_REJECT, AX_VENUE,
         },
         credential::Credential,
         enums::{AxOrderSide, AxTimeInForce},
@@ -1205,6 +1205,11 @@ impl ExecutionClient for AxExecutionClient {
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
 
+        // Floor the declared window at the /fills span cap so it does not overstate coverage
+        let fills_span = DurationNanos::try_from_days(u64::try_from(AX_FILLS_MAX_LOOKBACK_DAYS)?)?;
+        let fills_floor = ts_now.saturating_sub(fills_span);
+        let declared_start = start.map(|start| start.max(fills_floor));
+
         let order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),
             ts_now,
@@ -1254,6 +1259,9 @@ impl ExecutionClient for AxExecutionClient {
             ts_now,
             None,
         );
+
+        // Declare the window so these fills are bounded history, not live fills
+        mass_status.set_report_window(declared_start, true);
 
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
@@ -1416,15 +1424,11 @@ fn dispatch_order_event(
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
         AxWsOrderEvent::Rejected(msg) => {
-            let known_reason = msg.r.filter(|r| !matches!(r, AxOrderRejectReason::Unknown));
-            let reason = known_reason
-                .as_ref()
-                .map(AsRef::as_ref)
-                .or(msg.txt.as_deref())
-                .unwrap_or("UNKNOWN");
+            let reason = AxOrderRejectReason::reason_str(msg.r, msg.txt.as_deref())
+                .unwrap_or_else(|| "UNKNOWN".to_string());
 
             if let Some(event) =
-                create_order_rejected(&msg.o, reason, msg.ts, msg.tn, caches, account_id, clock)
+                create_order_rejected(&msg.o, &reason, msg.ts, msg.tn, caches, account_id, clock)
             {
                 emitter.send_order_event(OrderEventAny::Rejected(event));
             }

@@ -556,6 +556,21 @@ pub enum AxOrderRejectReason {
     Unknown,
 }
 
+impl AxOrderRejectReason {
+    /// Formats a venue reject reason for events and reports: the known enum
+    /// spelling when available, otherwise the order text. Returns `None` when
+    /// neither carries a usable reason.
+    #[must_use]
+    pub fn reason_str(reason: Option<Self>, text: Option<&str>) -> Option<String> {
+        if let Some(known) = reason.filter(|r| !matches!(r, Self::Unknown)) {
+            return Some(known.to_string());
+        }
+
+        text.filter(|text| !text.trim().is_empty())
+            .map(str::to_string)
+    }
+}
+
 /// Detailed order entry from historical orders query.
 ///
 /// # References
@@ -1335,6 +1350,43 @@ mod tests {
         let json = include_str!("../../test_data/http_authenticate.json");
         let response: AxAuthenticateResponse = serde_json::from_str(json).unwrap();
         assert!(response.token.expose_secret().starts_with("test-token"));
+    }
+
+    #[rstest]
+    fn test_reason_str_prefers_known_reason_over_text() {
+        assert_eq!(
+            AxOrderRejectReason::reason_str(
+                Some(AxOrderRejectReason::PriceOutOfBounds),
+                Some("order price is above the exchange's maximum price limit"),
+            ),
+            Some("PRICE_OUT_OF_BOUNDS".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_reason_str_falls_back_to_text() {
+        assert_eq!(
+            AxOrderRejectReason::reason_str(
+                Some(AxOrderRejectReason::Unknown),
+                Some("risk blocked")
+            ),
+            Some("risk blocked".to_string()),
+        );
+        assert_eq!(
+            AxOrderRejectReason::reason_str(None, Some("risk blocked")),
+            Some("risk blocked".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_reason_str_rejects_blank_text() {
+        assert_eq!(AxOrderRejectReason::reason_str(None, Some("")), None);
+        assert_eq!(AxOrderRejectReason::reason_str(None, Some("   ")), None);
+        assert_eq!(AxOrderRejectReason::reason_str(None, None), None);
+        assert_eq!(
+            AxOrderRejectReason::reason_str(Some(AxOrderRejectReason::Unknown), None),
+            None,
+        );
     }
 
     #[rstest]

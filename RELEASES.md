@@ -14,6 +14,8 @@ Released on TBD (UTC).
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added legacy `custom_<snake_case>` layout discovery to custom data queries
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
+- Added Architect AX account margins and locked USD balance from `/risk-snapshot`
+- Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
@@ -109,6 +111,7 @@ Released on TBD (UTC).
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
 - Fixed `CryptoOption` applying a one-contract minimum when `min_quantity` is unspecified
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
+- Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
