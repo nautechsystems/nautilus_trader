@@ -1010,9 +1010,13 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Flushes the database to persist all cached data.
-    pub fn flush_db(&self) {
-        self.cache.borrow_mut().flush_db();
+    /// Flushes the cache database, permanently removing the data the backing owns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing the database fails.
+    pub fn flush_db(&self) -> anyhow::Result<()> {
+        self.cache.borrow_mut().flush_db()
     }
 
     /// Reconciles an execution report.

@@ -213,12 +213,15 @@ Pass `PostgresCacheConfig` instead to back cache data with Postgres. Postgres do
 or strategy state persistence, so do not combine it with `load_state` or `save_state`. Both configs
 come from `nautilus_trader.infrastructure`.
 
-A Postgres backing is scoped to the node's trader ID. The node loads only that trader's orders,
-positions, and accounts, and `flush_on_start` deletes only that trader's order, position, and
-account rows. Currencies, instruments, instrument closes, market data, and general data stay shared
-across traders. Nodes sharing one database need distinct trader tags (the part after the last
-hyphen), because generated order and position IDs embed only the tag. Set
-`PostgresCacheConfig(all_traders=True)` to load and flush every trader in the database instead.
+A Postgres backing is scoped to the node's trader ID, so several nodes can share one database. The
+node loads and writes only its own orders, positions, snapshots, and accounts, keyed by trader, so
+two traders can reuse the same client order or position IDs. `flush_on_start` deletes only that
+trader's rows. Currencies, instruments, instrument closes, market data, and general data stay
+shared across traders.
+
+Account events persisted before trader scoping have no trader, so no node loads them. The node logs
+the affected accounts on connect. Assign each one to its trader with
+`nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>`.
 
 :::warning
 Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the

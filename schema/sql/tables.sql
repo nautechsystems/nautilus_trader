@@ -87,8 +87,8 @@ CREATE TABLE IF NOT EXISTS "instrument_close" (
 );
 
 CREATE TABLE IF NOT EXISTS "order" (
-    id TEXT PRIMARY KEY NOT NULL,
-    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    trader_id TEXT NOT NULL REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     client_order_id TEXT NOT NULL,
@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     ts_init TEXT NOT NULL,
     ts_last TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (trader_id, id)
 );
 -- Bring databases created before trailing-stop activation-price persistence forward
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS activation_price TEXT;
@@ -234,11 +235,16 @@ ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS info JSONB;
 ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_position_index" (
-    client_order_id TEXT PRIMARY KEY NOT NULL,
+    trader_id TEXT NOT NULL REFERENCES trader(id) ON DELETE CASCADE,
+    client_order_id TEXT NOT NULL,
     position_id TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (trader_id, client_order_id)
 );
+-- Bring databases created before trader-qualified index keys forward; the keys themselves are
+-- migrated with the snapshot tables below.
+ALTER TABLE "order_position_index" ADD COLUMN IF NOT EXISTS trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS "position_event" (
     event_sequence BIGSERIAL PRIMARY KEY NOT NULL,
@@ -278,8 +284,8 @@ CREATE INDEX IF NOT EXISTS idx_position_event_position_id
     ON position_event(position_id, event_sequence);
 
 CREATE TABLE IF NOT EXISTS "position"(
-    id TEXT PRIMARY KEY NOT NULL,
-    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    trader_id TEXT NOT NULL REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     account_id TEXT NOT NULL,
@@ -306,7 +312,8 @@ CREATE TABLE IF NOT EXISTS "position"(
     ts_last TEXT NOT NULL,
     replay_state JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (trader_id, id)
 );
 ALTER TABLE "position" ADD COLUMN IF NOT EXISTS replay_state JSONB;
 
@@ -325,28 +332,98 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 -- Bring databases created before trader-scoped account loads forward. `AccountState` carries no
--- trader, so the cache stamps the writing node's trader on each event.
+-- trader, so the cache stamps the writing node's trader on each event. Earlier events stay without
+-- a trader until assigned with `nautilus database assign-account`.
 ALTER TABLE "account_event" ADD COLUMN IF NOT EXISTS trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE;
 
--- Attribute unstamped account events to the one trader whose fills or orders used the account.
--- Accounts used by several traders, or by none, stay unstamped, and a trader-scoped cache does not
--- load them until the node persists a new state for the account.
-UPDATE "account_event" AS event
-SET trader_id = owner.trader_id
-FROM (
-    SELECT account_id, MIN(trader_id) AS trader_id
-    FROM (
-        SELECT account_id, trader_id FROM "order_event"
-        WHERE account_id IS NOT NULL AND trader_id IS NOT NULL
-        UNION
-        SELECT account_id, trader_id FROM "position_event"
-        WHERE trader_id IS NOT NULL
-    ) AS usage
-    GROUP BY account_id
-    HAVING COUNT(DISTINCT trader_id) = 1
-) AS owner
-WHERE event.trader_id IS NULL
-  AND event.account_id = owner.account_id;
+-- Qualify the order and position snapshot keys and the order position index key with the trader.
+-- Client order and position IDs are only unique per trader: NETTING position IDs are
+-- `{instrument_id}-{strategy_id}`, and generated IDs embed only the trader tag.
+--
+-- Guarded so it runs once, and fails with the offending rows rather than guessing an owner.
+-- Index rows are attributed from the fill that linked the order to the position, then from the
+-- order's own events; any row neither resolves must be assigned or deleted by hand.
+DO $$
+DECLARE
+    unresolved TEXT;
+    key_table TEXT;
+    key_columns TEXT;
+    key_name TEXT;
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints AS constraints
+        WHERE constraints.table_schema = current_schema()
+          AND constraints.constraint_type = 'PRIMARY KEY'
+          AND constraints.table_name IN ('order', 'position', 'order_position_index')
+          AND NOT EXISTS (
+            SELECT 1 FROM information_schema.key_column_usage AS keys
+            WHERE keys.constraint_schema = constraints.constraint_schema
+              AND keys.constraint_name = constraints.constraint_name
+              AND keys.column_name = 'trader_id'
+          )
+    ) THEN
+        SELECT string_agg(DISTINCT id, ', ') INTO unresolved
+        FROM (
+            SELECT id FROM "order" WHERE trader_id IS NULL
+            UNION ALL
+            SELECT id FROM "position" WHERE trader_id IS NULL
+        ) AS snapshot;
+
+        IF unresolved IS NOT NULL THEN
+            RAISE EXCEPTION 'Order or position snapshots have no trader, assign or delete them before migrating: %', unresolved;
+        END IF;
+
+        UPDATE "order_position_index" AS entry
+        SET trader_id = owner.trader_id
+        FROM (
+            SELECT client_order_id, position_id, MIN(trader_id) AS trader_id
+            FROM "position_event"
+            WHERE trader_id IS NOT NULL
+            GROUP BY client_order_id, position_id
+            HAVING COUNT(DISTINCT trader_id) = 1
+        ) AS owner
+        WHERE entry.trader_id IS NULL
+          AND entry.client_order_id = owner.client_order_id
+          AND entry.position_id = owner.position_id;
+
+        UPDATE "order_position_index" AS entry
+        SET trader_id = owner.trader_id
+        FROM (
+            SELECT client_order_id, MIN(trader_id) AS trader_id
+            FROM "order_event"
+            WHERE trader_id IS NOT NULL
+            GROUP BY client_order_id
+            HAVING COUNT(DISTINCT trader_id) = 1
+        ) AS owner
+        WHERE entry.trader_id IS NULL
+          AND entry.client_order_id = owner.client_order_id;
+
+        SELECT string_agg(client_order_id, ', ' ORDER BY client_order_id) INTO unresolved
+        FROM "order_position_index"
+        WHERE trader_id IS NULL;
+
+        IF unresolved IS NOT NULL THEN
+            RAISE EXCEPTION 'Order position index entries have no resolvable trader, assign or delete them before migrating: %', unresolved;
+        END IF;
+
+        FOR key_table, key_columns IN
+            VALUES ('order', 'trader_id, id'),
+                   ('position', 'trader_id, id'),
+                   ('order_position_index', 'trader_id, client_order_id')
+        LOOP
+            SELECT conname INTO key_name
+            FROM pg_constraint
+            WHERE conrelid = format('%I', key_table)::regclass AND contype = 'p';
+
+            IF key_name IS NOT NULL THEN
+                EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', key_table, key_name);
+            END IF;
+
+            EXECUTE format('ALTER TABLE %I ALTER COLUMN trader_id SET NOT NULL', key_table);
+            EXECUTE format('ALTER TABLE %I ADD PRIMARY KEY (%s)', key_table, key_columns);
+        END LOOP;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "trade" (
     id BIGSERIAL PRIMARY KEY NOT NULL,

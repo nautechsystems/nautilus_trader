@@ -81,7 +81,6 @@ def test_postgres_cache_config_defaults() -> None:
     assert config.username is None
     assert config.password is None
     assert config.database is None
-    assert config.all_traders is False
 
 
 def test_postgres_cache_config_accepts_explicit_kwargs() -> None:
@@ -94,7 +93,6 @@ def test_postgres_cache_config_accepts_explicit_kwargs() -> None:
         username="user",
         password="secret",
         database="nautilus",
-        all_traders=True,
     )
 
     assert config.host == "postgres.example.com"
@@ -102,4 +100,3 @@ def test_postgres_cache_config_accepts_explicit_kwargs() -> None:
     assert config.username == "user"
     assert config.password == "secret"
     assert config.database == "nautilus"
-    assert config.all_traders is True

@@ -71,7 +71,12 @@ mod serial_tests {
     use super::get_cache;
 
     async fn get_test_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database()).await {
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            get_pg_cache_database(TraderId::default()),
+        )
+        .await
+        {
             Ok(result) => result.map_err(|e| {
                 anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
             }),
@@ -80,6 +85,11 @@ mod serial_tests {
                  {e}"
             )),
         }
+    }
+
+    // Clears every table between tests. The cache's own `flush` only removes its trader's rows.
+    async fn reset_test_database(database: &PostgresCacheDatabase) {
+        DatabaseQueries::truncate(&database.pool).await.unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -115,7 +125,7 @@ mod serial_tests {
         let target_instrument = cache.instrument(&crypto_perpetual.id());
         assert_eq!(target_instrument.unwrap(), &crypto_perpetual);
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -165,7 +175,7 @@ mod serial_tests {
         let target_order = cache.order(&market_order.client_order_id());
         assert_eq!(&*target_order.unwrap(), &market_order);
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -238,7 +248,7 @@ mod serial_tests {
         assert!(cache.position_id(&order_2.client_order_id()).is_none());
         assert!(cache.client_id(&order_2.client_order_id()).is_none());
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -324,14 +334,14 @@ mod serial_tests {
         );
         assert_eq!(cached_position.quantity, position.quantity);
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_instrument_close_replacement_survives_restart() {
         let mut database = get_test_pg_cache_database().await.unwrap();
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
         let close = InstrumentClose::new(
             instrument_id,
@@ -367,7 +377,7 @@ mod serial_tests {
         );
 
         restarted_cache.dispose();
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -402,14 +412,14 @@ mod serial_tests {
         let target_account_for_venue = cache.account_for_venue(&account.id().get_issuer());
         assert_eq!(*target_account_for_venue.unwrap(), account);
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_all_and_unsupported_loads_return_results() {
         let mut database = get_test_pg_cache_database().await.unwrap();
-        database.flush().unwrap();
+        reset_test_database(&database).await;
 
         let loaded = database.load_all().await.unwrap();
         let synthetic_result = database
@@ -447,7 +457,7 @@ mod serial_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_all_registers_persisted_currencies_before_instruments() {
         let mut database = get_test_pg_cache_database().await.unwrap();
-        database.flush().unwrap();
+        reset_test_database(&database).await;
 
         let currency = Currency::new(
             "DBTEST",
@@ -488,7 +498,7 @@ mod serial_tests {
             serde_json::to_string(&instrument).unwrap()
         );
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -537,9 +547,10 @@ mod serial_tests {
             .unwrap();
 
         // Load back events
-        let events = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
-            .await
-            .unwrap();
+        let events =
+            DatabaseQueries::load_order_events(&pool, &client_order_id, &TraderId::default())
+                .await
+                .unwrap();
 
         delete_order_events(&pool, &client_order_id).await;
 
@@ -552,7 +563,7 @@ mod serial_tests {
             other => panic!("Expected OrderCancelRejected, was {other:?}"),
         }
 
-        db.flush().unwrap();
+        reset_test_database(&db).await;
         db.close().unwrap();
     }
 
@@ -590,7 +601,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let events = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
+        let events = DatabaseQueries::load_order_events(&pool, &client_order_id, &trader_id)
             .await
             .unwrap();
 
@@ -605,7 +616,7 @@ mod serial_tests {
             other => panic!("Expected OrderModifyRejected, was {other:?}"),
         }
 
-        db.flush().unwrap();
+        reset_test_database(&db).await;
         db.close().unwrap();
     }
 
@@ -654,7 +665,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let loaded = DatabaseQueries::load_order_events(pool, &client_order_id, None)
+        let loaded = DatabaseQueries::load_order_events(pool, &client_order_id, &event.trader_id())
             .await
             .unwrap();
 
@@ -936,7 +947,7 @@ mod serial_tests {
         fill_voided.causation_id = Some(causation_id);
         assert_event_round_trip(&pool, &OrderEventAny::FillVoided(fill_voided)).await;
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -982,7 +993,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let loaded = DatabaseQueries::load_position_events(&pool, &position_id, None)
+        let loaded = DatabaseQueries::load_position_events(&pool, &position_id, &fill.trader_id)
             .await
             .unwrap();
 
@@ -992,7 +1003,7 @@ mod serial_tests {
         assert_eq!(loaded[0].causation_id, fill.causation_id);
         assert_eq!(loaded[0], fill);
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -1029,9 +1040,13 @@ mod serial_tests {
         .await
         .unwrap();
 
-        let loaded = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
-            .await
-            .unwrap();
+        let loaded = DatabaseQueries::load_order_events(
+            &pool,
+            &client_order_id,
+            &TraderId::from("TRADER-LEGACY"),
+        )
+        .await
+        .unwrap();
 
         delete_order_events(&pool, &client_order_id).await;
 
@@ -1046,7 +1061,7 @@ mod serial_tests {
             other => panic!("Expected OrderRejected, was {other:?}"),
         }
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -1076,7 +1091,7 @@ mod serial_tests {
             "Currency should be flushed immediately"
         );
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -1101,7 +1116,7 @@ mod serial_tests {
             "Currency should be persisted after close"
         );
 
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 }

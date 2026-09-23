@@ -2012,14 +2012,17 @@ impl Cache {
         }
     }
 
-    /// Flushes the caches database which permanently removes all persisted data.
+    /// Flushes the cache database, permanently removing the data the backing owns.
     ///
-    /// If flushing the database connection fails, an error is logged.
-    pub fn flush_db(&mut self) {
-        if let Some(database) = &mut self.database
-            && let Err(e) = database.flush()
-        {
-            log::error!("Failed to flush database: {e}");
+    /// Does nothing when no database is configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing the database fails.
+    pub fn flush_db(&mut self) -> anyhow::Result<()> {
+        match &mut self.database {
+            Some(database) => database.flush(),
+            None => Ok(()),
         }
     }
 

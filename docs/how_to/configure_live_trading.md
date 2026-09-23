@@ -178,11 +178,9 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
 
-A Postgres backing loads and flushes only the node's trader, so nodes with different trader IDs can
-share one database. Give each node a distinct trader tag (the part after the last hyphen, such as
-`001` in `TRADER-001`): generated order and position IDs embed only the tag, and snapshot rows are
-keyed by those IDs. Set `PostgresCacheConfig(all_traders=True)` to load and flush every trader in
-the database instead.
+A Postgres backing loads, writes, and flushes only the node's trader, so nodes with different
+trader IDs can share one database. See [Cache](../concepts/cache.md) for what a scoped flush keeps
+and how to assign account events persisted before trader scoping.
 
 With `snapshot_orders=True`, the execution engine persists an order snapshot during submission
 processing and after each state change. Order snapshots require a Redis or Postgres cache backing.

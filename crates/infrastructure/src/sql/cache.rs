@@ -89,9 +89,6 @@ pub struct PostgresCacheConfig {
     pub password: Option<String>,
     /// The Postgres database name.
     pub database: Option<String>,
-    /// If loads and the start-up flush cover every trader in the database rather than only the
-    /// node's trader.
-    pub all_traders: bool,
 }
 
 impl Debug for PostgresCacheConfig {
@@ -103,7 +100,6 @@ impl Debug for PostgresCacheConfig {
             .field("username", &self.username)
             .field("password", &redacted)
             .field("database", &self.database)
-            .field("all_traders", &self.all_traders)
             .finish()
     }
 }
@@ -124,7 +120,6 @@ mod tests {
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
         assert_eq!(config.database, None);
-        assert!(!config.all_traders);
     }
 
     #[rstest]
@@ -144,18 +139,6 @@ mod tests {
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert_eq!(config.database, Some("nautilus".to_string()));
-        assert!(!config.all_traders);
-    }
-
-    #[rstest]
-    fn test_deserialize_postgres_cache_config_all_traders() {
-        let config_json = json!({
-            "all_traders": true,
-        });
-
-        let config: PostgresCacheConfig = serde_json::from_value(config_json).unwrap();
-
-        assert!(config.all_traders);
     }
 
     #[rstest]
@@ -178,7 +161,6 @@ impl CacheDatabaseFactory for PostgresCacheConfig {
         _instance_id: UUID4,
         _config: CacheConfig,
     ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
-        let trader_id = (!self.all_traders).then_some(trader_id);
         let database = PostgresCacheDatabase::connect(
             self.host.clone(),
             self.port,
@@ -199,7 +181,7 @@ impl CacheDatabaseFactory for PostgresCacheConfig {
 )]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
-    trader_id: Option<TraderId>,
+    trader_id: TraderId,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseQuery>,
     handle: tokio::task::JoinHandle<()>,
 }
@@ -234,12 +216,13 @@ pub enum DatabaseQuery {
 impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
     ///
-    /// When `trader_id` is given, loads and flushes are scoped to that trader and account events
-    /// are stamped with it. Otherwise they cover every trader in the database.
+    /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
+    /// stamped with it. Account events with no trader are reported and not loaded.
     ///
     /// # Errors
     ///
-    /// Returns an error if establishing the database connection fails.
+    /// Returns an error if establishing the database connection fails, or if the schema is out of
+    /// date.
     ///
     /// # Panics
     ///
@@ -250,12 +233,13 @@ impl PostgresCacheDatabase {
         username: Option<String>,
         password: Option<String>,
         database: Option<String>,
-        trader_id: Option<TraderId>,
+        trader_id: TraderId,
     ) -> Result<Self, sqlx::Error> {
         let pg_connect_options =
             get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         check_schema_migrated(&pool).await?;
+        report_unassigned_accounts(&pool).await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         let handle = get_runtime().spawn(async move {
@@ -274,16 +258,16 @@ impl PostgresCacheDatabase {
         })
     }
 
-    /// Returns the trader that loads and flushes are scoped to, if any.
+    /// Returns the trader that loads, writes and flushes are scoped to.
     #[must_use]
-    pub const fn trader_id(&self) -> Option<TraderId> {
+    pub const fn trader_id(&self) -> TraderId {
         self.trader_id
     }
 
     async fn process_commands(
         mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseQuery>,
         pg_connect_options: PgConnectOptions,
-        trader_id: Option<TraderId>,
+        trader_id: TraderId,
     ) {
         log_task_started(CACHE_PROCESS);
 
@@ -310,7 +294,7 @@ impl PostgresCacheDatabase {
                         &mut buffer,
                         buffer_interval,
                         &pool,
-                        trader_id.as_ref(),
+                        &trader_id,
                     ))
                     .await;
 
@@ -322,7 +306,7 @@ impl PostgresCacheDatabase {
                     flush_buffer(
                         &mut buffer,
                         &pool,
-                        trader_id.as_ref(),
+                        &trader_id,
                         &mut flush_timer,
                         buffer_interval,
                     )
@@ -332,7 +316,7 @@ impl PostgresCacheDatabase {
         }
 
         if !buffer.is_empty() {
-            drain_buffer(&pool, trader_id.as_ref(), &mut buffer).await;
+            drain_buffer(&pool, &trader_id, &mut buffer).await;
         }
 
         log_task_stopped(CACHE_PROCESS);
@@ -389,11 +373,14 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
         ));
     }
 
+    check_trader_keys(pool).await?;
+
     let missing: Vec<String> = sqlx::query_scalar(
         "SELECT required.table_name || '.' || required.column_name
         FROM (VALUES
             ('instrument', 'info'),
             ('account_event', 'trader_id'),
+            ('order_position_index', 'trader_id'),
             ('order_event', 'released_price'),
             ('order_event', 'protection_price'),
             ('order_event', 'due_post_only'),
@@ -430,12 +417,65 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     ))
 }
 
+// Client order and position IDs are only unique per trader, so the snapshot and index keys must be
+// trader-qualified or two traders sharing one database overwrite each other's rows.
+async fn check_trader_keys(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let unscoped_keys: Vec<String> = sqlx::query_scalar(
+        "SELECT constraints.table_name
+        FROM information_schema.table_constraints AS constraints
+        WHERE constraints.table_schema = current_schema()
+          AND constraints.constraint_type = 'PRIMARY KEY'
+          AND constraints.table_name IN ('order', 'position', 'order_position_index')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM information_schema.key_column_usage AS keys
+            WHERE keys.constraint_schema = constraints.constraint_schema
+              AND keys.constraint_name = constraints.constraint_name
+              AND keys.column_name = 'trader_id'
+          )
+        ORDER BY 1",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if unscoped_keys.is_empty() {
+        return Ok(());
+    }
+
+    Err(sqlx::Error::Configuration(
+        format!(
+            "Postgres schema is out of date, primary keys of {} are not trader-qualified: \
+             {SCHEMA_MIGRATION_COMMAND}",
+            unscoped_keys.join(", "),
+        )
+        .into(),
+    ))
+}
+
+// Account events written before trader-scoped persistence carry no trader, so no trader-scoped
+// cache loads them. Report them rather than excluding them silently.
+async fn report_unassigned_accounts(pool: &PgPool) {
+    match DatabaseQueries::load_unassigned_account_ids(pool).await {
+        Ok(account_ids) if account_ids.is_empty() => {}
+        Ok(account_ids) => {
+            let account_ids: Vec<String> = account_ids.iter().map(ToString::to_string).collect();
+            log::error!(
+                "Postgres cache has account events with no trader for {}; they are not loaded \
+                 until assigned: run `nautilus database assign-account --account-id <ACCOUNT_ID> \
+                 --trader-id <TRADER_ID>` for each account",
+                account_ids.join(", "),
+            );
+        }
+        Err(e) => log::error!("Failed to check for unassigned account events: {e}"),
+    }
+}
+
 async fn handle_query(
     maybe_msg: Option<DatabaseQuery>,
     buffer: &mut VecDeque<DatabaseQuery>,
     buffer_interval: Duration,
     pool: &PgPool,
-    trader_id: Option<&TraderId>,
+    trader_id: &TraderId,
 ) -> ControlFlow<()> {
     let Some(msg) = maybe_msg else {
         log::debug!("Command channel closed");
@@ -461,7 +501,7 @@ async fn handle_query(
 async fn flush_buffer(
     buffer: &mut VecDeque<DatabaseQuery>,
     pool: &PgPool,
-    trader_id: Option<&TraderId>,
+    trader_id: &TraderId,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
 ) {
@@ -471,14 +511,12 @@ async fn flush_buffer(
     flush_timer.as_mut().reset(Instant::now() + buffer_interval);
 }
 
-/// Retrieves a `PostgresCacheDatabase` using default connection options.
-///
-/// The returned database is not scoped to a trader.
+/// Retrieves a `PostgresCacheDatabase` for `trader_id` using default connection options.
 ///
 /// # Errors
 ///
 /// Returns an error if connecting to the database or initializing the cache adapter fails.
-pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
+pub async fn get_pg_cache_database(trader_id: TraderId) -> anyhow::Result<PostgresCacheDatabase> {
     let connect_options = get_postgres_connect_options(None, None, None, None, None);
     Ok(PostgresCacheDatabase::connect(
         Some(connect_options.host),
@@ -486,7 +524,7 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
         Some(connect_options.username),
         Some(connect_options.password),
         Some(connect_options.database),
-        None,
+        trader_id,
     )
     .await?)
 }
@@ -530,26 +568,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn flush(&mut self) -> anyhow::Result<()> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
-        let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::task::block_in_place(|| {
-            get_runtime().block_on(async {
-                let result = match trader_id {
-                    Some(trader_id) => DatabaseQueries::delete_trader(&pool, &trader_id).await,
-                    None => DatabaseQueries::truncate(&pool).await,
-                };
-
-                if let Err(e) = result {
-                    log::error!("Error flushing pool: {e:?}");
-                }
-
-                if let Err(e) = tx.send(()) {
-                    log::error!("Error sending flush result: {e:?}");
-                }
-            });
-        });
-
-        Ok(rx.recv()?)
+            get_runtime().block_on(DatabaseQueries::delete_trader(&pool, &trader_id))
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to flush Postgres cache for {trader_id}: {e}"))
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
@@ -690,7 +713,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_accounts(&pool, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_accounts(&pool, &trader_id).await;
             match result {
                 Ok(accounts) => {
                     let mapping = accounts
@@ -719,7 +742,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_orders(&pool, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_orders(&pool, &trader_id).await;
             match result {
                 Ok(orders) => {
                     let mapping = orders
@@ -748,7 +771,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_positions(&pool, trader_id.as_ref())
+            let result = DatabaseQueries::load_positions(&pool, &trader_id)
                 .await
                 .map(|positions| {
                     positions
@@ -770,8 +793,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result =
-                DatabaseQueries::load_index_order_position(&pool, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_index_order_position(&pool, &trader_id).await;
             match result {
                 Ok(index) => {
                     if let Err(e) = tx.send(index) {
@@ -796,8 +818,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
         tokio::spawn(async move {
             let result =
-                DatabaseQueries::load_distinct_order_event_client_ids(&pool, trader_id.as_ref())
-                    .await;
+                DatabaseQueries::load_distinct_order_event_client_ids(&pool, &trader_id).await;
+
             match result {
                 Ok(currency) => {
                     if let Err(e) = tx.send(currency) {
@@ -882,8 +904,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result =
-                DatabaseQueries::load_account(&pool, &account_id, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_account(&pool, &account_id, &trader_id).await;
             match result {
                 Ok(account) => {
                     if let Err(e) = tx.send(account) {
@@ -911,8 +932,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result =
-                DatabaseQueries::load_order(&pool, &client_order_id, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_order(&pool, &client_order_id, &trader_id).await;
             match result {
                 Ok(order) => {
                     if let Err(e) = tx.send(order) {
@@ -935,8 +955,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result =
-                DatabaseQueries::load_position(&pool, &position_id, trader_id.as_ref()).await;
+            let result = DatabaseQueries::load_position(&pool, &position_id, &trader_id).await;
             if let Err(e) = tx.send(result) {
                 log::error!("Failed to send position {position_id}: {e:?}");
             }
@@ -1232,11 +1251,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderSnapshot>> {
         let pool = self.pool.clone();
+        let trader_id = self.trader_id;
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
 
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_order_snapshot(&pool, &client_order_id).await;
+            let result =
+                DatabaseQueries::load_order_snapshot(&pool, &client_order_id, &trader_id).await;
+
             match result {
                 Ok(snapshot) => {
                     if let Err(e) = tx.send(snapshot) {
@@ -1267,8 +1289,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
         tokio::spawn(async move {
             let result =
-                DatabaseQueries::load_position_snapshot(&pool, &position_id, trader_id.as_ref())
-                    .await;
+                DatabaseQueries::load_position_snapshot(&pool, &position_id, &trader_id).await;
+
             match result {
                 Ok(snapshot) => {
                     if let Err(e) = tx.send(snapshot) {
@@ -1408,11 +1430,7 @@ fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
     clippy::too_many_lines,
     reason = "database command dispatch enumerates each cache query variant explicitly"
 )]
-async fn drain_buffer(
-    pool: &PgPool,
-    trader_id: Option<&TraderId>,
-    buffer: &mut VecDeque<DatabaseQuery>,
-) {
+async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         let result: anyhow::Result<()> = match cmd {
             DatabaseQuery::Close => Ok(()),
@@ -1532,10 +1550,11 @@ async fn drain_buffer(
                 DatabaseQueries::update_position(pool, &event).await
             }
             DatabaseQuery::IndexOrderPosition(client_order_id, position_id) => {
-                DatabaseQueries::index_order_position(pool, client_order_id, position_id).await
+                DatabaseQueries::index_order_position(pool, trader_id, client_order_id, position_id)
+                    .await
             }
             DatabaseQuery::IndexOrderClients(claims) => {
-                DatabaseQueries::index_order_clients(pool, &claims).await
+                DatabaseQueries::index_order_clients(pool, trader_id, &claims).await
             }
         };
 
