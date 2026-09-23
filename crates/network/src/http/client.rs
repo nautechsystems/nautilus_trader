@@ -115,7 +115,9 @@ impl HttpClient {
         proxy_url: Option<String>,
         rate_limiters: Option<Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>>,
         #[builder(default)] redirect_policy: HttpRedirectPolicy,
-        #[builder(default = true)] use_system_proxy: bool,
+        /// Whether to honor ambient proxy configuration when `proxy_url` is not set.
+        #[builder(default = true)]
+        use_system_proxy: bool,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {

@@ -170,6 +170,7 @@ Released on TBD (UTC).
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
 - Documented legacy custom data layout discovery and migration
+- Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset

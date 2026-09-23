@@ -56,8 +56,21 @@ process-wide instead of creating one allowance per connection.
 
 The client accepts default and per-request headers, query parameters with repeated values, raw
 request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A client-level timeout applies to
-all requests unless a request supplies its own timeout. An optional proxy applies to both HTTP and
-HTTPS traffic.
+all requests unless a request supplies its own timeout.
+
+### Proxy routing
+
+By default the client honors ambient proxy configuration: with `use_system_proxy` left at its
+default of `true` and no explicit `proxy_url`, requests are routed through the proxy named by
+`HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (lowercase variants included), except destinations
+matched by `NO_PROXY`.
+
+This default is a deliberate trust decision on the process environment: an actor who controls it
+chooses the proxy that observes all plaintext HTTP traffic and the CONNECT tunnels that carry HTTPS.
+
+An optional explicit `proxy_url` applies to both HTTP and HTTPS traffic and always takes precedence
+over ambient lookup. Passing `use_system_proxy(false)` disables ambient lookup, so requests route
+directly only when `proxy_url` is unset.
 
 **HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's
 body and retry rules. The transport retries requests canceled before transmission on reused
