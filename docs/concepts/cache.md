@@ -184,7 +184,8 @@ node.run().await?;
 :::warning
 With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
-`CacheConfig.flush_on_start = true` clears the backing instead.
+`CacheConfig.flush_on_start = true` clears the backing instead. A Postgres backing clears only the
+node's trader rows (see below).
 :::
 
 Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
@@ -211,6 +212,13 @@ finally:
 Pass `PostgresCacheConfig` instead to back cache data with Postgres. Postgres does not support actor
 or strategy state persistence, so do not combine it with `load_state` or `save_state`. Both configs
 come from `nautilus_trader.infrastructure`.
+
+A Postgres backing is scoped to the node's trader ID. The node loads only that trader's orders,
+positions, and accounts, and `flush_on_start` deletes only that trader's order, position, and
+account rows. Currencies, instruments, instrument closes, market data, and general data stay shared
+across traders. Nodes sharing one database need distinct trader tags (the part after the last
+hyphen), because generated order and position IDs embed only the tag. Set
+`PostgresCacheConfig(all_traders=True)` to load and flush every trader in the database instead.
 
 :::warning
 Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the
