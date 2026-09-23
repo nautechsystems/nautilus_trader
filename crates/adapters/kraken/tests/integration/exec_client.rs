@@ -135,6 +135,8 @@ struct TestServerState {
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
+    trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When true, `/0/private/TradeVolume` returns a Kraken API permission error.
     trade_volume_api_error: Arc<AtomicBool>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
@@ -145,6 +147,7 @@ impl Default for TestServerState {
         let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
         Self {
             command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
+            trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             trade_volume_api_error: Arc::new(AtomicBool::new(false)),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
@@ -446,6 +449,15 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         ),
         "/0/private/OpenOrders" => json_response(load_test_data("http_open_orders.json")),
         "/0/private/TradesHistory" => {
+            {
+                let mut guard = state.trades_history_json.lock().await;
+                if let Some(json) = guard.take() {
+                    // Serve once, then empty pages so the caller's pagination terminates.
+                    *guard = Some(r#"{"error":[],"result":{"trades":{},"count":0}}"#.to_string());
+                    return json_response(json);
+                }
+            }
+
             let mut value: Value =
                 serde_json::from_str(&load_test_data("http_trades_history.json")).unwrap();
             value["result"]["trades"] = json!({});
@@ -760,6 +772,191 @@ async fn test_spot_execution_client_connects_when_trade_volume_denied() {
         .expect("execution client must connect when the account fee request is denied");
 
     assert!(client.is_connected());
+}
+
+fn spot_trades_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""TTRADE-{i}":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"0.50000000","margin":"0.00000","misc":"","trade_id":{i},"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+fn spot_trades_json_with_unparsable_vol(pair: &str) -> String {
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{"TTRADE-BAD":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"not_a_number","margin":"0.00000","misc":"","trade_id":1,"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}}},"count":1}}}}"#
+    )
+}
+
+/// A historical row that cannot be parsed makes the bounded set incomplete.
+///
+/// The guide counts a required row that cannot be parsed or mapped as incomplete, the same as an
+/// unresolved instrument.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: the same row with a parsable volume reports complete, so the flag below is driven
+    // by the parse failure rather than by the row being rejected for some other reason.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json_with_unparsable_vol("XBTUSDT"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unparsable historical row must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
+fn futures_fills_for_symbol(symbol: &str) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-window-1","symbol":"{symbol}","side":"buy","order_id":"V-WINDOW","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-window-001","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+/// A bounded futures mass status must declare the cutoff it applied.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_declares_lookback_window() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot.lookback_start().is_some(),
+        "a bounded mass status must record its cutoff"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// An unresolved futures fill marks the bounded set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    // Control: the same fill on a listed symbol reports complete, so the flag below is driven by
+    // the unresolved symbol rather than by the payload itself.
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_NOTLISTED"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unresolved futures fill must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
+/// A bounded mass status must declare the cutoff it applied.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_declares_lookback_window() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot.lookback_start().is_some(),
+        "a bounded mass status must record its cutoff"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A skipped historical row makes the bounded set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_incomplete_when_historical_fill_unresolved() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: the identical payload with a resolvable pair reports complete, so the flag below
+    // is driven by the unresolved instrument rather than by the payload itself.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT", "ETHUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    // `fill_reports` groups by venue order id, so count the fills themselves.
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 2);
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT", "DELISTEDPAIR"]));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unresolved historical row must mark the bounded set incomplete"
+    );
+    assert!(snapshot.lookback_start().is_some());
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
 }
 
 fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>) {

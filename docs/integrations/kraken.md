@@ -508,6 +508,19 @@ The Kraken adapter provides reconciliation capabilities for both
 Spot and Futures markets, allowing traders to synchronize their local state with
 the exchange state at startup or during operation.
 
+### Bounded reports
+
+When reconciliation supplies a lookback, both execution clients derive a single cutoff and apply it
+to every historical query, then record it on the mass status through `set_report_window`. Using one
+cutoff avoids a report set that never existed at the venue, which a moving cutoff can produce.
+
+Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
+described below qualifies that set rather than gating it.
+
+Order and fill records contribute to the completeness flag: the set is incomplete when a record's
+instrument could not be resolved, or when a record could not be parsed. Position records do not
+currently contribute, and the futures position read still drops an unresolved symbol silently.
+
 ### Spot reconciliation
 
 **Order status reports:**
