@@ -15,6 +15,8 @@
 
 //! Pool profiling utilities for analyzing DeFi pool event data.
 
+use std::sync::Arc;
+
 use ahash::AHashMap;
 use alloy_primitives::{Address, I256, U160, U256};
 use nautilus_core::UnixNanos;
@@ -427,8 +429,8 @@ impl PoolProfiler {
         self.apply_swap_quote(&swap_quote);
 
         let swap_event = PoolSwap::new(
-            self.pool.chain.clone(),
-            self.pool.dex.clone(),
+            Arc::clone(&self.pool.chain),
+            Arc::clone(&self.pool.dex),
             self.pool.instrument_id,
             self.pool.pool_identifier,
             block.number,
@@ -1009,8 +1011,8 @@ impl PoolProfiler {
         self.analytics.total_mints += 1;
 
         let event = PoolLiquidityUpdate::new(
-            self.pool.chain.clone(),
-            self.pool.dex.clone(),
+            Arc::clone(&self.pool.chain),
+            Arc::clone(&self.pool.dex),
             self.pool.instrument_id,
             self.pool.pool_identifier,
             PoolLiquidityUpdateType::Mint,
@@ -1137,8 +1139,8 @@ impl PoolProfiler {
         self.analytics.total_burns += 1;
 
         let event = PoolLiquidityUpdate::new(
-            self.pool.chain.clone(),
-            self.pool.dex.clone(),
+            Arc::clone(&self.pool.chain),
+            Arc::clone(&self.pool.dex),
             self.pool.instrument_id,
             self.pool.pool_identifier,
             PoolLiquidityUpdateType::Burn,
@@ -1377,8 +1379,8 @@ impl PoolProfiler {
         self.analytics.total_flashes += 1;
 
         let flash_event = PoolFlash::new(
-            self.pool.chain.clone(),
-            self.pool.dex.clone(),
+            Arc::clone(&self.pool.chain),
+            Arc::clone(&self.pool.dex),
             self.pool.instrument_id,
             self.pool.pool_identifier,
             block.number,

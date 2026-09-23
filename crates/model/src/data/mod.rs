@@ -446,7 +446,7 @@ impl<T> BatchView<T> {
         assert!(start <= end, "invalid batch slice range");
         assert!(end <= self.len(), "batch slice range exceeds view length");
         Self {
-            data: self.data.clone(),
+            data: Arc::clone(&self.data),
             range: (self.range.start + start)..(self.range.start + end),
         }
     }
