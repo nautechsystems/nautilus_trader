@@ -4479,6 +4479,18 @@ fn make_open_positions_json(lots: &[(&str, &str, Decimal, Decimal)]) -> String {
     format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
 }
 
+fn make_open_positions_json_with_costs(lots: &[(&str, &str, &str, Decimal, Decimal)]) -> String {
+    let entries: Vec<String> = lots
+        .iter()
+        .map(|(pos_id, side, cost, vol, vol_closed)| {
+            format!(
+                r#""{pos_id}": {{"ordertxid": "O-{pos_id}", "pair": "XXBTZUSD", "time": 1714500000.0, "type": "{side}", "ordertype": "market", "cost": "{cost}", "fee": "75.00", "vol": "{vol}", "vol_closed": "{vol_closed}", "margin": "10000.00"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
+}
+
 async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, InstrumentId) {
     let state = Arc::new(TestServerState::default());
     *state.open_positions_json.lock().await = Some(json);
@@ -4511,6 +4523,102 @@ async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, Inst
     client.cache_instrument(inst);
 
     (client, instrument_id)
+}
+
+/// Margin position reports must carry the entry average derived from `cost` and `vol`.
+///
+/// Reconciliation opens a reported position at its entry average, and refuses to invent one, so a
+/// report without it can fail startup.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_reports_carry_the_entry_average() {
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    // Control: a single lot priced at 50,000 per unit.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0))],
+    ))
+    .await;
+
+    let control = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(control.len(), 1);
+    assert_eq!(control[0].avg_px_open, Some(dec!(50000)));
+
+    // Two lots at different prices: the average is weighted by the volume that remains open, so a
+    // second lot at 60,000 moves it to 55,000 rather than leaving it at the first lot's price.
+    let (client, _instrument_id) =
+        setup_margin_position_test(make_open_positions_json_with_costs(&[
+            ("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0)),
+            ("LOT2", "buy", "60000.00", dec!(1.0), dec!(0.0)),
+        ]))
+        .await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].avg_px_open, Some(dec!(55000)));
+
+    // A partially closed lot keeps its entry price: cost covers the original volume.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT1", "buy", "100000.00", dec!(2.0), dec!(1.0))],
+    ))
+    .await;
+
+    let partial = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(partial.len(), 1);
+    assert_eq!(partial[0].avg_px_open, Some(dec!(50000)));
+
+    // Opposing lots net to long, and the report carries the long side's average. Blending the
+    // short lot in would report an entry the surviving exposure was never opened at.
+    let (client, _instrument_id) =
+        setup_margin_position_test(make_open_positions_json_with_costs(&[
+            ("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0)),
+            ("LOT2", "sell", "28000.00", dec!(0.4), dec!(0.0)),
+        ]))
+        .await;
+
+    let netted = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(netted.len(), 1);
+    assert_eq!(netted[0].avg_px_open, Some(dec!(50000)));
 }
 
 #[rstest]
