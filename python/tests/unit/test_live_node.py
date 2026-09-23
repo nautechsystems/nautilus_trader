@@ -52,7 +52,7 @@ from tests.unit.common.actor import ControllerRegistrationProbe
 from tests.unit.common.actor import LifecycleProbeStrategy
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def live_node() -> object:
     """
     Live node.
@@ -650,6 +650,7 @@ def test_add_actor_registers_constructed_instance(live_node: LiveNode) -> None:
         live_node.add_actor(duplicate)
 
     assert str(exc_info.value) == "Actor 'PY-LIVE-CONSTRUCTED-ACTOR' is already registered"
+    del exc_info
     assert duplicate.trader_id is None
     assert duplicate.state() == ComponentState.PRE_INITIALIZED
     assert duplicate.is_ready() is False
@@ -960,6 +961,7 @@ async def test_add_exec_algorithm_rejects_running_node() -> None:
             await task
 
     assert "run_async" in str(exc_info.value)
+    del exc_info
     assert exec_algorithm.is_registered() is False
     assert handle.is_running is False
 

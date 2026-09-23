@@ -77,6 +77,8 @@ from nautilus_trader.model import VenueOrderId
 from nautilus_trader.trading import Strategy
 
 
+pytestmark = pytest.mark.usefixtures("collect_node_cycles")
+
 INSTRUMENT_ID = InstrumentId.from_str("EUR/USD.PYTHON")
 
 
@@ -272,11 +274,11 @@ def test_factory_cannot_reuse_another_nodes_client() -> None:
         def create(**kwargs: object) -> object:
             return client
 
-    try:
-        with pytest.raises(RuntimeError, match="owning factory cache view"):
-            build_node(ReusingFactory, config=client.config)
-    finally:
-        node.dispose()
+    node.dispose()
+    del node
+
+    with pytest.raises(RuntimeError, match="owning factory cache view"):
+        build_node(ReusingFactory, config=client.config)
 
 
 @pytest.mark.parametrize("registration", ["named", "instance", "importable", "direct_importable"])
@@ -1566,11 +1568,11 @@ def test_factory_cannot_reclaim_registered_output_with_replaced_context() -> Non
             return clients[0]
 
     node = build_node(ReusingFactory)
-    try:
-        with pytest.raises(RuntimeError, match="A client instance cannot be registered twice"):
-            build_node(ReusingFactory)
-    finally:
-        node.dispose()
+    node.dispose()
+    del node
+
+    with pytest.raises(RuntimeError, match="A client instance cannot be registered twice"):
+        build_node(ReusingFactory)
 
     with pytest.raises(RuntimeError, match="disposed"):
         clients[0].cache.instrument(INSTRUMENT_ID)

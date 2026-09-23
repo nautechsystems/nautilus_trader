@@ -81,7 +81,13 @@
 //! become eligible on the next maintenance tick. Event processing and runtime
 //! scheduling can delay dispatch further; the timer does not guarantee a maximum delay.
 
-use std::{any::Any, fmt::Debug, time::Duration};
+use std::{
+    any::Any,
+    cell::RefCell,
+    fmt::Debug,
+    rc::{Rc, Weak},
+    time::Duration,
+};
 
 use anyhow::Context;
 use nautilus_common::{
@@ -166,6 +172,10 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
 
+thread_local! {
+    static NODE_THREAD_OWNER: RefCell<Weak<()>> = const { RefCell::new(Weak::new()) };
+}
+
 type StreamProcessorCallback = dyn Fn(&dyn Any, &serde_json::Value) -> anyhow::Result<()> + 'static;
 
 struct StreamProcessor(Box<StreamProcessorCallback>);
@@ -180,6 +190,10 @@ impl Debug for StreamProcessor {
 ///
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
+///
+/// Only one live node may exist on a thread at a time. Drop the node before building another,
+/// including after disposal, because retained nodes can still access thread-local messaging.
+/// Concurrent nodes in one process remain unsupported, even on separate threads.
 #[derive(Debug)]
 pub struct LiveNode {
     kernel: NautilusKernel,
@@ -195,6 +209,7 @@ pub struct LiveNode {
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
+    _thread_owner: Rc<()>,
 }
 
 impl LiveNode {
@@ -215,6 +230,7 @@ impl LiveNode {
         socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
+        thread_owner: Rc<()>,
     ) -> Self {
         Self {
             kernel,
@@ -230,6 +246,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
+            _thread_owner: thread_owner,
         }
     }
 
@@ -253,8 +270,10 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if kernel construction fails.
+    /// Returns an error if kernel construction fails or another live node exists or is being
+    /// built on this thread.
     pub fn build(name: String, config: Option<LiveNodeConfig>) -> anyhow::Result<Self> {
+        let thread_owner = Self::acquire_thread()?;
         let config = config.unwrap_or_default();
         validate_live_environment(config.environment())?;
 
@@ -307,6 +326,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
+            _thread_owner: thread_owner,
         };
 
         node.load_configured_plugins()?;
@@ -314,6 +334,19 @@ impl LiveNode {
         log::info!("LiveNode built successfully with kernel config");
 
         Ok(node)
+    }
+
+    fn acquire_thread() -> anyhow::Result<Rc<()>> {
+        NODE_THREAD_OWNER.with(|slot| {
+            let mut owner = slot.borrow_mut();
+            anyhow::ensure!(
+                owner.upgrade().is_none(),
+                "A LiveNode already exists or is being built on this thread; drop it before building another"
+            );
+            let token = Rc::new(());
+            *owner = Rc::downgrade(&token);
+            Ok(token)
+        })
     }
 
     /// Loads and registers plug-ins declared on the node config.
@@ -7757,6 +7790,148 @@ mod tests {
         );
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(closed.get());
+    }
+
+    #[rstest]
+    fn test_node_build_rejects_existing_node_preserving_account_delivery(
+        #[values(false, true)] first_builder: bool,
+        #[values(false, true)] second_builder: bool,
+    ) {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("PROBE-001"),
+            ..Default::default()
+        };
+
+        let mut node = if first_builder {
+            LiveNodeBuilder::from_config(config)
+                .unwrap()
+                .build()
+                .unwrap()
+        } else {
+            LiveNode::build("Original".to_string(), Some(config)).unwrap()
+        };
+
+        let bus = msgbus::get_message_bus();
+
+        let ExecutionEvent::Account(before) = stub_account_event() else {
+            unreachable!()
+        };
+
+        get_exec_event_sender()
+            .send(ExecutionEvent::Account(before.clone()))
+            .unwrap();
+        assert_eq!(node.drain_runner_pending(), 1);
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .account(&before.account_id)
+                .unwrap()
+                .last_event(),
+            Some(before)
+        );
+
+        let result = if second_builder {
+            LiveNodeBuilder::from_config(LiveNodeConfig::default())
+                .unwrap()
+                .build()
+        } else {
+            LiveNode::build("Extra".to_string(), None)
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "A LiveNode already exists or is being built on this thread; drop it before building another"
+        );
+
+        let ExecutionEvent::Account(after) = stub_account_event() else {
+            unreachable!()
+        };
+
+        get_exec_event_sender()
+            .send(ExecutionEvent::Account(after.clone()))
+            .unwrap();
+        assert_eq!(node.drain_runner_pending(), 1);
+        assert_eq!(node.trader_id(), TraderId::from("PROBE-001"));
+        assert!(Rc::ptr_eq(&bus, &msgbus::get_message_bus()));
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .account(&after.account_id)
+                .unwrap()
+                .last_event(),
+            Some(after)
+        );
+    }
+
+    #[rstest]
+    fn test_node_build_rejects_reentry_and_releases_thread_after_factory_failure() {
+        let result = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
+            .unwrap()
+            .with_event_store(|_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
+                let error = LiveNode::build("Reentrant".to_string(), None).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("already exists or is being built")
+                );
+                anyhow::bail!("Event store construction failed")
+            })
+            .build();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Event store construction failed"
+        );
+
+        let node = LiveNode::build("Retry".to_string(), None).unwrap();
+        assert_eq!(node.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_allows_separate_threads() {
+        let node = LiveNode::build("First".to_string(), None).unwrap();
+
+        let other_state = std::thread::spawn(|| {
+            let other = LiveNode::build("OtherThread".to_string(), None).unwrap();
+            other.state()
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(node.state(), NodeState::Idle);
+        assert_eq!(other_state, NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_releases_thread_after_drop() {
+        let mut node = LiveNode::build("First".to_string(), None).unwrap();
+        node.dispose();
+        assert!(LiveNode::build("WhileRetained".to_string(), None).is_err());
+        drop(node);
+
+        let replacement = LiveNode::build("Replacement".to_string(), None).unwrap();
+        assert_eq!(replacement.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_releases_thread_after_failure(#[values(false, true)] builder: bool) {
+        let config = LiveNodeConfig {
+            event_store: Some(EventStoreConfig::default()),
+            ..Default::default()
+        };
+
+        let result = if builder {
+            LiveNodeBuilder::from_config(config).unwrap().build()
+        } else {
+            LiveNode::build("Failure".to_string(), Some(config))
+        };
+
+        assert!(result.unwrap_err().to_string().contains("factory"));
+
+        let node = LiveNode::build("Retry".to_string(), None).unwrap();
+        assert_eq!(node.state(), NodeState::Idle);
     }
 
     #[cfg(feature = "python")]

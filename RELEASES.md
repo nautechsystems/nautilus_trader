@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed live node startup to fail when in-scope nonzero venue positions remain unrecovered
+- Changed same-thread `LiveNode` replacement to require dropping the previous node, even after `dispose()`
 - Changed `RiskEngine` to reject orders when accounts, prices, or required funding cannot be established
 - Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
 - Changed kernel-wired Feather stream files to per-instrument directories
@@ -81,6 +82,7 @@ Released on TBD (UTC).
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions
+- Fixed duplicate `LiveNode` builds replacing thread-local messaging (#5049), thanks for reporting @logeid
 - Fixed unqueryable Python custom-data writes (#4984), thanks for reporting @shanezilla
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
 - Fixed catalog interval-filename validation renaming files before rejecting them (#4647)
