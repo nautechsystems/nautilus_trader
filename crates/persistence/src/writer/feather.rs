@@ -31,6 +31,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use bytes::Bytes;
 use datafusion::arrow::{
     array::StringArray,
     datatypes::{DataType, Field, Schema},
@@ -445,6 +446,7 @@ pub struct FeatherWriter {
     /// Whether staged batches include the catalog row identifier column.
     catalog_identifier_column: bool,
     pending_write_error: Option<String>,
+    pending_puts: Vec<(Path, Bytes)>,
 }
 
 impl FeatherWriter {
@@ -484,6 +486,7 @@ impl FeatherWriter {
             last_flush_ns,
             catalog_identifier_column: false,
             pending_write_error: None,
+            pending_puts: Vec::new(),
         }
     }
 
@@ -830,10 +833,48 @@ impl FeatherWriter {
         path: &FileWriterPath,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut writer = self.writers.remove(path).unwrap();
-        let bytes = writer.take_buffer()?;
-        self.store.put(&path.path, bytes.into()).await?;
+
+        let bytes = match writer.take_buffer() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.writers.insert(path.clone(), writer);
+                return Err(e.into());
+            }
+        };
+
         let new_path = self.regen_writer_path(path);
         self.writers.insert(new_path, writer);
+        self.put_sealed(path.path.clone(), Bytes::from(bytes)).await
+    }
+
+    async fn put_sealed(
+        &mut self,
+        path: Path,
+        payload: Bytes,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if payload.is_empty() {
+            return Ok(());
+        }
+
+        if let Err(e) = self.store.put(&path, payload.clone().into()).await {
+            self.pending_puts.push((path, payload));
+            return Err(e.into());
+        }
+
+        Ok(())
+    }
+
+    async fn flush_pending(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let pending = std::mem::take(&mut self.pending_puts);
+        let mut rest = pending.into_iter();
+
+        while let Some((path, payload)) = rest.next() {
+            if let Err(e) = self.put_sealed(path, payload).await {
+                self.pending_puts.extend(rest);
+                return Err(e);
+            }
+        }
+
         Ok(())
     }
 
@@ -981,22 +1022,28 @@ impl FeatherWriter {
     /// object store and creates a new buffer for continued writing. This is different from
     /// Python which just flushes OS buffers.
     pub async fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Collect paths and their current buffers before flushing
+        self.flush_pending().await?;
+
         let paths_to_flush: Vec<FileWriterPath> = self.writers.keys().cloned().collect();
 
-        // Flush each writer and recreate it
         for path in paths_to_flush {
-            if let Some(mut writer) = self.writers.remove(&path) {
-                if writer.rows == 0 {
-                    continue;
-                }
+            let Some(mut writer) = self.writers.remove(&path) else {
+                continue;
+            };
 
-                let bytes = writer.take_buffer()?;
-                if !bytes.is_empty() {
-                    // Write to the object store
-                    self.store.put(&path.path, bytes.into()).await?;
-                }
+            if writer.rows == 0 {
+                continue;
             }
+
+            let bytes = match writer.take_buffer() {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    self.writers.insert(path, writer);
+                    return Err(e.into());
+                }
+            };
+
+            self.put_sealed(path.path, Bytes::from(bytes)).await?;
         }
 
         self.last_flush_ns = self.clock.timestamp_ns();
@@ -1046,9 +1093,16 @@ impl FeatherWriter {
     /// Returns the total buffered (unflushed) bytes and rows across all active buffers.
     #[must_use]
     pub fn buffered_totals(&self) -> (u64, u64) {
-        self.writers.values().fold((0, 0), |(bytes, rows), buffer| {
+        let (mut bytes, rows) = self.writers.values().fold((0, 0), |(bytes, rows), buffer| {
             (bytes + buffer.size, rows + buffer.rows)
-        })
+        });
+
+        bytes += self
+            .pending_puts
+            .iter()
+            .map(|(_, payload)| payload.len() as u64)
+            .sum::<u64>();
+        (bytes, rows)
     }
 
     /// Returns the next rotation time for a specific writer key, if set.
@@ -1563,12 +1617,20 @@ impl StreamingSink for Rc<RefCell<FeatherWriter>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, sync::Arc};
+    use std::{
+        fmt::Display,
+        io::Cursor,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
 
     use datafusion::arrow::ipc::reader::StreamReader;
+    use futures::stream::BoxStream;
     use nautilus_common::{
         clock::VirtualClock,
-        live::{LiveClock, get_runtime},
+        live::{LiveClock, block_on_nautilus_with, get_runtime},
     };
     use nautilus_model::{
         data::{Data, QuoteTick, TradeTick},
@@ -1579,11 +1641,195 @@ mod tests {
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
     };
-    use object_store::{ObjectStore, local::LocalFileSystem};
+    use object_store::{
+        GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
+        local::LocalFileSystem, memory::InMemory, path::Path as ObjectPath,
+    };
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
+
+    #[derive(Debug)]
+    struct FailPutStore {
+        inner: InMemory,
+        fail: AtomicBool,
+    }
+
+    impl Display for FailPutStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("fail-put")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for FailPutStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> ObjectStoreResult<PutResult> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(object_store::Error::Generic {
+                    store: "fail-put",
+                    source: Box::new(std::io::Error::other("injected put failure")),
+                });
+            }
+
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
+            self.inner.put_multipart_opts(location, opts).await
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> ObjectStoreResult<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> ObjectStoreResult<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            opts: object_store::CopyOptions,
+        ) -> ObjectStoreResult<()> {
+            self.inner.copy_opts(from, to, opts).await
+        }
+    }
+
+    #[rstest]
+    fn failed_flush_keeps_accepted_rows_for_retry() {
+        let store = Arc::new(FailPutStore {
+            inner: InMemory::new(),
+            fail: AtomicBool::new(true),
+        });
+
+        let mut writer = FeatherWriter::new(
+            "run".to_string(),
+            store.clone(),
+            WriterClock::Test(Arc::new(AtomicU64::new(1_000))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+            Some(0),
+        );
+        writer
+            .write(QuoteTick::new(
+                InstrumentId::from("AUD/USD.SIM"),
+                Price::from("1.0"),
+                Price::from("1.1"),
+                Quantity::from("2"),
+                Quantity::from("3"),
+                4.into(),
+                5.into(),
+            ))
+            .unwrap();
+
+        let error = block_on_nautilus_with(|| async {
+            writer.flush().await.map_err(|e| anyhow::anyhow!("{e}"))
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("injected put failure"));
+        assert_eq!(writer.pending_puts.len(), 1);
+        assert!(writer.buffered_totals().0 > 0);
+        let path = writer.pending_puts[0].0.clone();
+
+        store.fail.store(false, Ordering::Relaxed);
+        block_on_nautilus_with(|| async {
+            writer.flush().await.map_err(|e| anyhow::anyhow!("{e}"))
+        })
+        .unwrap();
+
+        assert!(writer.pending_puts.is_empty());
+
+        let stored = block_on_nautilus_with(|| async {
+            let get = store.get(&path).await.map_err(anyhow::Error::from)?;
+            get.bytes().await.map_err(anyhow::Error::from)
+        })
+        .unwrap();
+
+        assert!(!stored.is_empty());
+    }
+
+    #[rstest]
+    fn failed_rotation_keeps_accepted_rows_for_retry() {
+        let store = Arc::new(FailPutStore {
+            inner: InMemory::new(),
+            fail: AtomicBool::new(true),
+        });
+
+        let mut writer = FeatherWriter::new(
+            "run".to_string(),
+            store.clone(),
+            WriterClock::Test(Arc::new(AtomicU64::new(1_000))),
+            RotationConfig::Size { max_size: 1 },
+            None,
+            None,
+            Some(0),
+        );
+        let error = writer
+            .write(QuoteTick::new(
+                InstrumentId::from("AUD/USD.SIM"),
+                Price::from("1.0"),
+                Price::from("1.1"),
+                Quantity::from("2"),
+                Quantity::from("3"),
+                4.into(),
+                5.into(),
+            ))
+            .unwrap_err();
+        assert!(error.to_string().contains("injected put failure"));
+        assert_eq!(writer.pending_puts.len(), 1);
+        let path = writer.pending_puts[0].0.clone();
+
+        store.fail.store(false, Ordering::Relaxed);
+        block_on_nautilus_with(|| async {
+            writer.flush().await.map_err(|e| anyhow::anyhow!("{e}"))
+        })
+        .unwrap();
+
+        assert!(writer.pending_puts.is_empty());
+
+        let stored = block_on_nautilus_with(|| async {
+            let get = store.get(&path).await.map_err(anyhow::Error::from)?;
+            get.bytes().await.map_err(anyhow::Error::from)
+        })
+        .unwrap();
+
+        assert!(!stored.is_empty());
+    }
 
     #[rstest]
     fn test_default_per_instrument_types_match_streaming_feather_writer() {

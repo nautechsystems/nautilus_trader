@@ -43,6 +43,24 @@ pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) ->
     format!("{datetime_1}_{datetime_2}.parquet")
 }
 
+/// Builds a catalog parquet filename, appending a promotion-identity hash when present.
+#[must_use]
+pub(crate) fn catalog_filename(
+    start_ts: UnixNanos,
+    end_ts: UnixNanos,
+    replay_identity: Option<&str>,
+) -> String {
+    let filename = timestamps_to_filename(start_ts, end_ts);
+
+    let Some(identity) = replay_identity else {
+        return filename;
+    };
+
+    let stem = filename.strip_suffix(".parquet").unwrap_or(&filename);
+    let digest = blake3::hash(identity.as_bytes()).to_hex();
+    format!("{stem}_{}.parquet", &digest[..16])
+}
+
 /// Converts an ISO 8601 timestamp to a filesystem-safe format.
 pub(crate) fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
     iso_timestamp.replace([':', '.'], "-")

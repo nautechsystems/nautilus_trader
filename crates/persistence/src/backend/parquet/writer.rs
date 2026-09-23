@@ -857,7 +857,7 @@ mod tests {
     #[rstest]
     #[case(true)]
     #[case(false)]
-    fn parquet_promotion_retains_conflicting_schema_groups(#[case] automatic: bool) {
+    fn parquet_promotion_unifies_empty_and_populated_depth(#[case] automatic: bool) {
         use nautilus_model::{
             data::{BookOrder, OrderBookDepth},
             enums::OrderSide,
@@ -877,14 +877,12 @@ mod tests {
         let id = InstrumentId::from("AUD/USD.SIM");
         let empty =
             OrderBookDepth::new(id, vec![], vec![], vec![], vec![], 1, 2, 3.into(), 4.into());
-
         let order = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.23"),
             Quantity::from("4.5"),
             6,
         );
-
         let populated = OrderBookDepth::new(
             id,
             vec![order],
@@ -898,19 +896,18 @@ mod tests {
         );
         sink.write_any(&empty).unwrap();
         sink.write_any(&populated).unwrap();
+        sink.close().unwrap();
 
-        let error = if automatic {
-            sink.close().unwrap_err().to_string()
-        } else {
-            sink.close().unwrap();
-            let mut catalog = ParquetDataCatalog::from_uri(
-                directory.path().to_str().unwrap(),
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        if !automatic {
             catalog
                 .convert_stream_to_data(
                     "run-depth-ties",
@@ -919,14 +916,22 @@ mod tests {
                     None,
                     false,
                 )
-                .unwrap_err()
-                .to_string()
+                .unwrap();
+        }
+
+        let batch = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::OrderBookDepth))
+            .unwrap();
+        let DataBatch::BookDepth(rows) = batch else {
+            panic!("expected order book depth");
         };
+        let mut rows = rows.as_ref().to_vec();
+        rows.sort_by_key(|depth| depth.sequence);
+        assert_eq!(rows, vec![empty, populated]);
 
         let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
         let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
-        assert!(error.contains("non-disjoint intervals"), "{error}");
-        assert_eq!(staged.len(), 1);
+        assert_eq!(staged.len(), usize::from(!automatic));
     }
 
     #[rstest]

@@ -28,15 +28,15 @@ use nautilus_model::data::{
     TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch};
+use object_store::ObjectStoreExt;
 
 use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
-        paths::{make_object_store_path, timestamps_to_filename},
+        paths::{make_object_store_path, parse_filename_timestamps, timestamps_to_filename},
     },
     catalog::types::{
-        CatalogDataType, HasCatalogDataType, data_type_from_data_path_prefix,
-        parquet_data_path_prefix,
+        HasCatalogDataType, data_type_from_data_path_prefix, parquet_data_path_prefix,
     },
     common::custom::group_custom_data_by_type,
 };
@@ -96,23 +96,13 @@ impl ParquetDataCatalog {
             type_name: type_name.to_string(),
         };
 
-        let path_prefix = parquet_data_path_prefix(&data_type);
+        let files = self.files_for_delete(&data_type, identifier)?;
 
-        // Get intervals for the custom data type
-        let intervals = self.get_intervals(&CatalogDataType::Data(data_type), identifier)?;
-
-        if intervals.is_empty() {
-            return Ok(()); // No files to process
+        if files.is_empty() {
+            return Ok(());
         }
 
-        // Prepare all operations for execution
-        let operations_to_execute = self.prepare_delete_operations(
-            path_prefix.as_ref(),
-            identifier,
-            &intervals,
-            start,
-            end,
-        )?;
+        let operations_to_execute = operations_for_files(&files, start, end);
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -170,11 +160,8 @@ impl ParquetDataCatalog {
             }
         }
 
-        // Remove all files that were processed
         for file in files_to_remove {
-            if let Err(e) = self.delete_file(&file) {
-                log::warn!("Failed to delete file {file}: {e}");
-            }
+            self.delete_listed_file(&file)?;
         }
 
         Ok(())
@@ -368,12 +355,7 @@ impl ParquetDataCatalog {
                     continue;
                 };
 
-                if let Err(e) =
-                    self.delete_data_range(&data_type, identifier.as_deref(), start, end)
-                {
-                    log::warn!("Failed to delete data in directory {directory}: {e}");
-                    // Continue with other directories instead of failing completely
-                }
+                self.delete_data_range(&data_type, identifier.as_deref(), start, end)?;
             }
         }
 
@@ -415,22 +397,13 @@ impl ParquetDataCatalog {
     {
         // Get intervals for cleaner implementation
         let data_type = T::catalog_data_type();
-        let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals =
-            self.get_intervals(&CatalogDataType::Data(data_type.clone()), identifier)?;
+        let files = self.files_for_delete(&data_type, identifier)?;
 
-        if intervals.is_empty() {
-            return Ok(()); // No files to process
+        if files.is_empty() {
+            return Ok(());
         }
 
-        // Prepare all operations for execution
-        let operations_to_execute = self.prepare_delete_operations(
-            path_prefix.as_ref(),
-            identifier,
-            &intervals,
-            start,
-            end,
-        )?;
+        let operations_to_execute = operations_for_files(&files, start, end);
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -478,14 +451,44 @@ impl ParquetDataCatalog {
             }
         }
 
-        // Remove all files that were processed
         for file in files_to_remove {
-            if let Err(e) = self.delete_file(&file) {
-                log::warn!("Failed to delete file {file}: {e}");
-            }
+            self.delete_listed_file(&file)?;
         }
 
         Ok(())
+    }
+
+    fn delete_listed_file(&self, path: &str) -> anyhow::Result<()> {
+        let object_path = self.to_object_path_parsed(path)?;
+        self.execute_async(|| async {
+            self.object_store
+                .delete(&object_path)
+                .await
+                .map_err(anyhow::Error::from)
+        })
+    }
+
+    // Canonical layout only. Legacy read prefixes such as `custom_<type>` stay in place.
+    fn files_for_delete(
+        &self,
+        data_type: &NautilusDataType,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<Vec<(String, u64, u64)>> {
+        let directory = if let NautilusDataType::Custom { type_name } = data_type {
+            self.make_path_custom_data(type_name, identifier)?
+        } else {
+            let prefix = parquet_data_path_prefix(data_type);
+            self.make_path(prefix.as_ref(), identifier)?
+        };
+
+        let files = self.list_parquet_files(&directory)?;
+
+        Ok(files
+            .into_iter()
+            .filter_map(|path| {
+                parse_filename_timestamps(&path).map(|(start, end)| (path, start, end))
+            })
+            .collect())
     }
 
     /// Prepares all operations for data deletion by identifying files that need to be
@@ -508,6 +511,9 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns a vector of `DeleteOperation` structs ready for execution.
+    ///
+    /// Plans from the supplied intervals. It does not look up stored filenames, so a
+    /// replay-identity suffix is not included. Catalog deletion resolves stored paths itself.
     pub fn prepare_delete_operations(
         &self,
         type_name: &str,
@@ -516,79 +522,84 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<DeleteOperation>> {
-        // Convert start/end to nanoseconds
-        let delete_start_ns = start.map(|s| s.as_u64());
-        let delete_end_ns = end.map(|e| e.as_u64());
-
-        let mut operations = Vec::new();
-
-        // Get directory for file path construction
         let directory = self.make_path(type_name, identifier)?;
 
-        // Process each interval (which represents an actual file)
-        for &(file_start_ns, file_end_ns) in intervals {
-            // Check if file intersects with deletion range
-            let intersects = delete_start_ns.is_none_or(|start| start <= file_end_ns)
-                && delete_end_ns.is_none_or(|end| file_start_ns <= end);
+        let files = intervals
+            .iter()
+            .map(|&(file_start_ns, file_end_ns)| {
+                let filename = timestamps_to_filename(
+                    UnixNanos::from(file_start_ns),
+                    UnixNanos::from(file_end_ns),
+                );
+                let file_path = make_object_store_path(&directory, [&filename]);
+                (file_path, file_start_ns, file_end_ns)
+            })
+            .collect::<Vec<_>>();
 
-            if !intersects {
-                continue; // File doesn't intersect with deletion range
-            }
+        Ok(operations_for_files(&files, start, end))
+    }
+}
 
-            // Construct file path from interval timestamps
-            let filename = timestamps_to_filename(
-                UnixNanos::from(file_start_ns),
-                UnixNanos::from(file_end_ns),
-            );
-            let file_path = make_object_store_path(&directory, [&filename]);
+fn operations_for_files(
+    files: &[(String, u64, u64)],
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> Vec<DeleteOperation> {
+    let delete_start_ns = start.map(|s| s.as_u64());
+    let delete_end_ns = end.map(|e| e.as_u64());
+    let mut operations = Vec::new();
 
-            // Determine what type of operation is needed
-            let file_completely_within_range = delete_start_ns
-                .is_none_or(|start| start <= file_start_ns)
-                && delete_end_ns.is_none_or(|end| file_end_ns <= end);
+    for (file_path, file_start_ns, file_end_ns) in files {
+        let intersects = delete_start_ns.is_none_or(|start| start <= *file_end_ns)
+            && delete_end_ns.is_none_or(|end| *file_start_ns <= end);
 
-            if file_completely_within_range {
-                // File is completely within deletion range - just mark for removal
-                operations.push(DeleteOperation {
-                    kind: DeleteOperationKind::Remove,
-                    files: vec![file_path],
-                    query_start: 0,
-                    query_end: 0,
-                    file_start_ns: 0,
-                    file_end_ns: 0,
-                });
-            } else {
-                // File partially overlaps - need to split
-                if let Some(delete_start) = delete_start_ns
-                    && file_start_ns < delete_start
-                {
-                    // Keep data before deletion range
-                    operations.push(DeleteOperation {
-                        kind: DeleteOperationKind::SplitBefore,
-                        files: vec![file_path.clone()],
-                        query_start: file_start_ns,
-                        query_end: delete_start.saturating_sub(1), // Exclusive end
-                        file_start_ns,
-                        file_end_ns: delete_start.saturating_sub(1),
-                    });
-                }
-
-                if let Some(delete_end) = delete_end_ns
-                    && delete_end < file_end_ns
-                {
-                    // Keep data after deletion range
-                    operations.push(DeleteOperation {
-                        kind: DeleteOperationKind::SplitAfter,
-                        files: vec![file_path.clone()],
-                        query_start: delete_end.saturating_add(1), // Exclusive start
-                        query_end: file_end_ns,
-                        file_start_ns: delete_end.saturating_add(1),
-                        file_end_ns,
-                    });
-                }
-            }
+        if !intersects {
+            continue;
         }
 
-        Ok(operations)
+        let file_completely_within_range = delete_start_ns
+            .is_none_or(|start| start <= *file_start_ns)
+            && delete_end_ns.is_none_or(|end| *file_end_ns <= end);
+
+        if file_completely_within_range {
+            operations.push(DeleteOperation {
+                kind: DeleteOperationKind::Remove,
+                files: vec![file_path.clone()],
+                query_start: 0,
+                query_end: 0,
+                file_start_ns: 0,
+                file_end_ns: 0,
+            });
+
+            continue;
+        }
+
+        if let Some(delete_start) = delete_start_ns
+            && *file_start_ns < delete_start
+        {
+            operations.push(DeleteOperation {
+                kind: DeleteOperationKind::SplitBefore,
+                files: vec![file_path.clone()],
+                query_start: *file_start_ns,
+                query_end: delete_start.saturating_sub(1),
+                file_start_ns: *file_start_ns,
+                file_end_ns: delete_start.saturating_sub(1),
+            });
+        }
+
+        if let Some(delete_end) = delete_end_ns
+            && delete_end < *file_end_ns
+        {
+            operations.push(DeleteOperation {
+                kind: DeleteOperationKind::SplitAfter,
+                files: vec![file_path.clone()],
+                query_start: delete_end.saturating_add(1),
+                query_end: *file_end_ns,
+                file_start_ns: delete_end.saturating_add(1),
+                file_end_ns: *file_end_ns,
+            });
+        }
     }
+
+    operations
 }

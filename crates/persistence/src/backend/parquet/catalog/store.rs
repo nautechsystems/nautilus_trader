@@ -27,8 +27,8 @@ use super::{
     HashSet, ObjectPath, ObjectStore, ObjectStoreExt, ParquetDataCatalog, PathBuf, StreamExt,
     UnixNanos, append_path_to_file_uri, are_intervals_disjoint, decode_object_store_segment,
     extract_path_components, is_remote_uri_scheme, make_object_store_path,
-    query_intersects_filename, remote_full_uri, remote_store_root_url, timestamps_to_filename,
-    urisafe_instrument_id,
+    parse_filename_timestamps, query_intersects_filename, remote_full_uri, remote_store_root_url,
+    timestamps_to_filename, urisafe_instrument_id,
 };
 use crate::{
     catalog::types::{
@@ -633,16 +633,29 @@ impl ParquetDataCatalog {
         new_start: u64,
         new_end: u64,
     ) -> anyhow::Result<()> {
-        let old_filename =
-            timestamps_to_filename(UnixNanos::from(old_start), UnixNanos::from(old_end));
-        let old_path = format!("{directory}/{old_filename}");
-        let old_object_path = self.to_object_path(&old_path)?;
-
         let new_filename =
             timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
         let new_path = format!("{directory}/{new_filename}");
-        let new_object_path = self.to_object_path(&new_path)?;
+        let matches = self
+            .list_parquet_files(directory)?
+            .into_iter()
+            .filter(|file| parse_filename_timestamps(file) == Some((old_start, old_end)))
+            .collect::<Vec<_>>();
 
+        anyhow::ensure!(
+            matches.len() == 1,
+            "expected one parquet file for interval ({old_start}, {old_end}) in {directory}, \
+             found {}",
+            matches.len()
+        );
+
+        let old_path = &matches[0];
+        if old_path.ends_with(&new_filename) {
+            return Ok(());
+        }
+
+        let old_object_path = self.to_object_path_parsed(old_path)?;
+        let new_object_path = self.to_object_path(&new_path)?;
         self.move_file(&old_object_path, &new_object_path)
     }
 

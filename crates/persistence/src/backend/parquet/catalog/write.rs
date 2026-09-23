@@ -32,7 +32,7 @@ use super::{
     timestamps_to_filename, to_snake_case, write_batches_to_object_store, write_catalog_batch,
 };
 use crate::{
-    backend::parquet::io::write_batches_to_object_store_create,
+    backend::parquet::{io::write_batches_to_object_store_create, paths::catalog_filename},
     common::metadata::record_batch_ts_init_range,
 };
 
@@ -453,13 +453,7 @@ impl ParquetDataCatalog {
         data_description: Option<&str>,
         replay_identity: Option<&str>,
     ) -> anyhow::Result<PathBuf> {
-        let filename = timestamps_to_filename(start_ts, end_ts);
-
-        let filename = replay_identity.map_or(filename.clone(), |identity| {
-            let stem = filename.strip_suffix(".parquet").unwrap_or(&filename);
-            let digest = blake3::hash(identity.as_bytes()).to_hex();
-            format!("{stem}_{}.parquet", &digest[..16])
-        });
+        let filename = catalog_filename(start_ts, end_ts, replay_identity);
 
         let path = PathBuf::from(directory).join(&filename);
         let object_path = self.to_object_path(&path.to_string_lossy())?;

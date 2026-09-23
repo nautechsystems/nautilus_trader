@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
+use std::{collections::HashMap, fmt::Display, fs, io::Write, str::FromStr, sync::Arc};
 
 use nautilus_common::live::get_runtime;
 use nautilus_core::{Params, UUID4, UnixNanos};
@@ -2946,6 +2946,221 @@ fn test_delete_data_range_complete_file_deletion() {
         .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
         .unwrap();
     assert_eq!(remaining_data.len(), 0);
+}
+
+#[rstest]
+fn test_delete_data_range_removes_replay_identity_suffix() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+    ];
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+    let files = catalog
+        .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+        .unwrap();
+    assert_eq!(files.len(), 1);
+    let path = std::path::PathBuf::from(&files[0]);
+
+    let path = if path.is_absolute() {
+        path
+    } else {
+        temp_dir.path().join(path)
+    };
+
+    let stem = path.file_stem().unwrap().to_str().unwrap();
+    let suffixed = path.with_file_name(format!("{stem}_abcdef0123456789.parquet"));
+    fs::rename(&path, &suffixed).unwrap();
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::QuoteTick,
+            Some("ETH/USDT.BINANCE"),
+            None,
+            None,
+        )
+        .unwrap();
+
+    let remaining = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    assert!(remaining.is_empty());
+    assert!(!suffixed.exists());
+}
+
+#[derive(Debug)]
+struct RejectDeleteStore {
+    inner: Arc<dyn object_store::ObjectStore>,
+}
+
+impl Display for RejectDeleteStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("reject-delete")
+    }
+}
+
+#[async_trait::async_trait]
+impl object_store::ObjectStore for RejectDeleteStore {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &object_store::path::Path,
+        opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &object_store::path::Path,
+        options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: futures::stream::BoxStream<
+            'static,
+            object_store::Result<object_store::path::Path>,
+        >,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
+        use futures::StreamExt;
+        Box::pin(locations.map(|item| {
+            item.and_then(|_| {
+                Err(object_store::Error::Generic {
+                    store: "reject-delete",
+                    source: Box::new(std::io::Error::other("injected delete failure")),
+                })
+            })
+        }))
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &object_store::path::Path,
+        to: &object_store::path::Path,
+        opts: object_store::CopyOptions,
+    ) -> object_store::Result<()> {
+        self.inner.copy_opts(from, to, opts).await
+    }
+}
+
+#[rstest]
+fn test_delete_data_range_returns_error_when_file_cannot_be_removed() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_to_parquet(&[create_quote_tick(1_000_000_000)], None, None, None)
+        .unwrap();
+    let before = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    assert_eq!(before.len(), 1);
+
+    let inner = catalog.object_store.clone();
+
+    catalog.object_store = Arc::new(RejectDeleteStore {
+        inner: inner.clone(),
+    });
+
+    let error = catalog
+        .delete_data_range(
+            &NautilusDataType::QuoteTick,
+            Some("ETH/USDT.BINANCE"),
+            None,
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("injected delete failure"),
+        "{error}"
+    );
+
+    catalog.object_store = inner;
+    let remaining = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    assert_eq!(remaining.len(), 1);
+}
+
+#[rstest]
+fn test_record_empty_coverage_extends_replay_identity_file() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_to_parquet(&[create_quote_tick(1)], None, None, None)
+        .unwrap();
+    let files = catalog
+        .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+        .unwrap();
+    let path = std::path::PathBuf::from(&files[0]);
+
+    let path = if path.is_absolute() {
+        path
+    } else {
+        temp_dir.path().join(path)
+    };
+
+    let stem = path.file_stem().unwrap().to_str().unwrap();
+    let suffixed = path.with_file_name(format!("{stem}_abcdef0123456789.parquet"));
+    fs::rename(&path, &suffixed).unwrap();
+
+    CatalogWriter::record_empty_coverage(
+        &mut catalog,
+        NautilusDataType::QuoteTick,
+        Some("ETH/USDT.BINANCE"),
+        UnixNanos::from(2),
+        UnixNanos::from(5),
+    )
+    .unwrap();
+
+    assert_eq!(
+        catalog
+            .get_intervals(
+                &NautilusDataType::QuoteTick.into(),
+                Some("ETH/USDT.BINANCE"),
+            )
+            .unwrap(),
+        vec![(1, 5)],
+    );
+    assert!(!suffixed.exists());
+}
+
+#[rstest]
+fn test_delete_data_range_without_identifier_removes_every_file() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let quotes = vec![create_quote_tick(1_000_000_000)];
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+
+    catalog
+        .delete_data_range(&NautilusDataType::QuoteTick, None, None, None)
+        .unwrap();
+
+    let remaining = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    assert!(remaining.is_empty());
 }
 
 #[rstest]
