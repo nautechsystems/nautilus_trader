@@ -1309,13 +1309,16 @@ pub trait Strategy: DataActor {
         let state = {
             let core = StrategyNative::strategy_core_mut(self);
             let id = &core.actor.actor_id;
-            let is_warning = matches!(
-                &event,
+
+            let is_warning = match &event {
+                OrderEventAny::Rejected(event) => {
+                    !event.due_post_only || core.config.log_rejected_due_post_only_as_warning
+                }
                 OrderEventAny::Denied(_)
-                    | OrderEventAny::Rejected(_)
-                    | OrderEventAny::CancelRejected(_)
-                    | OrderEventAny::ModifyRejected(_)
-            );
+                | OrderEventAny::CancelRejected(_)
+                | OrderEventAny::ModifyRejected(_) => true,
+                _ => false,
+            };
 
             if is_warning {
                 log::warn!("{id} {RECV}{EVT} {event}");
@@ -2470,7 +2473,7 @@ fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<Acco
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
     use nautilus_common::{
         actor::{
@@ -3233,17 +3236,68 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_order_event_dispatches_to_handler() {
+    #[case(false, false, false, Some(log::Level::Warn))]
+    #[case(false, false, true, Some(log::Level::Warn))]
+    #[case(false, true, false, Some(log::Level::Warn))]
+    #[case(false, true, true, Some(log::Level::Warn))]
+    #[case(true, false, false, None)]
+    #[case(true, false, true, Some(log::Level::Info))]
+    #[case(true, true, false, Some(log::Level::Warn))]
+    #[case(true, true, true, Some(log::Level::Warn))]
+    fn test_handle_order_event_logs_and_dispatches_rejection(
+        #[case] due_post_only: bool,
+        #[case] log_rejected_due_post_only_as_warning: bool,
+        #[case] log_events: bool,
+        #[case] expected_level: Option<log::Level>,
+    ) {
+        static LOG_CAPTURE: OrderEventLogCapture = OrderEventLogCapture(Mutex::new(Vec::new()));
+
         let mut strategy = create_test_strategy();
+        strategy.core.config.log_rejected_due_post_only_as_warning =
+            log_rejected_due_post_only_as_warning;
+        strategy.core.actor.config.log_events = log_events;
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
 
-        let event = make_rejected(ClientOrderId::from("O-001"));
+        let event = OrderEventAny::Rejected(
+            OrderRejectedSpec::builder()
+                .strategy_id(StrategyId::from("TEST-001"))
+                .client_order_id(ClientOrderId::from("O-001"))
+                .due_post_only(due_post_only)
+                .build(),
+        );
+
+        log::set_logger(&LOG_CAPTURE).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+        let expected_records: Vec<_> = expected_level
+            .map(|level| (level, format!("TEST-001 {RECV}{EVT} {event}")))
+            .into_iter()
+            .collect();
 
         strategy.handle_order_event(event);
 
+        assert_eq!(*LOG_CAPTURE.0.lock().unwrap(), expected_records);
         assert!(strategy.on_order_rejected_called);
         assert!(strategy.on_order_event_called);
+    }
+
+    struct OrderEventLogCapture(Mutex<Vec<(log::Level, String)>>);
+
+    impl log::Log for OrderEventLogCapture {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.target() == "nautilus_trading::strategy"
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((record.level(), record.args().to_string()));
+            }
+        }
+
+        fn flush(&self) {}
     }
 
     #[rstest]

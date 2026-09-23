@@ -68,6 +68,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `Strategy` ignoring `log_rejected_due_post_only_as_warning` for post-only rejections
 - Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
 - Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills, thanks for reporting @kta1kri
 - Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications, thanks for reporting @kta1kri
