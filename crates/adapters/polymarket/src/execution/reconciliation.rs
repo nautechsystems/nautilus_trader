@@ -990,7 +990,7 @@ fn build_admitted_target_fill(
             venue_order_id,
             trade_id,
         } => {
-            let taker_fee_rate = instrument_taker_fee(&admitted.instrument);
+            let taker_fee_rate = instrument_taker_fee(&admitted.instrument)?;
             let fee_exponent = instrument_fee_exponent(&admitted.instrument)?;
             parse_validated_fill_report(
                 trade,
@@ -1325,7 +1325,7 @@ pub(crate) fn build_fill_reports_from_trades(
             let ts_event = require_trade_timestamp(ts_event, trade)?;
             let price_prec = last_px.precision;
             let size_prec = instrument.size_precision();
-            let taker_fee_rate = instrument_taker_fee(&instrument);
+            let taker_fee_rate = instrument_taker_fee(&instrument)?;
             let fee_exponent = instrument_fee_exponent(&instrument)?;
 
             let report = parse_validated_fill_report(

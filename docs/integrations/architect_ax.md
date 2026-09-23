@@ -473,10 +473,9 @@ credentials are valid and have trading permissions.
   weekends and holidays, and emits the latest rate only when it differs from the last one emitted.
 - **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
   to have the exchange cancel all open orders if the orders WebSocket disconnects.
-- **Instrument fee rates**: AX reports maker and taker rates per account on `GET /whoami`, so the
-  adapter resolves them after authenticating and applies them to every instrument. A client with
-  credentials fails to connect if that lookup fails, rather than reporting zero fees for the process
-  lifetime. A data client configured without credentials cannot read the rates and reports zero fees.
+- **Instrument fee rates**: Instruments do not carry maker or taker fee rates. An
+  authenticated client still resolves account rates from `GET /whoami` and fails to
+  connect if that lookup fails. Those rates are not copied onto instruments.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
   Commission is reported as zero for streaming fills. During reconciliation, the REST
   `/fills` endpoint provides accurate fee information.

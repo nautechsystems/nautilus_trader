@@ -76,10 +76,6 @@ pub struct CryptoPerpetual {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -126,8 +122,6 @@ impl CryptoPerpetual {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -172,8 +166,6 @@ impl CryptoPerpetual {
             lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             max_quantity,
             min_quantity,
             max_notional,
@@ -217,8 +209,6 @@ impl CryptoPerpetual {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -245,8 +235,6 @@ impl CryptoPerpetual {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -386,14 +374,6 @@ impl Instrument for CryptoPerpetual {
         self.margin_maint
     }
 
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
     fn tick_scheme(&self) -> Option<Ustr> {
         self.tick_scheme
     }
@@ -415,7 +395,6 @@ impl Instrument for CryptoPerpetual {
 mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
@@ -516,8 +495,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -537,8 +514,6 @@ mod tests {
             5, // mismatch
             Price::from("0.01"),
             Quantity::from("1"),
-            None,
-            None,
             None,
             None,
             None,
@@ -587,8 +562,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -619,8 +592,6 @@ mod tests {
             None,
             None,
             Some(Quantity::from("10000.0")),
-            None,
-            None,
             None,
             None,
             None,
@@ -680,8 +651,6 @@ mod tests {
         assert_eq!(perp.lot_size, Quantity::from(1));
         assert_eq!(perp.margin_init, Decimal::default());
         assert_eq!(perp.margin_maint, Decimal::default());
-        assert_eq!(perp.maker_fee, Decimal::default());
-        assert_eq!(perp.taker_fee, Decimal::default());
         assert_eq!(perp.max_quantity, None);
         assert_eq!(perp.min_notional, None);
         assert_eq!(perp.tick_scheme, None);
@@ -703,7 +672,6 @@ mod tests {
             .size_increment(Quantity::from("0.001"))
             .max_quantity(Quantity::from("10000.0"))
             .maybe_min_notional(Some(Money::new(10.00, Currency::USDT())))
-            .maker_fee(dec!(0.0002))
             .ts_event(0.into())
             .ts_init(0.into())
             .build()
@@ -711,7 +679,6 @@ mod tests {
 
         assert_eq!(perp.max_quantity, Some(Quantity::from("10000.0")));
         assert_eq!(perp.min_notional, Some(Money::new(10.00, Currency::USDT())));
-        assert_eq!(perp.maker_fee, dec!(0.0002));
     }
 
     #[rstest]

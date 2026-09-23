@@ -27,8 +27,6 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.         |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                      |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                  |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.   |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.   |
 | `max_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                   |
 | `min_quantity`    | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                   |
 | `max_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.       |

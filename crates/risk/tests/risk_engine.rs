@@ -468,8 +468,6 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.0035))
-            .maker_fee(dec!(-0.00025))
-            .taker_fee(dec!(0.00075))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()
@@ -963,7 +961,8 @@ fn order_filled(
         cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
     )));
 
-    let fee_rates = MakerTakerFeeRates::new(instrument.maker_fee(), instrument.taker_fee());
+    // Matches the xbtusd_bitmex fixture schedule these tests were written against
+    let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
     let commission = account
         .calculate_commission(
             instrument,
@@ -10542,8 +10541,6 @@ fn test_submit_order_with_quote_quantity_skips_min_max_quantity_check(
             .min_notional(Money::from("5 USDT"))
             .margin_init(dec!(0.1))
             .margin_maint(dec!(0.1))
-            .maker_fee(dec!(-0.00005))
-            .taker_fee(dec!(0.00015))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()
@@ -10664,8 +10661,6 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(
             .min_notional(Money::from("5 USDT"))
             .margin_init(dec!(0.1))
             .margin_maint(dec!(0.1))
-            .maker_fee(dec!(-0.00005))
-            .taker_fee(dec!(0.00015))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()
@@ -10775,8 +10770,6 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(
             .min_notional(Money::from("1 USDT"))
             .margin_init(dec!(0.1))
             .margin_maint(dec!(0.1))
-            .maker_fee(dec!(-0.00005))
-            .taker_fee(dec!(0.00015))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()
@@ -10884,8 +10877,6 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
             .min_notional(Money::from("10 USDT"))
             .margin_init(dec!(0.1))
             .margin_maint(dec!(0.1))
-            .maker_fee(dec!(-0.00005))
-            .taker_fee(dec!(0.00015))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()

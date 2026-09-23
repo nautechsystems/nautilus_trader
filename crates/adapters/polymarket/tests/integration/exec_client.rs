@@ -1311,7 +1311,6 @@ async fn test_generate_order_status_reports_ignores_unselected_duplicate_order_i
         (other_token, other_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let other = cache
         .borrow()
@@ -1921,7 +1920,6 @@ async fn test_generate_mass_status_rejects_malformed_position_with_wrong_loaded_
         (token_id, loaded_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let instrument = cache
         .borrow()
@@ -2346,7 +2344,6 @@ async fn test_generate_fill_reports_ignores_duplicate_unselected_collection_trad
         (other_token, other_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let other = cache
         .borrow()
@@ -3189,7 +3186,6 @@ async fn test_generate_fill_reports_rejects_known_target_instrument_without_comm
         (other_token, other_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let provider = cache
         .borrow()
@@ -3371,7 +3367,6 @@ async fn test_generate_fill_reports_rejects_target_order_on_wrong_loaded_instrum
         (other_token, other_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let other = cache
         .borrow()
@@ -4026,7 +4021,6 @@ async fn test_generate_order_status_report_rejects_target_order_on_wrong_loaded_
         (other_token, other_condition, "Yes"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let other = cache
         .borrow()
@@ -4402,7 +4396,6 @@ async fn test_generate_order_status_report_accepts_fok_expiration_metadata() {
         (&token_id, TEST_CONDITION_ID, "No"),
         "0.0001",
         4,
-        Decimal::ZERO,
     );
     let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
     client.on_instrument(instrument);
@@ -9172,7 +9165,7 @@ fn add_instrument_to_cache_with_tick(
         instrument_id,
         tick_size,
         size_precision,
-        Decimal::ZERO,
+        None,
     );
 }
 
@@ -9181,15 +9174,16 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
     instrument_id: InstrumentId,
     tick_size: &str,
     size_precision: u8,
-    taker_fee: Decimal,
+    taker_fee: impl Into<Option<Decimal>>,
 ) {
-    add_instrument_to_cache_with_binding(
+    add_instrument_to_cache_with_values(
         cache,
         instrument_id,
-        (TEST_TOKEN_ID, TEST_CONDITION_ID, "Yes"),
+        TEST_TOKEN_ID,
+        Some((TEST_CONDITION_ID, "Yes")),
         tick_size,
         size_precision,
-        taker_fee,
+        taker_fee.into(),
     );
 }
 
@@ -9199,7 +9193,6 @@ fn add_instrument_to_cache_with_binding(
     binding: (&str, &str, &str),
     tick_size: &str,
     size_precision: u8,
-    taker_fee: Decimal,
 ) {
     let (token_id, condition_id, outcome) = binding;
     add_instrument_to_cache_with_values(
@@ -9209,7 +9202,7 @@ fn add_instrument_to_cache_with_binding(
         Some((condition_id, outcome)),
         tick_size,
         size_precision,
-        taker_fee,
+        None,
     );
 }
 
@@ -9218,15 +9211,7 @@ fn add_instrument_to_cache_with_token(
     instrument_id: InstrumentId,
     token_id: &str,
 ) {
-    add_instrument_to_cache_with_values(
-        cache,
-        instrument_id,
-        token_id,
-        None,
-        "0.0001",
-        0,
-        Decimal::ZERO,
-    );
+    add_instrument_to_cache_with_values(cache, instrument_id, token_id, None, "0.0001", 0, None);
 }
 
 fn add_instrument_to_cache_with_values(
@@ -9236,7 +9221,7 @@ fn add_instrument_to_cache_with_values(
     binding: Option<(&str, &str)>,
     tick_size: &str,
     size_precision: u8,
-    taker_fee: Decimal,
+    taker_fee: Option<Decimal>,
 ) {
     let price_increment =
         Price::from_decimal_dp(tick_size.parse().unwrap(), POLYMARKET_PRICE_PRECISION).unwrap();
@@ -9251,11 +9236,20 @@ fn add_instrument_to_cache_with_values(
     let raw_symbol = Symbol::from(token_id);
     let outcome = binding.map(|(_, outcome)| Ustr::from(outcome));
     let info: Option<Params> = binding.map(|(condition_id, _)| {
-        serde_json::from_value(json!({
+        let mut value = json!({
             "condition_id": condition_id,
             "token_id": token_id,
-        }))
-        .expect("valid test instrument metadata")
+        });
+
+        if let Some(rate) = taker_fee {
+            value["fee_schedule"] = json!({
+                "exponent": "1",
+                "rate": rate.to_string(),
+                "takerOnly": true,
+                "rebateRate": "0",
+            });
+        }
+        serde_json::from_value(value).expect("valid test instrument metadata")
     });
 
     let instrument = BinaryOption::builder()
@@ -9270,7 +9264,6 @@ fn add_instrument_to_cache_with_values(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_outcome(outcome)
-        .taker_fee(taker_fee)
         .maybe_info(info)
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())

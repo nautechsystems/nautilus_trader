@@ -88,8 +88,6 @@ complete constructor and struct fields for that type.
 | `lot_size`        | Rounded lot or board size when the venue publishes one.             |
 | `margin_init`     | Initial margin rate as a decimal fraction of notional value.        |
 | `margin_maint`    | Maintenance margin rate as a decimal fraction of notional value.    |
-| `maker_fee`       | Maker fee rate. Negative values represent rebates.                  |
-| `taker_fee`       | Taker fee rate. Negative values represent rebates.                  |
 | `max_quantity`    | Maximum order quantity when known.                                  |
 | `min_quantity`    | Minimum order quantity when known.                                  |
 | `max_notional`    | Maximum order notional value when known.                            |
@@ -225,8 +223,9 @@ Venue and adapter definitions can include optional limits:
 - `max_price` and `min_price`.
 
 Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance
-margin. Maker and taker fee rates apply to commission calculations. Nautilus uses one
-fee-rate convention across adapters and backtesting:
+margin. Instruments do not carry maker or taker fee rates. Backtest and sandbox
+commission uses a [fee model](../behavioral_models.md). Live commissions come from
+venue fills. Fee models use one rate convention:
 
 - Positive fee rates represent commissions.
 - Negative fee rates represent rebates.

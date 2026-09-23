@@ -269,15 +269,6 @@ pub fn parse_spot_instrument(
         "minimum quantity",
     )?;
 
-    let taker_fee = definition
-        .taker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-    let maker_fee = definition
-        .maker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-
     let margin_init = definition
         .init_margin
         .as_ref()
@@ -325,8 +316,6 @@ pub fn parse_spot_instrument(
         .maybe_min_price(min_price)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -366,15 +355,6 @@ pub fn parse_perpetual_instrument(
 
     let lot_size =
         convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
-
-    let taker_fee = definition
-        .taker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-    let maker_fee = definition
-        .maker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
@@ -429,8 +409,6 @@ pub fn parse_perpetual_instrument(
         .maybe_min_price(min_price)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -476,15 +454,6 @@ pub fn parse_futures_instrument(
 
     let lot_size =
         convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
-
-    let taker_fee = definition
-        .taker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-    let maker_fee = definition
-        .maker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
@@ -541,8 +510,6 @@ pub fn parse_futures_instrument(
         .maybe_min_price(min_price)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -611,15 +578,6 @@ pub fn parse_crypto_futures_spread_instrument(
     let lot_size =
         convert_contract_quantity(definition.lot_size, contract_decimal, max_scale, "lot size")?;
 
-    let taker_fee = definition
-        .taker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-    let maker_fee = definition
-        .maker_fee
-        .and_then(|fee| Decimal::try_from(fee).ok())
-        .unwrap_or(Decimal::ZERO);
-
     let margin_init = definition
         .init_margin
         .as_ref()
@@ -672,8 +630,6 @@ pub fn parse_crypto_futures_spread_instrument(
         .maybe_min_price(min_price)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -1193,7 +1149,7 @@ mod tests {
         instruments::InstrumentAny,
     };
     use rstest::rstest;
-    use rust_decimal::{Decimal, prelude::ToPrimitive};
+    use rust_decimal::Decimal;
     use uuid::Uuid;
 
     use super::*;
@@ -1222,7 +1178,6 @@ mod tests {
         assert_eq!(instrument.root_symbol, "XBT");
         assert_eq!(instrument.state, BitmexInstrumentState::Open);
         assert!(instrument.is_inverse);
-        assert_eq!(instrument.maker_fee, Some(0.0005));
         assert_eq!(
             instrument.timestamp,
             "2024-11-24T23:33:19.034Z".parse::<Timestamp>().unwrap()
@@ -1277,8 +1232,6 @@ mod tests {
                 assert_eq!(spread.max_quantity.unwrap().as_f64(), 10000000.0);
                 assert_eq!(spread.min_price.unwrap().as_f64(), -1000000.0);
                 assert_eq!(spread.max_price.unwrap().as_f64(), 1000000.0);
-                assert_eq!(spread.maker_fee.to_f64().unwrap(), 0.0005);
-                assert_eq!(spread.taker_fee.to_f64().unwrap(), 0.0005);
                 assert!(spread.activation_ns.as_u64() > 0);
                 assert!(spread.expiration_ns.as_u64() > 0);
             }
@@ -2869,8 +2822,6 @@ mod tests {
                 assert_eq!(spot.price_increment.as_f64(), 0.01);
                 assert!((spot.size_increment.as_f64() - 0.0001).abs() < 1e-9);
                 assert!((spot.lot_size.unwrap().as_f64() - 0.1).abs() < 1e-9);
-                assert_eq!(spot.maker_fee.to_f64().unwrap(), -0.00025);
-                assert_eq!(spot.taker_fee.to_f64().unwrap(), 0.00075);
             }
             _ => panic!("Expected CurrencyPair variant"),
         }
@@ -2893,8 +2844,6 @@ mod tests {
                 assert_eq!(perp.price_increment.as_f64(), 0.5);
                 assert_eq!(perp.size_increment.as_f64(), 1.0);
                 assert_eq!(perp.multiplier, Quantity::from(100_000_000));
-                assert_eq!(perp.maker_fee.to_f64().unwrap(), -0.00025);
-                assert_eq!(perp.taker_fee.to_f64().unwrap(), 0.00075);
                 assert!(perp.is_inverse);
             }
             _ => panic!("Expected CryptoPerpetual variant"),
@@ -2957,8 +2906,6 @@ mod tests {
                 assert_eq!(instrument.price_increment.as_f64(), 0.5);
                 assert_eq!(instrument.size_increment.as_f64(), 1.0);
                 assert_eq!(instrument.multiplier, Quantity::from(100_000_000));
-                assert_eq!(instrument.maker_fee.to_f64().unwrap(), -0.00025);
-                assert_eq!(instrument.taker_fee.to_f64().unwrap(), 0.00075);
                 assert!(instrument.is_inverse);
                 // Check expiration timestamp instead of expiry_date
                 // The futures contract expires on 2025-03-28

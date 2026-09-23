@@ -549,9 +549,8 @@ impl ExecutionClient for AxExecutionClient {
         .context("API credentials not configured")?;
         let token = self.authenticate(&credential).await?;
 
-        // Instruments load after authenticating because their fee rates come from the
-        // authenticated `/whoami`. A zero-fee fallback would outlive the failure that caused it,
-        // since `set_instruments_initialized` stops a reconnect from retrying the load.
+        // Account fee lookup stays a connect precondition. Instruments do not carry the rates.
+        // `set_instruments_initialized` stops a reconnect from retrying the load.
         if !self.core.instruments_initialized() {
             self.http_client
                 .request_account_fees()
@@ -560,7 +559,7 @@ impl ExecutionClient for AxExecutionClient {
 
             let instruments = self
                 .http_client
-                .request_instruments(None, None)
+                .request_instruments()
                 .await
                 .context("failed to request AX instruments")?;
 
@@ -2322,8 +2321,6 @@ mod tests {
             .size_increment(Quantity::from("1"))
             .margin_init(Decimal::new(1, 2))
             .margin_maint(Decimal::new(5, 3))
-            .maker_fee(Decimal::new(2, 4))
-            .taker_fee(Decimal::new(5, 4))
             .ts_event(0.into())
             .ts_init(0.into())
             .build()

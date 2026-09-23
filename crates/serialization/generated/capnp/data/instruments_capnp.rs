@@ -239,106 +239,98 @@ pub mod betting_instrument {
             !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(24).is_null()
+            !self.reader.get_pointer_field(22).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(25).is_null()
+            !self.reader.get_pointer_field(23).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(26), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(26).is_null()
+            !self.reader.get_pointer_field(24).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(27), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(25), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(27).is_null()
+            !self.reader.get_pointer_field(25).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(28), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(26), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(28).is_null()
+            !self.reader.get_pointer_field(26).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(29), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(27), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(29).is_null()
+            !self.reader.get_pointer_field(27).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 6, pointers: 30 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 6, pointers: 28 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -733,196 +725,178 @@ pub mod betting_instrument {
             !self.builder.is_pointer_field_null(17)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(24), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(24)
+            !self.builder.is_pointer_field_null(22)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(25), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(25), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(25)
+            !self.builder.is_pointer_field_null(23)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(26), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(26), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(26).init_text(size)
+            self.builder.get_pointer_field(24).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(26)
+            !self.builder.is_pointer_field_null(24)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(27), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(25), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(27).set_data(value);
+            self.builder.reborrow().get_pointer_field(25).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(27).init_data(size)
+            self.builder.get_pointer_field(25).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(27)
+            !self.builder.is_pointer_field_null(25)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(28), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(26), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(28), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(26), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(28), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(26), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(28)
+            !self.builder.is_pointer_field_null(26)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(29), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(27), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(29), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(27), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(29), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(27), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(29)
+            !self.builder.is_pointer_field_null(27)
         }
     }
 
@@ -960,35 +934,29 @@ pub mod betting_instrument {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(24))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(25))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(28))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(26))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(29))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(27))
         }
     }
     mod _private {
@@ -997,9 +965,9 @@ pub mod betting_instrument {
             ::capnp::word(71, 109, 69, 57, 243, 160, 168, 221),
             ::capnp::word(23, 0, 0, 0, 1, 0, 6, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(30, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(28, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(71, 2, 0, 0, 104, 7, 0, 0),
+            ::capnp::word(71, 2, 0, 0, 208, 7, 0, 0),
             ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1189,84 +1157,84 @@ pub mod betting_instrument {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(188, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(200, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(197, 4, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(196, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(208, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(205, 4, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(204, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(216, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(213, 4, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(212, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(224, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(28, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(28, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 28, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(221, 4, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(220, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(232, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(29, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(29, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 29, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(229, 4, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(30, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(30, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 30, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 4, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(236, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(248, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(31, 0, 0, 0, 24, 0, 0, 0),
+            ::capnp::word(31, 0, 0, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 31, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(245, 4, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(244, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(0, 5, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(32, 0, 0, 0, 25, 0, 0, 0),
+            ::capnp::word(32, 0, 0, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 32, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(253, 4, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(252, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(8, 5, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(33, 0, 0, 0, 26, 0, 0, 0),
+            ::capnp::word(33, 0, 0, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 33, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(5, 5, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(4, 5, 0, 0, 3, 0, 1, 0),
             ::capnp::word(16, 5, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(34, 0, 0, 0, 27, 0, 0, 0),
+            ::capnp::word(34, 0, 0, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 34, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(13, 5, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(8, 5, 0, 0, 3, 0, 1, 0),
             ::capnp::word(20, 5, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(35, 0, 0, 0, 28, 0, 0, 0),
+            ::capnp::word(35, 0, 0, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 35, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(17, 5, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(12, 5, 0, 0, 3, 0, 1, 0),
             ::capnp::word(24, 5, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(36, 0, 0, 0, 29, 0, 0, 0),
+            ::capnp::word(36, 0, 0, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 36, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(21, 5, 0, 0, 58, 0, 0, 0),
@@ -1500,20 +1468,20 @@ pub mod betting_instrument {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -1631,8 +1599,8 @@ pub mod betting_instrument {
                 22 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 23 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 24 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                25 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                26 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                25 => <() as ::capnp::introspect::Introspect>::introspect(),
+                26 => <() as ::capnp::introspect::Introspect>::introspect(),
                 27 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 28 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 29 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -1809,130 +1777,122 @@ pub mod binary_option {
             !self.reader.get_pointer_field(8).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(9).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(10).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_event_id(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_event_id(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
+            !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
         pub fn get_outcome(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_outcome(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+            !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
         pub fn get_description(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_description(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -2151,244 +2111,226 @@ pub mod binary_option {
             !self.builder.is_pointer_field_null(8)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(9)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(10)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_event_id(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_event_id(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false).unwrap()
         }
         #[inline]
         pub fn init_event_id(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(11).init_text(size)
+            self.builder.get_pointer_field(9).init_text(size)
         }
         #[inline]
         pub fn has_event_id(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
+            !self.builder.is_pointer_field_null(9)
         }
         #[inline]
         pub fn get_outcome(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_outcome(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false).unwrap()
         }
         #[inline]
         pub fn init_outcome(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(12).init_text(size)
+            self.builder.get_pointer_field(10).init_text(size)
         }
         #[inline]
         pub fn has_outcome(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+            !self.builder.is_pointer_field_null(10)
         }
         #[inline]
         pub fn get_description(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_description(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false).unwrap()
         }
         #[inline]
         pub fn init_description(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(13).init_text(size)
+            self.builder.get_pointer_field(11).init_text(size)
         }
         #[inline]
         pub fn has_description(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(20).init_text(size)
+            self.builder.get_pointer_field(18).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(21).set_data(value);
+            self.builder.reborrow().get_pointer_field(19).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(21).init_data(size)
+            self.builder.get_pointer_field(19).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
     }
 
@@ -2426,35 +2368,29 @@ pub mod binary_option {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(8))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(9))
-        }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
-        }
         pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
         pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
         pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
         pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
         pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
         pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
     }
     mod _private {
@@ -2463,9 +2399,9 @@ pub mod binary_option {
             ::capnp::word(101, 75, 119, 201, 176, 156, 66, 183),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(106, 7, 0, 0, 134, 11, 0, 0),
+            ::capnp::word(210, 7, 0, 0, 86, 12, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2563,105 +2499,105 @@ pub mod binary_option {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(56, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(68, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(12, 0, 0, 0, 9, 0, 0, 0),
+            ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(65, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(64, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(76, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(13, 0, 0, 0, 10, 0, 0, 0),
+            ::capnp::word(13, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(73, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(72, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(84, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 9, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(81, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(76, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(88, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(85, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(80, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(92, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(89, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(88, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(100, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(97, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(96, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(108, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(105, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(116, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(113, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(112, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(124, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(121, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(120, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(132, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(129, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(128, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(140, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(137, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(136, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(148, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(145, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(144, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(156, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(153, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(148, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(160, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(157, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 58, 0, 0, 0),
@@ -2777,20 +2713,20 @@ pub mod binary_option {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(101, 118, 101, 110, 116, 73, 100, 0),
@@ -2920,8 +2856,8 @@ pub mod binary_option {
                 9 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 10 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 11 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                12 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                13 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                12 => <() as ::capnp::introspect::Introspect>::introspect(),
+                13 => <() as ::capnp::introspect::Introspect>::introspect(),
                 14 => <::capnp::text::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <::capnp::text::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <::capnp::text::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -3093,114 +3029,106 @@ pub mod cfd {
             !self.reader.get_pointer_field(7).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(8).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(9).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.reader.get_pointer_field(10).is_null()
+            !self.reader.get_pointer_field(8).is_null()
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
+            !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+            !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 21 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 19 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -3403,212 +3331,194 @@ pub mod cfd {
             !self.builder.is_pointer_field_null(7)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(8)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(9)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_lot_size(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
         }
         #[inline]
         pub fn init_lot_size(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.builder.is_pointer_field_null(10)
+            !self.builder.is_pointer_field_null(8)
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
+            !self.builder.is_pointer_field_null(9)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+            !self.builder.is_pointer_field_null(10)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(17).init_text(size)
+            self.builder.get_pointer_field(15).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(18).set_data(value);
+            self.builder.reborrow().get_pointer_field(16).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(18).init_data(size)
+            self.builder.get_pointer_field(16).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
     }
 
@@ -3643,38 +3553,32 @@ pub mod cfd {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(7))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(8))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(9))
         }
-        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
     }
     mod _private {
@@ -3683,9 +3587,9 @@ pub mod cfd {
             ::capnp::word(169, 228, 40, 177, 18, 178, 200, 197),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(21, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(19, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(136, 11, 0, 0, 70, 15, 0, 0),
+            ::capnp::word(88, 12, 0, 0, 126, 16, 0, 0),
             ::capnp::word(21, 0, 0, 0, 218, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -3775,91 +3679,91 @@ pub mod cfd {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(220, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(232, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(11, 0, 0, 0, 8, 0, 0, 0),
+            ::capnp::word(11, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(229, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(12, 0, 0, 0, 9, 0, 0, 0),
+            ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(236, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(248, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(13, 0, 0, 0, 10, 0, 0, 0),
+            ::capnp::word(13, 0, 0, 0, 8, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(245, 2, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(240, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(252, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 9, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(249, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(248, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(4, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(1, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(12, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(9, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(8, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(20, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(17, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(16, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(28, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(25, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(24, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(36, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(33, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(32, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(44, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(41, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(40, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(52, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(49, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(44, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(56, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(53, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(48, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(60, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(57, 3, 0, 0, 58, 0, 0, 0),
@@ -3966,20 +3870,20 @@ pub mod cfd {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 111, 116, 83, 105, 122, 101, 0),
@@ -4091,8 +3995,8 @@ pub mod cfd {
                 8 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 9 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 10 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                11 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                12 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                11 => <() as ::capnp::introspect::Introspect>::introspect(),
+                12 => <() as ::capnp::introspect::Introspect>::introspect(),
                 13 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -4254,114 +4158,106 @@ pub mod commodity {
             !self.reader.get_pointer_field(6).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(7), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(7).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(8).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(7), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.reader.get_pointer_field(9).is_null()
+            !self.reader.get_pointer_field(7).is_null()
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(10).is_null()
+            !self.reader.get_pointer_field(8).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
+            !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+            !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 20 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 18 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -4548,212 +4444,194 @@ pub mod commodity {
             !self.builder.is_pointer_field_null(6)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(7), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(7), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(7), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(7)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(8)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(7), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_lot_size(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(7), value, false)
         }
         #[inline]
         pub fn init_lot_size(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(7), 0)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.builder.is_pointer_field_null(9)
+            !self.builder.is_pointer_field_null(7)
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(10)
+            !self.builder.is_pointer_field_null(8)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
+            !self.builder.is_pointer_field_null(9)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+            !self.builder.is_pointer_field_null(10)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(16).init_text(size)
+            self.builder.get_pointer_field(14).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(17).set_data(value);
+            self.builder.reborrow().get_pointer_field(15).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(17).init_data(size)
+            self.builder.get_pointer_field(15).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
     }
 
@@ -4785,38 +4663,32 @@ pub mod commodity {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(6))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(7))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(8))
         }
-        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(9))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
     }
     mod _private {
@@ -4825,9 +4697,9 @@ pub mod commodity {
             ::capnp::word(105, 113, 13, 85, 244, 9, 253, 212),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(20, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(18, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(72, 15, 0, 0, 218, 18, 0, 0),
+            ::capnp::word(128, 16, 0, 0, 122, 20, 0, 0),
             ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4911,91 +4783,91 @@ pub mod commodity {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(184, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(196, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(10, 0, 0, 0, 7, 0, 0, 0),
+            ::capnp::word(10, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(193, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(11, 0, 0, 0, 8, 0, 0, 0),
+            ::capnp::word(11, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(200, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(212, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(12, 0, 0, 0, 9, 0, 0, 0),
+            ::capnp::word(12, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(209, 2, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(204, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(216, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(13, 0, 0, 0, 10, 0, 0, 0),
+            ::capnp::word(13, 0, 0, 0, 8, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(213, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(212, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(224, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 9, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(221, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(220, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(232, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(229, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(236, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(248, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(245, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(244, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(0, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(253, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(252, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(8, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(5, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(4, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(16, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(13, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(8, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(20, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(17, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(12, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(24, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(21, 3, 0, 0, 58, 0, 0, 0),
@@ -5093,20 +4965,20 @@ pub mod commodity {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 111, 116, 83, 105, 122, 101, 0),
@@ -5217,8 +5089,8 @@ pub mod commodity {
                 7 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 8 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 9 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                10 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                11 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                10 => <() as ::capnp::introspect::Introspect>::introspect(),
+                11 => <() as ::capnp::introspect::Introspect>::introspect(),
                 12 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 13 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -5428,106 +5300,98 @@ pub mod crypto_future {
             !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(24).is_null()
+            !self.reader.get_pointer_field(22).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 25 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 23 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -5810,196 +5674,178 @@ pub mod crypto_future {
             !self.builder.is_pointer_field_null(12)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(21).init_text(size)
+            self.builder.get_pointer_field(19).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(22).set_data(value);
+            self.builder.reborrow().get_pointer_field(20).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(22).init_data(size)
+            self.builder.get_pointer_field(20).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(24), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(24)
+            !self.builder.is_pointer_field_null(22)
         }
     }
 
@@ -6049,35 +5895,29 @@ pub mod crypto_future {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(24))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
         }
     }
     mod _private {
@@ -6086,9 +5926,9 @@ pub mod crypto_future {
             ::capnp::word(44, 178, 178, 5, 231, 4, 32, 183),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(25, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(220, 18, 0, 0, 24, 23, 0, 0),
+            ::capnp::word(124, 20, 0, 0, 32, 25, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6214,84 +6054,84 @@ pub mod crypto_future {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(124, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(136, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(133, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(132, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(144, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(141, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(140, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(152, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(149, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(148, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(160, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(157, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(156, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(168, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(165, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(164, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(176, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(173, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(172, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(184, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(181, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(180, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(192, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(189, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(188, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(200, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(197, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(196, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(208, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 24, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(205, 3, 0, 0, 58, 0, 0, 0),
@@ -6443,20 +6283,20 @@ pub mod crypto_future {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -6565,8 +6405,8 @@ pub mod crypto_future {
                 13 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                16 => <() as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
                 18 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -6783,106 +6623,98 @@ pub mod crypto_futures_spread {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(24).is_null()
+            !self.reader.get_pointer_field(22).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(25).is_null()
+            !self.reader.get_pointer_field(23).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 26 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -7181,196 +7013,178 @@ pub mod crypto_futures_spread {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(22).init_text(size)
+            self.builder.get_pointer_field(20).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(23).set_data(value);
+            self.builder.reborrow().get_pointer_field(21).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(23).init_data(size)
+            self.builder.get_pointer_field(21).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(24), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(24)
+            !self.builder.is_pointer_field_null(22)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(25), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(25), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(25)
+            !self.builder.is_pointer_field_null(23)
         }
     }
 
@@ -7420,35 +7234,29 @@ pub mod crypto_futures_spread {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(24))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(25))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
         }
     }
     mod _private {
@@ -7457,9 +7265,9 @@ pub mod crypto_futures_spread {
             ::capnp::word(200, 61, 71, 152, 142, 184, 79, 232),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(26, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(26, 23, 0, 0, 121, 27, 0, 0),
+            ::capnp::word(34, 25, 0, 0, 233, 29, 0, 0),
             ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7593,84 +7401,84 @@ pub mod crypto_futures_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(160, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(172, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(169, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(168, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(180, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(177, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(176, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(188, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(185, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(184, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(196, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(193, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(200, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(212, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(209, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(208, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(220, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(217, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(216, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(228, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(225, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(224, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(236, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(233, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 24, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(232, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(244, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(28, 0, 0, 0, 25, 0, 0, 0),
+            ::capnp::word(28, 0, 0, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 28, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(241, 3, 0, 0, 58, 0, 0, 0),
@@ -7831,20 +7639,20 @@ pub mod crypto_futures_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -7954,8 +7762,8 @@ pub mod crypto_futures_spread {
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -8176,106 +7984,98 @@ pub mod crypto_option {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(24).is_null()
+            !self.reader.get_pointer_field(22).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(25).is_null()
+            !self.reader.get_pointer_field(23).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 26 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -8582,196 +8382,178 @@ pub mod crypto_option {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(22).init_text(size)
+            self.builder.get_pointer_field(20).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(23).set_data(value);
+            self.builder.reborrow().get_pointer_field(21).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(23).init_data(size)
+            self.builder.get_pointer_field(21).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(24), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(24)
+            !self.builder.is_pointer_field_null(22)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(25), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(25), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(25)
+            !self.builder.is_pointer_field_null(23)
         }
     }
 
@@ -8824,35 +8606,29 @@ pub mod crypto_option {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(24))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(25))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
         }
     }
     mod _private {
@@ -8861,9 +8637,9 @@ pub mod crypto_option {
             ::capnp::word(43, 72, 28, 220, 73, 76, 118, 175),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(26, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(123, 27, 0, 0, 255, 31, 0, 0),
+            ::capnp::word(235, 29, 0, 0, 215, 34, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -9003,84 +8779,84 @@ pub mod crypto_option {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(188, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(200, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(197, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(196, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(208, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(205, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(204, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(216, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(213, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(212, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(224, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(221, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(220, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(232, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(229, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(236, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(248, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(245, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(244, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(0, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(253, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(252, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(8, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(5, 4, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(4, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(16, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(13, 4, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(8, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(20, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(28, 0, 0, 0, 24, 0, 0, 0),
+            ::capnp::word(28, 0, 0, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 28, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(17, 4, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(12, 4, 0, 0, 3, 0, 1, 0),
             ::capnp::word(24, 4, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(29, 0, 0, 0, 25, 0, 0, 0),
+            ::capnp::word(29, 0, 0, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 29, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(21, 4, 0, 0, 58, 0, 0, 0),
@@ -9250,20 +9026,20 @@ pub mod crypto_option {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -9374,8 +9150,8 @@ pub mod crypto_option {
                 15 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                19 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
+                19 => <() as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 22 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -9592,106 +9368,98 @@ pub mod crypto_option_spread {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(24).is_null()
+            !self.reader.get_pointer_field(22).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(25).is_null()
+            !self.reader.get_pointer_field(23).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 26 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -9990,196 +9758,178 @@ pub mod crypto_option_spread {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(22).init_text(size)
+            self.builder.get_pointer_field(20).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(23).set_data(value);
+            self.builder.reborrow().get_pointer_field(21).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(23).init_data(size)
+            self.builder.get_pointer_field(21).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(24), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(24), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(24), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(24)
+            !self.builder.is_pointer_field_null(22)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(25), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(25), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(25), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(25)
+            !self.builder.is_pointer_field_null(23)
         }
     }
 
@@ -10229,35 +9979,29 @@ pub mod crypto_option_spread {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(24))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(25))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
         }
     }
     mod _private {
@@ -10266,9 +10010,9 @@ pub mod crypto_option_spread {
             ::capnp::word(123, 227, 49, 26, 112, 3, 70, 230),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(26, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(1, 32, 0, 0, 95, 36, 0, 0),
+            ::capnp::word(217, 34, 0, 0, 159, 39, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -10402,84 +10146,84 @@ pub mod crypto_option_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(160, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(172, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(169, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(168, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(180, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(177, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(176, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(188, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(185, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(184, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(196, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(193, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(200, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(212, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(209, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(208, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(220, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(217, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(216, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(228, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(225, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(224, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(236, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(233, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(228, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(240, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 24, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(237, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(232, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(244, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(28, 0, 0, 0, 25, 0, 0, 0),
+            ::capnp::word(28, 0, 0, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 28, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(241, 3, 0, 0, 58, 0, 0, 0),
@@ -10640,20 +10384,20 @@ pub mod crypto_option_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -10763,8 +10507,8 @@ pub mod crypto_option_spread {
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -10957,106 +10701,98 @@ pub mod crypto_perpetual {
             !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 23 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 21 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -11307,196 +11043,178 @@ pub mod crypto_perpetual {
             !self.builder.is_pointer_field_null(10)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(19).init_text(size)
+            self.builder.get_pointer_field(17).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(20).set_data(value);
+            self.builder.reborrow().get_pointer_field(18).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(20).init_data(size)
+            self.builder.get_pointer_field(18).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
     }
 
@@ -11540,35 +11258,29 @@ pub mod crypto_perpetual {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
     }
     mod _private {
@@ -11577,9 +11289,9 @@ pub mod crypto_perpetual {
             ::capnp::word(52, 176, 48, 143, 156, 201, 42, 129),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(21, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(97, 36, 0, 0, 86, 40, 0, 0),
+            ::capnp::word(161, 39, 0, 0, 254, 43, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -11691,84 +11403,84 @@ pub mod crypto_perpetual {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(44, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(56, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(53, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(52, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(64, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(61, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(60, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(72, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(69, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(68, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(80, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(77, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(76, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(88, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(85, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(84, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(96, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(93, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(92, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(104, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(101, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(100, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(112, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(120, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(117, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(120, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(132, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(129, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(124, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(136, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(133, 3, 0, 0, 58, 0, 0, 0),
@@ -11902,20 +11614,20 @@ pub mod crypto_perpetual {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -12022,8 +11734,8 @@ pub mod crypto_perpetual {
                 11 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 12 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 13 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                14 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                14 => <() as ::capnp::introspect::Introspect>::introspect(),
+                15 => <() as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 17 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 18 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -12204,106 +11916,98 @@ pub mod currency_pair {
             !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(10).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+            !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 20 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -12530,196 +12234,178 @@ pub mod currency_pair {
             !self.builder.is_pointer_field_null(9)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(10)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+            !self.builder.is_pointer_field_null(10)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(18).init_text(size)
+            self.builder.get_pointer_field(16).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(19).set_data(value);
+            self.builder.reborrow().get_pointer_field(17).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(19).init_data(size)
+            self.builder.get_pointer_field(17).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
     }
 
@@ -12760,35 +12446,29 @@ pub mod currency_pair {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(9))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
     }
     mod _private {
@@ -12797,9 +12477,9 @@ pub mod currency_pair {
             ::capnp::word(175, 106, 218, 198, 185, 71, 83, 193),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(20, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(88, 40, 0, 0, 17, 44, 0, 0),
+            ::capnp::word(0, 44, 0, 0, 33, 48, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -12897,84 +12577,84 @@ pub mod currency_pair {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(224, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(236, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(12, 0, 0, 0, 10, 0, 0, 0),
+            ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(233, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(232, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(244, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(13, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(13, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(241, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(240, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(252, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(249, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(248, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(4, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(1, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(12, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(9, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(8, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(20, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(17, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(16, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(28, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(25, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(24, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(36, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(33, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(32, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(44, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(41, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(40, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(52, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(49, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(44, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(56, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(53, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(48, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(60, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(57, 3, 0, 0, 58, 0, 0, 0),
@@ -13089,20 +12769,20 @@ pub mod currency_pair {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -13207,8 +12887,8 @@ pub mod currency_pair {
                 9 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 10 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 11 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                12 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                13 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                12 => <() as ::capnp::introspect::Introspect>::introspect(),
+                13 => <() as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -13361,98 +13041,90 @@ pub mod equity {
             !self.reader.get_pointer_field(6).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(7), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(7).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(8).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(7), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.reader.get_pointer_field(9).is_null()
+            !self.reader.get_pointer_field(7).is_null()
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(10).is_null()
+            !self.reader.get_pointer_field(8).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
+            !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+            !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 18 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 16 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -13623,180 +13295,162 @@ pub mod equity {
             !self.builder.is_pointer_field_null(6)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(7), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(7), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(7), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(7)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(8)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_lot_size(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(7), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_lot_size(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(7), value, false)
         }
         #[inline]
         pub fn init_lot_size(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(7), 0)
         }
         #[inline]
         pub fn has_lot_size(&self) -> bool {
-            !self.builder.is_pointer_field_null(9)
+            !self.builder.is_pointer_field_null(7)
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(8), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(8), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(8), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(10)
+            !self.builder.is_pointer_field_null(8)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(9), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(9), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(9), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
+            !self.builder.is_pointer_field_null(9)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(10), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(10), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(10), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+            !self.builder.is_pointer_field_null(10)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(14).init_text(size)
+            self.builder.get_pointer_field(12).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(15).set_data(value);
+            self.builder.reborrow().get_pointer_field(13).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(15).init_data(size)
+            self.builder.get_pointer_field(13).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
     }
 
@@ -13825,32 +13479,26 @@ pub mod equity {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(6))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(7))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(8))
         }
-        pub fn get_lot_size(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(9))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
     }
     mod _private {
@@ -13859,9 +13507,9 @@ pub mod equity {
             ::capnp::word(227, 234, 163, 179, 74, 147, 210, 242),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(18, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(16, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(19, 44, 0, 0, 246, 46, 0, 0),
+            ::capnp::word(35, 48, 0, 0, 110, 51, 0, 0),
             ::capnp::word(21, 0, 0, 0, 242, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -13930,77 +13578,77 @@ pub mod equity {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(52, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(64, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(8, 0, 0, 0, 7, 0, 0, 0),
+            ::capnp::word(8, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 8, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(61, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(60, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(72, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(9, 0, 0, 0, 8, 0, 0, 0),
+            ::capnp::word(9, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 9, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(69, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(68, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(80, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(10, 0, 0, 0, 9, 0, 0, 0),
+            ::capnp::word(10, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(77, 2, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(72, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(84, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(11, 0, 0, 0, 10, 0, 0, 0),
+            ::capnp::word(11, 0, 0, 0, 8, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(81, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(80, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(92, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(12, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(12, 0, 0, 0, 9, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(89, 2, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(88, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(100, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(13, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(13, 0, 0, 0, 10, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(97, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(96, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(108, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(105, 2, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(116, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(113, 2, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(112, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(124, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(121, 2, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 2, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(120, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(132, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(129, 2, 0, 0, 58, 0, 0, 0),
@@ -14079,20 +13727,20 @@ pub mod equity {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 111, 116, 83, 105, 122, 101, 0),
@@ -14183,8 +13831,8 @@ pub mod equity {
                 5 => <crate::types_capnp::price::Owned as ::capnp::introspect::Introspect>::introspect(),
                 6 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 7 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                8 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                9 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                8 => <() as ::capnp::introspect::Introspect>::introspect(),
+                9 => <() as ::capnp::introspect::Introspect>::introspect(),
                 10 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 11 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 12 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -14392,90 +14040,82 @@ pub mod futures_contract {
             !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 23 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 21 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -14758,164 +14398,146 @@ pub mod futures_contract {
             !self.builder.is_pointer_field_null(12)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(19).init_text(size)
+            self.builder.get_pointer_field(17).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(20).set_data(value);
+            self.builder.reborrow().get_pointer_field(18).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(20).init_data(size)
+            self.builder.get_pointer_field(18).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
     }
 
@@ -14959,29 +14581,23 @@ pub mod futures_contract {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
     }
     mod _private {
@@ -14990,9 +14606,9 @@ pub mod futures_contract {
             ::capnp::word(14, 231, 169, 187, 68, 192, 77, 135),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(21, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(248, 46, 0, 0, 209, 50, 0, 0),
+            ::capnp::word(112, 51, 0, 0, 177, 55, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -15118,70 +14734,70 @@ pub mod futures_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(56, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(68, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(65, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(64, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(76, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(73, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(72, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(84, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(81, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(80, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(92, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(89, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(88, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(100, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(97, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(96, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(108, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(105, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(116, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(113, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(112, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(124, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(121, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(120, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(132, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(129, 3, 0, 0, 58, 0, 0, 0),
@@ -15332,20 +14948,20 @@ pub mod futures_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -15436,8 +15052,8 @@ pub mod futures_contract {
                 13 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                16 => <() as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
                 18 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::price::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -15652,90 +15268,82 @@ pub mod futures_spread {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -16034,164 +15642,146 @@ pub mod futures_spread {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(20).init_text(size)
+            self.builder.get_pointer_field(18).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(21).set_data(value);
+            self.builder.reborrow().get_pointer_field(19).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(21).init_data(size)
+            self.builder.get_pointer_field(19).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
     }
 
@@ -16235,29 +15825,23 @@ pub mod futures_spread {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
     }
     mod _private {
@@ -16266,9 +15850,9 @@ pub mod futures_spread {
             ::capnp::word(194, 89, 226, 95, 159, 173, 41, 178),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(211, 50, 0, 0, 198, 54, 0, 0),
+            ::capnp::word(179, 55, 0, 0, 14, 60, 0, 0),
             ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -16401,70 +15985,70 @@ pub mod futures_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(92, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(104, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(101, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(100, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(112, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(120, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(117, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(124, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(136, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(133, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(132, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(144, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(141, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(140, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(152, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(149, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(148, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(160, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(157, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(156, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(168, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(165, 3, 0, 0, 58, 0, 0, 0),
@@ -16624,20 +16208,20 @@ pub mod futures_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -16729,8 +16313,8 @@ pub mod futures_spread {
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::price::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -17153,7 +16737,7 @@ pub mod index_instrument {
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
             ::capnp::word(9, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(200, 54, 0, 0, 107, 56, 0, 0),
+            ::capnp::word(16, 60, 0, 0, 179, 61, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -17563,90 +17147,82 @@ pub mod option_contract {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -17953,164 +17529,146 @@ pub mod option_contract {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(20).init_text(size)
+            self.builder.get_pointer_field(18).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(21).set_data(value);
+            self.builder.reborrow().get_pointer_field(19).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(21).init_data(size)
+            self.builder.get_pointer_field(19).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
     }
 
@@ -18157,29 +17715,23 @@ pub mod option_contract {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
     }
     mod _private {
@@ -18188,9 +17740,9 @@ pub mod option_contract {
             ::capnp::word(102, 200, 159, 0, 20, 189, 106, 185),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(109, 56, 0, 0, 141, 60, 0, 0),
+            ::capnp::word(181, 61, 0, 0, 61, 66, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -18330,70 +17882,70 @@ pub mod option_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(128, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(140, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(137, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(136, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(148, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(145, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(144, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(156, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(153, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(160, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(172, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(169, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(168, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(180, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(177, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(176, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(188, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(185, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(184, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(196, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(193, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(188, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(200, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(197, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 3, 0, 0, 58, 0, 0, 0),
@@ -18562,20 +18114,20 @@ pub mod option_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -18668,8 +18220,8 @@ pub mod option_contract {
                 15 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                19 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
+                19 => <() as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 22 => <crate::types_capnp::price::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -18884,90 +18436,82 @@ pub mod option_spread {
             !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -19266,164 +18810,146 @@ pub mod option_spread {
             !self.builder.is_pointer_field_null(13)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(20).init_text(size)
+            self.builder.get_pointer_field(18).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(21).set_data(value);
+            self.builder.reborrow().get_pointer_field(19).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(21).init_data(size)
+            self.builder.get_pointer_field(19).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
     }
 
@@ -19467,29 +18993,23 @@ pub mod option_spread {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
     }
     mod _private {
@@ -19498,9 +19018,9 @@ pub mod option_spread {
             ::capnp::word(130, 175, 118, 71, 3, 129, 200, 242),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(143, 60, 0, 0, 129, 64, 0, 0),
+            ::capnp::word(63, 66, 0, 0, 153, 70, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -19633,70 +19153,70 @@ pub mod option_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(92, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(104, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(101, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(100, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(112, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(120, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(117, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(124, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(136, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(133, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(132, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(144, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(141, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(140, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(152, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(149, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(148, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(160, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(157, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(161, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(156, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(168, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(165, 3, 0, 0, 58, 0, 0, 0),
@@ -19856,20 +19376,20 @@ pub mod option_spread {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -19961,8 +19481,8 @@ pub mod option_spread {
                 14 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                18 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
+                18 => <() as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 21 => <crate::types_capnp::price::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -20165,106 +19685,98 @@ pub mod perpetual_contract {
             !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(23).is_null()
+            !self.reader.get_pointer_field(21).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 24 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 22 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -20539,196 +20051,178 @@ pub mod perpetual_contract {
             !self.builder.is_pointer_field_null(11)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(20).init_text(size)
+            self.builder.get_pointer_field(18).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(21).set_data(value);
+            self.builder.reborrow().get_pointer_field(19).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(21).init_data(size)
+            self.builder.get_pointer_field(19).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(23), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(23), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(23), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(23)
+            !self.builder.is_pointer_field_null(21)
         }
     }
 
@@ -20772,35 +20266,29 @@ pub mod perpetual_contract {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(23))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
         }
     }
     mod _private {
@@ -20809,9 +20297,9 @@ pub mod perpetual_contract {
             ::capnp::word(72, 100, 167, 223, 67, 161, 172, 202),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(24, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(22, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(131, 64, 0, 0, 198, 68, 0, 0),
+            ::capnp::word(155, 70, 0, 0, 70, 75, 0, 0),
             ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -20938,84 +20426,84 @@ pub mod perpetual_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(124, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(136, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(133, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(132, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(144, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(141, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(140, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(152, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(149, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(148, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(160, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(157, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(156, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(168, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(165, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(164, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(176, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(173, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(172, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(184, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(181, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(180, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(192, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(189, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(188, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(200, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(197, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(192, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(204, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(26, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(26, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 26, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(201, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(196, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(208, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(27, 0, 0, 0, 23, 0, 0, 0),
+            ::capnp::word(27, 0, 0, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 27, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(205, 3, 0, 0, 58, 0, 0, 0),
@@ -21167,20 +20655,20 @@ pub mod perpetual_contract {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -21289,8 +20777,8 @@ pub mod perpetual_contract {
                 13 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 14 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                16 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                17 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                16 => <() as ::capnp::introspect::Introspect>::introspect(),
+                17 => <() as ::capnp::introspect::Introspect>::introspect(),
                 18 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 19 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 20 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -21483,106 +20971,98 @@ pub mod tokenized_asset {
             !self.reader.get_pointer_field(10).is_null()
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(11).is_null()
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.reader.get_pointer_field(12).is_null()
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(13).is_null()
+            !self.reader.get_pointer_field(11).is_null()
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.reader.get_pointer_field(14).is_null()
+            !self.reader.get_pointer_field(12).is_null()
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.reader.get_pointer_field(15).is_null()
+            !self.reader.get_pointer_field(13).is_null()
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.reader.get_pointer_field(16).is_null()
+            !self.reader.get_pointer_field(14).is_null()
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.reader.get_pointer_field(17).is_null()
+            !self.reader.get_pointer_field(15).is_null()
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.reader.get_pointer_field(18).is_null()
+            !self.reader.get_pointer_field(16).is_null()
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.reader.get_pointer_field(19).is_null()
+            !self.reader.get_pointer_field(17).is_null()
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.reader.get_pointer_field(20).is_null()
+            !self.reader.get_pointer_field(18).is_null()
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.reader.get_pointer_field(21).is_null()
+            !self.reader.get_pointer_field(19).is_null()
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Reader<'a>> {
-            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.reader.get_pointer_field(22).is_null()
+            !self.reader.get_pointer_field(20).is_null()
         }
     }
 
     pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }
     impl <> ::capnp::traits::HasStructSize for Builder<'_,>  {
-        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 23 };
+        const STRUCT_SIZE: ::capnp::private::layout::StructSize = ::capnp::private::layout::StructSize { data: 1, pointers: 21 };
     }
     impl <> ::capnp::traits::HasTypeId for Builder<'_,>  {
         const TYPE_ID: u64 = _private::TYPE_ID;
@@ -21833,196 +21313,178 @@ pub mod tokenized_asset {
             !self.builder.is_pointer_field_null(10)
         }
         #[inline]
-        pub fn get_maker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
+        pub fn get_maker_fee(self)  {
+
         }
         #[inline]
-        pub fn set_maker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
+        pub fn set_maker_fee(&mut self, _value: ())  {
         }
         #[inline]
-        pub fn init_maker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
+        pub fn get_taker_fee(self)  {
+
         }
         #[inline]
-        pub fn has_maker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(11)
-        }
-        #[inline]
-        pub fn get_taker_fee(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
-        }
-        #[inline]
-        pub fn set_taker_fee(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
-        }
-        #[inline]
-        pub fn init_taker_fee(self, ) -> crate::types_capnp::decimal::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
-        }
-        #[inline]
-        pub fn has_taker_fee(&self) -> bool {
-            !self.builder.is_pointer_field_null(12)
+        pub fn set_taker_fee(&mut self, _value: ())  {
         }
         #[inline]
         pub fn get_max_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(11), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(11), value, false)
         }
         #[inline]
         pub fn init_max_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(11), 0)
         }
         #[inline]
         pub fn has_max_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(13)
+            !self.builder.is_pointer_field_null(11)
         }
         #[inline]
         pub fn get_min_quantity(self) -> ::capnp::Result<crate::types_capnp::quantity::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(12), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_quantity(&mut self, value: crate::types_capnp::quantity::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(12), value, false)
         }
         #[inline]
         pub fn init_min_quantity(self, ) -> crate::types_capnp::quantity::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(12), 0)
         }
         #[inline]
         pub fn has_min_quantity(&self) -> bool {
-            !self.builder.is_pointer_field_null(14)
+            !self.builder.is_pointer_field_null(12)
         }
         #[inline]
         pub fn get_max_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(13), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(13), value, false)
         }
         #[inline]
         pub fn init_max_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(13), 0)
         }
         #[inline]
         pub fn has_max_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(15)
+            !self.builder.is_pointer_field_null(13)
         }
         #[inline]
         pub fn get_min_notional(self) -> ::capnp::Result<crate::types_capnp::money::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(14), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_notional(&mut self, value: crate::types_capnp::money::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(14), value, false)
         }
         #[inline]
         pub fn init_min_notional(self, ) -> crate::types_capnp::money::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(14), 0)
         }
         #[inline]
         pub fn has_min_notional(&self) -> bool {
-            !self.builder.is_pointer_field_null(16)
+            !self.builder.is_pointer_field_null(14)
         }
         #[inline]
         pub fn get_max_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(15), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_max_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(15), value, false)
         }
         #[inline]
         pub fn init_max_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(17), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(15), 0)
         }
         #[inline]
         pub fn has_max_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(17)
+            !self.builder.is_pointer_field_null(15)
         }
         #[inline]
         pub fn get_min_price(self) -> ::capnp::Result<crate::types_capnp::price::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(16), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_min_price(&mut self, value: crate::types_capnp::price::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(18), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(16), value, false)
         }
         #[inline]
         pub fn init_min_price(self, ) -> crate::types_capnp::price::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(18), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(16), 0)
         }
         #[inline]
         pub fn has_min_price(&self) -> bool {
-            !self.builder.is_pointer_field_null(18)
+            !self.builder.is_pointer_field_null(16)
         }
         #[inline]
         pub fn get_tick_scheme(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(17), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_tick_scheme(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false).unwrap()
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(17), value, false).unwrap()
         }
         #[inline]
         pub fn init_tick_scheme(self, size: u32) -> ::capnp::text::Builder<'a> {
-            self.builder.get_pointer_field(19).init_text(size)
+            self.builder.get_pointer_field(17).init_text(size)
         }
         #[inline]
         pub fn has_tick_scheme(&self) -> bool {
-            !self.builder.is_pointer_field_null(19)
+            !self.builder.is_pointer_field_null(17)
         }
         #[inline]
         pub fn get_info(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(18), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_info(&mut self, value: ::capnp::data::Reader<'_>)  {
-            self.builder.reborrow().get_pointer_field(20).set_data(value);
+            self.builder.reborrow().get_pointer_field(18).set_data(value);
         }
         #[inline]
         pub fn init_info(self, size: u32) -> ::capnp::data::Builder<'a> {
-            self.builder.get_pointer_field(20).init_data(size)
+            self.builder.get_pointer_field(18).init_data(size)
         }
         #[inline]
         pub fn has_info(&self) -> bool {
-            !self.builder.is_pointer_field_null(20)
+            !self.builder.is_pointer_field_null(18)
         }
         #[inline]
         pub fn get_ts_event(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(21), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(19), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_event(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(21), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(19), value, false)
         }
         #[inline]
         pub fn init_ts_event(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(21), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(19), 0)
         }
         #[inline]
         pub fn has_ts_event(&self) -> bool {
-            !self.builder.is_pointer_field_null(21)
+            !self.builder.is_pointer_field_null(19)
         }
         #[inline]
         pub fn get_ts_init(self) -> ::capnp::Result<crate::base_capnp::unix_nanos::Builder<'a>> {
-            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(22), ::core::option::Option::None)
+            ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(20), ::core::option::Option::None)
         }
         #[inline]
         pub fn set_ts_init(&mut self, value: crate::base_capnp::unix_nanos::Reader<'_>) -> ::capnp::Result<()> {
-            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(22), value, false)
+            ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(20), value, false)
         }
         #[inline]
         pub fn init_ts_init(self, ) -> crate::base_capnp::unix_nanos::Builder<'a> {
-            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(22), 0)
+            ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(20), 0)
         }
         #[inline]
         pub fn has_ts_init(&self) -> bool {
-            !self.builder.is_pointer_field_null(22)
+            !self.builder.is_pointer_field_null(20)
         }
     }
 
@@ -22063,35 +21525,29 @@ pub mod tokenized_asset {
         pub fn get_margin_maint(&self) -> crate::types_capnp::decimal::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(10))
         }
-        pub fn get_maker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(11))
         }
-        pub fn get_taker_fee(&self) -> crate::types_capnp::decimal::Pipeline {
+        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(12))
         }
-        pub fn get_max_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(13))
         }
-        pub fn get_min_quantity(&self) -> crate::types_capnp::quantity::Pipeline {
+        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(14))
         }
-        pub fn get_max_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(15))
         }
-        pub fn get_min_notional(&self) -> crate::types_capnp::money::Pipeline {
+        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(16))
         }
-        pub fn get_max_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(17))
-        }
-        pub fn get_min_price(&self) -> crate::types_capnp::price::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(18))
-        }
         pub fn get_ts_event(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(21))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(19))
         }
         pub fn get_ts_init(&self) -> crate::base_capnp::unix_nanos::Pipeline {
-            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(22))
+            ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(20))
         }
     }
     mod _private {
@@ -22100,9 +21556,9 @@ pub mod tokenized_asset {
             ::capnp::word(87, 209, 138, 126, 174, 187, 254, 205),
             ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
-            ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
+            ::capnp::word(21, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(200, 68, 0, 0, 201, 72, 0, 0),
+            ::capnp::word(72, 75, 0, 0, 177, 79, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -22214,84 +21670,84 @@ pub mod tokenized_asset {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(36, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(48, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(14, 0, 0, 0, 11, 0, 0, 0),
+            ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(45, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(44, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(56, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(15, 0, 0, 0, 12, 0, 0, 0),
+            ::capnp::word(15, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(53, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(52, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(64, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(16, 0, 0, 0, 13, 0, 0, 0),
+            ::capnp::word(16, 0, 0, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(61, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(60, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(72, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(17, 0, 0, 0, 14, 0, 0, 0),
+            ::capnp::word(17, 0, 0, 0, 12, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(69, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(68, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(80, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(18, 0, 0, 0, 15, 0, 0, 0),
+            ::capnp::word(18, 0, 0, 0, 13, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(77, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(76, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(88, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(19, 0, 0, 0, 16, 0, 0, 0),
+            ::capnp::word(19, 0, 0, 0, 14, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(85, 3, 0, 0, 98, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(84, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(96, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(20, 0, 0, 0, 17, 0, 0, 0),
+            ::capnp::word(20, 0, 0, 0, 15, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(93, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(92, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(104, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(21, 0, 0, 0, 18, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 21, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(101, 3, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(100, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(112, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(22, 0, 0, 0, 19, 0, 0, 0),
+            ::capnp::word(22, 0, 0, 0, 17, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 22, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 3, 0, 0, 90, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(108, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(120, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(23, 0, 0, 0, 20, 0, 0, 0),
+            ::capnp::word(23, 0, 0, 0, 18, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 23, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(117, 3, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(112, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(124, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(24, 0, 0, 0, 21, 0, 0, 0),
+            ::capnp::word(24, 0, 0, 0, 19, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 24, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(121, 3, 0, 0, 66, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 3, 0, 0, 3, 0, 1, 0),
             ::capnp::word(128, 3, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(25, 0, 0, 0, 22, 0, 0, 0),
+            ::capnp::word(25, 0, 0, 0, 20, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 25, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(125, 3, 0, 0, 58, 0, 0, 0),
@@ -22423,20 +21879,20 @@ pub mod tokenized_asset {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(116, 97, 107, 101, 114, 70, 101, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(109, 97, 120, 81, 117, 97, 110, 116),
@@ -22543,8 +21999,8 @@ pub mod tokenized_asset {
                 11 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 12 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
                 13 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                14 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
-                15 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
+                14 => <() as ::capnp::introspect::Introspect>::introspect(),
+                15 => <() as ::capnp::introspect::Introspect>::introspect(),
                 16 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 17 => <crate::types_capnp::quantity::Owned as ::capnp::introspect::Introspect>::introspect(),
                 18 => <crate::types_capnp::money::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -22876,7 +22332,7 @@ pub mod synthetic_instrument {
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
             ::capnp::word(6, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(203, 72, 0, 0, 216, 73, 0, 0),
+            ::capnp::word(179, 79, 0, 0, 192, 80, 0, 0),
             ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -23720,7 +23176,7 @@ pub mod instrument_any {
             ::capnp::word(167, 1, 72, 147, 205, 141, 191, 156),
             ::capnp::word(1, 0, 7, 0, 0, 0, 18, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(18, 74, 0, 0, 30, 77, 0, 0),
+            ::capnp::word(250, 80, 0, 0, 6, 84, 0, 0),
             ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

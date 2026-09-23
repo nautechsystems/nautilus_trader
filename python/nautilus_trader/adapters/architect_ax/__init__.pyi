@@ -2,7 +2,6 @@
 # ruff: noqa: E501
 
 import datetime
-import decimal
 import enum
 import typing
 
@@ -170,9 +169,7 @@ class AxHttpClient:
         self, api_key: str, api_secret: str, expiration_seconds: int = 86400
     ) -> typing.Any: ...
     def authenticate_auto(self, expiration_seconds: int = 86400) -> typing.Any: ...
-    def request_instruments(
-        self, maker_fee: decimal.Decimal | None = None, taker_fee: decimal.Decimal | None = None
-    ) -> typing.Any: ...
+    def request_instruments(self) -> typing.Any: ...
     def request_trade_ticks(
         self,
         instrument_id: model.InstrumentId,

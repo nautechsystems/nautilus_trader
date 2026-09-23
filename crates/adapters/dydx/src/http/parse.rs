@@ -299,8 +299,6 @@ pub fn validate_conditional_order(
 /// Note: Callers should pre-filter inactive markets using [`is_market_active`].
 pub fn parse_instrument_any(
     definition: &PerpetualMarket,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     // Parse instrument ID with Nautilus perpetual suffix and keep raw symbol as venue ticker
@@ -389,8 +387,6 @@ pub fn parse_instrument_any(
         // min_price: not specified by dYdX
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()?;
@@ -517,11 +513,9 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_any_valid() {
         let market = create_test_market();
-        let maker_fee = Some(Decimal::from_str("0.0002").unwrap());
-        let taker_fee = Some(Decimal::from_str("0.0005").unwrap());
         let ts_init = UnixNanos::default();
 
-        let result = parse_instrument_any(&market, maker_fee, taker_fee, ts_init);
+        let result = parse_instrument_any(&market, ts_init);
         assert!(result.is_ok());
 
         let instrument = result.unwrap();
@@ -552,7 +546,7 @@ mod tests {
         let mut market = create_test_market();
         market.ticker = Ustr::from("INVALID");
 
-        let result = parse_instrument_any(&market, None, None, UnixNanos::default());
+        let result = parse_instrument_any(&market, UnixNanos::default());
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         // The error message includes context, so check for key parts
@@ -568,7 +562,7 @@ mod tests {
         let mut market = create_test_market();
         market.tick_size = Decimal::ZERO;
 
-        let result = parse_instrument_any(&market, None, None, UnixNanos::default());
+        let result = parse_instrument_any(&market, UnixNanos::default());
 
         assert!(result.is_err());
 
@@ -891,8 +885,7 @@ mod tests {
         let btc = response.markets.get("BTC-USD").unwrap();
 
         let ts_init = UnixNanos::default();
-        let instrument =
-            parse_instrument_any(btc, None, None, ts_init).expect("Failed to parse instrument");
+        let instrument = parse_instrument_any(btc, ts_init).expect("Failed to parse instrument");
 
         assert_eq!(instrument.id().symbol.as_str(), "BTC-USD-PERP");
         assert_eq!(instrument.id().venue.as_str(), "DYDX");
@@ -1724,8 +1717,6 @@ mod reconciliation_tests {
                 .min_price(Price::new(0.01, 2))
                 .margin_init(dec!(0.05))
                 .margin_maint(dec!(0.03))
-                .maker_fee(dec!(0.0002))
-                .taker_fee(dec!(0.0005))
                 .ts_event(UnixNanos::default())
                 .ts_init(UnixNanos::default())
                 .build()

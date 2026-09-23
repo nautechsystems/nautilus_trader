@@ -17,6 +17,7 @@
 //! unnecessary.
 
 use rstest::fixture;
+use rust_decimal::Decimal;
 
 use crate::{
     accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount},
@@ -31,7 +32,7 @@ use crate::{
     },
     fees::MakerTakerFeeRates,
     identifiers::stubs::{account_id, uuid4},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
@@ -125,7 +126,7 @@ pub fn calculate_commission(
         cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
     };
     let account = cash_account_million_usd(account_state);
-    let fee_rates = MakerTakerFeeRates::new(instrument.maker_fee(), instrument.taker_fee());
+    let fee_rates = MakerTakerFeeRates::new(Decimal::ZERO, Decimal::ZERO);
     account
         .calculate_commission(
             instrument,

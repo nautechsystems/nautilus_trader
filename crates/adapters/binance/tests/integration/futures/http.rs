@@ -55,7 +55,6 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use parking_lot::Mutex;
 use rstest::rstest;
-use rust_decimal_macros::dec;
 use serde_json::json;
 use ustr::Ustr;
 
@@ -622,8 +621,6 @@ async fn test_request_delivery_instrument_populates_cache_and_status(
     assert_eq!(future.settlement_currency.code, settlement_currency);
     assert_eq!(future.is_inverse, is_inverse);
     assert_eq!(future.multiplier, multiplier);
-    assert_eq!(future.maker_fee, dec!(0.0002));
-    assert_eq!(future.taker_fee, dec!(0.0005));
     assert_eq!(cached.id().to_string(), expected_id);
     assert_eq!(
         statuses.get(&raw_symbol),
@@ -664,8 +661,6 @@ async fn test_request_instruments_applies_filters_and_retains_raw_metadata() {
         instruments[0].id(),
         InstrumentId::from("BTCUSDT-PERP.BINANCE")
     );
-    assert_eq!(instruments[0].maker_fee(), dec!(0.000123));
-    assert_eq!(instruments[0].taker_fee(), dec!(0.000456));
     assert!(
         client
             .instruments_cache()
@@ -795,8 +790,6 @@ async fn test_request_instruments_parses_tradifi_perpetual_exchange_info() {
     assert_eq!(tradifi.underlying, "XAU");
     assert_eq!(tradifi.asset_class, AssetClass::Commodity);
     assert_eq!(tradifi.base_currency, None);
-    assert_eq!(tradifi.maker_fee, dec!(0.0002));
-    assert_eq!(tradifi.taker_fee, dec!(0.0005));
 }
 
 #[rstest]

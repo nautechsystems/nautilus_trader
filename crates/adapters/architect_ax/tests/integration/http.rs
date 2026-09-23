@@ -554,10 +554,7 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
-    let instruments = client
-        .request_instruments(Some(Decimal::new(2, 4)), Some(Decimal::new(5, 4)))
-        .await
-        .unwrap();
+    let instruments = client.request_instruments().await.unwrap();
 
     assert_eq!(instruments.len(), 3);
 }
@@ -572,74 +569,11 @@ async fn test_domain_http_request_account_fees_reaches_instruments() {
     client.set_session_token("test_session_token".into());
 
     let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
-    let instruments = client.request_instruments(None, None).await.unwrap();
+    let instruments = client.request_instruments().await.unwrap();
 
     assert_eq!(maker_fee, dec!(0.0002));
     assert_eq!(taker_fee, dec!(0.0025));
     assert!(!instruments.is_empty());
-    for instrument in &instruments {
-        assert_eq!(instrument.maker_fee(), dec!(0.0002));
-        assert_eq!(instrument.taker_fee(), dec!(0.0025));
-    }
-}
-
-#[rstest]
-#[case(Some(dec!(0.0001)), None, dec!(0.0001), dec!(0.0025))]
-#[case(None, Some(dec!(0.0009)), dec!(0.0002), dec!(0.0009))]
-#[tokio::test]
-async fn test_domain_http_partial_fee_arguments_keep_resolved_rate_for_the_other_side(
-    #[case] maker_arg: Option<Decimal>,
-    #[case] taker_arg: Option<Decimal>,
-    #[case] expected_maker: Decimal,
-    #[case] expected_taker: Decimal,
-) {
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".into());
-    client.request_account_fees().await.unwrap();
-
-    let instruments = client
-        .request_instruments(maker_arg, taker_arg)
-        .await
-        .unwrap();
-
-    assert!(!instruments.is_empty());
-    for instrument in &instruments {
-        assert_eq!(instrument.maker_fee(), expected_maker);
-        assert_eq!(instrument.taker_fee(), expected_taker);
-    }
-}
-
-#[rstest]
-#[case(Some(dec!(0.0001)), None, dec!(0.0001), Decimal::ZERO)]
-#[case(None, Some(dec!(0.0009)), Decimal::ZERO, dec!(0.0009))]
-#[tokio::test]
-async fn test_domain_http_partial_fee_arguments_zero_the_other_side_when_unresolved(
-    #[case] maker_arg: Option<Decimal>,
-    #[case] taker_arg: Option<Decimal>,
-    #[case] expected_maker: Decimal,
-    #[case] expected_taker: Decimal,
-) {
-    // The session token routes this through the authenticated branch of `resolve_fees`, which
-    // warns; the warning text is not asserted, since the crate has no log-capture harness.
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".into());
-
-    let instruments = client
-        .request_instruments(maker_arg, taker_arg)
-        .await
-        .unwrap();
-
-    assert!(!instruments.is_empty());
-    for instrument in &instruments {
-        assert_eq!(instrument.maker_fee(), expected_maker);
-        assert_eq!(instrument.taker_fee(), expected_taker);
-    }
 }
 
 #[rstest]
@@ -655,13 +589,9 @@ async fn test_domain_http_resolved_fees_are_shared_across_clones() {
     let cloned = client.clone();
 
     client.request_account_fees().await.unwrap();
-    let instruments = cloned.request_instruments(None, None).await.unwrap();
+    let instruments = cloned.request_instruments().await.unwrap();
 
     assert!(!instruments.is_empty());
-    for instrument in &instruments {
-        assert_eq!(instrument.maker_fee(), dec!(0.0002));
-        assert_eq!(instrument.taker_fee(), dec!(0.0025));
-    }
 }
 
 #[rstest]
@@ -775,13 +705,9 @@ async fn test_domain_http_request_instruments_reports_zero_fees_until_resolved()
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
-    let instruments = client.request_instruments(None, None).await.unwrap();
+    let instruments = client.request_instruments().await.unwrap();
 
     assert!(!instruments.is_empty());
-    for instrument in &instruments {
-        assert_eq!(instrument.maker_fee(), Decimal::ZERO);
-        assert_eq!(instrument.taker_fee(), Decimal::ZERO);
-    }
 }
 
 #[rstest]
@@ -794,7 +720,7 @@ async fn test_domain_http_request_book_snapshot_composes_event_timestamp() {
     client.set_session_token("test_session_token".into());
 
     let symbol = Ustr::from("EURUSD-PERP");
-    let instrument = client.request_instrument(symbol, None, None).await.unwrap();
+    let instrument = client.request_instrument(symbol).await.unwrap();
     client.cache_instrument(instrument);
 
     let book = client.request_book_snapshot(symbol, None).await.unwrap();
@@ -831,10 +757,7 @@ async fn test_domain_http_request_book_snapshot_rejects_unrepresentable_price() 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
     client.set_session_token("test_session_token".into());
     let symbol = Ustr::from("EURUSD-PERP");
-    let instrument = client
-        .request_instrument(symbol, Some(Decimal::ZERO), Some(Decimal::ZERO))
-        .await
-        .unwrap();
+    let instrument = client.request_instrument(symbol).await.unwrap();
     client.cache_instrument(instrument);
 
     let error = client
@@ -860,7 +783,7 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
 
     // Mock server returns first instrument (EURUSD-PERP) regardless of request
     let instrument = client
-        .request_instrument(Ustr::from("EURUSD-PERP"), None, None)
+        .request_instrument(Ustr::from("EURUSD-PERP"))
         .await
         .unwrap();
 
@@ -888,7 +811,7 @@ async fn test_domain_http_cache_instruments() {
 
     assert!(!client.is_initialized());
 
-    let instruments = client.request_instruments(None, None).await.unwrap();
+    let instruments = client.request_instruments().await.unwrap();
     client.cache_instruments(&instruments);
 
     assert!(client.is_initialized());
@@ -908,7 +831,7 @@ async fn test_domain_http_get_cached_instrument() {
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
-    let instruments = client.request_instruments(None, None).await.unwrap();
+    let instruments = client.request_instruments().await.unwrap();
     client.cache_instruments(&instruments);
 
     let eurusd_symbol = Ustr::from("EURUSD-PERP");
@@ -1043,8 +966,6 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
         ]
     );
     assert_eq!(instrument.id(), InstrumentId::from("GBPUSD-PERP.AX"));
-    assert_eq!(instrument.maker_fee(), dec!(0.0002));
-    assert_eq!(instrument.taker_fee(), dec!(0.0025));
     assert_eq!(
         request_report_instrument_ids(&client, family)
             .await
@@ -1066,7 +987,7 @@ async fn test_domain_http_report_reuses_pre_cached_instrument() {
         AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
     client.set_session_token("test_session_token".into());
     client.request_account_fees().await.unwrap();
-    let instruments = client.request_instruments(None, None).await.unwrap();
+    let instruments = client.request_instruments().await.unwrap();
     client.cache_instruments(&instruments);
 
     let instrument_ids = request_report_instrument_ids(&client, ReportFamily::OpenOrders)

@@ -149,44 +149,23 @@ pub const fn is_terminal_order_state(state: OKXOrderStatus) -> bool {
     )
 }
 
-/// Extracts fee rates from a cached instrument.
+/// Extracts margin rates from a cached instrument.
 ///
-/// Returns a tuple of (`margin_init`, `margin_maint`, `maker_fee`, `taker_fee`).
-/// All values are None if the instrument type doesn't support fees.
+/// Returns a tuple of (`margin_init`, `margin_maint`).
+/// Both values are None if the instrument type doesn't carry margins.
 pub(crate) fn extract_fees_from_cached_instrument(
     instrument: &InstrumentAny,
-) -> (
-    Option<Decimal>,
-    Option<Decimal>,
-    Option<Decimal>,
-    Option<Decimal>,
-) {
+) -> (Option<Decimal>, Option<Decimal>) {
     match instrument {
-        InstrumentAny::CurrencyPair(pair) => (
-            Some(pair.margin_init),
-            Some(pair.margin_maint),
-            Some(pair.maker_fee),
-            Some(pair.taker_fee),
-        ),
-        InstrumentAny::CryptoPerpetual(perp) => (
-            Some(perp.margin_init),
-            Some(perp.margin_maint),
-            Some(perp.maker_fee),
-            Some(perp.taker_fee),
-        ),
-        InstrumentAny::CryptoFuture(future) => (
-            Some(future.margin_init),
-            Some(future.margin_maint),
-            Some(future.maker_fee),
-            Some(future.taker_fee),
-        ),
-        InstrumentAny::CryptoOption(option) => (
-            Some(option.margin_init),
-            Some(option.margin_maint),
-            Some(option.maker_fee),
-            Some(option.taker_fee),
-        ),
-        _ => (None, None, None, None),
+        InstrumentAny::CurrencyPair(pair) => (Some(pair.margin_init), Some(pair.margin_maint)),
+        InstrumentAny::CryptoPerpetual(perp) => (Some(perp.margin_init), Some(perp.margin_maint)),
+        InstrumentAny::CryptoFuture(future) => {
+            (Some(future.margin_init), Some(future.margin_maint))
+        }
+        InstrumentAny::CryptoOption(option) => {
+            (Some(option.margin_init), Some(option.margin_maint))
+        }
+        _ => (None, None),
     }
 }
 
@@ -2435,10 +2414,8 @@ pub fn parse_ws_message_data(
             if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
                 let inst_key = msg.inst_id;
                 let cached_instrument = instruments_cache.get(&inst_key);
-                let (margin_init, margin_maint, maker_fee, taker_fee) = cached_instrument.map_or(
-                    (None, None, None, None),
-                    extract_fees_from_cached_instrument,
-                );
+                let (margin_init, margin_maint) =
+                    cached_instrument.map_or((None, None), extract_fees_from_cached_instrument);
                 let instrument_id =
                     cached_instrument.map_or_else(|| parse_instrument_id(inst_key), Instrument::id);
 
@@ -2455,14 +2432,7 @@ pub fn parse_ws_message_data(
                     None,
                 );
 
-                match parse_instrument_any(
-                    &msg,
-                    margin_init,
-                    margin_maint,
-                    maker_fee,
-                    taker_fee,
-                    ts_init,
-                ) {
+                match parse_instrument_any(&msg, margin_init, margin_maint, ts_init) {
                     Ok(Some(inst_any)) => Ok(Some(NautilusWsMessage::Instrument(
                         Box::new(inst_any),
                         Some(status),
@@ -2573,7 +2543,6 @@ mod tests {
         types::Currency,
     };
     use rstest::rstest;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde_json::Value;
     use ustr::Ustr;
@@ -5458,14 +5427,7 @@ mod tests {
 
         let ts_init = UnixNanos::default();
 
-        // Create initial instrument with fees (simulating HTTP load)
-        // These values are already in Nautilus format (HTTP client negates OKX values)
-        let initial_fees = (
-            Some(Decimal::new(8, 4)),  // Nautilus: 0.0008 (commission)
-            Some(Decimal::new(10, 4)), // Nautilus: 0.0010 (commission)
-        );
-
-        // Deserialize initial instrument from JSON
+        // Deserialize the initial instrument from JSON.
         let initial_inst_json = serde_json::json!({
             "instType": "SPOT",
             "instId": "BTC-USD",
@@ -5502,25 +5464,14 @@ mod tests {
         let initial_inst: OKXInstrument = serde_json::from_value(initial_inst_json)
             .expect("Failed to deserialize initial instrument");
 
-        // Parse initial instrument with fees
-        let parsed_initial = parse_instrument_any(
-            &initial_inst,
-            None,
-            None,
-            initial_fees.0,
-            initial_fees.1,
-            ts_init,
-        )
-        .expect("Failed to parse initial instrument")
-        .expect("Initial instrument should not be None");
+        // Parse the initial instrument.
+        let parsed_initial = parse_instrument_any(&initial_inst, None, None, ts_init)
+            .expect("Failed to parse initial instrument")
+            .expect("Initial instrument should not be None");
 
-        // Verify fees were applied
-        if let InstrumentAny::CurrencyPair(ref pair) = parsed_initial {
-            assert_eq!(pair.maker_fee, dec!(0.0008));
-            assert_eq!(pair.taker_fee, dec!(0.0010));
-        } else {
+        let InstrumentAny::CurrencyPair(_) = parsed_initial else {
             panic!("Expected CurrencyPair instrument");
-        }
+        };
 
         // Build instrument cache with the initial instrument
         let mut instruments_cache = AHashMap::new();
@@ -5576,22 +5527,10 @@ mod tests {
         )
         .expect("Failed to parse WebSocket instrument update");
 
-        // Verify the update preserves the cached fees
         if let Some(NautilusWsMessage::Instrument(boxed_inst, _status)) = result {
-            if let InstrumentAny::CurrencyPair(pair) = *boxed_inst {
-                assert_eq!(
-                    pair.maker_fee,
-                    Decimal::new(8, 4),
-                    "Maker fee should be preserved from cache"
-                );
-                assert_eq!(
-                    pair.taker_fee,
-                    Decimal::new(10, 4),
-                    "Taker fee should be preserved from cache"
-                );
-            } else {
+            let InstrumentAny::CurrencyPair(_) = *boxed_inst else {
                 panic!("Expected CurrencyPair instrument from WebSocket update");
-            }
+            };
         } else {
             panic!("Expected Instrument message from WebSocket update");
         }
@@ -7592,7 +7531,7 @@ mod tests {
 
         let ts_init = UnixNanos::default();
 
-        // Build a cached instrument with fees
+        // Build a cached instrument.
         let inst_json = serde_json::json!({
             "instType": "SPOT",
             "instId": "BTC-USD",
@@ -7625,7 +7564,7 @@ mod tests {
             "instFamily": ""
         });
         let initial: OKXInstrument = serde_json::from_value(inst_json).unwrap();
-        let parsed = parse_instrument_any(&initial, None, None, None, None, ts_init)
+        let parsed = parse_instrument_any(&initial, None, None, ts_init)
             .unwrap()
             .unwrap();
 
@@ -7791,7 +7730,7 @@ mod tests {
             "instFamily": ""
         });
         let initial: OKXInstrument = serde_json::from_value(inst_json).unwrap();
-        let parsed = parse_instrument_any(&initial, None, None, None, None, ts_init)
+        let parsed = parse_instrument_any(&initial, None, None, ts_init)
             .unwrap()
             .unwrap();
 

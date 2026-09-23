@@ -2052,36 +2052,19 @@ mod tests {
             testing::load_test_json,
         },
         config::BybitDataClientConfig,
-        http::models::{
-            BybitFeeRate, BybitInstrumentLinearResponse, BybitInstrumentOptionResponse,
-        },
+        http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
         websocket::messages::{
             BybitWsMessage, BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg,
             BybitWsTickerOptionMsg, BybitWsTradeMsg,
         },
     };
 
-    fn sample_fee_rate(
-        symbol: &str,
-        taker: &str,
-        maker: &str,
-        base_coin: Option<&str>,
-    ) -> BybitFeeRate {
-        BybitFeeRate {
-            symbol: Ustr::from(symbol),
-            taker_fee_rate: taker.to_string(),
-            maker_fee_rate: maker.to_string(),
-            base_coin: base_coin.map(Ustr::from),
-        }
-    }
-
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_linear_instrument(instrument, &fee_rate, ts, ts).unwrap()
+        parse_linear_instrument(instrument, ts, ts).unwrap()
     }
 
     fn option_instrument() -> InstrumentAny {
@@ -2089,7 +2072,7 @@ mod tests {
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_option_instrument(instrument, None, ts, ts).unwrap()
+        parse_option_instrument(instrument, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {

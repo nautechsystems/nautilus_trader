@@ -345,12 +345,6 @@ pub trait Instrument: 'static + Send {
     fn margin_maint(&self) -> Decimal {
         dec!(0)
     }
-    fn maker_fee(&self) -> Decimal {
-        dec!(0)
-    }
-    fn taker_fee(&self) -> Decimal {
-        dec!(0)
-    }
 
     /// Returns additional instrument metadata, when provided.
     fn info(&self) -> Option<&Params>;

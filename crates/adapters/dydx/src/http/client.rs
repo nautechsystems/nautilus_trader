@@ -85,7 +85,6 @@ use nautilus_network::{
     retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::Mutex;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -820,8 +819,6 @@ impl DydxHttpClient {
     pub async fn request_instruments(
         &self,
         symbol: Option<String>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let markets_response = self.inner.get_markets().await?;
         let ts_init = self.generate_ts_init();
@@ -846,7 +843,7 @@ impl DydxHttpClient {
                 continue;
             }
 
-            match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
+            match super::parse::parse_instrument_any(&market, ts_init) {
                 Ok(instrument) => {
                     instruments.push(instrument);
                 }
@@ -899,7 +896,7 @@ impl DydxHttpClient {
                 continue;
             }
 
-            match super::parse::parse_instrument_any(&market, None, None, ts_init) {
+            match super::parse::parse_instrument_any(&market, ts_init) {
                 Ok(instrument) => {
                     parsed_instruments.push(instrument);
                     parsed_markets.push(market);
@@ -953,7 +950,7 @@ impl DydxHttpClient {
                 return Ok(None);
             }
 
-            let instrument = parse_instrument_any(market, None, None, ts_init)?;
+            let instrument = parse_instrument_any(market, ts_init)?;
             self.instrument_cache
                 .insert(instrument.clone(), market.clone());
 

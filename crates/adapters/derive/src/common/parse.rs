@@ -372,8 +372,6 @@ fn parse_perp_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .maker_fee(instrument.maker_fee_rate)
-        .taker_fee(instrument.taker_fee_rate)
         .info(info)
         .ts_event(ts_init)
         .ts_init(ts_init)
@@ -425,8 +423,6 @@ fn parse_option_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .maker_fee(instrument.maker_fee_rate)
-        .taker_fee(instrument.taker_fee_rate)
         .info(info)
         .ts_event(ts_init)
         .ts_init(ts_init)
@@ -461,8 +457,6 @@ fn parse_spot_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .maker_fee(instrument.maker_fee_rate)
-        .taker_fee(instrument.taker_fee_rate)
         .info(info)
         .ts_event(ts_init)
         .ts_init(ts_init)
@@ -732,8 +726,6 @@ mod tests {
         assert_eq!(perp.size_increment(), Quantity::from("0.001"));
         assert_eq!(perp.max_quantity(), Some(Quantity::from("10000")));
         assert_eq!(perp.min_quantity(), None);
-        assert_eq!(perp.maker_fee(), dec!(0.0001));
-        assert_eq!(perp.taker_fee(), dec!(0.0003));
         assert!(!perp.is_inverse());
 
         // `info` mirrors the raw venue payload so downstream consumers can read
@@ -819,7 +811,6 @@ mod tests {
         assert_eq!(option.size_increment(), Quantity::from("0.01"));
         assert_eq!(option.max_quantity(), Some(Quantity::from("10000")));
         assert_eq!(option.min_quantity(), None);
-        assert_eq!(option.taker_fee(), dec!(0.0003));
 
         let info = option.info.as_ref().expect("info populated");
         assert_eq!(info.get_str("instrument_name"), Some("ETH-20261225-3500-C"));
@@ -875,8 +866,6 @@ mod tests {
         assert_eq!(pair.size_increment(), Quantity::from("0.01"));
         assert_eq!(pair.max_quantity(), Some(Quantity::from("10000")));
         assert_eq!(pair.min_quantity(), None);
-        assert_eq!(pair.maker_fee(), dec!(0));
-        assert_eq!(pair.taker_fee(), dec!(0));
 
         let info = pair.info.as_ref().expect("info populated");
         assert_eq!(info.get_str("instrument_name"), Some("ETH-USDC"));
@@ -950,8 +939,6 @@ mod tests {
         response["amount_step"] = json!("0.0002");
         response["maximum_amount"] = json!("1234.5678");
         response["minimum_amount"] = json!("0.03");
-        response["maker_fee_rate"] = json!("-0.0001");
-        response["taker_fee_rate"] = json!("0.0005");
         let instrument: DeriveInstrument = serde_json::from_value(response).unwrap();
 
         let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(987))
@@ -966,8 +953,6 @@ mod tests {
         assert_eq!(parsed.lot_size(), Some(Quantity::from("0.0002")));
         assert_eq!(parsed.max_quantity(), Some(Quantity::from("1234.5678")));
         assert_eq!(parsed.min_quantity(), None);
-        assert_eq!(parsed.maker_fee(), dec!(-0.0001));
-        assert_eq!(parsed.taker_fee(), dec!(0.0005));
         assert_eq!(parsed.ts_event(), UnixNanos::from(987));
         assert_eq!(parsed.ts_init(), UnixNanos::from(987));
         assert_eq!(

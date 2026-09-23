@@ -26,7 +26,7 @@ Supported products:
 The adapter exposes these public components:
 
 - `BinanceDataClientConfig` and `BinanceExecutionClientConfig`: Live client configuration.
-- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, warning, and fee policy.
+- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, and warning policy.
 - `BinanceDataClientFactory` and `BinanceExecutionClientFactory`: Trading node client factories.
 - `load_binance_instruments`: Standalone configured instrument discovery.
 - `load_binance_order_book_deltas`: Rust-backed Binance depth CSV loading for order book wrangling.
@@ -1506,9 +1506,9 @@ Testnet credentials are completely separate from your live account. Market
 data and liquidity differ from production.
 :::
 
-### Commission rate queries
+### Instrument loading
 
-The instrument provider controls both selection and fee policy:
+The instrument provider controls selection and filters:
 
 ```python
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
@@ -1527,23 +1527,8 @@ filters are `symbols`, `bases`, and `quotes`, plus `contract_types` for Futures.
 or non-empty list of strings, and matching is case-insensitive. The adapter rejects
 `filter_callable`; use the supported declarative filters.
 
-Every parsed instrument receives maker and taker fees:
-
-- Spot uses the account-wide rate when credentials are present, otherwise 0.1% maker and taker.
-- Futures uses the account VIP tier when credentials are present, otherwise VIP 0.
-- `query_commission_rates=True` opts Global Spot and Futures into rate-limited exact per-symbol
-  queries. A failed or invalid query falls back to the account or tier rate for that symbol.
-- Binance US uses its account-wide commission rates because it does not expose the Global
-  `account/commission` endpoint.
-
-The exact-query behavior follows the Global Spot
-[commission FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md)
-and the USD-M
-[user commission rate](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/User-Commission-Rate)
-endpoint.
-
-Exact queries require credentials. Because they issue one private request per selected symbol,
-combine `load_ids` or filters with this option on large catalogs.
+Parsed instruments do not carry maker or taker fee rates.
+`query_commission_rates` does not copy account commission onto instruments.
 
 ### Parser warnings
 

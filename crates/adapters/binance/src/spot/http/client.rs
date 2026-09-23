@@ -98,7 +98,6 @@ use crate::{
             BinanceEnvironment, BinanceOrderStatus, BinanceProductType, BinanceRateLimitInterval,
             BinanceRateLimitType, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
         },
-        fees::BINANCE_SPOT_FEE_DEFAULT,
         instruments::BinanceInstrumentSelector,
         models::BinanceErrorResponse,
         parse::{
@@ -2839,7 +2838,7 @@ impl BinanceSpotHttpClient {
             .await
     }
 
-    /// Requests configured Nautilus instruments with populated maker and taker fees.
+    /// Requests configured Nautilus instruments.
     ///
     /// Non-trading symbols are skipped with a debug log unless explicitly
     /// selected via `load_ids` or the `symbols` filter.
@@ -2858,18 +2857,13 @@ impl BinanceSpotHttpClient {
         let selector = BinanceInstrumentSelector::new(config)
             .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
         let ts_init = self.generate_ts_init();
-        let fallback_fees = self.spot_fallback_fees(us).await;
 
         let mut instruments = if us {
             if config.query_commission_rates {
                 if config.log_warnings {
-                    log::warn!(
-                        "Binance US does not expose the Global account/commission endpoint; using account-wide commission rates"
-                    );
+                    log::warn!("query_commission_rates does not copy commission onto instruments");
                 } else {
-                    log::debug!(
-                        "Binance US exact per-symbol commission query disabled; using account-wide rates"
-                    );
+                    log::debug!("query_commission_rates does not copy commission onto instruments");
                 }
             }
             let info = self.inner.exchange_info_json().await?;
@@ -2888,13 +2882,7 @@ impl BinanceSpotHttpClient {
                     continue;
                 }
 
-                match parse_spot_instrument_json_with_fees(
-                    symbol,
-                    Some(fallback_fees.0),
-                    Some(fallback_fees.1),
-                    ts_init,
-                    ts_init,
-                ) {
+                match parse_spot_instrument_json_with_fees(symbol, ts_init, ts_init) {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => log_instrument_parse_error(
                         config,
@@ -2923,17 +2911,7 @@ impl BinanceSpotHttpClient {
                     continue;
                 }
 
-                let fees = self
-                    .spot_symbol_fees(config, &symbol.symbol, fallback_fees)
-                    .await;
-
-                match parse_spot_instrument_sbe_with_fees(
-                    symbol,
-                    Some(fees.0),
-                    Some(fees.1),
-                    ts_init,
-                    ts_init,
-                ) {
+                match parse_spot_instrument_sbe_with_fees(symbol, ts_init, ts_init) {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => log_instrument_parse_error(
                         config,
@@ -2952,81 +2930,6 @@ impl BinanceSpotHttpClient {
 
         log::debug!("Loaded spot instruments: count={}", instruments.len());
         Ok(instruments)
-    }
-
-    async fn spot_fallback_fees(&self, us: bool) -> (Decimal, Decimal) {
-        if !self.has_credentials() {
-            return (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT);
-        }
-
-        let result = if us {
-            self.inner.account_rates_json().await.map(|account| {
-                parse_commission_rates(
-                    &account.commission_rates.maker,
-                    &account.commission_rates.taker,
-                )
-            })
-        } else {
-            self.inner
-                .account(&AccountInfoParams::default())
-                .await
-                .map(|account| {
-                    Ok((
-                        decimal_from_mantissa_exponent(
-                            account.maker_commission_mantissa,
-                            account.commission_exponent,
-                        ),
-                        decimal_from_mantissa_exponent(
-                            account.taker_commission_mantissa,
-                            account.commission_exponent,
-                        ),
-                    ))
-                })
-        };
-
-        match result {
-            Ok(Ok(fees)) => fees,
-            Ok(Err(e)) => {
-                log::warn!("Invalid Binance Spot account commission rates: {e}; using fallback");
-                (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT)
-            }
-            Err(e) => {
-                log::warn!("Binance Spot account commission query failed: {e}; using fallback");
-                (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT)
-            }
-        }
-    }
-
-    async fn spot_symbol_fees(
-        &self,
-        config: &BinanceInstrumentProviderConfig,
-        symbol: &str,
-        fallback: (Decimal, Decimal),
-    ) -> (Decimal, Decimal) {
-        if !config.query_commission_rates || !self.has_credentials() {
-            return fallback;
-        }
-
-        match self.inner.account_commission(symbol).await {
-            Ok(response) => match parse_commission_rates(
-                &response.standard_commission.maker,
-                &response.standard_commission.taker,
-            ) {
-                Ok(fees) => fees,
-                Err(e) => {
-                    log::warn!(
-                        "Invalid Binance Spot commission response for {symbol}: {e}; using fallback"
-                    );
-                    fallback
-                }
-            },
-            Err(e) => {
-                log::warn!(
-                    "Binance Spot commission query failed for {symbol}: {e}; using fallback"
-                );
-                fallback
-            }
-        }
     }
 
     /// Requests recent trades for an instrument.
@@ -3844,26 +3747,11 @@ impl BinanceSpotHttpClient {
     }
 }
 
-fn parse_commission_rates(maker: &str, taker: &str) -> anyhow::Result<(Decimal, Decimal)> {
-    Ok((
-        Decimal::from_str_exact(maker)?,
-        Decimal::from_str_exact(taker)?,
-    ))
-}
-
 fn spot_json_market_status(status: &str) -> MarketStatusAction {
     match status {
         "TRADING" => MarketStatusAction::Trading,
         "BREAK" => MarketStatusAction::Pause,
         _ => MarketStatusAction::NotAvailableForTrading,
-    }
-}
-
-fn decimal_from_mantissa_exponent(mantissa: i64, exponent: i8) -> Decimal {
-    if exponent >= 0 {
-        Decimal::from(mantissa) * Decimal::from(10_i64.pow(exponent as u32))
-    } else {
-        Decimal::new(mantissa, (-exponent) as u32)
     }
 }
 

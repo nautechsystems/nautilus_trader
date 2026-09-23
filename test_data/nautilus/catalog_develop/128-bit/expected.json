@@ -211,8 +211,6 @@
       "lot_size": "1000",
       "margin_init": "0.03",
       "margin_maint": "0.03",
-      "maker_fee": "0.00002",
-      "taker_fee": "0.00002",
       "max_quantity": "1000000",
       "min_quantity": "100",
       "max_notional": null,

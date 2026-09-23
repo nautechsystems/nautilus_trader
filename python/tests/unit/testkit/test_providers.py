@@ -55,8 +55,6 @@ def test_xbtusd_bitmex_matches_rust_fixture() -> None:
     assert instrument.min_price == Price.from_str("0.01")
     assert instrument.margin_init == Decimal("0.01")
     assert instrument.margin_maint == Decimal("0.0035")
-    assert instrument.maker_fee == Decimal("-0.00025")
-    assert instrument.taker_fee == Decimal("0.00075")
 
 
 @pytest.mark.parametrize(

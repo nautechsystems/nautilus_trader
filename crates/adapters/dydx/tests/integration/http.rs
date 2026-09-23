@@ -318,7 +318,7 @@ async fn test_request_instruments_success() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     assert_eq!(instruments.len(), 2);
     assert!(
@@ -342,7 +342,7 @@ async fn test_instrument_caching() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     client.cache_instruments(instruments);
 
@@ -366,7 +366,7 @@ async fn test_cache_single_instrument() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     let btc_inst = instruments
         .into_iter()
@@ -448,7 +448,7 @@ async fn test_rate_limiting() {
         DydxHttpClient::new(Some(base_url.clone()), 30, None, DydxNetwork::Mainnet, None).unwrap();
 
     for _ in 0..12 {
-        let _ = client.request_instruments(None, None, None).await;
+        let _ = client.request_instruments(None).await;
     }
 
     let count = state.request_count.lock().await;
@@ -467,7 +467,7 @@ async fn test_network_error_handling() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -521,7 +521,7 @@ async fn test_server_error_500() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -543,7 +543,7 @@ async fn test_malformed_json_response() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -572,7 +572,7 @@ async fn test_empty_instruments_response() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     assert_eq!(instruments.len(), 0);
 }
 
@@ -658,7 +658,7 @@ async fn test_server_error_503() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -687,7 +687,7 @@ async fn test_invalid_json_structure() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     if let Ok(instruments) = result {
         assert_eq!(instruments.len(), 0);
     }
@@ -975,7 +975,7 @@ async fn test_server_error_400() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -1000,7 +1000,7 @@ async fn test_server_error_404() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -2358,7 +2358,7 @@ async fn test_request_orderbook_snapshot_sets_snapshot_flags() {
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
 
     // request_orderbook_snapshot reads from the instrument cache, so populate it first.
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2410,7 +2410,7 @@ async fn test_request_orderbook_snapshot_empty_book() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2529,7 +2529,7 @@ async fn test_request_trade_ticks_paginates_across_blocks() {
 
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2593,7 +2593,7 @@ async fn test_request_trade_ticks_dedups_cross_page_overlap() {
 
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2647,7 +2647,7 @@ async fn test_request_trade_ticks_respects_start_boundary() {
 
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);

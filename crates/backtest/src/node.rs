@@ -639,10 +639,9 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
 mod tests {
     #[cfg(feature = "python")]
     use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
-    use nautilus_model::enums::{AccountType, OmsType};
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
-        enums::AggressorSide,
+        enums::{AccountType, AggressorSide, OmsType},
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };

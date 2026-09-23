@@ -159,8 +159,6 @@ pub fn parse_funding_rate(
 /// Panics if the constructed perpetual instrument fails validation.
 pub fn parse_instrument(
     definition: &AxInstrument,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -331,8 +329,6 @@ pub fn parse_instrument(
             .maybe_min_quantity(min_quantity)
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -359,8 +355,6 @@ pub fn parse_instrument(
         .maybe_min_quantity(min_quantity)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .info(info)
         .ts_event(ts_event)
         .ts_init(ts_init)
@@ -966,8 +960,6 @@ mod tests {
     fn test_parse_order_status_report_uses_cid_resolver() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1016,8 +1008,6 @@ mod tests {
     ) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1046,8 +1036,6 @@ mod tests {
     fn test_parse_fill_report_uses_stable_surrogate_for_block_fill(#[case] order_id: Option<&str>) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1074,8 +1062,6 @@ mod tests {
     fn test_parse_fill_report_uses_stable_surrogate_for_final_settlement() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1103,8 +1089,6 @@ mod tests {
     fn test_parse_fill_report_rejects_final_settlement_without_block_classification() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1131,8 +1115,6 @@ mod tests {
     fn test_parse_fill_report_rejects_missing_identity() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1160,8 +1142,6 @@ mod tests {
     fn test_parse_fill_report_rejects_regular_fill_without_order_id() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1186,8 +1166,6 @@ mod tests {
     fn test_parse_fill_report_rejects_invalid_regular_order_id(#[case] order_id: &str) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1210,11 +1188,9 @@ mod tests {
     #[rstest]
     fn test_parse_fx_instrument() {
         let definition = create_eurusd_instrument();
-        let maker_fee = Decimal::new(2, 5);
-        let taker_fee = Decimal::new(2, 5);
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         assert!(result.is_ok());
 
         let instrument = result.unwrap();
@@ -1249,11 +1225,9 @@ mod tests {
     #[rstest]
     fn test_parse_equity_instrument() {
         let definition = create_nvda_instrument();
-        let maker_fee = Decimal::new(2, 5);
-        let taker_fee = Decimal::new(2, 5);
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         assert!(result.is_ok());
 
         let instrument = result.unwrap();
@@ -1277,7 +1251,7 @@ mod tests {
         let definition = create_xau_instrument();
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1296,16 +1270,12 @@ mod tests {
     fn test_parse_current_dated_instruments() {
         let test_data = include_str!("../../test_data/http_get_dated_instruments.json");
         let response: AxInstrumentsResponse = serde_json::from_str(test_data).unwrap();
-        let maker_fee = dec!(0.0002);
-        let taker_fee = dec!(0.0005);
         let ts_now = UnixNanos::default();
 
         let instruments = response
             .instruments
             .iter()
-            .map(|definition| {
-                parse_instrument(definition, maker_fee, taker_fee, ts_now, ts_now).unwrap()
-            })
+            .map(|definition| parse_instrument(definition, ts_now, ts_now).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(instruments.len(), 2);
@@ -1342,8 +1312,6 @@ mod tests {
             assert_eq!(future.multiplier.as_decimal(), Decimal::ONE);
             assert_eq!(future.margin_init, dec!(0.125));
             assert_eq!(future.margin_maint, dec!(0.075));
-            assert_eq!(future.maker_fee, maker_fee);
-            assert_eq!(future.taker_fee, taker_fee);
             assert_eq!(info["product"], json!("XAU"));
             assert_eq!(
                 info["expiration"],
@@ -1367,14 +1335,8 @@ mod tests {
         definition.multiplier = dec!(2.5);
         definition.minimum_order_size = dec!(5);
 
-        let instrument = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let instrument =
+            parse_instrument(definition, UnixNanos::default(), UnixNanos::default()).unwrap();
         let InstrumentAny::FuturesContract(future) = instrument else {
             panic!("Expected FuturesContract instrument");
         };
@@ -1392,14 +1354,8 @@ mod tests {
         let definition = &mut response.instruments[0];
         definition.product = None;
 
-        let instrument = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let instrument =
+            parse_instrument(definition, UnixNanos::default(), UnixNanos::default()).unwrap();
         let InstrumentAny::FuturesContract(future) = instrument else {
             panic!("Expected FuturesContract instrument");
         };
@@ -1412,13 +1368,7 @@ mod tests {
         let mut definition = create_xau_instrument();
         definition.product = Some(Ustr::from(" "));
 
-        let result = parse_instrument(
-            &definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(&definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1433,13 +1383,7 @@ mod tests {
         let mut definition = create_xau_instrument();
         definition.minimum_order_size = minimum_order_size;
 
-        let result = parse_instrument(
-            &definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(&definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1451,13 +1395,7 @@ mod tests {
         let definition = &mut response.instruments[0];
         definition.funding_settlement_currency = Ustr::from("EUR");
 
-        let result = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1468,7 +1406,7 @@ mod tests {
         definition.funding_settlement_currency = Ustr::from("EUR");
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1526,7 +1464,7 @@ mod tests {
         definition.category = AxCategory::Unknown;
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1565,8 +1503,6 @@ mod tests {
         let response: AxInstrumentsResponse =
             serde_json::from_str(test_data).expect("Failed to deserialize test data");
 
-        let maker_fee = Decimal::new(2, 4);
-        let taker_fee = Decimal::new(5, 4);
         let ts_now = UnixNanos::default();
 
         let open_instruments: Vec<_> = response
@@ -1578,7 +1514,7 @@ mod tests {
         assert_eq!(open_instruments.len(), 3);
 
         for instrument in open_instruments {
-            let result = parse_instrument(instrument, maker_fee, taker_fee, ts_now, ts_now);
+            let result = parse_instrument(instrument, ts_now, ts_now);
             assert!(
                 result.is_ok(),
                 "Failed to parse {}: {:?}",
@@ -1603,8 +1539,6 @@ mod tests {
     fn test_parse_trade_tick_derives_trade_id_from_timestamp_and_content() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1630,8 +1564,6 @@ mod tests {
         // Two prints from one sweep share `ts` and `tn`, so only the content digest separates them
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1654,8 +1586,6 @@ mod tests {
     fn test_parse_trade_tick_rejects_negative_timestamp() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )

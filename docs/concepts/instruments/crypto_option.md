@@ -34,8 +34,6 @@ Examples include BTC and ETH options on crypto derivatives venues.
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
@@ -88,8 +86,6 @@ let btc_option = CryptoOption::builder()
     .min_notional(Money::from("10.00 USD"))
     .margin_init(dec!(0))
     .margin_maint(dec!(0))
-    .maker_fee(dec!(0.0003))
-    .taker_fee(dec!(0.0003))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -133,8 +129,6 @@ btc_option = CryptoOption(
     min_notional=Money(10.00, USD),
     margin_init=Decimal(0),
     margin_maint=Decimal(0),
-    maker_fee=Decimal("0.0003"),
-    taker_fee=Decimal("0.0003"),
     ts_event=0,
     ts_init=0,
 )

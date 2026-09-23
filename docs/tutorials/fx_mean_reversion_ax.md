@@ -171,8 +171,6 @@ EURUSD_PERP = PerpetualContract(
     lot_size=Quantity.from_int(1),
     margin_init=Decimal("0.05"),
     margin_maint=Decimal("0.025"),
-    maker_fee=Decimal("0.0002"),
-    taker_fee=Decimal("0.0005"),
     ts_event=0,
     ts_init=0,
 )

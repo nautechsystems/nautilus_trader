@@ -69,24 +69,11 @@ does not span both markets.
 
 ## Spot instrument fees
 
-When both `api_key` and `api_secret` are configured, the adapter loads the
-account's current maker and taker rates for currency pairs and tokenized assets
-from Kraken's
-[`TradeVolume` endpoint](https://docs.kraken.com/api-reference/account-data/get-trade-volume).
-The API key must include the `Funds permissions - Query` permission, shown as
-**Query Funds** when creating the key.
+Spot instruments do not carry maker or taker fee rates. Loading instruments does
+not call Kraken's `TradeVolume` endpoint.
 
-If the `TradeVolume` request fails, the adapter logs a warning and uses the
-public base-tier rates from `AssetPairs` instead, so a transient or isolated
-failure does not stop the Spot data or execution client connecting. A key
-missing `Funds permissions - Query` altogether still fails later, when the
-execution client requests account state. If the request succeeds but the
-response omits the fee for a requested pair, the client cannot connect. For pairs without a
-maker/taker schedule, Kraken returns one fee, which the adapter applies to both
-maker and taker activity.
-
-Without Spot API credentials, the adapter uses the public base-tier rates from
-`AssetPairs`. These rates can differ from the account's actual fee tier.
+A Spot API key without `Funds permissions - Query` (**Query Funds**) fails when
+the execution client requests account state.
 
 ## Bar streaming
 
@@ -785,8 +772,8 @@ The product type for each client is specified via the `product_type` option.
 | ------------------------- | --------- | -------------------------------------------------------------- |
 | `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
 | `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
-| `api_key`                 | `None`    | API key for Spot L3 data and account fee rates.                |
-| `api_secret`              | `None`    | API secret for Spot L3 data and account fee rates.             |
+| `api_key`                 | `None`    | API key for Spot L3 data.                                      |
+| `api_secret`              | `None`    | API secret for Spot L3 data.                                   |
 | `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
 | `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
 | `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
@@ -856,8 +843,8 @@ execution clients.
 
 Live-node configuration objects do not read credential environment variables
 automatically. Pass `api_key` and `api_secret` explicitly to
-`KrakenExecutionClientConfig` and, for Spot L3 data or account-specific
-instrument fees, to `KrakenDataClientConfig`. Public market data does not
+`KrakenExecutionClientConfig` and, for Spot L3 data, to
+`KrakenDataClientConfig`. Public market data does not
 require credentials.
 
 The lower-level Python HTTP and WebSocket clients load the following variables

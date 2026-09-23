@@ -257,7 +257,7 @@ impl AxDataClient {
                         break;
                     }
                     () = &mut sleep => {
-                        match http_client.request_instruments(None, None).await {
+                        match http_client.request_instruments().await {
                             Ok(instruments) => {
                                 for inst in &instruments {
                                     instruments_cache.insert(inst.symbol().inner(), inst.clone());
@@ -499,13 +499,13 @@ impl DataClient for AxDataClient {
 
             Some(credential)
         } else {
-            log::debug!("No Ax credentials configured, instruments will report zero fees");
+            log::debug!("No Ax credentials configured");
             None
         };
 
         let instruments = self
             .http_client
-            .request_instruments(None, None)
+            .request_instruments()
             .await
             .context("Failed to fetch instruments")?;
 
@@ -868,7 +868,7 @@ impl DataClient for AxDataClient {
         let clock = self.clock;
 
         self.spawn_task(async move {
-            match http.request_instruments(None, None).await {
+            match http.request_instruments().await {
                 Ok(instruments) => {
                     if cancel.is_cancelled() {
                         return;
@@ -918,7 +918,7 @@ impl DataClient for AxDataClient {
         let clock = self.clock;
 
         self.spawn_task(async move {
-            match http.request_instrument(symbol, None, None).await {
+            match http.request_instrument(symbol).await {
                 Ok(instrument) => {
                     if cancel.is_cancelled() {
                         return;
@@ -1483,8 +1483,6 @@ mod tests {
             .size_increment(Quantity::from("1"))
             .margin_init(Decimal::new(1, 2))
             .margin_maint(Decimal::new(5, 3))
-            .maker_fee(Decimal::new(2, 4))
-            .taker_fee(Decimal::new(5, 4))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()

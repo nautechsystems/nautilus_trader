@@ -800,7 +800,7 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            let instrument = match http.request_instruments(None, None, None).await {
+            let instrument = match http.request_instruments(None).await {
                 Ok(instruments) => {
                     for inst in &instruments {
                         instrument_cache.insert_instrument_only(inst.clone());
@@ -851,7 +851,7 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            match http.request_instruments(None, None, None).await {
+            match http.request_instruments(None).await {
                 Ok(instruments) => {
                     log::debug!("Fetched {} instruments from dYdX", instruments.len());
 

@@ -65,10 +65,6 @@ def create_6E_instrument(venue: Venue) -> FuturesContract:
         # It is not block, it is only entry requirement check.
         margin_maint=Decimal("0.18181818182"),
         # $2,500 per contract (at price 1.1000). This amount is really locked on account, while we have open position
-        maker_fee=Decimal(
-            0,
-        ),  # CME Futures don't use maker/taker fee model. They have fixed fee per contract.
-        taker_fee=Decimal(0),  # same as above
         # Additional contract specifications
         exchange="SIM",  # Chicago Mercantile Exchange rules
     )

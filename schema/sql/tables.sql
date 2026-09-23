@@ -63,8 +63,6 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     min_price TEXT,
     margin_init TEXT NOT NULL,
     margin_maint TEXT NOT NULL,
-    maker_fee TEXT NULL,
-    taker_fee TEXT NULL,
     info JSON,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
@@ -73,6 +71,10 @@ CREATE TABLE IF NOT EXISTS "instrument" (
 );
 
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS info JSON;
+-- Maker/taker fee rates are account-owned; drop the retired instrument columns from
+-- databases created before that change. Dropping is metadata-only and idempotent.
+ALTER TABLE "instrument" DROP COLUMN IF EXISTS maker_fee;
+ALTER TABLE "instrument" DROP COLUMN IF EXISTS taker_fee;
 
 -- Instrument closes are stored independently of instrument metadata.
 CREATE TABLE IF NOT EXISTS "instrument_close" (

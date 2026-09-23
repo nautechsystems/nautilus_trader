@@ -20,7 +20,6 @@ use nautilus_core::{
     correctness::{CorrectnessError, CorrectnessResultExt, FAILED},
     hex,
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
@@ -284,8 +283,6 @@ impl TryFrom<&Pool> for CurrencyPair {
             p.token1.name.as_str(),
             CurrencyType::Crypto,
         )?;
-        let taker_fee = p.fee.map(|fee| Decimal::new(i64::from(fee), 6));
-
         let pair = Self::builder()
             .instrument_id(p.instrument_id)
             .raw_symbol(p.instrument_id.symbol)
@@ -295,7 +292,6 @@ impl TryFrom<&Pool> for CurrencyPair {
             .size_precision(size_precision)
             .price_increment(price_increment)
             .size_increment(size_increment)
-            .maybe_taker_fee(taker_fee)
             .ts_event(p.ts_event)
             .ts_init(p.ts_init)
             .build()?;
@@ -329,7 +325,6 @@ impl From<Pool> for InstrumentAny {
 mod tests {
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
-    use rust_decimal::Decimal;
 
     use super::{CurrencyPair, DexType};
     use crate::{
@@ -446,7 +441,6 @@ mod tests {
         pool.token1.decimals = price_precision;
 
         let expected_id = pool.instrument_id;
-        let expected_taker_fee = pool.fee.map(|fee| Decimal::new(i64::from(fee), 6));
         let expected_ts_event = pool.ts_event;
         let expected_ts_init = pool.ts_init;
         let pair = CurrencyPair::from(pool);
@@ -468,8 +462,6 @@ mod tests {
         assert_eq!(pair.price_increment.precision, expected_price_precision);
         assert_eq!(pair.size_increment.raw(), 10_u128.pow(size_scale_exponent));
         assert_eq!(pair.size_increment.precision, expected_size_precision);
-        assert_eq!(pair.maker_fee, Decimal::ZERO);
-        assert_eq!(pair.taker_fee, expected_taker_fee.unwrap());
         assert_eq!(pair.ts_event, expected_ts_event);
         assert_eq!(pair.ts_init, expected_ts_init);
     }

@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added legacy `custom_<snake_case>` layout discovery to custom data queries
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
+- Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Lighter support for 64-bit market IDs at and above 4095
@@ -30,6 +31,11 @@ Released on TBD (UTC).
 
 - Removed `nautilus_trader.persistence.NautilusDataType` - import from `nautilus_trader.model`
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
+- Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
+- Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
+- Changed backtest venues to require an explicit `fee_model`, including an explicit zero-fee model
+- Changed fee models that read instrument fees to require explicit `maker_rate` and `taker_rate`
+- Changed account `calculate_commission` to require explicit `maker_rate` and `taker_rate`
 - Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
 - Changed Rust `ExecutionEngine::register_client` to require explicit venue or default routing setup for commands that relied on automatic venue routing; live-node and backtest automatic routing remain unchanged
 - Changed `ParquetDataCatalog` file operations to take a `data_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings (#5027), thanks @faysou
@@ -59,6 +65,8 @@ Released on TBD (UTC).
 - Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
 - Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
 - Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
+- Changed Polymarket taker fees to read `info.fee_schedule` instead of instrument `taker_fee`
+- Changed sandbox execution clients to require an explicit `fee_model`, including a zero-fee model
 
 ### Security
 

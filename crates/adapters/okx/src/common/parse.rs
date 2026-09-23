@@ -1565,65 +1565,28 @@ pub fn parse_instrument_any(
     instrument: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.inst_type {
-        OKXInstrumentType::Spot => parse_spot_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Margin => parse_spot_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Swap => parse_swap_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Futures => parse_futures_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Option => parse_option_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Events => parse_event_contract_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
+        OKXInstrumentType::Spot => {
+            parse_spot_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Margin => {
+            parse_spot_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Swap => {
+            parse_swap_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Futures => {
+            parse_futures_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Option => {
+            parse_option_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Events => {
+            parse_event_contract_instrument(instrument, margin_init, margin_maint, ts_init)
+                .map(Some)
+        }
         OKXInstrumentType::Any => Ok(None),
     }
 }
@@ -1641,8 +1604,6 @@ pub fn parse_spread_instrument(
     definition: &OKXSpread,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     if definition.tick_sz.is_empty() {
@@ -1721,8 +1682,6 @@ pub fn parse_spread_instrument(
             .maybe_min_quantity(min_quantity)
             .maybe_margin_init(margin_init)
             .maybe_margin_maint(margin_maint)
-            .maybe_maker_fee(maker_fee)
-            .maybe_taker_fee(taker_fee)
             .maybe_info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -1750,8 +1709,6 @@ pub fn parse_spread_instrument(
         .maybe_min_quantity(min_quantity)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         .ts_event(ts_event)
         .ts_init(ts_init)
@@ -1883,12 +1840,10 @@ struct CommonInstrumentData {
     min_price: Option<Price>,
 }
 
-/// Margin and fee configuration for an instrument.
-struct MarginAndFees {
+/// Margin rates for an instrument.
+struct MarginRates {
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
 }
 
 /// Parses the multiplier as the product of `ct_mult` and `ct_val`.
@@ -1935,7 +1890,7 @@ trait InstrumentParser {
         &self,
         definition: &OKXInstrument,
         common: CommonInstrumentData,
-        margin_fees: MarginAndFees,
+        margin: MarginRates,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny>;
 }
@@ -2019,19 +1974,15 @@ fn parse_instrument_with_parser<P: InstrumentParser>(
     parser: &P,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let common = parse_common_instrument_data(definition)?;
     parser.parse_specific_fields(
         definition,
         common,
-        MarginAndFees {
+        MarginRates {
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
         },
         ts_init,
     )
@@ -2045,7 +1996,7 @@ impl InstrumentParser for SpotInstrumentParser {
         &self,
         definition: &OKXInstrument,
         common: CommonInstrumentData,
-        margin_fees: MarginAndFees,
+        margin: MarginRates,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny> {
         let context = format!("{} instrument {}", definition.inst_type, definition.inst_id);
@@ -2075,10 +2026,8 @@ impl InstrumentParser for SpotInstrumentParser {
             .maybe_min_notional(common.min_notional)
             .maybe_max_price(common.max_price)
             .maybe_min_price(common.min_price)
-            .maybe_margin_init(margin_fees.margin_init)
-            .maybe_margin_maint(margin_fees.margin_maint)
-            .maybe_maker_fee(margin_fees.maker_fee)
-            .maybe_taker_fee(margin_fees.taker_fee)
+            .maybe_margin_init(margin.margin_init)
+            .maybe_margin_maint(margin.margin_maint)
             .maybe_info(info)
             .ts_event(ts_init)
             .ts_init(ts_init)
@@ -2098,8 +2047,6 @@ pub fn parse_spot_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     parse_instrument_with_parser(
@@ -2107,8 +2054,6 @@ pub fn parse_spot_instrument(
         &SpotInstrumentParser,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_init,
     )
 }
@@ -2141,8 +2086,6 @@ pub fn parse_swap_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2248,8 +2191,6 @@ pub fn parse_swap_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         // No ts_event for response
         .ts_event(ts_init)
@@ -2273,8 +2214,6 @@ pub fn parse_futures_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2391,8 +2330,6 @@ pub fn parse_futures_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         // No ts_event for response
         .ts_event(ts_init)
@@ -2491,8 +2428,6 @@ pub fn parse_option_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2617,8 +2552,6 @@ pub fn parse_option_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -2705,8 +2638,6 @@ pub fn parse_event_contract_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let common = parse_common_instrument_data(definition)?;
@@ -2743,8 +2674,6 @@ pub fn parse_event_contract_instrument(
         .min_price(Price::from("0"))
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .info(info)
         .ts_event(ts_init)
         .ts_init(ts_init)
@@ -3320,8 +3249,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD"));
@@ -3361,8 +3289,7 @@ mod tests {
             vec![Ustr::from("USD"), Ustr::from("USDC")]
         );
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USDC.OKX"));
         assert_eq!(instrument.quote_currency(), Currency::USDC());
@@ -3391,8 +3318,7 @@ mod tests {
         assert_eq!(okx_inst.float_px_lmt_pct, "0.03");
         assert_eq!(okx_inst.max_px_lmt_pct, "0.15");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CurrencyPair(pair) = instrument else {
             panic!("expected CurrencyPair");
@@ -3415,8 +3341,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USDT"));
@@ -3449,8 +3374,7 @@ mod tests {
         }
 
         let okx_inst = response.data.first().unwrap();
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         // Should parse the multiplier as product of ctMult * ctVal (0.01 * 1 = 0.01)
         if let InstrumentAny::CurrencyPair(pair) = instrument {
@@ -3471,7 +3395,7 @@ mod tests {
         }
 
         let okx_inst = response.data.first().unwrap();
-        let result = parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default());
+        let result = parse_spot_instrument(okx_inst, None, None, UnixNanos::default());
 
         // Should error instead of silently defaulting to 1.0
         assert!(result.is_err());
@@ -3484,66 +3408,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_spot_instrument_with_fees() {
-        let json_data = load_test_json("http_get_instruments_spot.json");
-        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
-        let okx_inst = response.data.first().unwrap();
-
-        let maker_fee = Some(dec!(0.0008));
-        let taker_fee = Some(dec!(0.0010));
-
-        let instrument = parse_spot_instrument(
-            okx_inst,
-            None,
-            None,
-            maker_fee,
-            taker_fee,
-            UnixNanos::default(),
-        )
-        .unwrap();
-
-        // Should apply the provided fees to the instrument
-        if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, dec!(0.0008));
-            assert_eq!(pair.taker_fee, dec!(0.0010));
-        } else {
-            panic!("Expected CurrencyPair instrument");
-        }
-    }
-
-    #[rstest]
-    fn test_parse_instrument_any_passes_through_fees() {
-        // parse_instrument_any receives fees already converted to Nautilus format
-        // (negation happens in HTTP client when parsing OKX API values)
-        let json_data = load_test_json("http_get_instruments_spot.json");
-        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
-        let okx_inst = response.data.first().unwrap();
-
-        // Fees are already in Nautilus convention (negated by HTTP client)
-        let maker_fee = Some(dec!(-0.00025)); // Nautilus: rebate (negative)
-        let taker_fee = Some(dec!(0.00050)); // Nautilus: commission (positive)
-
-        let instrument = parse_instrument_any(
-            okx_inst,
-            None,
-            None,
-            maker_fee,
-            taker_fee,
-            UnixNanos::default(),
-        )
-        .unwrap()
-        .expect("Should parse spot instrument");
-
-        // Fees should pass through unchanged
-        if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, dec!(-0.00025));
-            assert_eq!(pair.taker_fee, dec!(0.00050));
-        } else {
-            panic!("Expected CurrencyPair instrument");
-        }
-    }
-
-    #[rstest]
     fn test_parse_swap_instrument() {
         let json_data = load_test_json("http_get_instruments_swap.json");
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
@@ -3552,8 +3416,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-SWAP.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD-SWAP"));
@@ -3588,8 +3451,7 @@ mod tests {
         okx_inst.float_px_lmt_pct = "0.03".to_string();
         okx_inst.max_px_lmt_pct = "0.15".to_string();
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
             panic!("expected CryptoPerpetual");
@@ -3621,8 +3483,7 @@ mod tests {
         let okx_spread = response.data.first().expect("Test data must have a spread");
 
         let instrument =
-            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_spread_instrument(okx_spread, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
             panic!("Expected CryptoFuturesSpread");
@@ -3673,8 +3534,7 @@ mod tests {
             .expect("Test data must have a linear spread");
 
         let instrument =
-            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_spread_instrument(okx_spread, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
             panic!("Expected CryptoFuturesSpread");
@@ -3721,8 +3581,6 @@ mod tests {
         let response: OKXResponse<OKXSpread> = serde_json::from_value(payload).unwrap();
         let instrument = parse_spread_instrument(
             response.data.first().expect("Test data must have a spread"),
-            None,
-            None,
             None,
             None,
             UnixNanos::default(),
@@ -3776,8 +3634,6 @@ mod tests {
         let response: OKXResponse<OKXSpread> = serde_json::from_value(payload).unwrap();
         let result = parse_spread_instrument(
             response.data.first().expect("Test data must have a spread"),
-            None,
-            None,
             None,
             None,
             UnixNanos::default(),
@@ -3834,15 +3690,8 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let parsed = parse_event_contract_instrument(
-            &instrument,
-            None,
-            None,
-            Some(dec!(-0.0002)),
-            Some(dec!(-0.0005)),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let parsed =
+            parse_event_contract_instrument(&instrument, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::BinaryOption(binary) = parsed else {
             panic!("Expected BinaryOption");
@@ -3857,8 +3706,6 @@ mod tests {
         assert_eq!(binary.price_increment, Price::from("0.001"));
         assert_eq!(binary.size_increment, Quantity::from(1));
         assert_eq!(binary.description, Some(Ustr::from("BTC-ABOVE-DAILY")));
-        assert_eq!(binary.maker_fee, dec!(-0.0002));
-        assert_eq!(binary.taker_fee, dec!(-0.0005));
     }
 
     #[rstest]
@@ -3872,8 +3719,7 @@ mod tests {
             .find(|i| i.inst_id == "ETH-USDT-SWAP")
             .expect("ETH-USDT-SWAP must be in test data");
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("ETH-USDT-SWAP.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("ETH-USDT-SWAP"));
@@ -3974,8 +3820,7 @@ mod tests {
             .expect("Test data must have an instrument");
 
         let instrument =
-            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_futures_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-241220.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD-241220"));
@@ -4012,8 +3857,7 @@ mod tests {
         okx_inst.max_px_lmt_pct = "0.12".to_string();
 
         let instrument =
-            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_futures_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuture(crypto_future) = instrument else {
             panic!("expected CryptoFuture");
@@ -4075,9 +3919,8 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let parsed =
-            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default())
-                .expect("parses synthetic X-Perp instrument");
+        let parsed = parse_futures_instrument(&instrument, None, None, UnixNanos::default())
+            .expect("parses synthetic X-Perp instrument");
 
         let InstrumentAny::CryptoFuture(crypto_future) = parsed else {
             panic!("expected CryptoFuture for X-Perp");
@@ -4099,8 +3942,7 @@ mod tests {
             .expect("Test data must have an instrument");
 
         let instrument =
-            parse_option_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_option_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(
             instrument.id(),
@@ -5609,8 +5451,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_swap_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -5659,8 +5500,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_futures_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -5711,8 +5551,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_option_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -5765,8 +5604,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_option_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -6484,8 +6322,7 @@ mod tests {
         assert_eq!(okx_inst.rpi_min_level, Some(5));
         assert_eq!(okx_inst.rpi_min_px_band, Some(Decimal::from(20)));
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
         let InstrumentAny::CurrencyPair(pair) = instrument else {
             panic!("expected CurrencyPair");
         };

@@ -56,7 +56,6 @@ use nautilus_network::{
 };
 use parking_lot::RwLock;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -75,9 +74,8 @@ use crate::{
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
-            parse_fill_report, parse_order_status_report, parse_spot_instrument_with_fee_rates,
-            parse_tokenized_instrument_with_fee_rates, parse_trade_tick_from_array,
-            truncate_cl_ord_id,
+            parse_fill_report, parse_order_status_report, parse_spot_instrument,
+            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -329,6 +327,10 @@ impl KrakenSpotRawHttpClient {
             .await
     }
 
+    #[allow(
+        dead_code,
+        reason = "TradeVolume transport retained for account fee-rate follow-up"
+    )]
     async fn send_json_request<T: DeserializeOwned, P: Serialize>(
         &self,
         method: Method,
@@ -1273,6 +1275,10 @@ impl KrakenSpotRawHttpClient {
         })
     }
 
+    #[allow(
+        dead_code,
+        reason = "TradeVolume endpoint retained for account fee-rate follow-up"
+    )]
     async fn get_trade_volume(
         &self,
         params: &SpotTradeVolumeParams,
@@ -1322,11 +1328,19 @@ enum RequestBody {
     Json(serde_json::Value),
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 struct SpotTradeVolumeParams {
     pair: SpotTradeVolumePairs,
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 #[serde(untagged)]
 enum SpotTradeVolumePairs {
@@ -1334,12 +1348,20 @@ enum SpotTradeVolumePairs {
     Classified(Vec<SpotTradeVolumePair>),
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 struct SpotTradeVolumePair {
     asset: String,
     aclass: SpotTradeVolumeAssetClass,
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum SpotTradeVolumeAssetClass {
@@ -1646,10 +1668,6 @@ impl KrakenSpotHttpClient {
     ///
     /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
     /// (xStocks) and merges them with the default currency pairs.
-    /// When credentials are configured, instruments use account fee rates from `TradeVolume`;
-    /// otherwise, they use the public base-tier rates from `AssetPairs`. When the `TradeVolume`
-    /// request itself fails, instruments load with the public rates rather than failing, so a fee
-    /// problem cannot take down the execution client on connect.
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
@@ -1657,18 +1675,10 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
         self.record_pair_aliases(&asset_pairs);
-        let fee_rates = self.request_fee_rates(&asset_pairs, None).await?;
-
         let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
-                match parse_spot_instrument_with_fee_rates(
-                    pair_name,
-                    definition,
-                    fee_rates.get(pair_name).copied(),
-                    ts_init,
-                    ts_init,
-                ) {
+                match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
                     Ok(instrument) => Some((instrument, definition)),
                     Err(e) => {
                         log::warn!("Failed to parse instrument {pair_name}: {e}");
@@ -1703,21 +1713,11 @@ impl KrakenSpotHttpClient {
                         log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                     }
                     self.record_pair_aliases(&tokenized_pairs);
-                    let fee_rates = self
-                        .request_fee_rates(
-                            &tokenized_pairs,
-                            Some(SpotTradeVolumeAssetClass::EquityPair),
-                        )
-                        .await?;
-                    let tokenized_instruments: Vec<InstrumentAny> = tokenized_pairs
-                        .iter()
-                        .filter_map(|(pair_name, definition)| {
-                            match parse_tokenized_instrument_with_fee_rates(
-                                pair_name,
-                                definition,
-                                fee_rates.get(pair_name).copied(),
-                                ts_init,
-                                ts_init,
+                    let tokenized_instruments: Vec<InstrumentAny> =
+                        tokenized_pairs
+                            .iter()
+                            .filter_map(|(pair_name, definition)| match parse_tokenized_instrument(
+                                pair_name, definition, ts_init, ts_init,
                             ) {
                                 Ok(instrument) => Some(instrument),
                                 Err(e) => {
@@ -1726,9 +1726,8 @@ impl KrakenSpotHttpClient {
                                     );
                                     None
                                 }
-                            }
-                        })
-                        .collect();
+                            })
+                            .collect();
                     instruments.extend(tokenized_instruments);
                 }
                 Err(e) => {
@@ -1738,81 +1737,6 @@ impl KrakenSpotHttpClient {
         }
 
         Ok(instruments)
-    }
-
-    async fn request_fee_rates(
-        &self,
-        pairs: &AssetPairsResponse,
-        asset_class: Option<SpotTradeVolumeAssetClass>,
-    ) -> anyhow::Result<AHashMap<String, (Decimal, Decimal)>, KrakenHttpError> {
-        if self.inner.credential().is_none() || pairs.is_empty() {
-            return Ok(AHashMap::new());
-        }
-
-        let (pair_ids, fee_keys) = match asset_class {
-            Some(aclass) => {
-                let mut assets = IndexMap::new();
-                let mut fee_keys = AHashMap::with_capacity(pairs.len());
-                for (pair_name, definition) in pairs {
-                    let base = definition.base.strip_suffix('x').ok_or_else(|| {
-                        KrakenHttpError::ParseError(format!(
-                            "Tokenized pair {pair_name} base {} is missing the x suffix",
-                            definition.base
-                        ))
-                    })?;
-                    let quote = normalize_currency_code(definition.quote.as_str());
-                    let asset = format!("{base}/{quote}");
-                    let fee_key = format!("{base}{}.EQ", definition.quote);
-                    assets.insert(asset, ());
-                    fee_keys.insert(pair_name.clone(), fee_key);
-                }
-                let pairs = assets
-                    .into_keys()
-                    .map(|asset| SpotTradeVolumePair { asset, aclass })
-                    .collect();
-                (SpotTradeVolumePairs::Classified(pairs), fee_keys)
-            }
-            None => (
-                SpotTradeVolumePairs::Names(pairs.keys().cloned().collect::<Vec<_>>().join(",")),
-                pairs
-                    .keys()
-                    .map(|pair_name| (pair_name.clone(), pair_name.clone()))
-                    .collect(),
-            ),
-        };
-        // A failure to resolve account fee rates must not abort instrument loading: this runs on
-        // the execution client connect path, where losing the listing costs the account state and
-        // reconciliation. Fall back to the public base-tier rates from `AssetPairs` instead.
-        // A malformed response is still an error, see the fee-key lookup below.
-        let response = match self
-            .inner
-            .get_trade_volume(&SpotTradeVolumeParams { pair: pair_ids })
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                log::warn!(
-                    "Failed to request Kraken account fee rates, falling back to public rates: {e}"
-                );
-                return Ok(AHashMap::new());
-            }
-        };
-
-        fee_keys
-            .into_iter()
-            .map(|(pair_name, fee_key)| {
-                let taker = response.fees.get(&fee_key).ok_or_else(|| {
-                    KrakenHttpError::ParseError(format!(
-                        "TradeVolume response missing taker fee for {pair_name}"
-                    ))
-                })?;
-                let maker = response.fees_maker.get(&fee_key).unwrap_or(taker);
-                let maker_fee = maker.fee / dec!(100);
-                let taker_fee = taker.fee / dec!(100);
-
-                Ok((pair_name.clone(), (maker_fee, taker_fee)))
-            })
-            .collect()
     }
 
     /// Requests the current market status for Kraken Spot instruments.

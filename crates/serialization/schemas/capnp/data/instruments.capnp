@@ -38,8 +38,8 @@ struct BettingInstrument {
     sizeIncrement @22 :Types.Quantity;
     marginInit @23 :Types.Decimal;
     marginMaint @24 :Types.Decimal;
-    makerFee @25 :Types.Decimal;
-    takerFee @26 :Types.Decimal;
+    makerFee @25 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @26 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @27 :Types.Quantity;  # Optional
     minQuantity @28 :Types.Quantity;  # Optional
     maxNotional @29 :Types.Money;  # Optional
@@ -65,8 +65,8 @@ struct BinaryOption {
     sizeIncrement @9 :Types.Quantity;
     marginInit @10 :Types.Decimal;
     marginMaint @11 :Types.Decimal;
-    makerFee @12 :Types.Decimal;
-    takerFee @13 :Types.Decimal;
+    makerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @13 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     eventId @14 :Text;  # Optional
     outcome @15 :Text;  # Optional
     description @16 :Text;  # Optional
@@ -94,8 +94,8 @@ struct Cfd {
     sizeIncrement @8 :Types.Quantity;
     marginInit @9 :Types.Decimal;
     marginMaint @10 :Types.Decimal;
-    makerFee @11 :Types.Decimal;
-    takerFee @12 :Types.Decimal;
+    makerFee @11 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     lotSize @13 :Types.Quantity;  # Optional
     maxQuantity @14 :Types.Quantity;  # Optional
     minQuantity @15 :Types.Quantity;  # Optional
@@ -120,8 +120,8 @@ struct Commodity {
     sizeIncrement @7 :Types.Quantity;
     marginInit @8 :Types.Decimal;
     marginMaint @9 :Types.Decimal;
-    makerFee @10 :Types.Decimal;
-    takerFee @11 :Types.Decimal;
+    makerFee @10 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @11 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     lotSize @12 :Types.Quantity;  # Optional
     maxQuantity @13 :Types.Quantity;  # Optional
     minQuantity @14 :Types.Quantity;  # Optional
@@ -152,8 +152,8 @@ struct CryptoFuture {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Types.Decimal;
-    takerFee @17 :Types.Decimal;
+    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @18 :Types.Quantity;  # Optional
     minQuantity @19 :Types.Quantity;  # Optional
     maxNotional @20 :Types.Money;  # Optional
@@ -184,8 +184,8 @@ struct CryptoFuturesSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Types.Decimal;
-    takerFee @18 :Types.Decimal;
+    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @19 :Types.Quantity;  # Optional
     minQuantity @20 :Types.Quantity;  # Optional
     maxNotional @21 :Types.Money;  # Optional
@@ -217,8 +217,8 @@ struct CryptoOption {
     lotSize @15 :Types.Quantity;
     marginInit @16 :Types.Decimal;
     marginMaint @17 :Types.Decimal;
-    makerFee @18 :Types.Decimal;
-    takerFee @19 :Types.Decimal;
+    makerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @19 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @20 :Types.Quantity;  # Optional
     minQuantity @21 :Types.Quantity;  # Optional
     maxNotional @22 :Types.Money;  # Optional
@@ -249,8 +249,8 @@ struct CryptoOptionSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Types.Decimal;
-    takerFee @18 :Types.Decimal;
+    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @19 :Types.Quantity;  # Optional
     minQuantity @20 :Types.Quantity;  # Optional
     maxNotional @21 :Types.Money;  # Optional
@@ -278,8 +278,8 @@ struct CryptoPerpetual {
     lotSize @11 :Types.Quantity;
     marginInit @12 :Types.Decimal;
     marginMaint @13 :Types.Decimal;
-    makerFee @14 :Types.Decimal;
-    takerFee @15 :Types.Decimal;
+    makerFee @14 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @15 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @16 :Types.Quantity;  # Optional
     minQuantity @17 :Types.Quantity;  # Optional
     maxNotional @18 :Types.Money;  # Optional
@@ -305,8 +305,8 @@ struct CurrencyPair {
     lotSize @9 :Types.Quantity;  # Optional
     marginInit @10 :Types.Decimal;
     marginMaint @11 :Types.Decimal;
-    makerFee @12 :Types.Decimal;
-    takerFee @13 :Types.Decimal;
+    makerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @13 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @14 :Types.Quantity;  # Optional
     minQuantity @15 :Types.Quantity;  # Optional
     maxNotional @16 :Types.Money;  # Optional
@@ -328,8 +328,8 @@ struct Equity {
     priceIncrement @5 :Types.Price;
     marginInit @6 :Types.Decimal;
     marginMaint @7 :Types.Decimal;
-    makerFee @8 :Types.Decimal;
-    takerFee @9 :Types.Decimal;
+    makerFee @8 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @9 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     lotSize @10 :Types.Quantity;  # Optional
     maxQuantity @11 :Types.Quantity;  # Optional
     minQuantity @12 :Types.Quantity;  # Optional
@@ -358,8 +358,8 @@ struct FuturesContract {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Types.Decimal;
-    takerFee @17 :Types.Decimal;
+    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @18 :Types.Quantity;  # Optional
     minQuantity @19 :Types.Quantity;  # Optional
     maxPrice @20 :Types.Price;  # Optional
@@ -388,8 +388,8 @@ struct FuturesSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Types.Decimal;
-    takerFee @18 :Types.Decimal;
+    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @19 :Types.Quantity;  # Optional
     minQuantity @20 :Types.Quantity;  # Optional
     maxPrice @21 :Types.Price;  # Optional
@@ -433,8 +433,8 @@ struct OptionContract {
     lotSize @15 :Types.Quantity;
     marginInit @16 :Types.Decimal;
     marginMaint @17 :Types.Decimal;
-    makerFee @18 :Types.Decimal;
-    takerFee @19 :Types.Decimal;
+    makerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @19 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @20 :Types.Quantity;  # Optional
     minQuantity @21 :Types.Quantity;  # Optional
     maxPrice @22 :Types.Price;  # Optional
@@ -463,8 +463,8 @@ struct OptionSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Types.Decimal;
-    takerFee @18 :Types.Decimal;
+    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @19 :Types.Quantity;  # Optional
     minQuantity @20 :Types.Quantity;  # Optional
     maxPrice @21 :Types.Price;  # Optional
@@ -492,8 +492,8 @@ struct PerpetualContract {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Types.Decimal;
-    takerFee @17 :Types.Decimal;
+    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @18 :Types.Quantity;  # Optional
     minQuantity @19 :Types.Quantity;  # Optional
     maxNotional @20 :Types.Money;  # Optional
@@ -521,8 +521,8 @@ struct TokenizedAsset {
     lotSize @11 :Types.Quantity;  # Optional
     marginInit @12 :Types.Decimal;
     marginMaint @13 :Types.Decimal;
-    makerFee @14 :Types.Decimal;
-    takerFee @15 :Types.Decimal;
+    makerFee @14 :Void;  # retired: maker/taker fees are account-owned, do not reuse
+    takerFee @15 :Void;  # retired: maker/taker fees are account-owned, do not reuse
     maxQuantity @16 :Types.Quantity;  # Optional
     minQuantity @17 :Types.Quantity;  # Optional
     maxNotional @18 :Types.Money;  # Optional

@@ -114,8 +114,6 @@ use nautilus_persistence::test_data::RustTestCustomData;
 #[cfg(feature = "streaming")]
 use nautilus_serialization::ensure_custom_data_registered;
 use rstest::*;
-#[cfg(feature = "defi")]
-use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -13241,7 +13239,6 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
                 .size_precision(8)
                 .price_increment(Price::from("0.000001"))
                 .size_increment(Quantity::from("0.00000001"))
-                .maybe_taker_fee(pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)))
                 .ts_event(pool.ts_event)
                 .ts_init(pool.ts_init)
                 .build()

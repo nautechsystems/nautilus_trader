@@ -943,8 +943,6 @@ pub(crate) fn create_test_instrument(symbol: &str) -> InstrumentAny {
         .size_increment(Quantity::new(0.001, 3))
         .margin_init(Decimal::new(1, 2))
         .margin_maint(Decimal::new(5, 3))
-        .maker_fee(Decimal::new(2, 4))
-        .taker_fee(Decimal::new(5, 4))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()

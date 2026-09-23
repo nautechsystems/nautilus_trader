@@ -263,10 +263,6 @@ impl AxRawHttpClient {
         *self.session_token.write() = Some(token);
     }
 
-    pub(crate) fn has_session_token(&self) -> bool {
-        self.session_token.read().is_some()
-    }
-
     fn default_headers() -> HashMap<String, String> {
         let mut headers: HashMap<String, String> =
             create_standard_nautilus_headers().into_iter().collect();
@@ -1363,8 +1359,7 @@ impl AxHttpClient {
     ///
     /// AX reports fee rates per account rather than per user, and returns the accounts the
     /// credentials can act on. The first entry is used, which is the account AX resolves when a
-    /// request carries no explicit selector. The rates are retained so later instrument requests,
-    /// including the periodic refresh, keep reporting them.
+    /// request carries no explicit selector. Instruments do not carry these rates.
     ///
     /// Requires an authenticated client.
     ///
@@ -1405,24 +1400,16 @@ impl AxHttpClient {
 
     /// Requests all instruments from Ax.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
-    pub async fn request_instruments(
-        &self,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
+    pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let resp = self
             .inner
             .get_instruments()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
@@ -1438,7 +1425,7 @@ impl AxHttpClient {
                 continue;
             }
 
-            match parse_instrument(inst, maker_fee, taker_fee, ts_init, ts_init) {
+            match parse_instrument(inst, ts_init, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => {
                     log::warn!("Failed to parse instrument {}: {e}", inst.symbol);
@@ -1451,56 +1438,19 @@ impl AxHttpClient {
 
     /// Requests a single instrument from Ax by symbol.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
-    pub async fn request_instrument(
-        &self,
-        symbol: Ustr,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> anyhow::Result<InstrumentAny> {
+    pub async fn request_instrument(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         let resp = self
             .inner
             .get_instrument(symbol)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
-        parse_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
-    }
-
-    fn resolve_fees(
-        &self,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> (Decimal, Decimal) {
-        let resolved = self.account_fees.load();
-
-        let Some(&(resolved_maker, resolved_taker)) = resolved.as_deref() else {
-            // Either rate missing becomes zero, so warn on a partial argument too
-            if (maker_fee.is_none() || taker_fee.is_none()) && self.inner.has_session_token() {
-                log::warn!(
-                    "Building instruments with zero fees: authenticated but account fee rates \
-                     were never resolved"
-                );
-            }
-
-            return (
-                maker_fee.unwrap_or(Decimal::ZERO),
-                taker_fee.unwrap_or(Decimal::ZERO),
-            );
-        };
-
-        (
-            maker_fee.unwrap_or(resolved_maker),
-            taker_fee.unwrap_or(resolved_taker),
-        )
+        parse_instrument(&resp, ts_init, ts_init)
     }
 
     /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].
@@ -2364,12 +2314,9 @@ impl AxHttpClient {
             return Ok(instrument);
         }
 
-        let instrument = self
-            .request_instrument(symbol, None, None)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
-            })?;
+        let instrument = self.request_instrument(symbol).await.map_err(|e| {
+            anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
+        })?;
         self.cache_instrument(instrument.clone());
         Ok(instrument)
     }

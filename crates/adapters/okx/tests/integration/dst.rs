@@ -107,7 +107,7 @@ fn load_spot_instruments() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+            parse_instrument_any(raw, None, None, UnixNanos::default())
                 .ok()
                 .flatten()
         })

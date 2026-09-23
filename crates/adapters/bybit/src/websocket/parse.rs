@@ -1110,35 +1110,18 @@ mod tests {
 
     use ustr::Ustr;
 
-    use crate::http::models::BybitFeeRate;
-
-    fn sample_fee_rate(
-        symbol: &str,
-        taker: &str,
-        maker: &str,
-        base_coin: Option<&str>,
-    ) -> BybitFeeRate {
-        BybitFeeRate {
-            symbol: Ustr::from(symbol),
-            taker_fee_rate: taker.to_string(),
-            maker_fee_rate: maker.to_string(),
-            base_coin: base_coin.map(Ustr::from),
-        }
-    }
-
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
-        parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
+        parse_linear_instrument(instrument, TS, TS).unwrap()
     }
 
     fn option_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_option.json");
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        parse_option_instrument(instrument, None, TS, TS).unwrap()
+        parse_option_instrument(instrument, TS, TS).unwrap()
     }
 
     #[rstest]
@@ -1746,14 +1729,7 @@ mod tests {
         let instruments_response: crate::http::models::BybitInstrumentLinearResponse =
             serde_json::from_str(&instruments_json).unwrap();
         let eth_def = &instruments_response.result.list[1]; // ETHUSDT is second in the list
-        let fee_rate = crate::http::models::BybitFeeRate {
-            symbol: Ustr::from("ETHUSDT"),
-            taker_fee_rate: "0.00055".to_string(),
-            maker_fee_rate: "0.0001".to_string(),
-            base_coin: Some(Ustr::from("ETH")),
-        };
-        let instrument =
-            crate::common::parse::parse_linear_instrument(eth_def, &fee_rate, TS, TS).unwrap();
+        let instrument = crate::common::parse::parse_linear_instrument(eth_def, TS, TS).unwrap();
 
         let json = load_test_json("ws_account_position_short.json");
         let msg: crate::websocket::messages::BybitWsAccountPositionMsg =

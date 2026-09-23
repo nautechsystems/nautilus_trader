@@ -2661,7 +2661,7 @@ fn query_order_instrument() -> InstrumentAny {
         .find(|instrument| instrument.inst_id == Ustr::from("ETH-USDT-SWAP"))
         .expect("expected ETH-USDT-SWAP fixture");
 
-    parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+    parse_instrument_any(raw, None, None, UnixNanos::default())
         .unwrap()
         .expect("expected parsed ETH-USDT-SWAP instrument")
 }
@@ -2675,7 +2675,7 @@ fn btc_usdt_swap_instrument() -> InstrumentAny {
         .find(|instrument| instrument.inst_id == Ustr::from("BTC-USDT-SWAP"))
         .expect("expected BTC-USDT-SWAP fixture");
 
-    parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+    parse_instrument_any(raw, None, None, UnixNanos::default())
         .unwrap()
         .expect("expected parsed BTC-USDT-SWAP instrument")
 }

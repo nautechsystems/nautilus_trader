@@ -1296,42 +1296,26 @@ mod tests {
             parse::{parse_linear_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
-        http::models::{BybitFeeRate, BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
+        http::models::{BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
         websocket::messages::{
             BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
         },
     };
 
-    fn sample_fee_rate(
-        symbol: &str,
-        taker: &str,
-        maker: &str,
-        base_coin: Option<&str>,
-    ) -> BybitFeeRate {
-        BybitFeeRate {
-            symbol: Ustr::from(symbol),
-            taker_fee_rate: taker.to_string(),
-            maker_fee_rate: maker.to_string(),
-            base_coin: base_coin.map(Ustr::from),
-        }
-    }
-
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_linear_instrument(instrument, &fee_rate, ts, ts).unwrap()
+        parse_linear_instrument(instrument, ts, ts).unwrap()
     }
 
     fn spot_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_spot.json");
         let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.0006", "0.0001", Some("BTC"));
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_spot_instrument(instrument, &fee_rate, ts, ts).unwrap()
+        parse_spot_instrument(instrument, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {

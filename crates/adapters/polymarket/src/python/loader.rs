@@ -910,7 +910,6 @@ mod tests {
             loader.instrument.outcome.map(|value| value.to_string()),
             Some("No".to_string())
         );
-        assert_eq!(loader.instrument.taker_fee.to_string(), "0.02");
         assert_eq!(loader.resolution_metadata["closed"], true);
         assert_eq!(loader.resolution_metadata["tokens"][0]["winner"], true);
         assert_eq!(

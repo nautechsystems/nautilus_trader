@@ -1032,21 +1032,13 @@ impl OKXDataClient {
                 for okx_inst in okx_instruments {
                     let inst_key = okx_inst.inst_id;
                     let cached = instruments_by_symbol.get_cloned(&inst_key);
-                    let (margin_init, margin_maint, maker_fee, taker_fee) = cached
-                        .as_ref()
-                        .map_or((None, None, None, None), |instrument| {
+                    let (margin_init, margin_maint) =
+                        cached.as_ref().map_or((None, None), |instrument| {
                             extract_fees_from_cached_instrument(instrument)
                         });
                     let status_action = okx_status_to_market_action(okx_inst.state);
                     let is_live = matches!(okx_inst.state, OKXInstrumentStatus::Live);
-                    match parse_instrument_any(
-                        &okx_inst,
-                        margin_init,
-                        margin_maint,
-                        maker_fee,
-                        taker_fee,
-                        ts_init,
-                    ) {
+                    match parse_instrument_any(&okx_inst, margin_init, margin_maint, ts_init) {
                         Ok(Some(inst_any)) => {
                             let instrument_id = inst_any.id();
                             let is_new_or_changed = cached.is_none_or(|cached| {
@@ -4543,8 +4535,6 @@ mod tests {
             &okx_inst,
             None,
             None,
-            None,
-            None,
             UnixNanos::from(1u64),
         )
         .expect("parse events instrument");
@@ -4624,26 +4614,12 @@ mod tests {
     fn definitions_match_ignores_event_timestamps() {
         let okx_instrument: OKXInstrument =
             serde_json::from_value(swap_definition("0.1")).expect("valid OKXInstrument");
-        let first = parse_instrument_any(
-            &okx_instrument,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::from(1u64),
-        )
-        .expect("parse")
-        .expect("instrument");
-        let second = parse_instrument_any(
-            &okx_instrument,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::from(2u64),
-        )
-        .expect("parse")
-        .expect("instrument");
+        let first = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(1u64))
+            .expect("parse")
+            .expect("instrument");
+        let second = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(2u64))
+            .expect("parse")
+            .expect("instrument");
 
         assert!(instrument_definitions_match(&first, &second));
     }
@@ -5236,7 +5212,7 @@ mod tests {
         let mut v2_item = test_payload("http_get_instruments_spot.json")["data"][0].clone();
         v2_item["tickSz"] = json!("0.5");
         let v2: OKXInstrument = serde_json::from_value(v2_item).expect("valid OKXInstrument");
-        let v2 = parse_instrument_any(&v2, None, None, None, None, UnixNanos::from(1u64))
+        let v2 = parse_instrument_any(&v2, None, None, UnixNanos::from(1u64))
             .expect("parse")
             .expect("instrument");
         {

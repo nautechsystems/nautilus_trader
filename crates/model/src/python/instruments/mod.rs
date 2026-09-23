@@ -486,13 +486,6 @@ impl_instrument_getter!(
     IndexInstrument,
 );
 impl_instrument_getter!(
-    "maker_fee",
-    py_maker_fee,
-    Decimal,
-    maker_fee,
-    IndexInstrument
-);
-impl_instrument_getter!(
     "margin_init",
     py_margin_init,
     Decimal,
@@ -583,13 +576,6 @@ impl_instrument_getter!(
     FuturesSpread,
     OptionContract,
     OptionSpread,
-);
-impl_instrument_getter!(
-    "taker_fee",
-    py_taker_fee,
-    Decimal,
-    taker_fee,
-    IndexInstrument
 );
 
 pub mod betting;

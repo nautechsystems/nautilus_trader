@@ -28,7 +28,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
-use rust_decimal::Decimal;
 
 use crate::{
     common::{
@@ -234,27 +233,15 @@ impl AxHttpClient {
 
     /// Requests all instruments from Ax.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (maker_fee=None, taker_fee=None))]
-    fn py_request_instruments<'py>(
-        &self,
-        py: Python<'py>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let instruments = client
-                .request_instruments(maker_fee, taker_fee)
-                .await
-                .map_err(to_pyvalue_err)?;
+            let instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments

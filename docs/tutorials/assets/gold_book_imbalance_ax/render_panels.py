@@ -152,8 +152,6 @@ def run_backtest() -> object:
         lot_size=Quantity.from_int(1),
         margin_init=Decimal("0.08"),
         margin_maint=Decimal("0.04"),
-        maker_fee=Decimal("0.0002"),
-        taker_fee=Decimal("0.0005"),
         ts_event=0,
         ts_init=0,
     )

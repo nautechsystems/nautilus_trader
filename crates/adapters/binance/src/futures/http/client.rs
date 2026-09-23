@@ -94,7 +94,6 @@ use crate::{
             BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
             BinanceSide, BinanceTimeInForce, BinanceWorkingType,
         },
-        fees::futures_fee_tier_rates,
         instruments::BinanceInstrumentSelector,
         models::BinanceErrorResponse,
         parse::{
@@ -2131,7 +2130,6 @@ impl BinanceFuturesHttpClient {
         let selector = BinanceInstrumentSelector::new(config)
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
         let ts_init = UnixNanos::default();
-        let fallback_fees = self.futures_fallback_fees(config).await;
         let mut cache = Vec::new();
         let mut reconciliation = AHashMap::new();
 
@@ -2162,17 +2160,7 @@ impl BinanceFuturesHttpClient {
                         continue;
                     }
 
-                    let fees = self
-                        .futures_symbol_fees(config, &symbol.symbol, fallback_fees)
-                        .await;
-
-                    match parse_usdm_instrument_with_fees(
-                        &symbol,
-                        Some(fees.0),
-                        Some(fees.1),
-                        ts_init,
-                        ts_init,
-                    ) {
+                    match parse_usdm_instrument_with_fees(&symbol, ts_init, ts_init) {
                         Ok(instrument) => {
                             validate_reconciliation_instrument(
                                 &mut reconciliation,
@@ -2224,17 +2212,7 @@ impl BinanceFuturesHttpClient {
                         continue;
                     }
 
-                    let fees = self
-                        .futures_symbol_fees(config, &symbol.symbol, fallback_fees)
-                        .await;
-
-                    match parse_coinm_instrument_with_fees(
-                        &symbol,
-                        Some(fees.0),
-                        Some(fees.1),
-                        ts_init,
-                        ts_init,
-                    ) {
+                    match parse_coinm_instrument_with_fees(&symbol, ts_init, ts_init) {
                         Ok(instrument) => {
                             validate_reconciliation_instrument(
                                 &mut reconciliation,
@@ -2271,53 +2249,6 @@ impl BinanceFuturesHttpClient {
         self.replace_instruments(cache)?;
         self.instruments_reconciliation.store(reconciliation);
         Ok(instruments)
-    }
-
-    async fn futures_fallback_fees(
-        &self,
-        config: &BinanceInstrumentProviderConfig,
-    ) -> (Decimal, Decimal) {
-        if !self.has_credentials() {
-            return futures_fee_tier_rates(0);
-        }
-
-        match self.query_account().await {
-            Ok(account) => futures_fee_tier_rates(account.fee_tier),
-            Err(e) => {
-                if config.log_warnings {
-                    log::warn!("Unable to query Binance Futures fee tier; using VIP 0 rates: {e}");
-                } else {
-                    log::debug!("Unable to query Binance Futures fee tier; using VIP 0 rates: {e}");
-                }
-                futures_fee_tier_rates(0)
-            }
-        }
-    }
-
-    async fn futures_symbol_fees(
-        &self,
-        config: &BinanceInstrumentProviderConfig,
-        symbol: &str,
-        fallback: (Decimal, Decimal),
-    ) -> (Decimal, Decimal) {
-        if !config.query_commission_rates || !self.has_credentials() {
-            return fallback;
-        }
-
-        let params = BinanceCommissionRateParams {
-            symbol: symbol.to_string(),
-        };
-
-        match self.inner.commission_rate(&params).await {
-            Ok(response) => parse_futures_commission_rates(&response).unwrap_or_else(|e| {
-                log_futures_commission_fallback(config, symbol, &e, fallback);
-                fallback
-            }),
-            Err(e) => {
-                log_futures_commission_fallback(config, symbol, &e, fallback);
-                fallback
-            }
-        }
     }
 
     /// Fetches 24hr ticker statistics.
@@ -3768,15 +3699,6 @@ fn parse_futures_funding_rate_update(
     ))
 }
 
-fn parse_futures_commission_rates(
-    response: &BinanceFuturesCommissionRate,
-) -> anyhow::Result<(Decimal, Decimal)> {
-    Ok((
-        response.maker_commission_rate.parse()?,
-        response.taker_commission_rate.parse()?,
-    ))
-}
-
 fn validate_reconciliation_instrument(
     instruments: &mut AHashMap<InstrumentId, InstrumentAny>,
     expected_id: InstrumentId,
@@ -3810,27 +3732,6 @@ fn log_futures_instrument_parse_error(
         log::warn!("Skipping Binance Futures instrument {symbol}: {error}");
     } else {
         log::debug!("Skipping Binance Futures instrument {symbol}: {error}");
-    }
-}
-
-fn log_futures_commission_fallback(
-    config: &BinanceInstrumentProviderConfig,
-    symbol: &str,
-    error: &dyn std::fmt::Display,
-    fallback: (Decimal, Decimal),
-) {
-    if config.log_warnings {
-        log::warn!(
-            "Unable to query Binance Futures commission for {symbol}; using maker={} taker={}: {error}",
-            fallback.0,
-            fallback.1,
-        );
-    } else {
-        log::debug!(
-            "Unable to query Binance Futures commission for {symbol}; using maker={} taker={}: {error}",
-            fallback.0,
-            fallback.1,
-        );
     }
 }
 
