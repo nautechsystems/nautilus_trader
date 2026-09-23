@@ -1740,12 +1740,23 @@ async fn cancel_order_for_spot(
     Ok(())
 }
 
+/// How Kraken identifies one order in a batch cancellation.
+///
+/// Kraken keys transaction IDs and client order IDs in separate request fields, so the two cannot
+/// be mixed into one array.
+enum SpotBatchCancelId {
+    VenueOrderId(String),
+    ClientOrderId(String),
+}
+
+const SPOT_BATCH_CANCEL_LIMIT: usize = 50;
+
 async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[CancelOrder]) {
-    let mut orders = Vec::new();
+    let mut ids = Vec::new();
 
     for cancel in cancels {
         match batch_cancel_item_for_spot(http, cancel) {
-            Ok(order) => orders.push(order),
+            Ok(id) => ids.push(id),
             Err(CommandFailure::NotSent(reason)) => {
                 log::warn!(
                     "Batch cancel command failed local validation for {}: {reason}",
@@ -1761,10 +1772,23 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
         }
     }
 
-    for chunk in orders.chunks(50) {
-        let params = KrakenSpotCancelOrderBatchParams {
-            orders: chunk.to_vec(),
-        };
+    // The venue limit counts both fields together, so chunk before splitting them.
+    for chunk in ids.chunks(SPOT_BATCH_CANCEL_LIMIT) {
+        let mut orders = Vec::new();
+        let mut cl_ord_ids = Vec::new();
+
+        for id in chunk {
+            match id {
+                SpotBatchCancelId::VenueOrderId(venue_order_id) => {
+                    orders.push(venue_order_id.clone());
+                }
+                SpotBatchCancelId::ClientOrderId(client_order_id) => {
+                    cl_ord_ids.push(client_order_id.clone());
+                }
+            }
+        }
+
+        let params = KrakenSpotCancelOrderBatchParams { orders, cl_ord_ids };
 
         match http.inner.cancel_order_batch(&params).await {
             Ok(response) => {
@@ -1793,7 +1817,7 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
 fn batch_cancel_item_for_spot(
     http: &KrakenSpotHttpClient,
     cancel: &CancelOrder,
-) -> Result<String, CommandFailure> {
+) -> Result<SpotBatchCancelId, CommandFailure> {
     http.get_cached_instrument(&cancel.instrument_id.symbol.inner())
         .ok_or_else(|| {
             CommandFailure::not_sent(
@@ -1802,9 +1826,11 @@ fn batch_cancel_item_for_spot(
         })?;
 
     if let Some(venue_order_id) = cancel.venue_order_id {
-        Ok(venue_order_id.to_string())
+        Ok(SpotBatchCancelId::VenueOrderId(venue_order_id.to_string()))
     } else {
-        Ok(truncate_cl_ord_id(&cancel.client_order_id))
+        Ok(SpotBatchCancelId::ClientOrderId(truncate_cl_ord_id(
+            &cancel.client_order_id,
+        )))
     }
 }
 

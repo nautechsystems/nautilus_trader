@@ -2749,6 +2749,35 @@ async fn test_futures_cancel_all_side_filter_uses_batch_path() {
     );
 }
 
+/// Returns the `orders` and `cl_ord_ids` arrays from the captured batch-cancel body.
+///
+/// Kraken keys transaction IDs and client order IDs separately, so a test that only looks for the
+/// identifier anywhere in the body would pass even if it were sent in the wrong field.
+async fn captured_batch_cancel_fields(state: &TestServerState) -> (Vec<String>, Vec<String>) {
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    let value: Value = serde_json::from_str(&body).expect("batch cancel body is JSON");
+
+    let read = |key: &str| -> Vec<String> {
+        value
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    (read("orders"), read("cl_ord_ids"))
+}
+
 /// Cancel-all must reach an order the venue may already hold while the cache still records it
 /// as submitted, without widening beyond the requested instrument.
 #[rstest]
@@ -2775,19 +2804,21 @@ async fn test_spot_cancel_all_includes_submitted_orders_within_instrument_scope(
 
     wait_for_count(&state.batch_cancel_request_count, 1).await;
 
-    let body = state
-        .last_batch_cancel_body
-        .lock()
-        .await
-        .clone()
-        .expect("batch cancel body");
+    let (orders, cl_ord_ids) = captured_batch_cancel_fields(&state).await;
+
+    // A submitted order has no venue ID yet, so Kraken requires it under `cl_ord_ids`.
     assert!(
-        body.contains("submitted-001"),
-        "a submitted order must still be cancelled: {body}"
+        cl_ord_ids.contains(&"submitted-001".to_string()),
+        "a submitted order must be cancelled by client order ID: orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
     );
     assert!(
-        !body.contains("submitted-other"),
-        "another instrument must stay untouched: {body}"
+        !orders.contains(&"submitted-001".to_string()),
+        "a client order ID must not be sent as a transaction ID: orders={orders:?}"
+    );
+    assert!(
+        !orders.contains(&"submitted-other".to_string())
+            && !cl_ord_ids.contains(&"submitted-other".to_string()),
+        "another instrument must stay untouched: orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
     );
 }
 
@@ -2915,16 +2946,20 @@ async fn test_spot_cancel_all_unsided_scopes_to_requested_instrument() {
 
     wait_for_count(&state.batch_cancel_request_count, 1).await;
 
-    let body = state
-        .last_batch_cancel_body
-        .lock()
-        .await
-        .clone()
-        .expect("batch cancel body");
-    assert!(body.contains("V-TARGET"), "body: {body}");
+    let (orders, cl_ord_ids) = captured_batch_cancel_fields(&state).await;
+
+    // An accepted order carries a venue ID, which Kraken expects under `orders`.
     assert!(
-        !body.contains("V-OTHER"),
-        "an order on another instrument must be untouched: {body}"
+        orders.contains(&"V-TARGET".to_string()),
+        "orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
+    );
+    assert!(
+        !cl_ord_ids.contains(&"V-TARGET".to_string()),
+        "a transaction ID must not be sent as a client order ID: cl_ord_ids={cl_ord_ids:?}"
+    );
+    assert!(
+        !orders.contains(&"V-OTHER".to_string()),
+        "an order on another instrument must be untouched: orders={orders:?}"
     );
     assert_eq!(
         state.cancel_all_request_count.load(Ordering::Relaxed),

@@ -345,7 +345,9 @@ time rather than silently coercing them.
   given, and selects matching cached open and in-flight orders by explicit order ID
   when one is.
 - Selected IDs go through the batch-cancel endpoint and are auto-chunked into
-  batches of 50. Each cancel keeps the owning strategy of the order it targets,
+  batches of 50. Kraken keys the two identifier kinds separately, so venue order
+  IDs are sent as `orders` and client order IDs as `cl_ord_ids`; the batch limit
+  counts both together. Each cancel keeps the owning strategy of the order it targets,
   and aggregate or ambiguous responses are left to reconciliation rather than
   producing per-order outcomes.
 

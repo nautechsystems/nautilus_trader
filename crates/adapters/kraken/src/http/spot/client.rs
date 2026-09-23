@@ -1072,10 +1072,16 @@ impl KrakenSpotRawHttpClient {
         let nonce = self.generate_nonce();
 
         // CancelOrderBatch uses JSON body with nonce included
-        let json_body = serde_json::json!({
-            "nonce": nonce.to_string(),
-            "orders": params.orders
-        });
+        let mut json_body = serde_json::json!({ "nonce": nonce.to_string() });
+
+        // Kraken keys transaction IDs and client order IDs separately, and rejects empty arrays.
+        if !params.orders.is_empty() {
+            json_body["orders"] = serde_json::json!(params.orders);
+        }
+
+        if !params.cl_ord_ids.is_empty() {
+            json_body["cl_ord_ids"] = serde_json::json!(params.cl_ord_ids);
+        }
         let json_str = serde_json::to_string(&json_body)
             .map_err(|e| KrakenHttpError::ParseError(format!("Failed to serialize: {e}")))?;
 
@@ -3018,7 +3024,10 @@ impl KrakenSpotHttpClient {
 
         for chunk in venue_order_ids.chunks(BATCH_CANCEL_LIMIT) {
             let orders: Vec<String> = chunk.iter().map(|id| id.to_string()).collect();
-            let params = KrakenSpotCancelOrderBatchParams { orders };
+            let params = KrakenSpotCancelOrderBatchParams {
+                orders,
+                cl_ord_ids: Vec::new(),
+            };
 
             let response = self.inner.cancel_order_batch(&params).await?;
             total_cancelled += response.count;
