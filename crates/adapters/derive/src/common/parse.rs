@@ -312,6 +312,9 @@ pub fn derive_rejection_due_post_only(code: Option<i64>, reason: &str) -> bool {
 /// settle in USDC, so Money currencies must match the account balances. The
 /// raw wire values remain in the instrument `info` payload.
 ///
+/// Derive can fill taker orders below `minimum_amount`, so that venue value
+/// remains in `info` rather than becoming an unconditional `min_quantity`.
+///
 /// # Errors
 ///
 /// Returns an error when a Derive instrument is missing required details or
@@ -353,7 +356,6 @@ fn parse_perp_instrument(
     let size_increment = quantity_from_decimal(instrument.amount_step, "amount_step")?;
     let multiplier = quantity_from_decimal(Decimal::ONE, "multiplier")?;
     let max_quantity = quantity_from_decimal(instrument.maximum_amount, "maximum_amount")?;
-    let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
     let perp = CryptoPerpetual::builder()
@@ -370,7 +372,6 @@ fn parse_perp_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .min_quantity(min_quantity)
         .maker_fee(instrument.maker_fee_rate)
         .taker_fee(instrument.taker_fee_rate)
         .info(info)
@@ -404,7 +405,6 @@ fn parse_option_instrument(
     let size_increment = quantity_from_decimal(instrument.amount_step, "amount_step")?;
     let multiplier = quantity_from_decimal(Decimal::ONE, "multiplier")?;
     let max_quantity = quantity_from_decimal(instrument.maximum_amount, "maximum_amount")?;
-    let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
     let option = CryptoOption::builder()
@@ -425,7 +425,6 @@ fn parse_option_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .min_quantity(min_quantity)
         .maker_fee(instrument.maker_fee_rate)
         .taker_fee(instrument.taker_fee_rate)
         .info(info)
@@ -448,7 +447,6 @@ fn parse_spot_instrument(
     let size_increment = quantity_from_decimal(instrument.amount_step, "amount_step")?;
     let multiplier = quantity_from_decimal(Decimal::ONE, "multiplier")?;
     let max_quantity = quantity_from_decimal(instrument.maximum_amount, "maximum_amount")?;
-    let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
     let pair = CurrencyPair::builder()
@@ -463,7 +461,6 @@ fn parse_spot_instrument(
         .multiplier(multiplier)
         .lot_size(size_increment)
         .max_quantity(max_quantity)
-        .min_quantity(min_quantity)
         .maker_fee(instrument.maker_fee_rate)
         .taker_fee(instrument.taker_fee_rate)
         .info(info)
@@ -481,11 +478,12 @@ fn parse_option_kind(kind: DeriveOptionKind) -> OptionKind {
     }
 }
 
-// Serializes the raw DeriveInstrument into the Nautilus `info` slot so
-// downstream consumers can read venue fields (base_asset_address,
-// base_asset_sub_id, base_fee, mark_price_fee_rate_cap, option_details,
-// perp_details, etc.) that the core instrument model does not expose.
+// Reconstruct metadata only for definitions created without a venue response
 fn derive_instrument_info(instrument: &DeriveInstrument) -> anyhow::Result<Params> {
+    if let Some(raw) = &instrument.raw {
+        return Ok(raw.clone());
+    }
+
     let value = serde_json::to_value(instrument)
         .context("failed to serialize DeriveInstrument for info field")?;
     let object = value
@@ -733,7 +731,7 @@ mod tests {
         assert_eq!(perp.price_increment(), Price::from("0.01"));
         assert_eq!(perp.size_increment(), Quantity::from("0.001"));
         assert_eq!(perp.max_quantity(), Some(Quantity::from("10000")));
-        assert_eq!(perp.min_quantity(), Some(Quantity::from("0.1")));
+        assert_eq!(perp.min_quantity(), None);
         assert_eq!(perp.maker_fee(), dec!(0.0001));
         assert_eq!(perp.taker_fee(), dec!(0.0003));
         assert!(!perp.is_inverse());
@@ -747,6 +745,7 @@ mod tests {
         assert_eq!(info.get_str("base_asset_sub_id"), Some("0"));
         // Normalization must not rewrite the raw venue payload.
         assert_eq!(info.get_str("quote_currency"), Some("USD"));
+        assert_eq!(info.get_str("minimum_amount"), Some("0.1"));
         assert!(info.get("perp_details").is_some_and(|v| v.is_object()));
     }
 
@@ -819,12 +818,13 @@ mod tests {
         assert_eq!(option.price_increment(), Price::from("0.1"));
         assert_eq!(option.size_increment(), Quantity::from("0.01"));
         assert_eq!(option.max_quantity(), Some(Quantity::from("10000")));
-        assert_eq!(option.min_quantity(), Some(Quantity::from("0.1")));
+        assert_eq!(option.min_quantity(), None);
         assert_eq!(option.taker_fee(), dec!(0.0003));
 
         let info = option.info.as_ref().expect("info populated");
         assert_eq!(info.get_str("instrument_name"), Some("ETH-20261225-3500-C"));
         assert_eq!(info.get_str("instrument_type"), Some("option"));
+        assert_eq!(info.get_str("minimum_amount"), Some("0.1"));
         let option_details = info.get("option_details").expect("option_details present");
         assert_eq!(
             option_details.get("option_type").and_then(|v| v.as_str()),
@@ -874,13 +874,14 @@ mod tests {
         assert_eq!(pair.price_increment(), Price::from("0.1"));
         assert_eq!(pair.size_increment(), Quantity::from("0.01"));
         assert_eq!(pair.max_quantity(), Some(Quantity::from("10000")));
-        assert_eq!(pair.min_quantity(), Some(Quantity::from("0.1")));
+        assert_eq!(pair.min_quantity(), None);
         assert_eq!(pair.maker_fee(), dec!(0));
         assert_eq!(pair.taker_fee(), dec!(0));
 
         let info = pair.info.as_ref().expect("info populated");
         assert_eq!(info.get_str("instrument_name"), Some("ETH-USDC"));
         assert_eq!(info.get_str("instrument_type"), Some("erc20"));
+        assert_eq!(info.get_str("minimum_amount"), Some("0.1"));
         assert_eq!(info.get_str("base_asset_sub_id"), Some("0"));
         assert_eq!(
             info.get_str("base_asset_address"),
@@ -889,23 +890,90 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_spot_instrument_maps_fee_slots_distinctly() {
-        // The shipped spot fixtures have maker_fee == taker_fee, so the
-        // round-trip test above cannot catch a swap between the slots. Pin
-        // the mapping with distinct values.
-        let mut instrument = spot_fixture();
-        instrument.maker_fee_rate = dec!(0.0001);
-        instrument.taker_fee_rate = dec!(0.0005);
+    fn test_parse_instrument_without_response_uses_typed_metadata() {
+        let mut instrument = perp_fixture();
+        instrument.raw = None;
+        instrument.minimum_amount = dec!(0.03);
 
-        let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(0))
+        let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
             .unwrap()
             .unwrap();
-        let InstrumentAny::CurrencyPair(pair) = parsed else {
-            panic!("expected CurrencyPair");
-        };
+        let info = parsed.info().unwrap();
 
-        assert_eq!(pair.maker_fee(), dec!(0.0001));
-        assert_eq!(pair.taker_fee(), dec!(0.0005));
+        assert_eq!(info.get_str("instrument_name"), Some("ETH-PERP"));
+        assert_eq!(info.get_str("quote_currency"), Some("USD"));
+        assert_eq!(info.get_str("minimum_amount"), Some("0.03"));
+        assert_eq!(info.get("raw"), None);
+    }
+
+    #[rstest]
+    #[case::perp("perps/instrument_eth.json")]
+    #[case::option("options/instrument_eth.json")]
+    #[case::spot("spot/instrument_eth_mainnet.json")]
+    fn test_parse_instrument_preserves_complete_response(#[case] filename: &str) {
+        let mut response = load_json(filename);
+        response["base_fee"] = json!(0.125);
+        response["pro_rata_fraction"] = json!("0.8");
+        response["fifo_min_allocation"] = json!("10");
+        response["pro_rata_amount_step"] = json!("1");
+        response["erc20_details"] = json!({
+            "decimals": 18,
+            "underlying_erc20_address": "0x15CEcd5190A43C7798dD2058308781D0662e678E",
+            "borrow_index": "1.000000000000000001",
+            "supply_index": "1.000000000000000002",
+        });
+        response["additional_data"] = json!([null, true, {"value": "0.000000000000000001"}]);
+        for field in ["option_details", "perp_details"] {
+            if let Some(details) = response[field].as_object_mut() {
+                details.insert("additional_data".to_string(), json!({"value": 42}));
+            }
+        }
+        let instrument: DeriveInstrument = serde_json::from_value(response.clone()).unwrap();
+
+        let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(parsed.info().unwrap()).unwrap(),
+            response
+        );
+    }
+
+    #[rstest]
+    #[case::perp("perps/instrument_eth.json")]
+    #[case::option("options/instrument_eth.json")]
+    #[case::spot("spot/instrument_eth.json")]
+    fn test_parse_instrument_preserves_trading_parameters(#[case] filename: &str) {
+        let mut response = load_json(filename);
+        response["tick_size"] = json!("0.005");
+        response["amount_step"] = json!("0.0002");
+        response["maximum_amount"] = json!("1234.5678");
+        response["minimum_amount"] = json!("0.03");
+        response["maker_fee_rate"] = json!("-0.0001");
+        response["taker_fee_rate"] = json!("0.0005");
+        let instrument: DeriveInstrument = serde_json::from_value(response).unwrap();
+
+        let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(987))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(parsed.price_increment(), Price::from("0.005"));
+        assert_eq!(parsed.size_increment(), Quantity::from("0.0002"));
+        assert_eq!(parsed.price_precision(), 3);
+        assert_eq!(parsed.size_precision(), 4);
+        assert_eq!(parsed.multiplier(), Quantity::from("1"));
+        assert_eq!(parsed.lot_size(), Some(Quantity::from("0.0002")));
+        assert_eq!(parsed.max_quantity(), Some(Quantity::from("1234.5678")));
+        assert_eq!(parsed.min_quantity(), None);
+        assert_eq!(parsed.maker_fee(), dec!(-0.0001));
+        assert_eq!(parsed.taker_fee(), dec!(0.0005));
+        assert_eq!(parsed.ts_event(), UnixNanos::from(987));
+        assert_eq!(parsed.ts_init(), UnixNanos::from(987));
+        assert_eq!(
+            parsed.info().unwrap().get_str("minimum_amount"),
+            Some("0.03")
+        );
     }
 
     #[rstest]

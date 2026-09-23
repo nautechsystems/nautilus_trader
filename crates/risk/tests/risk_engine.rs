@@ -2241,16 +2241,30 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
 }
 
 #[rstest]
-fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
+#[case::market_minimum(OrderType::Market, true)]
+#[case::limit_minimum(OrderType::Limit, true)]
+#[case::market_no_minimum(OrderType::Market, false)]
+#[case::limit_no_minimum(OrderType::Limit, false)]
+fn test_submit_order_checks_instrument_minimum_quantity(
+    #[case] order_type: OrderType,
+    #[case] has_minimum: bool,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
-    instrument_audusd: InstrumentAny,
+    mut instrument_audusd: InstrumentAny,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
     cash_account_state_million_usd: AccountState,
     quote_audusd: QuoteTick,
     mut simple_cache: Cache,
 ) {
+    if !has_minimum {
+        let InstrumentAny::CurrencyPair(instrument) = &mut instrument_audusd else {
+            unreachable!()
+        };
+        instrument.min_quantity = None;
+    }
+
     simple_cache
         .add_instrument(instrument_audusd.clone())
         .unwrap();
@@ -2265,9 +2279,10 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
 
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order = OrderTestBuilder::new(OrderType::Market)
+    let order = OrderTestBuilder::new(order_type)
         .instrument_id(instrument_audusd.id())
         .side(OrderSide::Buy)
+        .price(quote_audusd.ask_price)
         .quantity(Quantity::from_str("1").unwrap())
         .build();
 
@@ -2292,19 +2307,27 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
         None, // correlation_id
     );
 
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let command = TradingCommand::SubmitOrder(submit_order);
+    risk_engine.execute(command.clone());
     let saved_process_messages =
         get_process_order_event_handler_messages(&process_order_event_handler);
-    assert_eq!(saved_process_messages.len(), 1);
+    let saved_commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
-    assert_eq!(
-        saved_process_messages.first().unwrap().event_type(),
-        OrderEventType::Denied
-    );
-    assert_eq!(
-        saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("QUANTITY_BELOW_MINIMUM: effective=1, min=100")
-    );
+    if has_minimum {
+        assert_eq!(saved_process_messages.len(), 1);
+        assert_eq!(
+            saved_process_messages[0].event_type(),
+            OrderEventType::Denied
+        );
+        assert_eq!(
+            saved_process_messages[0].message().unwrap(),
+            Ustr::from("QUANTITY_BELOW_MINIMUM: effective=1, min=100"),
+        );
+        assert!(saved_commands.is_empty());
+    } else {
+        assert!(saved_process_messages.is_empty());
+        assert_eq!(saved_commands, vec![command]);
+    }
 }
 
 #[rstest]

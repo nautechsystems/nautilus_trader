@@ -94,6 +94,7 @@ Released on TBD (UTC).
 - Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
+- Fixed `CryptoOption` applying a one-contract minimum when `min_quantity` is unspecified
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
@@ -105,6 +106,8 @@ Released on TBD (UTC).
 - Fixed Binance Spot `batch_cancel_orders` using a non-existent batch endpoint
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
+- Fixed Derive rejecting valid sub-minimum taker orders (#5045), thanks for reporting @Aviksaikat
+- Fixed Derive instrument `info` dropping fields from the venue response
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
 - Fixed Lighter cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet

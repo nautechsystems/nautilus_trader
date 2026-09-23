@@ -193,7 +193,7 @@ impl CryptoOption {
             max_notional,
             min_notional,
             max_quantity,
-            min_quantity: Some(min_quantity.unwrap_or(1.into())),
+            min_quantity,
             max_price,
             min_price,
             tick_scheme,
@@ -482,6 +482,35 @@ mod tests {
         );
         assert!(crypto_option_btc_deribit.activation_ns().is_some());
         assert!(crypto_option_btc_deribit.expiration_ns().is_some());
+    }
+
+    #[rstest]
+    #[case::unspecified(None)]
+    #[case::fractional(Some(Quantity::from("0.01")))]
+    #[case::whole(Some(Quantity::from("2")))]
+    fn test_builder_preserves_minimum_quantity(#[case] min_quantity: Option<Quantity>) {
+        let instrument = CryptoOption::builder()
+            .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
+            .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
+            .underlying(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::BTC())
+            .is_inverse(false)
+            .option_kind(OptionKind::Put)
+            .strike_price(Price::from("16000"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(1)
+            .size_precision(2)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.01"))
+            .maybe_min_quantity(min_quantity)
+            .ts_event(3.into())
+            .ts_init(4.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(instrument.min_quantity(), min_quantity);
     }
 
     #[rstest]

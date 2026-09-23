@@ -27,7 +27,7 @@ Examples include BTC and ETH options on crypto derivatives venues.
 | `multiplier`          | `Quantity`         | `Quantity`         | `1`              | Contract multiplier.                     |
 | `lot_size`            | `Quantity`         | `Quantity`         | `1`              | Rounded lot or board size.               |
 | `max_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                  |
-| `min_quantity`        | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                  |
+| `min_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                  |
 | `max_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.            |
 | `min_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Minimum order notional value.            |
 | `max_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
