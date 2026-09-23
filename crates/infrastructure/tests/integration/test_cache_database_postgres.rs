@@ -47,8 +47,8 @@ mod serial_tests {
             order::spec::OrderFillVoidedSpec,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
-            stubs::account_id,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, TraderId,
+            VenueOrderId, stubs::account_id,
         },
         instruments::{
             Instrument, InstrumentAny,
@@ -904,7 +904,7 @@ mod serial_tests {
                     .unwrap()
                     .is_some_and(|loaded| loaded.events == position.events)
                     && pg_cache.load_positions().await.unwrap().len() == 1
-                    && DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
+                    && DatabaseQueries::load_position_events(&pg_cache.pool, &position.id, None)
                         .await
                         .unwrap()
                         .len()
@@ -915,7 +915,7 @@ mod serial_tests {
         .await;
 
         let loaded = pg_cache.load_position(&position.id).await.unwrap().unwrap();
-        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
+        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &position.id, None)
             .await
             .unwrap();
 
@@ -1010,19 +1010,23 @@ mod serial_tests {
 
         wait_until_async(
             || async {
-                let events =
-                    DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
-                        .await
-                        .unwrap();
+                let events = DatabaseQueries::load_position_events(
+                    &pg_cache.pool,
+                    &reopened_position.id,
+                    None,
+                )
+                .await
+                .unwrap();
                 events.len() == 1 && events[0].event_id == reopen_fill.event_id
             },
             Duration::from_secs(5),
         )
         .await;
 
-        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
-            .await
-            .unwrap();
+        let events =
+            DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id, None)
+                .await
+                .unwrap();
 
         assert_eq!(events, reopened_position.events.clone());
 
@@ -1083,7 +1087,7 @@ mod serial_tests {
             .unwrap();
 
         let events: Vec<OrderFilled> =
-            DatabaseQueries::load_position_events(&pg_cache.pool, &position_id)
+            DatabaseQueries::load_position_events(&pg_cache.pool, &position_id, None)
                 .await
                 .unwrap();
         let result = pg_cache.load_position(&position_id).await;
@@ -1216,7 +1220,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let positions = DatabaseQueries::load_positions(&pg_cache.pool)
+        let positions = DatabaseQueries::load_positions(&pg_cache.pool, None)
             .await
             .unwrap();
 
@@ -1414,7 +1418,7 @@ mod serial_tests {
 
         let mut event = wallet_account_state();
         event.account_id = AccountId::from("WALLET-MALFORMED-001");
-        DatabaseQueries::add_account(&pg_cache.pool, false, event)
+        DatabaseQueries::add_account(&pg_cache.pool, false, event, None)
             .await
             .unwrap();
         sqlx::query(
@@ -1428,6 +1432,7 @@ mod serial_tests {
         let error = DatabaseQueries::load_account_events(
             &pg_cache.pool,
             &AccountId::from("WALLET-MALFORMED-001"),
+            None,
         )
         .await
         .unwrap_err();
@@ -1445,7 +1450,7 @@ mod serial_tests {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
 
-        let result = DatabaseQueries::add_account(&pg_cache.pool, true, event).await;
+        let result = DatabaseQueries::add_account(&pg_cache.pool, true, event, None).await;
 
         assert!(result.is_err());
         assert!(
@@ -2107,5 +2112,317 @@ mod serial_tests {
 
         restarted.flush().unwrap();
         restarted.close().unwrap();
+    }
+
+    async fn get_test_pg_cache_database_for_trader(
+        trader_id: TraderId,
+    ) -> anyhow::Result<PostgresCacheDatabase> {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let connect = PostgresCacheDatabase::connect(
+            Some(options.host),
+            Some(options.port),
+            Some(options.username),
+            Some(options.password),
+            Some(options.database),
+            Some(trader_id),
+        );
+        match tokio::time::timeout(Duration::from_secs(2), connect).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
+    // Writes one order, one position and one account for `trader_id` through `pg_cache`, and
+    // returns their identifiers.
+    fn add_trader_rows(
+        pg_cache: &PostgresCacheDatabase,
+        instrument: &InstrumentAny,
+        trader_id: TraderId,
+        suffix: &str,
+    ) -> (ClientOrderId, PositionId, AccountId) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new(format!("O-PG-SCOPE-{suffix}")))
+            .build();
+        pg_cache.add_order(&order, None).unwrap();
+
+        let position_id = PositionId::new(format!("P-PG-SCOPE-{suffix}"));
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            instrument,
+            Some(TradeId::new(format!("E-PG-SCOPE-{suffix}"))),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let position = Position::new(instrument, fill);
+        pg_cache.add_position(&position).unwrap();
+        pg_cache
+            .index_order_position(order.client_order_id(), position_id)
+            .unwrap();
+
+        let mut state = cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
+        state.account_id = AccountId::from(format!("SIM-SCOPE-{suffix}").as_str());
+        let account = AccountAny::Cash(CashAccount::new(state, false, false));
+        pg_cache.add_account(&account).unwrap();
+
+        (order.client_order_id(), position_id, account.id())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_trader_scoped_databases_load_only_own_rows() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let mut unscoped = get_test_pg_cache_database().await.unwrap();
+        unscoped.flush().unwrap();
+
+        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        unscoped
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        unscoped.add_currency(&instrument.quote_currency()).unwrap();
+        unscoped.add_currency(&Currency::USD()).unwrap();
+        unscoped.add_instrument(&instrument).unwrap();
+        wait_until_async(
+            || async {
+                unscoped
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let (order_a, position_a, account_a) =
+            add_trader_rows(&pg_cache_a, &instrument, trader_a, "A");
+        let (order_b, position_b, account_b) =
+            add_trader_rows(&pg_cache_b, &instrument, trader_b, "B");
+
+        wait_until_async(
+            || async {
+                unscoped.load_orders().await.unwrap().len() == 2
+                    && unscoped.load_positions().await.unwrap().len() == 2
+                    && unscoped.load_accounts().await.unwrap().len() == 2
+                    && unscoped.load_index_order_position().unwrap().len() == 2
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let orders_a = pg_cache_a.load_orders().await.unwrap();
+        let positions_a = pg_cache_a.load_positions().await.unwrap();
+        let accounts_a = pg_cache_a.load_accounts().await.unwrap();
+        let index_a = pg_cache_a.load_index_order_position().unwrap();
+        assert_eq!(orders_a.keys().collect::<Vec<_>>(), vec![&order_a]);
+        assert_eq!(positions_a.keys().collect::<Vec<_>>(), vec![&position_a]);
+        assert_eq!(accounts_a.keys().collect::<Vec<_>>(), vec![&account_a]);
+        assert_eq!(index_a.keys().collect::<Vec<_>>(), vec![&order_a]);
+        assert!(pg_cache_a.load_order(&order_b).await.unwrap().is_none());
+        assert!(
+            pg_cache_a
+                .load_position(&position_b)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(pg_cache_a.load_account(&account_b).await.unwrap().is_none());
+
+        let orders_b = pg_cache_b.load_orders().await.unwrap();
+        let positions_b = pg_cache_b.load_positions().await.unwrap();
+        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
+        assert_eq!(orders_b.keys().collect::<Vec<_>>(), vec![&order_b]);
+        assert_eq!(positions_b.keys().collect::<Vec<_>>(), vec![&position_b]);
+        assert_eq!(accounts_b.keys().collect::<Vec<_>>(), vec![&account_b]);
+
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+        unscoped.flush().unwrap();
+        unscoped.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_trader_scoped_flush_keeps_other_trader_rows() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let mut unscoped = get_test_pg_cache_database().await.unwrap();
+        unscoped.flush().unwrap();
+
+        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        unscoped
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        unscoped.add_currency(&instrument.quote_currency()).unwrap();
+        unscoped.add_currency(&Currency::USD()).unwrap();
+        unscoped.add_instrument(&instrument).unwrap();
+        wait_until_async(
+            || async {
+                unscoped
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let (order_a, _, _) = add_trader_rows(&pg_cache_a, &instrument, trader_a, "A");
+        let (order_b, position_b, account_b) =
+            add_trader_rows(&pg_cache_b, &instrument, trader_b, "B");
+
+        wait_until_async(
+            || async {
+                unscoped.load_orders().await.unwrap().len() == 2
+                    && unscoped.load_positions().await.unwrap().len() == 2
+                    && unscoped.load_accounts().await.unwrap().len() == 2
+                    && unscoped.load_index_order_position().unwrap().len() == 2
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        pg_cache_a.flush().unwrap();
+
+        assert!(pg_cache_a.load_orders().await.unwrap().is_empty());
+        assert!(pg_cache_a.load_positions().await.unwrap().is_empty());
+        assert!(pg_cache_a.load_accounts().await.unwrap().is_empty());
+        assert!(pg_cache_a.load_index_order_position().unwrap().is_empty());
+
+        let orders = unscoped.load_orders().await.unwrap();
+        let positions = unscoped.load_positions().await.unwrap();
+        let accounts = unscoped.load_accounts().await.unwrap();
+        let index = unscoped.load_index_order_position().unwrap();
+        assert_eq!(orders.keys().collect::<Vec<_>>(), vec![&order_b]);
+        assert_eq!(positions.keys().collect::<Vec<_>>(), vec![&position_b]);
+        assert_eq!(accounts.keys().collect::<Vec<_>>(), vec![&account_b]);
+        assert_eq!(index.keys().collect::<Vec<_>>(), vec![&order_b]);
+        assert!(!index.contains_key(&order_a));
+
+        // Shared reference data survives a trader-scoped flush
+        assert!(
+            unscoped
+                .load_instrument(&instrument.id())
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            unscoped
+                .load_currency(&instrument.quote_currency().code)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+        unscoped.flush().unwrap();
+        unscoped.close().unwrap();
+    }
+
+    // Extracts the account-event trader backfill from the real schema file, so the test runs the
+    // shipped SQL rather than a copy of it.
+    fn account_event_trader_backfill_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/tables.sql");
+        let schema = std::fs::read_to_string(path).unwrap();
+        let start = schema
+            .find(r#"UPDATE "account_event""#)
+            .expect("no account_event backfill in tables.sql");
+        let end = schema[start..]
+            .find(';')
+            .expect("unterminated account_event backfill in tables.sql")
+            + start
+            + 1;
+        schema[start..end].to_string()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_account_event_trader_backfill_stamps_single_owner_accounts() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+
+        // Rolled back at the end so the probe rows cannot outlive the test, even on panic
+        let mut tx = pg.begin().await.unwrap();
+
+        for statement in [
+            r#"INSERT INTO "trader" (id) VALUES ('BACKFILL-001'), ('BACKFILL-002')
+               ON CONFLICT (id) DO NOTHING"#,
+            r#"INSERT INTO "account" (id)
+               VALUES ('SIM-BACKFILL-OWNED'), ('SIM-BACKFILL-SHARED'), ('SIM-BACKFILL-UNUSED')
+               ON CONFLICT (id) DO NOTHING"#,
+            r#"INSERT INTO "order_event" (id, kind, trader_id, strategy_id, client_order_id,
+                   account_id, ts_event, ts_init)
+               VALUES
+                   ('BACKFILL-EVENT-1', 'OrderAccepted', 'BACKFILL-001', 'S-001',
+                    'O-BACKFILL-1', 'SIM-BACKFILL-OWNED', '0', '0'),
+                   ('BACKFILL-EVENT-2', 'OrderAccepted', 'BACKFILL-001', 'S-001',
+                    'O-BACKFILL-2', 'SIM-BACKFILL-SHARED', '0', '0'),
+                   ('BACKFILL-EVENT-3', 'OrderAccepted', 'BACKFILL-002', 'S-001',
+                    'O-BACKFILL-3', 'SIM-BACKFILL-SHARED', '0', '0')"#,
+            r#"INSERT INTO "account_event" (id, kind, account_id, ts_event, ts_init)
+               VALUES
+                   ('BACKFILL-ACCOUNT-1', 'CASH', 'SIM-BACKFILL-OWNED', '0', '0'),
+                   ('BACKFILL-ACCOUNT-2', 'CASH', 'SIM-BACKFILL-SHARED', '0', '0'),
+                   ('BACKFILL-ACCOUNT-3', 'CASH', 'SIM-BACKFILL-UNUSED', '0', '0')"#,
+        ] {
+            sqlx::query(statement).execute(&mut *tx).await.unwrap();
+        }
+
+        sqlx::query(AssertSqlSafe(account_event_trader_backfill_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let stamped: Vec<(String, Option<String>)> = sqlx::query_as(
+            r#"SELECT account_id, trader_id FROM "account_event"
+               WHERE id LIKE 'BACKFILL-ACCOUNT-%' ORDER BY id"#,
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.rollback().await.unwrap();
+
+        assert_eq!(
+            stamped,
+            vec![
+                (
+                    String::from("SIM-BACKFILL-OWNED"),
+                    Some(String::from("BACKFILL-001"))
+                ),
+                (String::from("SIM-BACKFILL-SHARED"), None),
+                (String::from("SIM-BACKFILL-UNUSED"), None),
+            ]
+        );
     }
 }

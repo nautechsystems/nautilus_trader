@@ -24,7 +24,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Bar, CustomData, DataType, QuoteTick, TradeTick},
     events::{OrderSnapshot, PositionSnapshot},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
     python::{
         account::{account_any_to_pyobject, pyobject_to_account_any},
         events::order::pyobject_to_order_event,
@@ -44,21 +44,26 @@ use crate::sql::{
 impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
     ///
+    /// When `trader_id` is given, loads and flushes are scoped to that trader and account events
+    /// are stamped with it. Otherwise they cover every trader in the database.
+    ///
     /// # Errors
     ///
     /// Returns an error if establishing the database connection fails.
     #[staticmethod]
     #[pyo3(name = "connect")]
-    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]
+    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None, trader_id=None))]
     fn py_connect(
         host: Option<String>,
         port: Option<u16>,
         username: Option<String>,
         password: Option<String>,
         database: Option<String>,
+        trader_id: Option<TraderId>,
     ) -> PyResult<Self> {
-        let result = get_runtime()
-            .block_on(async { Self::connect(host, port, username, password, database).await });
+        let result = get_runtime().block_on(async {
+            Self::connect(host, port, username, password, database, trader_id).await
+        });
         result.map_err(to_pyruntime_err)
     }
 
@@ -138,9 +143,13 @@ impl PostgresCacheDatabase {
         client_order_id: ClientOrderId,
     ) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_order(&self.pool, &client_order_id)
-                .await
-                .map_err(to_pyruntime_err)?;
+            let result = DatabaseQueries::load_order(
+                &self.pool,
+                &client_order_id,
+                self.trader_id().as_ref(),
+            )
+            .await
+            .map_err(to_pyruntime_err)?;
 
             match result {
                 Some(order) => {
@@ -155,9 +164,10 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "load_account")]
     fn py_load_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_account(&self.pool, &account_id)
-                .await
-                .map_err(to_pyruntime_err)?;
+            let result =
+                DatabaseQueries::load_account(&self.pool, &account_id, self.trader_id().as_ref())
+                    .await
+                    .map_err(to_pyruntime_err)?;
 
             match result {
                 Some(account) => {
@@ -252,9 +262,13 @@ impl PostgresCacheDatabase {
         position_id: PositionId,
     ) -> PyResult<Option<PositionSnapshot>> {
         get_runtime().block_on(async {
-            DatabaseQueries::load_position_snapshot(&self.pool, &position_id)
-                .await
-                .map_err(to_pyruntime_err)
+            DatabaseQueries::load_position_snapshot(
+                &self.pool,
+                &position_id,
+                self.trader_id().as_ref(),
+            )
+            .await
+            .map_err(to_pyruntime_err)
         })
     }
 
@@ -354,13 +368,14 @@ impl PostgresCacheConfig {
     ///
     /// Missing fields are resolved from Postgres environment variables and then built-in defaults.
     #[new]
-    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]
+    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None, all_traders=false))]
     fn py_new(
         host: Option<String>,
         port: Option<u16>,
         username: Option<String>,
         password: Option<String>,
         database: Option<String>,
+        all_traders: bool,
     ) -> Self {
         Self {
             host,
@@ -368,6 +383,7 @@ impl PostgresCacheConfig {
             username,
             password,
             database,
+            all_traders,
         }
     }
 
@@ -394,6 +410,11 @@ impl PostgresCacheConfig {
     #[getter]
     fn database(&self) -> Option<&str> {
         self.database.as_deref()
+    }
+
+    #[getter]
+    const fn all_traders(&self) -> bool {
+        self.all_traders
     }
 }
 

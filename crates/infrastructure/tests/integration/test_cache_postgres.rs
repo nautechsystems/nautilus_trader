@@ -537,7 +537,7 @@ mod serial_tests {
             .unwrap();
 
         // Load back events
-        let events = DatabaseQueries::load_order_events(&pool, &client_order_id)
+        let events = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
             .await
             .unwrap();
 
@@ -590,7 +590,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let events = DatabaseQueries::load_order_events(&pool, &client_order_id)
+        let events = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
             .await
             .unwrap();
 
@@ -654,7 +654,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let loaded = DatabaseQueries::load_order_events(pool, &client_order_id)
+        let loaded = DatabaseQueries::load_order_events(pool, &client_order_id, None)
             .await
             .unwrap();
 
@@ -982,7 +982,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let loaded = DatabaseQueries::load_position_events(&pool, &position_id)
+        let loaded = DatabaseQueries::load_position_events(&pool, &position_id, None)
             .await
             .unwrap();
 
@@ -1029,7 +1029,7 @@ mod serial_tests {
         .await
         .unwrap();
 
-        let loaded = DatabaseQueries::load_order_events(&pool, &client_order_id)
+        let loaded = DatabaseQueries::load_order_events(&pool, &client_order_id, None)
             .await
             .unwrap();
 

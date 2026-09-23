@@ -314,6 +314,7 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
     account_id TEXT REFERENCES account(id) ON DELETE CASCADE,
+    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     base_currency TEXT REFERENCES currency(id),
     balances JSONB,
     margins JSONB,
@@ -323,6 +324,29 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before trader-scoped account loads forward. `AccountState` carries no
+-- trader, so the cache stamps the writing node's trader on each event.
+ALTER TABLE "account_event" ADD COLUMN IF NOT EXISTS trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE;
+
+-- Attribute unstamped account events to the one trader whose fills or orders used the account.
+-- Accounts used by several traders, or by none, stay unstamped, and a trader-scoped cache does not
+-- load them until the node persists a new state for the account.
+UPDATE "account_event" AS event
+SET trader_id = owner.trader_id
+FROM (
+    SELECT account_id, MIN(trader_id) AS trader_id
+    FROM (
+        SELECT account_id, trader_id FROM "order_event"
+        WHERE account_id IS NOT NULL AND trader_id IS NOT NULL
+        UNION
+        SELECT account_id, trader_id FROM "position_event"
+        WHERE trader_id IS NOT NULL
+    ) AS usage
+    GROUP BY account_id
+    HAVING COUNT(DISTINCT trader_id) = 1
+) AS owner
+WHERE event.trader_id IS NULL
+  AND event.account_id = owner.account_id;
 
 CREATE TABLE IF NOT EXISTS "trade" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
