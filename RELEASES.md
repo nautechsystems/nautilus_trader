@@ -64,6 +64,7 @@ Released on TBD (UTC).
 - Fixed adapter HTTP redirect leaks of credentials and signed payloads, thanks for reporting @seungpyoson
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
+- Hardened WebSocket transport client close-reason logging against server-injected line breaks and terminal escapes
 
 ### Fixes
 

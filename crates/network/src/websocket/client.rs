@@ -116,7 +116,7 @@ use crate::{
     },
     dst,
     error::{SendError, is_connection_drop_io_error},
-    logging::{log_task_aborted, log_task_started, log_task_stopped},
+    logging::{escape_control_characters, log_task_aborted, log_task_started, log_task_stopped},
     mode::{
         ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
         ReconnectRequestOutcome,
@@ -1583,7 +1583,7 @@ impl WebSocketClientInner {
                             read_termination_log_level(&connection_state),
                             "Received close frame, terminating: code={}, reason='{}'",
                             frame.code,
-                            frame.reason
+                            escape_control_characters(&frame.reason)
                         );
                         break;
                     }
@@ -3740,6 +3740,7 @@ mod tests {
             Message as WsMessage,
             handshake::server::{self, Callback},
             http::HeaderValue,
+            protocol::frame::{CloseFrame as WsCloseFrame, coding::CloseCode},
         },
     };
 
@@ -3759,6 +3760,8 @@ mod tests {
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
     const PING_TRIGGER: &str = "send-test-ping";
+    const HOSTILE_CLOSE_TRIGGER: &str = "close-hostile";
+    const HOSTILE_CLOSE_REASON: &str = "injected\r\n\u{1b}[31mforged\u{1b}[0m";
     const NETWORK_LOG_TARGETS: &[&str] = &[
         "nautilus_network::http::client",
         "nautilus_network::websocket::client",
@@ -3822,6 +3825,19 @@ mod tests {
                                     log::debug!("Forcibly closing from server side");
                                     // This sends a close frame, then stops reading
                                     let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                WsMessage::Text(txt) if txt == HOSTILE_CLOSE_TRIGGER => {
+                                    // Close reasons are server-controlled: this one carries a
+                                    // forged line break and ANSI color sequences for the log
+                                    // sanitization test.
+                                    let _ = websocket
+                                        .send(WsMessage::Close(Some(WsCloseFrame {
+                                            code: CloseCode::Error,
+                                            reason: HOSTILE_CLOSE_REASON.into(),
+                                        })))
+                                        .await;
+
                                     break;
                                 }
                                 WsMessage::Text(txt) if txt == PING_TRIGGER => {
@@ -4430,6 +4446,57 @@ mod tests {
         // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
+    }
+
+    // A close reason is fully server-controlled: the logged line must escape its control
+    // characters rather than let a hostile venue forge log lines or terminal sequences.
+    #[rstest]
+    #[tokio::test]
+    async fn test_close_frame_reason_is_sanitized_in_logs() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+        let capture = capture_logs_for(&["nautilus_network::websocket::client"]).await;
+
+        client
+            .send_text(HOSTILE_CLOSE_TRIGGER.to_string(), None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if capture.messages().iter().any(|(_, message)| {
+                    message.starts_with("Received close frame, terminating: code=")
+                }) {
+                    break;
+                }
+
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out waiting for the close frame log");
+
+        let close_frame_logs: Vec<String> = capture
+            .messages()
+            .iter()
+            .map(|(_, message)| message.clone())
+            .filter(|message| message.starts_with("Received close frame, terminating: code="))
+            .collect();
+
+        let expected = "Received close frame, terminating: code=1011, \
+                        reason='injected\\r\\n\\u{1b}[31mforged\\u{1b}[0m'";
+        assert!(
+            close_frame_logs.iter().any(|message| message == expected),
+            "close frame reason was not escaped: {close_frame_logs:?}"
+        );
+        assert!(
+            close_frame_logs.iter().all(|message| {
+                !message.contains('\r') && !message.contains('\n') && !message.contains('\u{1b}')
+            }),
+            "close frame log forged line breaks or escape sequences: {close_frame_logs:?}"
+        );
+
+        client.disconnect().await;
     }
 
     #[rstest]
