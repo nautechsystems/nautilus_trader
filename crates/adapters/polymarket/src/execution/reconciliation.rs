@@ -1862,8 +1862,6 @@ mod tests {
             price_precision: 3,
             tick_size: Decimal::new(1, 3),
             min_size: None,
-            maker_fee: None,
-            taker_fee: None,
             start_date: None,
             event_start_time: None,
             end_date: None,

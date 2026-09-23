@@ -38,18 +38,16 @@ struct BettingInstrument {
     sizeIncrement @22 :Types.Quantity;
     marginInit @23 :Types.Decimal;
     marginMaint @24 :Types.Decimal;
-    makerFee @25 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @26 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @27 :Types.Quantity;  # Optional
-    minQuantity @28 :Types.Quantity;  # Optional
-    maxNotional @29 :Types.Money;  # Optional
-    minNotional @30 :Types.Money;  # Optional
-    maxPrice @31 :Types.Price;  # Optional
-    minPrice @32 :Types.Price;  # Optional
-    tickScheme @33 :Text;  # Optional
-    info @34 :Data;  # Optional JSON-encoded Params
-    tsEvent @35 :Base.UnixNanos;
-    tsInit @36 :Base.UnixNanos;
+    maxQuantity @25 :Types.Quantity;  # Optional
+    minQuantity @26 :Types.Quantity;  # Optional
+    maxNotional @27 :Types.Money;  # Optional
+    minNotional @28 :Types.Money;  # Optional
+    maxPrice @29 :Types.Price;  # Optional
+    minPrice @30 :Types.Price;  # Optional
+    tickScheme @31 :Text;  # Optional
+    info @32 :Data;  # Optional JSON-encoded Params
+    tsEvent @33 :Base.UnixNanos;
+    tsInit @34 :Base.UnixNanos;
 }
 
 struct BinaryOption {
@@ -65,21 +63,19 @@ struct BinaryOption {
     sizeIncrement @9 :Types.Quantity;
     marginInit @10 :Types.Decimal;
     marginMaint @11 :Types.Decimal;
-    makerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @13 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    eventId @14 :Text;  # Optional
-    outcome @15 :Text;  # Optional
-    description @16 :Text;  # Optional
-    maxQuantity @17 :Types.Quantity;  # Optional
-    minQuantity @18 :Types.Quantity;  # Optional
-    maxNotional @19 :Types.Money;  # Optional
-    minNotional @20 :Types.Money;  # Optional
-    maxPrice @21 :Types.Price;  # Optional
-    minPrice @22 :Types.Price;  # Optional
-    tickScheme @23 :Text;  # Optional
-    info @24 :Data;  # Optional JSON-encoded Params
-    tsEvent @25 :Base.UnixNanos;
-    tsInit @26 :Base.UnixNanos;
+    eventId @12 :Text;  # Optional
+    outcome @13 :Text;  # Optional
+    description @14 :Text;  # Optional
+    maxQuantity @15 :Types.Quantity;  # Optional
+    minQuantity @16 :Types.Quantity;  # Optional
+    maxNotional @17 :Types.Money;  # Optional
+    minNotional @18 :Types.Money;  # Optional
+    maxPrice @19 :Types.Price;  # Optional
+    minPrice @20 :Types.Price;  # Optional
+    tickScheme @21 :Text;  # Optional
+    info @22 :Data;  # Optional JSON-encoded Params
+    tsEvent @23 :Base.UnixNanos;
+    tsInit @24 :Base.UnixNanos;
 }
 
 struct Cfd {
@@ -94,19 +90,17 @@ struct Cfd {
     sizeIncrement @8 :Types.Quantity;
     marginInit @9 :Types.Decimal;
     marginMaint @10 :Types.Decimal;
-    makerFee @11 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    lotSize @13 :Types.Quantity;  # Optional
-    maxQuantity @14 :Types.Quantity;  # Optional
-    minQuantity @15 :Types.Quantity;  # Optional
-    maxNotional @16 :Types.Money;  # Optional
-    minNotional @17 :Types.Money;  # Optional
-    maxPrice @18 :Types.Price;  # Optional
-    minPrice @19 :Types.Price;  # Optional
-    tickScheme @20 :Text;  # Optional
-    info @21 :Data;  # Optional JSON-encoded Params
-    tsEvent @22 :Base.UnixNanos;
-    tsInit @23 :Base.UnixNanos;
+    lotSize @11 :Types.Quantity;  # Optional
+    maxQuantity @12 :Types.Quantity;  # Optional
+    minQuantity @13 :Types.Quantity;  # Optional
+    maxNotional @14 :Types.Money;  # Optional
+    minNotional @15 :Types.Money;  # Optional
+    maxPrice @16 :Types.Price;  # Optional
+    minPrice @17 :Types.Price;  # Optional
+    tickScheme @18 :Text;  # Optional
+    info @19 :Data;  # Optional JSON-encoded Params
+    tsEvent @20 :Base.UnixNanos;
+    tsInit @21 :Base.UnixNanos;
 }
 
 struct Commodity {
@@ -120,19 +114,17 @@ struct Commodity {
     sizeIncrement @7 :Types.Quantity;
     marginInit @8 :Types.Decimal;
     marginMaint @9 :Types.Decimal;
-    makerFee @10 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @11 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    lotSize @12 :Types.Quantity;  # Optional
-    maxQuantity @13 :Types.Quantity;  # Optional
-    minQuantity @14 :Types.Quantity;  # Optional
-    maxNotional @15 :Types.Money;  # Optional
-    minNotional @16 :Types.Money;  # Optional
-    maxPrice @17 :Types.Price;  # Optional
-    minPrice @18 :Types.Price;  # Optional
-    tickScheme @19 :Text;  # Optional
-    info @20 :Data;  # Optional JSON-encoded Params
-    tsEvent @21 :Base.UnixNanos;
-    tsInit @22 :Base.UnixNanos;
+    lotSize @10 :Types.Quantity;  # Optional
+    maxQuantity @11 :Types.Quantity;  # Optional
+    minQuantity @12 :Types.Quantity;  # Optional
+    maxNotional @13 :Types.Money;  # Optional
+    minNotional @14 :Types.Money;  # Optional
+    maxPrice @15 :Types.Price;  # Optional
+    minPrice @16 :Types.Price;  # Optional
+    tickScheme @17 :Text;  # Optional
+    info @18 :Data;  # Optional JSON-encoded Params
+    tsEvent @19 :Base.UnixNanos;
+    tsInit @20 :Base.UnixNanos;
 }
 
 struct CryptoFuture {
@@ -152,18 +144,16 @@ struct CryptoFuture {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @18 :Types.Quantity;  # Optional
-    minQuantity @19 :Types.Quantity;  # Optional
-    maxNotional @20 :Types.Money;  # Optional
-    minNotional @21 :Types.Money;  # Optional
-    maxPrice @22 :Types.Price;  # Optional
-    minPrice @23 :Types.Price;  # Optional
-    tickScheme @24 :Text;  # Optional
-    info @25 :Data;  # Optional JSON-encoded Params
-    tsEvent @26 :Base.UnixNanos;
-    tsInit @27 :Base.UnixNanos;
+    maxQuantity @16 :Types.Quantity;  # Optional
+    minQuantity @17 :Types.Quantity;  # Optional
+    maxNotional @18 :Types.Money;  # Optional
+    minNotional @19 :Types.Money;  # Optional
+    maxPrice @20 :Types.Price;  # Optional
+    minPrice @21 :Types.Price;  # Optional
+    tickScheme @22 :Text;  # Optional
+    info @23 :Data;  # Optional JSON-encoded Params
+    tsEvent @24 :Base.UnixNanos;
+    tsInit @25 :Base.UnixNanos;
 }
 
 struct CryptoFuturesSpread {
@@ -184,18 +174,16 @@ struct CryptoFuturesSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @19 :Types.Quantity;  # Optional
-    minQuantity @20 :Types.Quantity;  # Optional
-    maxNotional @21 :Types.Money;  # Optional
-    minNotional @22 :Types.Money;  # Optional
-    maxPrice @23 :Types.Price;  # Optional
-    minPrice @24 :Types.Price;  # Optional
-    tickScheme @25 :Text;  # Optional
-    info @26 :Data;  # Optional JSON-encoded Params
-    tsEvent @27 :Base.UnixNanos;
-    tsInit @28 :Base.UnixNanos;
+    maxQuantity @17 :Types.Quantity;  # Optional
+    minQuantity @18 :Types.Quantity;  # Optional
+    maxNotional @19 :Types.Money;  # Optional
+    minNotional @20 :Types.Money;  # Optional
+    maxPrice @21 :Types.Price;  # Optional
+    minPrice @22 :Types.Price;  # Optional
+    tickScheme @23 :Text;  # Optional
+    info @24 :Data;  # Optional JSON-encoded Params
+    tsEvent @25 :Base.UnixNanos;
+    tsInit @26 :Base.UnixNanos;
 }
 
 struct CryptoOption {
@@ -217,18 +205,16 @@ struct CryptoOption {
     lotSize @15 :Types.Quantity;
     marginInit @16 :Types.Decimal;
     marginMaint @17 :Types.Decimal;
-    makerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @19 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @20 :Types.Quantity;  # Optional
-    minQuantity @21 :Types.Quantity;  # Optional
-    maxNotional @22 :Types.Money;  # Optional
-    minNotional @23 :Types.Money;  # Optional
-    maxPrice @24 :Types.Price;  # Optional
-    minPrice @25 :Types.Price;  # Optional
-    tickScheme @26 :Text;  # Optional
-    info @27 :Data;  # Optional JSON-encoded Params
-    tsEvent @28 :Base.UnixNanos;
-    tsInit @29 :Base.UnixNanos;
+    maxQuantity @18 :Types.Quantity;  # Optional
+    minQuantity @19 :Types.Quantity;  # Optional
+    maxNotional @20 :Types.Money;  # Optional
+    minNotional @21 :Types.Money;  # Optional
+    maxPrice @22 :Types.Price;  # Optional
+    minPrice @23 :Types.Price;  # Optional
+    tickScheme @24 :Text;  # Optional
+    info @25 :Data;  # Optional JSON-encoded Params
+    tsEvent @26 :Base.UnixNanos;
+    tsInit @27 :Base.UnixNanos;
 }
 
 struct CryptoOptionSpread {
@@ -249,18 +235,16 @@ struct CryptoOptionSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @19 :Types.Quantity;  # Optional
-    minQuantity @20 :Types.Quantity;  # Optional
-    maxNotional @21 :Types.Money;  # Optional
-    minNotional @22 :Types.Money;  # Optional
-    maxPrice @23 :Types.Price;  # Optional
-    minPrice @24 :Types.Price;  # Optional
-    tickScheme @25 :Text;  # Optional
-    info @26 :Data;  # Optional JSON-encoded Params
-    tsEvent @27 :Base.UnixNanos;
-    tsInit @28 :Base.UnixNanos;
+    maxQuantity @17 :Types.Quantity;  # Optional
+    minQuantity @18 :Types.Quantity;  # Optional
+    maxNotional @19 :Types.Money;  # Optional
+    minNotional @20 :Types.Money;  # Optional
+    maxPrice @21 :Types.Price;  # Optional
+    minPrice @22 :Types.Price;  # Optional
+    tickScheme @23 :Text;  # Optional
+    info @24 :Data;  # Optional JSON-encoded Params
+    tsEvent @25 :Base.UnixNanos;
+    tsInit @26 :Base.UnixNanos;
 }
 
 struct CryptoPerpetual {
@@ -278,18 +262,16 @@ struct CryptoPerpetual {
     lotSize @11 :Types.Quantity;
     marginInit @12 :Types.Decimal;
     marginMaint @13 :Types.Decimal;
-    makerFee @14 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @15 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @16 :Types.Quantity;  # Optional
-    minQuantity @17 :Types.Quantity;  # Optional
-    maxNotional @18 :Types.Money;  # Optional
-    minNotional @19 :Types.Money;  # Optional
-    maxPrice @20 :Types.Price;  # Optional
-    minPrice @21 :Types.Price;  # Optional
-    tickScheme @22 :Text;  # Optional
-    info @23 :Data;  # Optional JSON-encoded Params
-    tsEvent @24 :Base.UnixNanos;
-    tsInit @25 :Base.UnixNanos;
+    maxQuantity @14 :Types.Quantity;  # Optional
+    minQuantity @15 :Types.Quantity;  # Optional
+    maxNotional @16 :Types.Money;  # Optional
+    minNotional @17 :Types.Money;  # Optional
+    maxPrice @18 :Types.Price;  # Optional
+    minPrice @19 :Types.Price;  # Optional
+    tickScheme @20 :Text;  # Optional
+    info @21 :Data;  # Optional JSON-encoded Params
+    tsEvent @22 :Base.UnixNanos;
+    tsInit @23 :Base.UnixNanos;
 }
 
 struct CurrencyPair {
@@ -305,18 +287,16 @@ struct CurrencyPair {
     lotSize @9 :Types.Quantity;  # Optional
     marginInit @10 :Types.Decimal;
     marginMaint @11 :Types.Decimal;
-    makerFee @12 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @13 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @14 :Types.Quantity;  # Optional
-    minQuantity @15 :Types.Quantity;  # Optional
-    maxNotional @16 :Types.Money;  # Optional
-    minNotional @17 :Types.Money;  # Optional
-    maxPrice @18 :Types.Price;  # Optional
-    minPrice @19 :Types.Price;  # Optional
-    tickScheme @20 :Text;  # Optional
-    info @21 :Data;  # Optional JSON-encoded Params
-    tsEvent @22 :Base.UnixNanos;
-    tsInit @23 :Base.UnixNanos;
+    maxQuantity @12 :Types.Quantity;  # Optional
+    minQuantity @13 :Types.Quantity;  # Optional
+    maxNotional @14 :Types.Money;  # Optional
+    minNotional @15 :Types.Money;  # Optional
+    maxPrice @16 :Types.Price;  # Optional
+    minPrice @17 :Types.Price;  # Optional
+    tickScheme @18 :Text;  # Optional
+    info @19 :Data;  # Optional JSON-encoded Params
+    tsEvent @20 :Base.UnixNanos;
+    tsInit @21 :Base.UnixNanos;
 }
 
 struct Equity {
@@ -328,17 +308,15 @@ struct Equity {
     priceIncrement @5 :Types.Price;
     marginInit @6 :Types.Decimal;
     marginMaint @7 :Types.Decimal;
-    makerFee @8 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @9 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    lotSize @10 :Types.Quantity;  # Optional
-    maxQuantity @11 :Types.Quantity;  # Optional
-    minQuantity @12 :Types.Quantity;  # Optional
-    maxPrice @13 :Types.Price;  # Optional
-    minPrice @14 :Types.Price;  # Optional
-    tickScheme @15 :Text;  # Optional
-    info @16 :Data;  # Optional JSON-encoded Params
-    tsEvent @17 :Base.UnixNanos;
-    tsInit @18 :Base.UnixNanos;
+    lotSize @8 :Types.Quantity;  # Optional
+    maxQuantity @9 :Types.Quantity;  # Optional
+    minQuantity @10 :Types.Quantity;  # Optional
+    maxPrice @11 :Types.Price;  # Optional
+    minPrice @12 :Types.Price;  # Optional
+    tickScheme @13 :Text;  # Optional
+    info @14 :Data;  # Optional JSON-encoded Params
+    tsEvent @15 :Base.UnixNanos;
+    tsInit @16 :Base.UnixNanos;
 }
 
 struct FuturesContract {
@@ -358,16 +336,14 @@ struct FuturesContract {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @18 :Types.Quantity;  # Optional
-    minQuantity @19 :Types.Quantity;  # Optional
-    maxPrice @20 :Types.Price;  # Optional
-    minPrice @21 :Types.Price;  # Optional
-    tickScheme @22 :Text;  # Optional
-    info @23 :Data;  # Optional JSON-encoded Params
-    tsEvent @24 :Base.UnixNanos;
-    tsInit @25 :Base.UnixNanos;
+    maxQuantity @16 :Types.Quantity;  # Optional
+    minQuantity @17 :Types.Quantity;  # Optional
+    maxPrice @18 :Types.Price;  # Optional
+    minPrice @19 :Types.Price;  # Optional
+    tickScheme @20 :Text;  # Optional
+    info @21 :Data;  # Optional JSON-encoded Params
+    tsEvent @22 :Base.UnixNanos;
+    tsInit @23 :Base.UnixNanos;
 }
 
 struct FuturesSpread {
@@ -388,16 +364,14 @@ struct FuturesSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @19 :Types.Quantity;  # Optional
-    minQuantity @20 :Types.Quantity;  # Optional
-    maxPrice @21 :Types.Price;  # Optional
-    minPrice @22 :Types.Price;  # Optional
-    tickScheme @23 :Text;  # Optional
-    info @24 :Data;  # Optional JSON-encoded Params
-    tsEvent @25 :Base.UnixNanos;
-    tsInit @26 :Base.UnixNanos;
+    maxQuantity @17 :Types.Quantity;  # Optional
+    minQuantity @18 :Types.Quantity;  # Optional
+    maxPrice @19 :Types.Price;  # Optional
+    minPrice @20 :Types.Price;  # Optional
+    tickScheme @21 :Text;  # Optional
+    info @22 :Data;  # Optional JSON-encoded Params
+    tsEvent @23 :Base.UnixNanos;
+    tsInit @24 :Base.UnixNanos;
 }
 
 struct IndexInstrument {
@@ -433,16 +407,14 @@ struct OptionContract {
     lotSize @15 :Types.Quantity;
     marginInit @16 :Types.Decimal;
     marginMaint @17 :Types.Decimal;
-    makerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @19 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @20 :Types.Quantity;  # Optional
-    minQuantity @21 :Types.Quantity;  # Optional
-    maxPrice @22 :Types.Price;  # Optional
-    minPrice @23 :Types.Price;  # Optional
-    tickScheme @24 :Text;  # Optional
-    info @25 :Data;  # Optional JSON-encoded Params
-    tsEvent @26 :Base.UnixNanos;
-    tsInit @27 :Base.UnixNanos;
+    maxQuantity @18 :Types.Quantity;  # Optional
+    minQuantity @19 :Types.Quantity;  # Optional
+    maxPrice @20 :Types.Price;  # Optional
+    minPrice @21 :Types.Price;  # Optional
+    tickScheme @22 :Text;  # Optional
+    info @23 :Data;  # Optional JSON-encoded Params
+    tsEvent @24 :Base.UnixNanos;
+    tsInit @25 :Base.UnixNanos;
 }
 
 struct OptionSpread {
@@ -463,16 +435,14 @@ struct OptionSpread {
     lotSize @14 :Types.Quantity;
     marginInit @15 :Types.Decimal;
     marginMaint @16 :Types.Decimal;
-    makerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @18 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @19 :Types.Quantity;  # Optional
-    minQuantity @20 :Types.Quantity;  # Optional
-    maxPrice @21 :Types.Price;  # Optional
-    minPrice @22 :Types.Price;  # Optional
-    tickScheme @23 :Text;  # Optional
-    info @24 :Data;  # Optional JSON-encoded Params
-    tsEvent @25 :Base.UnixNanos;
-    tsInit @26 :Base.UnixNanos;
+    maxQuantity @17 :Types.Quantity;  # Optional
+    minQuantity @18 :Types.Quantity;  # Optional
+    maxPrice @19 :Types.Price;  # Optional
+    minPrice @20 :Types.Price;  # Optional
+    tickScheme @21 :Text;  # Optional
+    info @22 :Data;  # Optional JSON-encoded Params
+    tsEvent @23 :Base.UnixNanos;
+    tsInit @24 :Base.UnixNanos;
 }
 
 struct PerpetualContract {
@@ -492,18 +462,16 @@ struct PerpetualContract {
     lotSize @13 :Types.Quantity;
     marginInit @14 :Types.Decimal;
     marginMaint @15 :Types.Decimal;
-    makerFee @16 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @17 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @18 :Types.Quantity;  # Optional
-    minQuantity @19 :Types.Quantity;  # Optional
-    maxNotional @20 :Types.Money;  # Optional
-    minNotional @21 :Types.Money;  # Optional
-    maxPrice @22 :Types.Price;  # Optional
-    minPrice @23 :Types.Price;  # Optional
-    tickScheme @24 :Text;  # Optional
-    info @25 :Data;  # Optional JSON-encoded Params
-    tsEvent @26 :Base.UnixNanos;
-    tsInit @27 :Base.UnixNanos;
+    maxQuantity @16 :Types.Quantity;  # Optional
+    minQuantity @17 :Types.Quantity;  # Optional
+    maxNotional @18 :Types.Money;  # Optional
+    minNotional @19 :Types.Money;  # Optional
+    maxPrice @20 :Types.Price;  # Optional
+    minPrice @21 :Types.Price;  # Optional
+    tickScheme @22 :Text;  # Optional
+    info @23 :Data;  # Optional JSON-encoded Params
+    tsEvent @24 :Base.UnixNanos;
+    tsInit @25 :Base.UnixNanos;
 }
 
 struct TokenizedAsset {
@@ -521,18 +489,16 @@ struct TokenizedAsset {
     lotSize @11 :Types.Quantity;  # Optional
     marginInit @12 :Types.Decimal;
     marginMaint @13 :Types.Decimal;
-    makerFee @14 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    takerFee @15 :Void;  # retired: maker/taker fees are account-owned, do not reuse
-    maxQuantity @16 :Types.Quantity;  # Optional
-    minQuantity @17 :Types.Quantity;  # Optional
-    maxNotional @18 :Types.Money;  # Optional
-    minNotional @19 :Types.Money;  # Optional
-    maxPrice @20 :Types.Price;  # Optional
-    minPrice @21 :Types.Price;  # Optional
-    tickScheme @22 :Text;  # Optional
-    info @23 :Data;  # Optional JSON-encoded Params
-    tsEvent @24 :Base.UnixNanos;
-    tsInit @25 :Base.UnixNanos;
+    maxQuantity @14 :Types.Quantity;  # Optional
+    minQuantity @15 :Types.Quantity;  # Optional
+    maxNotional @16 :Types.Money;  # Optional
+    minNotional @17 :Types.Money;  # Optional
+    maxPrice @18 :Types.Price;  # Optional
+    minPrice @19 :Types.Price;  # Optional
+    tickScheme @20 :Text;  # Optional
+    info @21 :Data;  # Optional JSON-encoded Params
+    tsEvent @22 :Base.UnixNanos;
+    tsInit @23 :Base.UnixNanos;
 }
 
 struct SyntheticInstrument {

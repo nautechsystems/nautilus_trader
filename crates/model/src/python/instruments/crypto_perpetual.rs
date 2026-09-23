@@ -388,8 +388,6 @@ mod tests {
             dict.set_item("min_price", py.None()).unwrap();
             dict.set_item("margin_init", "0").unwrap();
             dict.set_item("margin_maint", "0").unwrap();
-            dict.set_item("maker_fee", "0.0002").unwrap();
-            dict.set_item("taker_fee", "0.0004").unwrap();
             dict.set_item("ts_event", 1_758_067_200_000_000_000u64)
                 .unwrap();
             dict.set_item("ts_init", 1_758_067_200_000_000_000u64)

@@ -77,10 +77,6 @@ pub struct PolymarketInstrumentDef {
     pub tick_size: Decimal,
     /// Minimum order size.
     pub min_size: Option<Decimal>,
-    /// Maker fee (decimal, not bps).
-    pub maker_fee: Option<Decimal>,
-    /// Taker fee (decimal, not bps).
-    pub taker_fee: Option<Decimal>,
     /// Market start timestamp (ISO 8601).
     pub start_date: Option<String>,
     /// Event window start timestamp (ISO 8601).
@@ -145,12 +141,6 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
         .unwrap_or(DEFAULT_TICK_SIZE);
     let price_precision = POLYMARKET_PRICE_PRECISION;
 
-    // Polymarket charges fees using `feeSchedule.rate` on the Gamma market.
-    // Only takers pay; makers are always zero.
-    // Reference: https://docs.polymarket.com/trading/fees
-    let maker_fee: Option<Decimal> = market.fee_schedule.as_ref().map(|_| Decimal::ZERO);
-    let taker_fee: Option<Decimal> = market.fee_schedule.as_ref().map(|fs| fs.rate);
-
     let min_size = market.order_min_size;
 
     let active = market.active.unwrap_or(false)
@@ -181,8 +171,6 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             price_precision,
             tick_size,
             min_size,
-            maker_fee,
-            taker_fee,
             start_date: market.start_date.clone(),
             event_start_time: market.event_start_time.clone(),
             end_date: market.end_date.clone(),
@@ -806,8 +794,7 @@ mod tests {
         assert_eq!(yes_def.tick_size, dec!(0.01));
         assert_eq!(yes_def.price_precision, POLYMARKET_PRICE_PRECISION);
         assert_eq!(yes_def.min_size, Some(dec!(5.0)));
-        assert!(yes_def.maker_fee.is_none());
-        assert!(yes_def.taker_fee.is_none());
+        assert_eq!(yes_def.fee_schedule, None);
         assert!(yes_def.active);
         assert_eq!(
             yes_def.market_slug.as_deref(),
@@ -828,11 +815,6 @@ mod tests {
         assert_eq!(map_handicap_defs[0].game_id.as_deref(), Some("1427074"));
         assert_eq!(money_line_defs[0].fee_schedule, money_line.fee_schedule);
         assert_eq!(map_handicap_defs[0].fee_schedule, map_handicap.fee_schedule);
-
-        // Maker fee is always zero for feeSchedule-backed markets
-        assert_eq!(money_line_defs[0].maker_fee, Some(Decimal::ZERO));
-        // Taker fee comes from feeSchedule.rate (sports rate = 0.03)
-        assert_eq!(money_line_defs[0].taker_fee, Some(dec!(0.03)));
     }
 
     #[rstest]
@@ -1093,7 +1075,13 @@ mod tests {
 
         let info = binary.info.as_ref().expect("info should be Some");
         assert_eq!(info.get_str("game_id"), Some("1427074"));
-        assert!(info.get("fee_schedule").is_some());
+        let schedule = info.get("fee_schedule").unwrap();
+        let fields = schedule.as_object().unwrap();
+        assert_eq!(fields.len(), 4);
+        assert_eq!(schedule["rate"], "0.03");
+        assert_eq!(schedule["exponent"], "1");
+        assert_eq!(schedule["takerOnly"], true);
+        assert_eq!(schedule["rebateRate"], "0.25");
     }
 
     #[rstest]
