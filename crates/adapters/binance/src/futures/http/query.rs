@@ -582,8 +582,11 @@ impl BatchCancelItem {
 pub struct BatchModifyItem {
     /// Trading symbol.
     pub symbol: String,
-    /// Order ID to modify.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Order ID to modify, serialized as a string because the batch endpoint rejects JSON numbers.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_batch_order_id"
+    )]
     pub order_id: Option<i64>,
     /// Original client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -754,6 +757,16 @@ pub struct BinanceCancelAllAlgoOrdersParams {
     #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub recv_window: Option<u64>,
+}
+
+fn serialize_batch_order_id<S: serde::Serializer>(
+    order_id: &Option<i64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match order_id {
+        Some(id) => serializer.collect_str(id),
+        None => serializer.serialize_none(),
+    }
 }
 
 #[cfg(test)]

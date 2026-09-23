@@ -56,15 +56,15 @@ use ustr::Ustr;
 use super::{
     error::{BinanceFuturesHttpError, BinanceFuturesHttpResult},
     models::{
-        BatchOrderResult, BinanceBookTicker, BinanceCancelAllOrdersResponse, BinanceFundingRate,
-        BinanceFuturesAccountInfo, BinanceFuturesAggTrade, BinanceFuturesAlgoOrder,
-        BinanceFuturesAlgoOrderCancelResponse, BinanceFuturesCoinExchangeInfo,
-        BinanceFuturesCoinSymbol, BinanceFuturesCommissionRate, BinanceFuturesKline,
-        BinanceFuturesMarkPrice, BinanceFuturesOrder, BinanceFuturesTicker24hr,
-        BinanceFuturesTrade, BinanceFuturesUsdExchangeInfo, BinanceFuturesUsdSymbol,
-        BinanceHedgeModeResponse, BinanceLeverageResponse, BinanceOpenInterest,
-        BinanceOpenInterestHistRecord, BinanceOrderBook, BinancePositionRisk, BinancePriceTicker,
-        BinanceServerTime, BinanceUserTrade, ListenKeyResponse,
+        BatchOrderError, BatchOrderResult, BinanceBookTicker, BinanceCancelAllOrdersResponse,
+        BinanceFundingRate, BinanceFuturesAccountInfo, BinanceFuturesAggTrade,
+        BinanceFuturesAlgoOrder, BinanceFuturesAlgoOrderCancelResponse,
+        BinanceFuturesCoinExchangeInfo, BinanceFuturesCoinSymbol, BinanceFuturesCommissionRate,
+        BinanceFuturesKline, BinanceFuturesMarkPrice, BinanceFuturesOrder,
+        BinanceFuturesTicker24hr, BinanceFuturesTrade, BinanceFuturesUsdExchangeInfo,
+        BinanceFuturesUsdSymbol, BinanceHedgeModeResponse, BinanceLeverageResponse,
+        BinanceOpenInterest, BinanceOpenInterestHistRecord, BinanceOrderBook, BinancePositionRisk,
+        BinancePriceTicker, BinanceServerTime, BinanceUserTrade, ListenKeyResponse,
     },
     query::{
         BatchCancelItem, BatchModifyItem, BatchOrderItem, BinanceAggTradesParams,
@@ -85,10 +85,10 @@ use crate::{
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
             BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-            BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
+            BINANCE_NO_SUCH_ORDER_CODE, BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
-        encoder::encode_broker_id,
+        encoder::{encode_broker_id, legacy_client_order_id},
         enums::{
             BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
             BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
@@ -1127,7 +1127,95 @@ impl BinanceRawFuturesHttpClient {
         &self,
         params: &BinanceOrderQueryParams,
     ) -> BinanceFuturesHttpResult<BinanceFuturesOrder> {
-        self.get("order", Some(params), true, false).await
+        let Some(legacy) = params
+            .orig_client_order_id
+            .as_deref()
+            .and_then(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID))
+        else {
+            return self.get("order", Some(params), true, false).await;
+        };
+
+        let mut query = params.clone();
+        if query.order_id.is_some() {
+            query.orig_client_order_id = None;
+            return self.get("order", Some(&query), true, false).await;
+        }
+
+        let current: BinanceFuturesHttpResult<BinanceFuturesOrder> =
+            self.get("order", Some(&query), true, false).await;
+
+        if let Err(e) = &current
+            && !matches!(
+                e,
+                BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }
+            )
+        {
+            return current;
+        }
+
+        query.orig_client_order_id = Some(legacy);
+        let historical: BinanceFuturesHttpResult<BinanceFuturesOrder> =
+            self.get("order", Some(&query), true, false).await;
+
+        match (current, historical) {
+            (Ok(current), Ok(historical)) if current.order_id != historical.order_id => {
+                Err(BinanceFuturesHttpError::ValidationError(
+                    "Ambiguous historical client order ID".to_string(),
+                ))
+            }
+            (Ok(current), Ok(_)) => Ok(current),
+            (
+                Ok(current),
+                Err(BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }),
+            ) => Ok(current),
+            (Err(_), Ok(historical)) => Ok(historical),
+            (_, Err(e)) => Err(e),
+        }
+    }
+
+    pub(crate) async fn resolve_order_identity(
+        &self,
+        symbol: &str,
+        order_id: &mut Option<i64>,
+        client_order_id: &mut Option<String>,
+    ) -> BinanceFuturesHttpResult<()> {
+        let Some(id) = client_order_id
+            .as_deref()
+            .filter(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some())
+        else {
+            return Ok(());
+        };
+
+        *order_id = Some(self.resolve_order_id(symbol, *order_id, id).await?);
+        *client_order_id = None;
+        Ok(())
+    }
+
+    async fn resolve_order_id(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        client_order_id: &str,
+    ) -> BinanceFuturesHttpResult<i64> {
+        if let Some(order_id) = order_id {
+            return Ok(order_id);
+        }
+
+        self.query_order(&BinanceOrderQueryParams {
+            symbol: symbol.to_string(),
+            order_id: None,
+            orig_client_order_id: Some(client_order_id.to_string()),
+            recv_window: None,
+        })
+        .await
+        .map(|order| order.order_id)
+        .map_err(identity_lookup_error)
     }
 
     /// Queries all open orders.
@@ -1197,6 +1285,18 @@ impl BinanceRawFuturesHttpClient {
         &self,
         params: &BinanceModifyOrderParams,
     ) -> BinanceFuturesHttpResult<BinanceFuturesOrder> {
+        if let Some(id) = params.orig_client_order_id.as_deref()
+            && legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+        {
+            let mut resolved = params.clone();
+            resolved.order_id = Some(
+                self.resolve_order_id(&params.symbol, params.order_id, id)
+                    .await?,
+            );
+            resolved.orig_client_order_id = None;
+            return self.request_put("order", Some(&resolved), true, true).await;
+        }
+
         self.request_put("order", Some(params), true, true).await
     }
 
@@ -1219,6 +1319,53 @@ impl BinanceRawFuturesHttpClient {
             ));
         }
 
+        if modifies.iter().any(|item| {
+            item.orig_client_order_id.as_deref().is_some_and(|id| {
+                legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+            })
+        }) {
+            let mut resolved = Vec::with_capacity(modifies.len());
+            let mut results = Vec::with_capacity(modifies.len());
+            for item in modifies {
+                let mut item = item.clone();
+                if let Some(id) = item.orig_client_order_id.as_deref()
+                    && legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+                {
+                    match self.resolve_order_id(&item.symbol, item.order_id, id).await {
+                        Ok(order_id) => {
+                            item.order_id = Some(order_id);
+                            item.orig_client_order_id = None;
+                        }
+                        Err(BinanceFuturesHttpError::BinanceError {
+                            code: BINANCE_NO_SUCH_ORDER_CODE,
+                            message,
+                            ..
+                        }) => {
+                            results.push(Some(BatchOrderResult::Error(BatchOrderError {
+                                code: BINANCE_NO_SUCH_ORDER_CODE,
+                                msg: message,
+                            })));
+
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                resolved.push(item);
+                results.push(None);
+            }
+
+            let responses = if resolved.is_empty() {
+                Vec::new()
+            } else {
+                self.batch_request_put("batchOrders", &resolved, true)
+                    .await?
+            };
+
+            return merge_batch_results(results, responses);
+        }
+
         self.batch_request_put("batchOrders", modifies, true).await
     }
 
@@ -1231,6 +1378,20 @@ impl BinanceRawFuturesHttpClient {
         &self,
         params: &BinanceCancelOrderParams,
     ) -> BinanceFuturesHttpResult<BinanceFuturesOrder> {
+        if let Some(id) = params.orig_client_order_id.as_deref()
+            && legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+        {
+            let mut resolved = params.clone();
+            resolved.order_id = Some(
+                self.resolve_order_id(&params.symbol, params.order_id, id)
+                    .await?,
+            );
+            resolved.orig_client_order_id = None;
+            return self
+                .request_delete("order", Some(&resolved), true, true)
+                .await;
+        }
+
         self.request_delete("order", Some(params), true, true).await
     }
 
@@ -1267,6 +1428,57 @@ impl BinanceRawFuturesHttpClient {
         }
 
         let params = Self::batch_cancel_params(cancels)?;
+        if cancels.iter().any(|item| {
+            item.orig_client_order_id.as_deref().is_some_and(|id| {
+                legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+            })
+        }) {
+            let mut resolved = Vec::with_capacity(cancels.len());
+            let mut results = Vec::with_capacity(cancels.len());
+            for item in cancels {
+                let order = self
+                    .query_order(&BinanceOrderQueryParams {
+                        symbol: item.symbol.clone(),
+                        order_id: item.order_id,
+                        orig_client_order_id: item.orig_client_order_id.clone(),
+                        recv_window: None,
+                    })
+                    .await
+                    .map_err(identity_lookup_error);
+
+                match order {
+                    Ok(order) => {
+                        resolved.push(BatchCancelItem::by_order_id(
+                            item.symbol.clone(),
+                            order.order_id,
+                        ));
+                        results.push(None);
+                    }
+                    Err(BinanceFuturesHttpError::BinanceError {
+                        code: BINANCE_NO_SUCH_ORDER_CODE,
+                        message,
+                        ..
+                    }) => {
+                        results.push(Some(BatchOrderResult::Error(BatchOrderError {
+                            code: BINANCE_NO_SUCH_ORDER_CODE,
+                            msg: message,
+                        })));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let responses = if resolved.is_empty() {
+                Vec::new()
+            } else {
+                let params = Self::batch_cancel_params(&resolved)?;
+                self.request_delete("batchOrders", Some(&params), true, true)
+                    .await?
+            };
+
+            return merge_batch_results(results, responses);
+        }
+
         self.request_delete("batchOrders", Some(&params), true, true)
             .await
     }
@@ -1356,6 +1568,25 @@ impl BinanceRawFuturesHttpClient {
         &self,
         params: &BinanceAlgoOrderQueryParams,
     ) -> BinanceFuturesHttpResult<BinanceFuturesAlgoOrderCancelResponse> {
+        if let Some(id) = params.client_algo_id.as_deref()
+            && legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_some()
+        {
+            let mut resolved = params.clone();
+            if resolved.algo_id.is_none() {
+                resolved.algo_id = Some(
+                    self.query_algo_order(params)
+                        .await
+                        .map_err(identity_lookup_error)?
+                        .algo_id,
+                );
+            }
+
+            resolved.client_algo_id = None;
+            return self
+                .request_delete("algoOrder", Some(&resolved), true, true)
+                .await;
+        }
+
         self.request_delete("algoOrder", Some(params), true, true)
             .await
     }
@@ -1371,7 +1602,56 @@ impl BinanceRawFuturesHttpClient {
         &self,
         params: &BinanceAlgoOrderQueryParams,
     ) -> BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> {
-        self.get("algoOrder", Some(params), true, false).await
+        let Some(legacy) = params
+            .client_algo_id
+            .as_deref()
+            .and_then(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_FUTURES_BROKER_ID))
+        else {
+            return self.get("algoOrder", Some(params), true, false).await;
+        };
+
+        let mut query = params.clone();
+        if query.algo_id.is_some() {
+            query.client_algo_id = None;
+            return self.get("algoOrder", Some(&query), true, false).await;
+        }
+
+        let current: BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> =
+            self.get("algoOrder", Some(&query), true, false).await;
+
+        if let Err(e) = &current
+            && !matches!(
+                e,
+                BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }
+            )
+        {
+            return current;
+        }
+
+        query.client_algo_id = Some(legacy);
+        let historical: BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> =
+            self.get("algoOrder", Some(&query), true, false).await;
+
+        match (current, historical) {
+            (Ok(current), Ok(historical)) if current.algo_id != historical.algo_id => {
+                Err(BinanceFuturesHttpError::ValidationError(
+                    "Ambiguous historical client algo ID".to_string(),
+                ))
+            }
+            (Ok(current), Ok(_)) => Ok(current),
+            (
+                Ok(current),
+                Err(BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }),
+            ) => Ok(current),
+            (Err(_), Ok(historical)) => Ok(historical),
+            (_, Err(e)) => Err(e),
+        }
     }
 
     /// Queries all open algo orders.
@@ -2598,14 +2878,17 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.inner.cancel_algo_order(&params).await?;
-        if response.code.parse::<i32>().unwrap_or(0) == 200 {
+        let code = response.code.parse::<i64>()?;
+        if code == 200 {
             Ok(())
         } else {
-            anyhow::bail!(
-                "Cancel algo order failed: code={}, msg={}",
-                response.code,
-                response.msg
-            )
+            Err(BinanceFuturesHttpError::BinanceError {
+                code,
+                message: response.msg,
+                status: 200,
+                retry_after: None,
+            }
+            .into())
         }
     }
 
@@ -2785,7 +3068,10 @@ impl BinanceFuturesHttpClient {
                 .await
             {
                 Ok(order) => Some(order),
-                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                Err(BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }) => {
                     self.query_historical_algo_order_by_venue_order_id(
                         instrument_id,
                         venue_order_id,
@@ -2801,7 +3087,10 @@ impl BinanceFuturesHttpClient {
 
             match self.query_algo_order(client_order_id).await {
                 Ok(order) => Some(order),
-                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => None,
+                Err(BinanceFuturesHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }) => None,
                 Err(e) => return Err(e),
             }
         };
@@ -3308,6 +3597,36 @@ impl BinanceFuturesHttpClient {
     }
 }
 
+fn identity_lookup_error(error: BinanceFuturesHttpError) -> BinanceFuturesHttpError {
+    // Preserve missing-order codes for batch results and algo-to-regular cancellation
+    match error {
+        BinanceFuturesHttpError::BinanceError {
+            code: -2011 | BINANCE_NO_SUCH_ORDER_CODE,
+            ..
+        } => error,
+        _ => BinanceFuturesHttpError::ValidationError(format!(
+            "Order identity lookup failed before submission: {error}"
+        )),
+    }
+}
+
+fn merge_batch_results(
+    results: Vec<Option<BatchOrderResult>>,
+    responses: Vec<BatchOrderResult>,
+) -> BinanceFuturesHttpResult<Vec<BatchOrderResult>> {
+    if results.iter().filter(|result| result.is_none()).count() != responses.len() {
+        return Err(BinanceFuturesHttpError::JsonError(
+            "Batch response length does not match submitted orders".to_string(),
+        ));
+    }
+
+    let mut responses = responses.into_iter();
+    Ok(results
+        .into_iter()
+        .filter_map(|result| result.or_else(|| responses.next()))
+        .collect())
+}
+
 fn parse_futures_trade_tick(
     trade: &BinanceFuturesTrade,
     instrument_id: InstrumentId,
@@ -3550,13 +3869,14 @@ pub(crate) fn order_type_to_binance_futures(
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_live::execution::failure::CommandFailure;
     use nautilus_network::http::{HttpStatus, StatusCode};
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use tokio_util::bytes::Bytes;
 
     use super::*;
-    use crate::common::enums::BinanceTradingStatus;
+    use crate::common::{enums::BinanceTradingStatus, failure::classify_futures_http_failure};
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
@@ -4187,6 +4507,18 @@ mod tests {
             }
             other => panic!("Expected ValidationError, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_batch_response_length_mismatch_has_unknown_outcome() {
+        let error = merge_batch_results(vec![None], Vec::new()).unwrap_err();
+
+        assert_eq!(
+            classify_futures_http_failure(&error),
+            CommandFailure::Ambiguous(
+                "JSON error: Batch response length does not match submitted orders".to_string()
+            ),
+        );
     }
 
     fn assert_validation_error(

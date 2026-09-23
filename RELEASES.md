@@ -105,6 +105,7 @@ Released on TBD (UTC).
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
 - Fixed Betfair resting SP bets treated as closed before BSP reconciliation
+- Fixed Binance order ID encoding for short alphanumeric tags (#5055), thanks for reporting @logeid
 - Fixed Binance WebSocket subscribe bursts that closed sockets with 1008 (#5014), thanks @costajohnt
 - Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
 - Fixed Binance bulk non-trading instrument skips logged as warnings instead of debug

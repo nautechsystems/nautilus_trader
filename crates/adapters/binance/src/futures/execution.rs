@@ -109,7 +109,7 @@ use crate::{
         },
         credential::resolve_credentials,
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
-        encoder::encode_broker_id,
+        encoder::{encode_broker_id, legacy_client_order_id},
         enums::{
             BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide, BinancePriceMatch,
             BinanceProductType, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
@@ -846,11 +846,46 @@ impl BinanceFuturesExecutionClient {
                 },
             );
 
+            let http_client = self.http_client.clone();
             self.spawn_task("cancel_order_ws", async move {
-                if let Err(e) = ws_client
-                    .cancel_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_order_identity(
+                        &params.symbol,
+                        &mut params.order_id,
+                        &mut params.orig_client_order_id,
+                    )
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        let ts_now = clock.get_time_ns();
+
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!(
+                                "cancel identity lookup failed before submission: {}",
+                                sanitize_reason(&e.to_string())
+                            )
+                            .into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    })?;
+
+                let result = ws_client
+                    .cancel_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     log::error!("WS cancel request failed for {client_order_id}: {e}");
                     anyhow::bail!("WS cancel order failed: {e}");
@@ -869,6 +904,7 @@ impl BinanceFuturesExecutionClient {
                 // before this session started, so fall back to regular cancel
                 match http_client.cancel_algo_order(client_order_id).await {
                     Ok(()) => Ok(()),
+                    Err(algo_err) if !should_retry_regular_cancel(client_order_id, &algo_err) => Err(algo_err),
                     Err(algo_err) => {
                         log::debug!("Algo cancel failed, trying regular cancel: {algo_err}");
                         http_client
@@ -3541,11 +3577,46 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 },
             );
 
+            let http_client = self.http_client.clone();
             self.spawn_task("modify_order_ws", async move {
-                if let Err(e) = ws_client
-                    .modify_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_order_identity(
+                        &params.symbol,
+                        &mut params.order_id,
+                        &mut params.orig_client_order_id,
+                    )
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        let ts_now = clock.get_time_ns();
+
+                        let rejected = OrderModifyRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!(
+                                "modify identity lookup failed before submission: {}",
+                                sanitize_reason(&e.to_string())
+                            )
+                            .into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                    })?;
+
+                let result = ws_client
+                    .modify_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     log::error!(
                         "WS modify request failed for {}: {e}",
@@ -3790,13 +3861,26 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             }
                         }
                         Err(e) => {
-                            // Log per classification and continue with the remaining chunks:
-                            // a whole-request failure says nothing about unsent sibling chunks
                             match classify_futures_http_failure(&e) {
                                 CommandFailure::NotSent(reason) => {
-                                    log::warn!(
-                                        "Batch cancel command failed before sending for {batch_len} orders: {reason}",
-                                    );
+                                    for cancel in &batch_cancels {
+                                        let ts_now = clock.get_time_ns();
+
+                                        let rejected = OrderCancelRejected::new(
+                                            trader_id,
+                                            cancel.strategy_id,
+                                            cancel.instrument_id,
+                                            cancel.client_order_id,
+                                            format!("batch-cancel-error: {}", sanitize_reason(&reason)).into(),
+                                            UUID4::new(),
+                                            ts_now,
+                                            ts_now,
+                                            false,
+                                            cancel.venue_order_id,
+                                            Some(account_id),
+                                        );
+                                        emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                                    }
                                 }
                                 CommandFailure::VenueRejected(reason)
                                 | CommandFailure::Ambiguous(reason) => {
@@ -4031,6 +4115,18 @@ fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNano
         .saturating_sub(USER_TRADES_COMPLETE_INTERVAL)
 }
 
+fn should_retry_regular_cancel(client_order_id: ClientOrderId, error: &anyhow::Error) -> bool {
+    let encoded = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+    legacy_client_order_id(&encoded, BINANCE_NAUTILUS_FUTURES_BROKER_ID).is_none()
+        || matches!(
+            error.downcast_ref::<BinanceFuturesHttpError>(),
+            Some(BinanceFuturesHttpError::BinanceError {
+                code: -2011 | -2013,
+                ..
+            })
+        )
+}
+
 fn should_use_algo_cancel(is_algo: bool, is_triggered: bool, has_promoted_id: bool) -> bool {
     is_algo && !is_triggered && !has_promoted_id
 }
@@ -4205,6 +4301,39 @@ mod tests {
             info.get_str("max_withdraw_amount"),
             Some("9.0000000000000009")
         );
+    }
+
+    #[rstest]
+    #[case(-2011, true)]
+    #[case(-2013, true)]
+    #[case(-2015, false)]
+    #[case(-1007, false)]
+    fn test_tagged_algo_cancel_fallback_requires_missing_order(
+        #[case] code: i64,
+        #[case] expected: bool,
+    ) {
+        let id = ClientOrderId::new("O-20260922-160119-V2-000-8");
+        let error = anyhow::anyhow!(BinanceFuturesHttpError::BinanceError {
+            code,
+            message: "test".to_string(),
+            status: 400,
+            retry_after: None,
+        });
+        assert_eq!(should_retry_regular_cancel(id, &error), expected);
+        assert!(!should_retry_regular_cancel(
+            id,
+            &anyhow::anyhow!(BinanceFuturesHttpError::Timeout("lookup".into()))
+        ));
+        assert!(!should_retry_regular_cancel(
+            id,
+            &anyhow::anyhow!(BinanceFuturesHttpError::ValidationError(
+                "ambiguous identity".into()
+            ))
+        ));
+        assert!(should_retry_regular_cancel(
+            ClientOrderId::new("legacy-order"),
+            &error
+        ));
     }
 
     #[rstest]

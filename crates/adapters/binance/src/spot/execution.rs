@@ -504,11 +504,42 @@ impl BinanceSpotExecutionClient {
                 },
             );
 
+            let http_client = self.http_client.clone();
             self.spawn_task("cancel_order_ws", async move {
-                if let Err(e) = ws_client
-                    .cancel_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_cancel_order(&mut params)
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        let ts_now = clock.get_time_ns();
+
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!(
+                                "cancel identity lookup failed before submission: {}",
+                                sanitize_reason(&e.to_string())
+                            )
+                            .into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        event_emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    })?;
+
+                let result = ws_client
+                    .cancel_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     log::warn!(
                         "WS cancel request failed for {}, awaiting reconciliation: {e}",
@@ -1927,13 +1958,36 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             );
             dispatch_state
                 .cancel_replace_request_ids
-                .insert(request_id.clone(), cancel_id);
+                .insert(request_id.clone(), cancel_id.clone());
 
+            let http_client = self.http_client.clone();
             self.spawn_task("modify_order_ws", async move {
-                if let Err(e) = ws_client
-                    .cancel_replace_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_cancel_replace(&mut params)
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        dispatch_state
+                            .cancel_replace_request_ids
+                            .remove(&request_id);
+                        handle_http_modify_failure(
+                            &anyhow::anyhow!(BinanceSpotHttpError::ValidationError(e.to_string())),
+                            &command,
+                            &cancel_id,
+                            &event_emitter,
+                            &dispatch_state,
+                            account_id,
+                            clock.get_time_ns(),
+                        );
+                    })?;
+
+                let result = ws_client
+                    .cancel_replace_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     dispatch_state
                         .cancel_replace_request_ids

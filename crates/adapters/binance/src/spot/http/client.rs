@@ -93,7 +93,7 @@ use crate::{
             BinanceRateLimitQuota,
         },
         credential::SigningCredential,
-        encoder::{decode_client_order_id, encode_broker_id},
+        encoder::{decode_client_order_id, encode_broker_id, legacy_client_order_id},
         enums::{
             BinanceEnvironment, BinanceOrderStatus, BinanceProductType, BinanceRateLimitInterval,
             BinanceRateLimitType, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
@@ -1479,6 +1479,57 @@ impl BinanceRawSpotHttpClient {
         order_id: Option<i64>,
         client_order_id: Option<&str>,
     ) -> BinanceSpotHttpResult<BinanceOrderResponse> {
+        let Some(legacy) = client_order_id
+            .and_then(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_SPOT_BROKER_ID))
+        else {
+            return self
+                .query_order_exact(symbol, order_id, client_order_id)
+                .await;
+        };
+
+        if order_id.is_some() {
+            return self.query_order_exact(symbol, order_id, None).await;
+        }
+
+        let current = self.query_order_exact(symbol, None, client_order_id).await;
+        if let Err(e) = &current
+            && !matches!(
+                e,
+                BinanceSpotHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }
+            )
+        {
+            return current;
+        }
+
+        let historical = self.query_order_exact(symbol, None, Some(&legacy)).await;
+        match (current, historical) {
+            (Ok(current), Ok(historical)) if current.order_id != historical.order_id => {
+                Err(BinanceSpotHttpError::ValidationError(
+                    "Ambiguous historical client order ID".to_string(),
+                ))
+            }
+            (Ok(current), Ok(_)) => Ok(current),
+            (
+                Ok(current),
+                Err(BinanceSpotHttpError::BinanceError {
+                    code: BINANCE_NO_SUCH_ORDER_CODE,
+                    ..
+                }),
+            ) => Ok(current),
+            (Err(_), Ok(historical)) => Ok(historical),
+            (_, Err(e)) => Err(e),
+        }
+    }
+
+    async fn query_order_exact(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        client_order_id: Option<&str>,
+    ) -> BinanceSpotHttpResult<BinanceOrderResponse> {
         let params = QueryOrderParams {
             symbol: symbol.to_string(),
             order_id,
@@ -1693,7 +1744,7 @@ impl BinanceRawSpotHttpClient {
         cancel_new_client_order_id: Option<&str>,
         new_client_order_id: Option<&str>,
     ) -> BinanceSpotHttpResult<BinanceNewOrderResponse> {
-        let params = CancelReplaceOrderParams {
+        let mut params = CancelReplaceOrderParams {
             symbol: symbol.to_string(),
             side,
             order_type,
@@ -1712,6 +1763,8 @@ impl BinanceRawSpotHttpClient {
             new_order_resp_type: Some(BinanceOrderResponseType::Full),
             self_trade_prevention_mode: None,
         };
+
+        self.resolve_cancel_replace(&mut params).await?;
         let bytes = self
             .post_order("order/cancelReplace", Some(&params))
             .await?;
@@ -1723,6 +1776,53 @@ impl BinanceRawSpotHttpClient {
         } else {
             Ok(parse::decode_cancel_replace(&bytes)?)
         }
+    }
+
+    pub(crate) async fn resolve_cancel_replace(
+        &self,
+        params: &mut CancelReplaceOrderParams,
+    ) -> BinanceSpotHttpResult<()> {
+        let replacement = params
+            .new_client_order_id
+            .as_deref()
+            .and_then(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+        let historical = params
+            .cancel_orig_client_order_id
+            .as_deref()
+            .and_then(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+
+        if replacement.is_none() && historical.is_none() {
+            return Ok(());
+        }
+
+        let order = self
+            .query_order(
+                &params.symbol,
+                params.cancel_order_id,
+                params.cancel_orig_client_order_id.as_deref(),
+            )
+            .await
+            .map_err(|e| {
+                BinanceSpotHttpError::ValidationError(format!(
+                    "Cancel-replace identity lookup failed before submission: {e}"
+                ))
+            })?;
+
+        params.cancel_order_id = Some(order.order_id);
+        params.cancel_orig_client_order_id = None;
+
+        if let Some(replacement) = replacement {
+            let original =
+                decode_client_order_id(&order.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)
+                    .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
+
+            if original.as_str() == replacement {
+                // Changing the wire ID would make later lookups ambiguous
+                params.new_client_order_id = Some(order.client_order_id);
+            }
+        }
+
+        Ok(())
     }
 
     /// Cancels an existing order.
@@ -1738,7 +1838,7 @@ impl BinanceRawSpotHttpClient {
         order_id: Option<i64>,
         client_order_id: Option<&str>,
     ) -> BinanceSpotHttpResult<BinanceCancelOrderResponse> {
-        let params = match (order_id, client_order_id) {
+        let mut params = match (order_id, client_order_id) {
             (Some(id), _) => CancelOrderParams::by_order_id(symbol, id),
             (None, Some(id)) => CancelOrderParams::by_client_order_id(symbol, id.to_string()),
             (None, None) => {
@@ -1747,8 +1847,39 @@ impl BinanceRawSpotHttpClient {
                 ));
             }
         };
+
+        self.resolve_cancel_order(&mut params).await?;
         let bytes = self.delete_order("order", Some(&params)).await?;
         self.decode_cancel_order_response(&bytes)
+    }
+
+    pub(crate) async fn resolve_cancel_order(
+        &self,
+        params: &mut CancelOrderParams,
+    ) -> BinanceSpotHttpResult<()> {
+        let Some(id) = params
+            .orig_client_order_id
+            .as_deref()
+            .filter(|id| legacy_client_order_id(id, BINANCE_NAUTILUS_SPOT_BROKER_ID).is_some())
+        else {
+            return Ok(());
+        };
+
+        if params.order_id.is_none() {
+            params.order_id = Some(
+                self.query_order(&params.symbol, None, Some(id))
+                    .await
+                    .map_err(|e| {
+                        BinanceSpotHttpError::ValidationError(format!(
+                            "Cancel identity lookup failed before submission: {e}"
+                        ))
+                    })?
+                    .order_id,
+            );
+        }
+
+        params.orig_client_order_id = None;
+        Ok(())
     }
 
     /// Cancels all open orders for a symbol.

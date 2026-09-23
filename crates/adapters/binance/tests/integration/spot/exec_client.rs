@@ -4427,3 +4427,103 @@ fn test_strategy_id() -> StrategyId {
 fn test_instrument_id() -> InstrumentId {
     InstrumentId::from("BTCUSDT.BINANCE")
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_tagged_lookup_failure_is_rejected_before_submission(
+    #[values(false, true)] websocket: bool,
+    #[values(false, true)] modify: bool,
+    #[values(false, true)] invalid_response: bool,
+) {
+    let mutations = Arc::new(AtomicUsize::new(0));
+    let captured = mutations.clone();
+
+    let app = create_exec_test_router(None).layer(axum::middleware::from_fn(
+        move |request: axum::extract::Request, next: axum::middleware::Next| {
+            let captured = captured.clone();
+            async move {
+                if request.uri().path() == "/api/v3/order"
+                    && request.method() == axum::http::Method::GET
+                {
+                    return if invalid_response {
+                        axum::Json(serde_json::json!({"invalid": "order response"})).into_response()
+                    } else {
+                        unauthorized_response().into_response()
+                    };
+                }
+
+                if request.uri().path() == "/api/v3/order/cancelReplace"
+                    || (request.uri().path() == "/api/v3/order"
+                        && request.method() == axum::http::Method::DELETE)
+                {
+                    captured.fetch_add(1, Ordering::Relaxed);
+                }
+
+                next.run(request).await
+            }
+        },
+    ));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (ws_addr, ws_state) = start_ws_setup_test_server(WsSetupBehavior::CompleteSetup).await;
+
+    let (mut client, mut rx, cache) = if websocket {
+        create_test_execution_client_with_ws_trading(base_url, format!("ws://{ws_addr}/ws-api/v3"))
+    } else {
+        create_test_execution_client(base_url)
+    };
+
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let client_order_id = ClientOrderId::new("O-20260922-160119-V2-000-8");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    if modify {
+        client
+            .modify_order(modify_order_command(client_order_id))
+            .unwrap();
+    } else {
+        let mut command = cancel_order_command(client_order_id);
+        command.venue_order_id = None;
+        client.cancel_order(command).unwrap();
+    }
+
+    let event = recv_until(&mut rx, |event| match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            modify && event.client_order_id == client_order_id
+        }
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            !modify && event.client_order_id == client_order_id
+        }
+        _ => false,
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    let (actual_id, reason) = match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            (event.client_order_id, event.reason)
+        }
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            (event.client_order_id, event.reason)
+        }
+        _ => panic!("Expected rejection"),
+    };
+
+    assert_eq!(actual_id, client_order_id);
+    assert!(reason.contains("before submission"));
+    assert_eq!(mutations.load(Ordering::Relaxed), 0);
+    assert!(
+        !ws_state
+            .received_methods()
+            .await
+            .iter()
+            .any(|method| method == "order.cancelReplace" || method == "order.cancel")
+    );
+}
