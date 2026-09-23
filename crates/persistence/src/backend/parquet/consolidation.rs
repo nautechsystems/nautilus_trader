@@ -329,6 +329,7 @@ impl ParquetDataCatalog {
         for file in parquet_files {
             if let Some(interval) = parse_filename_timestamps(&file) {
                 let (interval_start, interval_end) = interval;
+
                 let include_file = match (start, end) {
                     (Some(s), Some(e)) => interval_start >= s && interval_end <= e,
                     (Some(s), None) => interval_start >= s,
@@ -518,12 +519,14 @@ impl ParquetDataCatalog {
                 let Some(type_name) = path_components.get(data_index + 2) else {
                     return Ok((None, None));
                 };
+
                 let identifier = (path_components.len() > data_index + 3)
                     .then(|| path_components[data_index + 3..].join("/"));
                 return Ok((Some(format!("custom/{type_name}")), identifier));
             }
 
             let data_cls = second.clone();
+
             let identifier = if data_index + 2 < path_components.len() {
                 Some(path_components[data_index + 2].clone())
             } else {
@@ -876,6 +879,7 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
+
                 continue;
             }
 
@@ -885,6 +889,7 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
+
                 let start = file_start_ns.unwrap();
                 (start, query_info.query_end)
             } else {
@@ -970,6 +975,7 @@ impl ParquetDataCatalog {
         let data_type = NautilusDataType::Custom {
             type_name: type_name.to_string(),
         };
+
         let path_prefix = parquet_data_path_prefix(&data_type);
         let intervals = self.get_intervals(&CatalogDataType::Data(data_type), identifier)?;
 
@@ -1023,6 +1029,7 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
+
                 continue;
             }
 
@@ -1032,6 +1039,7 @@ impl ParquetDataCatalog {
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
                 }
+
                 let start = file_start_ns.unwrap();
                 (start, query_info.query_end)
             } else {
@@ -1207,6 +1215,7 @@ impl ParquetDataCatalog {
                     // Safety break to prevent infinite loops
                     break;
                 }
+
                 let current_end_ns = (current_start_ns + period_nanos - 1).min(effective_end);
 
                 // Check if target file already exists (only when ensure_contiguous_files is true)

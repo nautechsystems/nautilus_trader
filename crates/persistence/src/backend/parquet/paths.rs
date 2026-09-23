@@ -123,6 +123,7 @@ pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> Pat
     for component in components {
         path.push(component);
     }
+
     path
 }
 

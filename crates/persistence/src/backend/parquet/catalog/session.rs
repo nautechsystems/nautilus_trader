@@ -54,11 +54,13 @@ impl<T: HasTsInit> MergedPages<T> {
                 self.advance(index)?;
             }
         }
+
         let mut page = Vec::with_capacity(self.page_size);
         while page.len() < self.page_size {
             let Some(Reverse((_, index))) = self.heads.pop() else {
                 break;
             };
+
             page.push(
                 self.buffers[index]
                     .pop_front()
@@ -66,6 +68,7 @@ impl<T: HasTsInit> MergedPages<T> {
             );
             self.advance(index)?;
         }
+
         Ok((!page.is_empty()).then_some(page))
     }
 
@@ -76,6 +79,7 @@ impl<T: HasTsInit> MergedPages<T> {
                 None => return Ok(()),
             }
         }
+
         let row = self.buffers[index].front().expect("source has a row");
         self.heads.push(Reverse((row.ts_init(), index)));
         Ok(())
@@ -115,6 +119,7 @@ where
         let Some(batch) = stream.next().await else {
             return Ok(None);
         };
+
         let rows = T::decode_typed_batch(&metadata, batch?)?;
         Ok(Some((rows, (stream, metadata))))
     })
@@ -144,6 +149,7 @@ mod tests {
         let quote = quote_audusd();
         let batch = QuoteTick::encode_batch(&quote.metadata(), &[quote]).unwrap();
         let schema = batch.schema();
+
         let failure = if decode_error {
             Ok(batch.project(&[0]).unwrap())
         } else {
@@ -151,13 +157,16 @@ mod tests {
                 "injected stream failure".to_string(),
             ))
         };
+
         let mut batches = vec![Ok(batch.clone()), failure, Ok(batch)].into_iter();
         let polls = Arc::new(AtomicUsize::new(0));
         let counted = Arc::clone(&polls);
+
         let inner = futures::stream::poll_fn(move |_| {
             counted.fetch_add(1, Ordering::SeqCst);
             Poll::Ready(batches.next())
         });
+
         let stream = Box::pin(RecordBatchStreamAdapter::new(schema, inner));
         let decoded = decode_typed_pages::<QuoteTick>(stream);
         let mut items: Vec<_> = futures::executor::block_on_stream(Box::pin(decoded)).collect();

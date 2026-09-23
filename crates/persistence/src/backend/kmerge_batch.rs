@@ -42,6 +42,7 @@ impl<T> EagerStream<T> {
 
         let task = runtime.spawn(async move {
             futures::pin_mut!(stream);
+
             while let Some(item) = stream.next().await {
                 if tx.send(item).await.is_err() {
                     break;

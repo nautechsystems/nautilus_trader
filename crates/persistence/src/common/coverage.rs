@@ -96,6 +96,7 @@ where
 #[must_use]
 pub fn last_data_timestamp(rows: &[CatalogCoverageRow]) -> Option<u64> {
     let mut intervals = Vec::new();
+
     for row in rows {
         let Some(interval) = ClosedInterval::new(row.start_ts, row.end_ts) else {
             continue;
@@ -109,6 +110,7 @@ pub fn last_data_timestamp(rows: &[CatalogCoverageRow]) -> Option<u64> {
             CoverageKind::Empty => {}
         }
     }
+
     merge_closed_intervals(&intervals)
         .into_iter()
         .map(|interval| interval.end)

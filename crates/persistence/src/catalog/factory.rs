@@ -64,6 +64,7 @@ impl CatalogConnectConfig {
             Some(protocol) => format!("{protocol}://{path}"),
             None => path.to_string(),
         };
+
         Self::new(uri, storage_options)
     }
 }

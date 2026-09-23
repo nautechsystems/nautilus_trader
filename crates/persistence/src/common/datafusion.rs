@@ -71,6 +71,7 @@ impl<T> BlockingBatchStream<T> {
 
         let task = runtime.spawn(async move {
             futures::pin_mut!(stream);
+
             while let Some(item) = stream.next().await {
                 if sender.send(item).await.is_err() {
                     break;
@@ -110,6 +111,7 @@ impl DataBackendSession {
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
         let session_ctx = SessionContext::new_with_config(session_config());
+
         Self {
             session_ctx,
             chunk_size,
@@ -170,6 +172,7 @@ impl DataBackendSession {
         if batches.is_empty() {
             batches.push(RecordBatch::new_empty(schema));
         }
+
         Ok(batches)
     }
 
@@ -199,9 +202,11 @@ impl DataBackendSession {
                 skip_metadata: Some(false),
                 ..Default::default()
             };
+
             let dataframe = block_on_nautilus_with(|| {
                 self.session_ctx.read_parquet(file_paths, parquet_options)
             })?;
+
             validate_catalog_schema(dataframe.schema().as_arrow())?;
             self.session_ctx
                 .register_table(table_name, dataframe.into_view())?;
@@ -292,6 +297,7 @@ pub(crate) fn cast_column_to_data_type(
                 builder.append_value(array.value(row))?;
             }
         }
+
         return Ok(Arc::new(builder.finish()));
     }
 
@@ -302,9 +308,11 @@ pub(crate) fn cast_column_to_data_type(
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
             .expect("FixedSizeList column should downcast to FixedSizeListArray");
+
         let size = usize::try_from(*size).map_err(|e| {
             DataFusionError::Execution(format!("Invalid fixed-size list length {size}: {e}"))
         })?;
+
         let mut parts = Vec::with_capacity(array.len());
         let mut offsets = Vec::with_capacity(array.len() + 1);
         offsets.push(0_i32);
@@ -314,6 +322,7 @@ pub(crate) fn cast_column_to_data_type(
                 let value = array.value(row);
                 parts.push(cast_column_to_data_type(&value, field.data_type())?);
             }
+
             let offset = parts
                 .len()
                 .checked_mul(size)
@@ -323,8 +332,10 @@ pub(crate) fn cast_column_to_data_type(
                         "List offset exceeds the supported i32 range".to_string(),
                     )
                 })?;
+
             offsets.push(offset);
         }
+
         let values = if parts.is_empty() {
             new_empty_array(field.data_type())
         } else {
@@ -334,6 +345,7 @@ pub(crate) fn cast_column_to_data_type(
                 .collect::<Vec<_>>();
             concat(&parts)?
         };
+
         let offsets = OffsetBuffer::new(ScalarBuffer::from(offsets));
         return Ok(Arc::new(ListArray::try_new(
             field.clone(),
@@ -350,15 +362,18 @@ pub(crate) fn cast_column_to_data_type(
             .as_any()
             .downcast_ref::<ListArray>()
             .expect("List column should downcast to ListArray");
+
         let size_usize = usize::try_from(*size).map_err(|e| {
             DataFusionError::Execution(format!("Invalid fixed-size list length {size}: {e}"))
         })?;
+
         let mut parts = Vec::with_capacity(array.len());
         for row in 0..array.len() {
             if array.is_null(row) {
                 parts.push(new_null_array(field.data_type(), size_usize));
                 continue;
             }
+
             let value = array.value(row);
             if value.len() != size_usize {
                 return Err(DataFusionError::Execution(format!(
@@ -366,8 +381,10 @@ pub(crate) fn cast_column_to_data_type(
                     value.len(),
                 )));
             }
+
             parts.push(cast_column_to_data_type(&value, field.data_type())?);
         }
+
         let values = if parts.is_empty() {
             new_empty_array(field.data_type())
         } else {
@@ -377,6 +394,7 @@ pub(crate) fn cast_column_to_data_type(
                 .collect::<Vec<_>>();
             concat(&parts)?
         };
+
         return Ok(Arc::new(FixedSizeListArray::try_new(
             field.clone(),
             *size,
@@ -465,6 +483,7 @@ pub fn identifiers_from_record_batches(batches: &[RecordBatch]) -> anyhow::Resul
                     identifiers.insert(array.value(row).to_string());
                 }
             }
+
             continue;
         }
 
@@ -474,6 +493,7 @@ pub fn identifiers_from_record_batches(batches: &[RecordBatch]) -> anyhow::Resul
                     identifiers.insert(array.value(row).to_string());
                 }
             }
+
             continue;
         }
 
@@ -727,10 +747,12 @@ mod tests {
     fn blocking_batch_stream_prefetches_first_item() {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let (polled_sender, polled_receiver) = mpsc::channel();
+
         let stream = futures::stream::once(async move {
             polled_sender.send(()).unwrap();
             42
         });
+
         let mut stream = BlockingBatchStream::from_stream_with_runtime(stream, runtime.handle());
 
         assert_eq!(polled_receiver.recv_timeout(Duration::from_secs(1)), Ok(()),);

@@ -193,6 +193,7 @@ impl PyStreamingFeatherWriter {
                         base_path.trim_start_matches('/'),
                     ))
                 };
+
                 let mut stream = store_ref.list(prefix.as_ref());
                 let mut to_delete = Vec::new();
 
@@ -205,6 +206,7 @@ impl PyStreamingFeatherWriter {
                 for path in to_delete {
                     let _ = store_ref.delete(&path).await;
                 }
+
                 Ok::<(), anyhow::Error>(())
             })
             .map_err(|e| PyIOError::new_err(format!("Failed to replace existing files: {e}")))?;
@@ -226,6 +228,7 @@ impl PyStreamingFeatherWriter {
                         .await
                 })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write run manifest: {e}")))?;
+
                 Some((storage.clone(), kind, instance_id))
             } else {
                 None
@@ -239,16 +242,20 @@ impl PyStreamingFeatherWriter {
             },
             1 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
+
                 RotationConfig::Interval {
                     interval_ns: interval,
                 }
             }
             2 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
+
                 let tz = get_timezone(rotation_timezone).map_err(|e| {
                     PyIOError::new_err(format!("Failed to parse rotation_timezone: {e}"))
                 })?;
+
                 let time_ns = rotation_time_ns.unwrap_or(0);
+
                 RotationConfig::ScheduledDates {
                     interval_ns: interval,
                     rotation_time: UnixNanos::from(time_ns),
@@ -314,6 +321,7 @@ impl PyStreamingFeatherWriter {
         if let Some(handler) = self.handler.take() {
             FeatherWriter::unsubscribe_from_message_bus(&handler);
         }
+
         Ok(())
     }
 
@@ -464,6 +472,7 @@ impl PyStreamingFeatherWriter {
             writer.close().await
         })?
         .map_err(|e| PyIOError::new_err(format!("Failed to close: {e}")))?;
+
         drop(writer);
         self.write_run_manifest(
             "completed",
@@ -520,6 +529,7 @@ impl PyStreamingFeatherWriter {
         if *self.run_manifest_has_data.borrow() {
             return Ok(());
         }
+
         self.write_run_manifest("in_progress", false, "update")?;
         *self.run_manifest_has_data.borrow_mut() = true;
         Ok(())
@@ -549,6 +559,7 @@ where
     F: std::future::Future,
 {
     let run = move || get_runtime().block_on(async move { create_future().await });
+
     if tokio::runtime::Handle::try_current().is_err() {
         return Ok(run());
     }

@@ -50,10 +50,12 @@ impl ParquetDataCatalog {
     /// authentication problems, or other I/O errors.
     pub(crate) fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
         let object_path = self.to_object_path(path)?;
+
         let exists = self.execute_async(|| async {
             let result: bool = self.object_store.head(&object_path).await.is_ok();
             Ok(result)
         })?;
+
         Ok(exists)
     }
 
@@ -89,6 +91,7 @@ impl ParquetDataCatalog {
                 .await
                 .map_err(anyhow::Error::from)
         })?;
+
         Ok(())
     }
 
@@ -235,6 +238,7 @@ impl ParquetDataCatalog {
 
         for file in parquet_files {
             let object_path = ObjectPath::from(file.as_str());
+
             let (first_ts, last_ts) = self.execute_async(|| async {
                 min_max_from_parquet_metadata_object_store(
                     self.object_store.clone(),
@@ -330,6 +334,7 @@ impl ParquetDataCatalog {
                     leaf_dirs.push(dir.clone());
                 }
             }
+
             leaf_dirs.sort();
 
             Ok::<Vec<String>, anyhow::Error>(leaf_dirs)

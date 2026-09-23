@@ -699,6 +699,7 @@ impl CatalogReader for ParquetDataCatalog {
             instrument_type,
             ..
         } = query.clone();
+
         let data_type = match (data_type, instrument_type) {
             (NautilusDataType::Instrument, Some(instrument_type)) => {
                 CatalogDataType::Instrument(instrument_type)
@@ -815,6 +816,7 @@ impl CatalogWriter for ParquetDataCatalog {
         if data.is_empty() {
             return Ok(());
         }
+
         let skip_disjoint_check = params
             .as_ref()
             .and_then(|params| params.get_bool(WRITE_SKIP_DISJOINT_CHECK));

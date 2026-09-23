@@ -27,6 +27,7 @@ pub(super) fn migrate_market_data_fixture(source: impl AsRef<Path>) -> NamedTemp
     let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(source).unwrap()).unwrap();
     let schema = builder.schema().clone();
     let row_groups = builder.metadata().num_row_groups();
+
     let metadata = builder
         .metadata()
         .file_metadata()
@@ -38,6 +39,7 @@ pub(super) fn migrate_market_data_fixture(source: impl AsRef<Path>) -> NamedTemp
                 .cloned()
                 .collect()
         });
+
     let properties = WriterProperties::builder()
         .set_key_value_metadata(metadata)
         .build();
@@ -58,6 +60,7 @@ pub(super) fn migrate_market_data_fixture(source: impl AsRef<Path>) -> NamedTemp
         for batch in reader {
             let batch = batch.unwrap().with_schema(schema.clone()).unwrap();
             let batch = normalize_legacy_fixed_columns(&batch).unwrap();
+
             let writer = writer.get_or_insert_with(|| {
                 ArrowWriter::try_new(
                     target.reopen().unwrap(),
@@ -66,8 +69,10 @@ pub(super) fn migrate_market_data_fixture(source: impl AsRef<Path>) -> NamedTemp
                 )
                 .unwrap()
             });
+
             writer.write(&batch).unwrap();
         }
+
         writer.as_mut().unwrap().flush().unwrap();
     }
 

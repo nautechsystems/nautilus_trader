@@ -122,11 +122,13 @@ impl ParquetWriter {
         )?;
         let source_storage =
             create_storage_backend_from_path(&session.catalog_uri, config.storage_options.clone())?;
+
         let source = FeatherSessionSource::new(
             source_storage,
             session.kind.clone(),
             session.instance_id.clone(),
         );
+
         let mut core = StagedFeatherWriter::new(
             storage.clone(),
             clock,
@@ -144,6 +146,7 @@ impl ParquetWriter {
                 true,
             )
         })?;
+
         let timer_catalog_uri = session.catalog_uri.clone();
         let timer_storage_options = config.storage_options.clone();
         core.warn_if_orphan_feather_present("Parquet");
@@ -168,6 +171,7 @@ impl ParquetWriter {
             use_ts_event_for_ts_init,
             delete_feather_after_commit,
         )?;
+
         Ok(Self {
             core,
             catalog_uri: session.catalog_uri.clone(),
@@ -188,6 +192,7 @@ impl ParquetWriter {
         if self.run_status == status {
             return Ok(());
         }
+
         block_on_nautilus_with(|| {
             self.core.storage.write_current_run_manifest(
                 &self.session.kind,
@@ -196,6 +201,7 @@ impl ParquetWriter {
                 !self.has_data,
             )
         })?;
+
         self.run_status = status;
         Ok(())
     }
@@ -204,6 +210,7 @@ impl ParquetWriter {
         if self.has_data {
             return Ok(());
         }
+
         block_on_nautilus_with(|| {
             self.core.storage.write_current_run_manifest(
                 &self.session.kind,
@@ -212,6 +219,7 @@ impl ParquetWriter {
                 false,
             )
         })?;
+
         self.has_data = true;
         Ok(())
     }
@@ -251,6 +259,7 @@ impl ParquetWriter {
         } else if result.run_state_recorded {
             self.run_status = RunStatus::Promoted;
         }
+
         self.core.finalize_promotion(result)
     }
 
@@ -259,6 +268,7 @@ impl ParquetWriter {
         for result in self.core.promotion_driver.drain_completed()? {
             converted.extend(self.finalize(result)?);
         }
+
         Ok(converted)
     }
 
@@ -267,6 +277,7 @@ impl ParquetWriter {
         for result in self.core.promotion_driver.wait()? {
             converted.extend(self.finalize(result)?);
         }
+
         Ok(converted)
     }
 
@@ -275,6 +286,7 @@ impl ParquetWriter {
         if let Some(work) = self.prepare_promotion()? {
             converted.extend(self.finalize(work.execute())?);
         }
+
         Ok(converted)
     }
 }
@@ -292,6 +304,7 @@ impl StagedWriter for ParquetWriter {
 
     fn maybe_promote(&mut self) -> anyhow::Result<()> {
         self.drain_completed()?;
+
         let Some(interval_ns) = self.interval_ns() else {
             return Ok(());
         };
@@ -309,6 +322,7 @@ impl StagedWriter for ParquetWriter {
                 .promotion_driver
                 .mark_committed_at(self.core.clock.timestamp_ns());
         }
+
         Ok(())
     }
 
@@ -344,6 +358,7 @@ impl StagedWriter for ParquetWriter {
 impl Drop for ParquetWriter {
     fn drop(&mut self) {
         self.core.stop_promotion_timer();
+
         let promotion_failed = if let Err(e) = self.wait() {
             log::warn!("ParquetWriter dropped with pending promotion error: {e}");
             true
@@ -365,6 +380,7 @@ impl Drop for ParquetWriter {
                 );
             }
         }
+
         self.core.flush_on_drop("ParquetWriter");
     }
 }
@@ -403,6 +419,7 @@ impl ParquetPromotionBackend {
         if self.legacy_manifest_missing.load(Ordering::Relaxed) {
             return Ok(ParquetPromotionManifest::default());
         }
+
         let path = self.manifest_path();
         block_on_nautilus_with(|| async {
             let result = match self.catalog.object_store.get(&path).await {
@@ -413,6 +430,7 @@ impl ParquetPromotionBackend {
                 }
                 Err(e) => return Err(e.into()),
             };
+
             Ok(serde_json::from_slice(&result.bytes().await?)?)
         })
     }
@@ -430,6 +448,7 @@ impl ParquetPromotionBackend {
 
     fn identity_recorded(&self, identity: &str) -> anyhow::Result<bool> {
         let path = self.marker_path(identity);
+
         let marker_exists = block_on_nautilus_with(|| async {
             match self.catalog.object_store.head(&path).await {
                 Ok(_) => Ok::<bool, anyhow::Error>(true),
@@ -437,6 +456,7 @@ impl ParquetPromotionBackend {
                 Err(e) => Err(anyhow::Error::from(e)),
             }
         })?;
+
         Ok(marker_exists
             || self
                 .manifest()?
@@ -482,12 +502,14 @@ impl PromotionBackend for ParquetPromotionBackend {
         record_promoted: bool,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
         let object_path = ObjectPath::from(file);
+
         let read = block_on_nautilus_with(|| {
             read_feather_record_batches_with_identity(
                 source.storage.object_store.clone(),
                 &object_path,
             )
         })?;
+
         let identifiers = identifiers_from_record_batches(&read.batches)
             .ok()
             .filter(|identifiers| !identifiers.is_empty());
@@ -501,6 +523,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         if self.identity_recorded(&identity)? {
             return Ok(None);
         }
+
         let summary = self.catalog.promote_feather_file(
             source,
             file,
@@ -512,6 +535,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         if summary.is_some() && record_promoted {
             self.record_identity(&identity)?;
         }
+
         Ok(summary)
     }
 
@@ -613,6 +637,7 @@ mod tests {
             .filter(|path| path.ends_with(".feather"))
             .count();
         assert!(before.is_empty());
+
         let DataBatch::Quote(rows) = after else {
             panic!("expected quotes")
         };
@@ -668,13 +693,16 @@ mod tests {
                 )
                 .unwrap();
         }
+
         let after = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap();
         assert_eq!(before_manual.len(), usize::from(interval == Some(1)));
+
         let DataBatch::Quote(rows) = after else {
             panic!("expected quotes")
         };
+
         assert_eq!(rows.as_ref(), &[quote]);
     }
 

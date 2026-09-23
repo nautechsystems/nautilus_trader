@@ -118,6 +118,7 @@ where
             let Some(item) = self.next_row()? else {
                 return Ok(Some(T::into_batch(chunk)));
             };
+
             chunk.push(item);
         }
 

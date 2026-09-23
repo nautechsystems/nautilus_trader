@@ -95,6 +95,7 @@ impl ParquetDataCatalog {
         let data_type = NautilusDataType::Custom {
             type_name: type_name.to_string(),
         };
+
         let path_prefix = parquet_data_path_prefix(&data_type);
 
         // Get intervals for the custom data type

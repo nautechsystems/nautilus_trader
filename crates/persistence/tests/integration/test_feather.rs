@@ -294,6 +294,7 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
         UnixNanos::from(1000),
         UnixNanos::from(1000),
     );
+
     let add = OrderBookDelta::new(
         instrument_id,
         BookAction::Add,
@@ -502,5 +503,6 @@ fn find_feather_file(dir: &std::path::Path) -> std::path::PathBuf {
             return path;
         }
     }
+
     std::path::PathBuf::new()
 }

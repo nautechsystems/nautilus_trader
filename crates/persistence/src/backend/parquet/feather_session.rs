@@ -73,6 +73,7 @@ impl ParquetDataCatalog {
         if batches.is_empty() {
             return Ok(None);
         }
+
         let batches = Self::restore_staged_batches(batches)?;
         let type_name =
             type_name_from_session_feather_path(feather_path, &source.kind, &source.instance_id)?;
@@ -81,6 +82,7 @@ impl ParquetDataCatalog {
             Self::is_supported_stream_data_type(catalog_data_name),
             "Unknown data class: {type_name}"
         );
+
         let identifier = Self::identifier_from_batch_or_path(
             &batches[0],
             feather_path,
@@ -411,9 +413,11 @@ impl ParquetDataCatalog {
     /// Reads a feather file and returns all `RecordBatches`.
     fn read_feather_file(&self, file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
         let path = ObjectPath::from(file_path);
+
         let batches = self.execute_async(|| async {
             read_feather_record_batches(self.object_store.clone(), &path).await
         })?;
+
         Self::restore_staged_batches(batches)
     }
 
@@ -422,6 +426,7 @@ impl ParquetDataCatalog {
         for batch in batches {
             restored.extend(restore_staged_record_batches(batch)?);
         }
+
         Ok(restored)
     }
 
@@ -448,6 +453,7 @@ impl ParquetDataCatalog {
                     convert_bar_type_to_external: false,
                 },
             )?;
+
             let metadata = batch.schema().metadata().clone();
 
             let data_vec = T::decode_data_batch(&metadata, batch)
@@ -697,6 +703,7 @@ impl ParquetDataCatalog {
         let Some(identifier) = identifier else {
             return Ok(batch);
         };
+
         let metadata_key = if catalog_data_name == "bars" {
             "bar_type"
         } else {
@@ -709,6 +716,7 @@ impl ParquetDataCatalog {
 
         let mut metadata = batch.schema().metadata().clone();
         metadata.insert(metadata_key.to_string(), identifier.to_string());
+
         let schema = Arc::new(Schema::new_with_metadata(
             batch.schema().fields().clone(),
             metadata,

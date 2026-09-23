@@ -210,6 +210,7 @@ fn record_batch_with_delta_staged_metadata(
             ))
         })
         .collect::<Vec<_>>();
+
     fields.push(Arc::new(Field::new(
         NAUTILUS_ARROW_METADATA_ID_COLUMN,
         DataType::Utf8,
@@ -249,6 +250,7 @@ fn arrow_metadata_row(
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<BTreeMap<_, _>>();
+
     let field_metadata = fields
         .iter()
         .filter(|field| !field.metadata().is_empty())
@@ -263,6 +265,7 @@ fn arrow_metadata_row(
             )
         })
         .collect::<BTreeMap<_, _>>();
+
     let metadata_json = serde_json::to_string(&serde_json::json!({
         "format_version": 1,
         "schema_metadata": schema_metadata,
@@ -339,6 +342,7 @@ impl FeatherBuffer {
         } else {
             RecordBatch::try_new(Arc::new(self.schema.clone()), batch.columns().to_vec())?
         };
+
         self.writer.write(&batch)?;
         self.size += batch.get_array_memory_size() as u64;
         self.rows += batch.num_rows() as u64;
@@ -462,6 +466,7 @@ impl FeatherWriter {
                  per stream - configure size rotation or a flush interval for live use"
             );
         }
+
         let last_flush_ns = clock.timestamp_ns();
 
         Self {
@@ -521,6 +526,7 @@ impl FeatherWriter {
     {
         let metadata = T::metadata(&data);
         let identifier = catalog_identifier_from_metadata(&metadata);
+
         let instrument_type = if T::path_prefix() == InstrumentAny::path_prefix() {
             metadata.get("class").map(String::as_str)
         } else {
@@ -593,6 +599,7 @@ impl FeatherWriter {
         for item in data {
             let metadata = T::metadata(&item);
             let identifier = catalog_identifier_from_metadata(&metadata);
+
             let instrument_type = if type_str == InstrumentAny::path_prefix() {
                 metadata.get("class").map(String::as_str)
             } else {
@@ -602,6 +609,7 @@ impl FeatherWriter {
             if !self.should_write_record(type_str, identifier.as_deref(), instrument_type) {
                 continue;
             }
+
             let group_identifier = if self.catalog_identifier_column
                 && type_str != InstrumentAny::path_prefix()
             {
@@ -619,6 +627,7 @@ impl FeatherWriter {
             } else {
                 None
             };
+
             groups.entry(group_identifier).or_default().push(item);
         }
 
@@ -640,6 +649,7 @@ impl FeatherWriter {
             let stage_delta_metadata =
                 self.catalog_identifier_column && type_str != InstrumentAny::path_prefix();
             let mut batch = T::encode_batch(&metadata, &group)?;
+
             let metadata_rows = if stage_delta_metadata {
                 group
                     .iter()
@@ -675,6 +685,7 @@ impl FeatherWriter {
                 pending.rotate_paths.push(path);
             }
         }
+
         Ok(())
     }
 
@@ -706,6 +717,7 @@ impl FeatherWriter {
             if pending.flush_due {
                 self.flush().await.map_err(feather_error)?;
             }
+
             Ok::<(), anyhow::Error>(())
         })
         .map_err(Into::into)
@@ -780,6 +792,7 @@ impl FeatherWriter {
 
         let rotation_time_secs = u32::try_from(*rotation_time / 1_000_000_000).unwrap_or(0);
         let rotation_time_nanos = i32::try_from(*rotation_time % 1_000_000_000).unwrap_or(0);
+
         let rotation_time = if rotation_time_secs < 86_400 {
             Time::new(
                 i8::try_from(rotation_time_secs / 3_600).unwrap_or(0),
@@ -794,6 +807,7 @@ impl FeatherWriter {
 
         let local_rotation = now_local.date().to_datetime(rotation_time);
         let ambiguous = rotation_timezone.to_ambiguous_timestamp(local_rotation);
+
         let mut next_rotation = match ambiguous.offset() {
             AmbiguousOffset::Gap { .. } => now_utc,
             _ => ambiguous.earlier().unwrap_or(now_utc),
@@ -846,6 +860,7 @@ impl FeatherWriter {
         let type_str = T::path_prefix();
         let stage_delta_metadata =
             self.catalog_identifier_column && type_str != InstrumentAny::path_prefix();
+
         let schema = if self.catalog_identifier_column
             || type_str == InstrumentAny::path_prefix()
             || self.per_instrument_types.contains(type_str)
@@ -860,6 +875,7 @@ impl FeatherWriter {
         } else {
             schema
         };
+
         let writer = FeatherBuffer::new(&schema, &self.rotation_config)?;
         self.writers.insert(path, writer);
         Ok(())
@@ -874,15 +890,19 @@ impl FeatherWriter {
         if self.writers.contains_key(&path) {
             return Ok(());
         }
+
         let base_schema = get_arrow_schema(type_name).ok_or_else(|| {
             format!("Custom data type \"{type_name}\" is not registered for Arrow encoding")
         })?;
+
         let schema = schema_with_data_type_column(base_schema.as_ref(), type_name);
+
         let schema = if self.catalog_identifier_column {
             Self::schema_with_delta_staging_columns(&schema_with_identifier_column(&schema))
         } else {
             schema
         };
+
         let writer = FeatherBuffer::new(&schema, &self.rotation_config)
             .map_err(|e| format!("Failed to create feather buffer for custom {type_name}: {e}"))?;
         self.writers.insert(path, writer);
@@ -900,11 +920,13 @@ impl FeatherWriter {
             .map_err(|e| format!("Failed to serialize data_type for persistence: {e}"))?;
         let dt_meta = custom.data_type.metadata_string_map();
         let items: [Arc<dyn CustomDataTrait>; 1] = [Arc::clone(&custom.data)];
+
         let batch = encode_custom_to_arrow(type_name, &items)
             .map_err(|e| format!("Failed to encode custom data: {e}"))?
             .ok_or_else(|| {
                 format!("Custom data type \"{type_name}\" is not registered for Arrow")
             })?;
+
         let batch = augment_batch_with_data_type_column(
             &batch,
             &data_type_json,
@@ -968,6 +990,7 @@ impl FeatherWriter {
                 if writer.rows == 0 {
                     continue;
                 }
+
                 let bytes = writer.take_buffer()?;
                 if !bytes.is_empty() {
                     // Write to the object store
@@ -1013,8 +1036,10 @@ impl FeatherWriter {
                 Some(id) => format!("{}:{}", path.type_str, id),
                 None => path.type_str.clone(),
             };
+
             info.insert(key, (buffer.size, path.path.to_string()));
         }
+
         info
     }
 
@@ -1119,6 +1144,7 @@ impl FeatherWriter {
             if let Some(safe) = &safe_id {
                 path = path.join(safe.clone());
             }
+
             let file_stem = safe_id.as_deref().unwrap_or(type_name);
             path = path.join(Self::timestamped_feather_file_name(
                 file_stem, timestamp, sequence,
@@ -1252,6 +1278,7 @@ impl FeatherWriter {
                     .expect("built-in data batch dispatch is exhaustive")?,
             }
         }
+
         Ok(())
     }
 
@@ -1679,6 +1706,7 @@ mod tests {
         );
 
         let instrument_id = "AAPL.AAPL";
+
         // Write a dummy value
         let quote = QuoteTick::new(
             InstrumentId::from(instrument_id),
@@ -1729,6 +1757,7 @@ mod tests {
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
         let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
         let manager = FeatherWriter::new(
             base_path.clone(),
             store,
@@ -1761,6 +1790,7 @@ mod tests {
         )
         .unwrap();
         let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
         let mut writer = FeatherWriter::new(
             storage.base_path.clone(),
             storage.object_store.clone(),
@@ -1770,6 +1800,7 @@ mod tests {
             Some(HashSet::from(["quotes".to_string()])),
             None,
         );
+
         let quote = QuoteTick::new(
             InstrumentId::from("AUD/USD.SIM"),
             Price::from("1.0"),
@@ -1802,14 +1833,17 @@ mod tests {
             None,
         )
         .unwrap();
+
         let now = Arc::new(AtomicU64::new(
             1_767_258_000_000_000_000, // 2026-01-01 09:00:00 UTC
         ));
+
         let path = FileWriterPath {
             path: Path::from("quotes.feather"),
             type_str: "quotes".to_string(),
             instrument_id: None,
         };
+
         let mut writer = FeatherWriter::new(
             storage.base_path,
             storage.object_store,
@@ -1841,6 +1875,7 @@ mod tests {
     #[rstest]
     fn test_file_writer_round_trip() {
         let instrument_id = "AAPL.AAPL";
+
         // Write a dummy value.
         let quote = QuoteTick::new(
             InstrumentId::from(instrument_id),
@@ -1902,6 +1937,7 @@ mod tests {
         );
 
         let instrument_id = "AAPL.AAPL";
+
         // Write a dummy value.
         let quote = QuoteTick::new(
             InstrumentId::from(instrument_id),
@@ -2278,6 +2314,7 @@ mod tests {
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
         let shared_clock = Arc::new(AtomicU64::new(0));
+
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_str().unwrap().to_string(),
             Arc::clone(&store),
@@ -2391,6 +2428,7 @@ mod tests {
 
         let instrument_id = InstrumentId::from("RUST.TEST");
         let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
         let original = RustTestCustomData {
             instrument_id,
             value: 1.23,
@@ -2398,6 +2436,7 @@ mod tests {
             ts_event: UnixNanos::from(1000),
             ts_init: UnixNanos::from(1000),
         };
+
         let custom = CustomData::new(Arc::new(original.clone()), data_type);
 
         writer
@@ -2428,6 +2467,7 @@ mod tests {
         let decoded =
             CustomDataDecoder::decode_data_batch(&metadata, batch).expect("decode_data_batch");
         assert_eq!(decoded.len(), 1);
+
         if let Data::Custom(decoded_custom) = &decoded[0] {
             assert_eq!(decoded_custom.data_type.type_name(), "RustTestCustomData");
             let rust: &RustTestCustomData = decoded_custom
@@ -2457,6 +2497,7 @@ mod tests {
             None,
         )
         .unwrap();
+
         let mut writer = FeatherWriter::new(
             storage.base_path.clone(),
             storage.object_store.clone(),
@@ -2483,6 +2524,7 @@ mod tests {
                 )))
                 .unwrap();
         }
+
         assert_eq!(writer.get_current_file_info().len(), 1);
         writer.flush().await.unwrap();
 

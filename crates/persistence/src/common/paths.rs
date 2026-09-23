@@ -283,10 +283,13 @@ pub(crate) fn type_name_from_session_feather_path(
                 "Cannot infer custom data type from Feather session path '{path}' for {kind}/{instance_id}"
             )
         })?;
+
         return Ok(format!("custom/{type_name}"));
     }
+
     let type_segment = components[type_index];
     let file_name = components.last().copied().unwrap_or(type_segment);
+
     let type_name = if type_segment.ends_with(".feather") {
         file_name
             .strip_suffix(".feather")
@@ -295,6 +298,7 @@ pub(crate) fn type_name_from_session_feather_path(
     } else {
         type_segment
     };
+
     Ok(type_name.to_string())
 }
 
@@ -321,8 +325,10 @@ pub(crate) fn identifier_from_session_feather_path(
         if identifier_start >= file_index {
             return None;
         }
+
         return Some(components[identifier_start].to_string());
     }
+
     let identifier = components.get(type_index + 1)?;
     let file_name = components.last()?;
 

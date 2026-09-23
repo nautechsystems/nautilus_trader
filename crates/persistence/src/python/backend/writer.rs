@@ -77,6 +77,7 @@ impl PyStreamingWriter {
             .map_err(|e| PyIOError::new_err(format!("Invalid writer backend: {e}")))?;
         let clock_rc = clock.clock_rc();
         let (writer_clock, shared_time) = WriterClock::from_shared_clock(&clock_rc);
+
         let config = WriterConnectConfig::new(
             path,
             storage_options.map(|options| options.into_iter().collect()),

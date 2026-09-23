@@ -313,15 +313,18 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
                 }
             }
         }
+
         return Ok(path_to_file_uri(&resolved.to_string_lossy())
             .trim_end_matches('/')
             .to_string());
     }
+
     let mut url = Url::parse(&uri)?;
     if url.scheme() == "gcs" {
         url.set_scheme("gs")
             .map_err(|()| anyhow::anyhow!("invalid storage scheme"))?;
     }
+
     url.set_fragment(None);
     url.set_query(None);
     Ok(url.as_str().trim_end_matches('/').to_string())
@@ -349,6 +352,7 @@ pub fn create_storage_backend_from_path(
     if uri.starts_with("file://") {
         fs::create_dir_all(file_uri_to_native_path(&uri))?;
     }
+
     let (object_store, base_path, original_uri) =
         crate::backend::parquet::io::create_object_store_from_path(&uri, storage_options)?;
     Ok(storage_backend(object_store, base_path, original_uri))

@@ -64,6 +64,7 @@ fn arrow_ipc_schema(
                     "Arrow IPC result batches do not share one physical schema",
                 ));
             }
+
             let metadata = first.schema().metadata().clone();
 
             if batches

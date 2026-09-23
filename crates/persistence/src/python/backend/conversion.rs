@@ -59,6 +59,7 @@ pub(crate) fn catalog_metadata_to_pydict(
             params_to_pydict(py, &item.metadata)?,
         )?;
     }
+
     Ok(dict.into())
 }
 
@@ -165,6 +166,7 @@ pub(crate) fn writer_record_filter_from_py(
             } else {
                 Some(identifiers.extract::<Vec<String>>()?)
             };
+
             filter.insert_prefix(catalog_filter_prefix_from_py(&record_type)?, identifiers);
         }
     }
@@ -185,10 +187,12 @@ fn catalog_filter_prefix_from_py(value: &Bound<'_, PyAny>) -> PyResult<String> {
         if let Ok(record_type) = value.parse::<NautilusRecordType>() {
             return Ok(record_type.path_prefix().into_owned());
         }
+
         return data_type_from_data_path_prefix(&value)
             .map(|data_type| data_type.path_prefix().into_owned())
             .map_err(to_pytype_err);
     }
+
     Err(to_pytype_err(
         "filter key must be NautilusRecordType, NautilusDataType, or str",
     ))

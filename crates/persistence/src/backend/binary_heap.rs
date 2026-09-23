@@ -50,6 +50,7 @@ impl<T, C: Compare<T>> BinaryHeap<T, C> {
         if !heap.data.is_empty() {
             heap.rebuild();
         }
+
         heap
     }
 
@@ -75,6 +76,7 @@ impl<T, C: Compare<T>> BinaryHeap<T, C> {
                 // SAFETY: !self.is_empty() means that self.len() > 0
                 unsafe { self.sift_down_to_bottom(0) };
             }
+
             item
         })
     }
@@ -195,6 +197,7 @@ impl<T, C: Compare<T>> BinaryHeap<T, C> {
             // SAFETY: child == end - 1 < self.len(), so it's a valid index
             unsafe { hole.move_to(child) };
         }
+
         pos = hole.pos();
         drop(hole);
 
@@ -321,6 +324,7 @@ impl<'a, T> Hole<'a, T> {
         debug_assert!(pos < data.len());
         // SAFETY: pos should be inside the slice
         let elt = unsafe { ptr::read(data.get_unchecked(pos)) };
+
         Hole {
             data,
             elt: ManuallyDrop::new(elt),
@@ -367,6 +371,7 @@ impl<'a, T> Hole<'a, T> {
             let hole_ptr = ptr.add(self.pos);
             ptr::copy_nonoverlapping(index_ptr, hole_ptr, 1);
         }
+
         self.pos = index;
     }
 }
@@ -479,6 +484,7 @@ mod tests {
         while let Some(v) = heap.pop() {
             sorted.push(v);
         }
+
         assert_eq!(sorted, vec![9, 6, 5, 4, 3, 2, 1, 1]);
     }
 }

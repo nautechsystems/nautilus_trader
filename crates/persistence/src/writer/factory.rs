@@ -117,6 +117,7 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
         for path in storage.list_files("", None).await? {
             storage.object_store.delete(&ObjectPath::from(path)).await?;
         }
+
         Ok::<(), anyhow::Error>(())
     })
 }
@@ -382,6 +383,7 @@ mod tests {
                 }
             }
         }
+
         count
     }
 }

@@ -72,6 +72,7 @@ pub fn migrate_parquet_catalog(
     if config.dry_run {
         return Ok(CatalogMigrationReport::from_plan(&plan, true));
     }
+
     let url = url::Url::parse(&target_uri)?;
     if url.scheme() == "file" {
         let path = url
@@ -79,6 +80,7 @@ pub fn migrate_parquet_catalog(
             .map_err(|()| anyhow::anyhow!("Invalid destination file URI"))?;
         std::fs::create_dir_all(path)?;
     }
+
     let target = ParquetDataCatalog::from_uri(
         &target_uri,
         Some(config.target_options.into_iter().collect()),
@@ -134,6 +136,7 @@ impl ParquetDataCatalog {
             if file.size == 0 {
                 let source_path = source.to_object_path_parsed(&file.path)?;
                 ensure_planned_file_unchanged(source, file, &source_path)?;
+
                 let target_prefix = match file.target_type_name.as_str() {
                     "instruments" => file.source_type_name.clone(),
                     "custom" => file
@@ -142,6 +145,7 @@ impl ParquetDataCatalog {
                         .map_or_else(|| "custom".to_string(), |name| format!("custom/{name}")),
                     _ => file.target_type_name.clone(),
                 };
+
                 let relative_path = file.relative_path.replacen(
                     &format!("data/{}/", file.source_type_name),
                     &format!("data/{target_prefix}/"),
@@ -159,11 +163,14 @@ impl ParquetDataCatalog {
                             },
                         )
                         .await?;
+
                     Ok(())
                 })?;
+
                 report.record_migrated_file(file, 0, 0);
                 continue;
             }
+
             let batches = read_planned_migration_file(source, file)?;
             let mut migrated_rows = 0;
             let mut path_identifier_rows = 0;
@@ -172,6 +179,7 @@ impl ParquetDataCatalog {
                 if part.row_count == 0 {
                     continue;
                 }
+
                 let directory = if let Some(custom_type_name) =
                     file.target_type_name.strip_prefix("custom/")
                 {
@@ -184,9 +192,11 @@ impl ParquetDataCatalog {
                             } else {
                                 &file.target_type_name
                             };
+
                         self.make_path(prefix, part.identifier.as_deref())?
                     }
                 };
+
                 let (start_ts, end_ts) = record_batch_ts_init_range(&part.batches)?;
                 let filename =
                     timestamps_to_filename(UnixNanos::from(start_ts), UnixNanos::from(end_ts));
@@ -214,6 +224,7 @@ impl ParquetDataCatalog {
                          {object_path}: {e}"
                     )
                 })?;
+
                 migrated_rows += part.row_count;
                 if part.identifier_source == IdentifierSource::Path {
                     path_identifier_rows += part.row_count;

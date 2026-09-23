@@ -62,6 +62,7 @@ struct StagingClient {
 impl StagingClient {
     fn new(tx: SyncSender<StagingMessage>) -> Self {
         let (reply_tx, replies) = mpsc::sync_channel(1);
+
         Self {
             tx,
             reply_tx,
@@ -91,6 +92,7 @@ impl StagingClient {
         if !self.should_write_custom(type_name, identifier)? {
             return Ok(());
         }
+
         let batch = FeatherWriter::encode_custom_to_batch(&custom).map_err(feather_error)?;
         self.request(|reply| StagingMessage::WriteCustom(custom, batch, reply))
     }
@@ -217,6 +219,7 @@ fn run_staging_worker(mut writer: FeatherWriter, rx: &Receiver<StagingMessage>) 
                     writer.flush().await.map_err(feather_error)
                 })
                 .map_err(|e| e.to_string());
+
                 let _ = reply.send(StagingReply::Operation(result));
             }
             StagingMessage::Close(reply) => {
@@ -224,6 +227,7 @@ fn run_staging_worker(mut writer: FeatherWriter, rx: &Receiver<StagingMessage>) 
                     writer.close().await.map_err(feather_error)
                 })
                 .map_err(|e| e.to_string());
+
                 let _ = reply.send(StagingReply::Operation(result));
             }
             StagingMessage::IsClosed(reply) => {
@@ -393,6 +397,7 @@ where
         else {
             return Ok(());
         };
+
         let staging = self.staging.client.clone();
         let submitter = self.promotion_driver.submitter(worker_name)?;
         let scheduled_paths = self.promotion_driver.scheduled_paths();
@@ -434,6 +439,7 @@ where
                             scheduled.remove(&file);
                         }
                     }
+
                     promotion
                 })();
 
@@ -443,6 +449,7 @@ where
                 }
             },
         )?);
+
         Ok(())
     }
 
@@ -459,6 +466,7 @@ where
         if files.is_empty() {
             return Ok(None);
         }
+
         Ok(Some(backend.into_work(PromotionScope {
             source,
             staging_uri: self.storage.original_uri.clone(),
@@ -496,6 +504,7 @@ where
                         partial_converted.len()
                     );
                 }
+
                 self.promotion_driver
                     .unschedule_uncommitted(&files, &committed_paths);
                 Err(e)
@@ -505,6 +514,7 @@ where
 
     pub(crate) fn warn_if_orphan_feather_present(&self, writer_name: &str) {
         let storage = self.storage.clone();
+
         let result = block_on_nautilus_with(move || async move {
             storage.list_files("", Some(".feather")).await
         });
@@ -535,8 +545,10 @@ where
             for item in data {
                 self.write_data(item)?;
             }
+
             return Ok(());
         }
+
         self.staging.client.write_batch(data)
     }
 
@@ -550,9 +562,11 @@ where
             self.staging.client.write_custom(custom.clone())?;
             return Ok(true);
         }
+
         let Some(command) = FeatherWriter::write_command(message) else {
             return Ok(false);
         };
+
         self.staging.client.write_any(command)?;
         Ok(true)
     }
@@ -592,6 +606,7 @@ where
         if let Some(timer) = self.promotion_timer.as_mut() {
             timer.stop();
         }
+
         self.promotion_timer = None;
     }
 
@@ -616,6 +631,7 @@ where
         if !B::REQUIRES_SESSION {
             anyhow::bail!("{} does not require a run session", B::NAME);
         }
+
         super::promotion::PromotionSession::from_uri(uri).ok_or_else(|| {
             anyhow::anyhow!("{uri_name} must end with /{{backtest|sandbox|live}}/{{run_id}}")
         })

@@ -118,6 +118,7 @@ impl QueryResult {
         T: Into<Data> + Send + 'static,
     {
         let error = Arc::new(ErrorSlot::default());
+
         let pages = pages.map(|page| {
             page.map(|rows| {
                 rows.into_iter()
@@ -130,6 +131,7 @@ impl QueryResult {
                 Err(e) => QueryError::Stream(DataFusionError::External(e.into())),
             })
         });
+
         let stream = BatchStream {
             inner: EagerStream::from_stream_with_runtime(
                 futures::stream::iter(pages),
@@ -137,6 +139,7 @@ impl QueryResult {
             ),
             error: Arc::clone(&error),
         };
+
         let mut merge = KMerge::new(TsInitComparator);
         merge.push_iter(stream);
         Self { merge, error }
@@ -200,6 +203,7 @@ impl DataBackendSession {
             .set_str("datafusion.optimizer.repartition_file_scans", "false")
             .set_str("datafusion.optimizer.prefer_existing_sort", "true");
         let session_ctx = SessionContext::new_with_config(session_cfg);
+
         Self {
             session_ctx,
             batch_streams: Vec::default(),
@@ -297,6 +301,7 @@ impl DataBackendSession {
                 }]],
                 ..Default::default()
             };
+
             super::block_on(
                 &self.runtime,
                 self.session_ctx
@@ -308,6 +313,7 @@ impl DataBackendSession {
                 self.session_ctx.deregister_table(table_name)?;
                 return Err(DataFusionError::External(e.into()));
             }
+
             self.registered_tables.insert(table_name.to_string());
 
             // Only add batch stream for newly registered tables to avoid duplicates
@@ -343,6 +349,7 @@ impl DataBackendSession {
                 }]],
                 ..Default::default()
             };
+
             super::block_on(
                 &self.runtime,
                 self.session_ctx
@@ -354,6 +361,7 @@ impl DataBackendSession {
                 self.session_ctx.deregister_table(table_name)?;
                 return Err(DataFusionError::External(e.into()));
             }
+
             self.registered_tables.insert(table_name.to_string());
         }
 
@@ -367,6 +375,7 @@ impl DataBackendSession {
             while let Some(batch) = batch_stream.next().await {
                 batches.push(batch?);
             }
+
             Ok::<_, datafusion::error::DataFusionError>(batches)
         })
     }
@@ -834,10 +843,12 @@ mod tests {
         let polls = Arc::new(AtomicUsize::new(0));
         let counted = Arc::clone(&polls);
         let mut batches = vec![Ok(quote_batch(&[quote(1)])), Err(stream_error())].into_iter();
+
         let inner = futures::stream::poll_fn(move |_| {
             counted.fetch_add(1, Ordering::SeqCst);
             Poll::Ready(batches.next())
         });
+
         let stream = Box::pin(RecordBatchStreamAdapter::new(
             Arc::new(QuoteTick::get_schema(Some(quote_metadata()))),
             inner,

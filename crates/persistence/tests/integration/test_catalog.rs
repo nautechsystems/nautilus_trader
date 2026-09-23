@@ -472,10 +472,12 @@ fn test_datafusion_parquet_round_trip() {
 
         let mut writer =
             ArrowWriter::try_new(&mut temp_file, schema.into(), Some(writer_props)).unwrap();
+
         for chunk in quote_ticks.chunks(1000) {
             let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
             writer.write(&batch).unwrap();
         }
+
         writer.close().unwrap();
     }
 
@@ -489,6 +491,7 @@ fn test_datafusion_parquet_round_trip() {
     let ticks_variants: Vec<QuoteTick> = to_variant(ticks);
 
     assert_eq!(quote_ticks.len(), ticks_variants.len());
+
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
         assert_eq!(orig, loaded);
     }
@@ -1354,6 +1357,7 @@ fn test_query_round_trip_non_ascii_instrument_id() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let id = InstrumentId::from("CAFÉ.SIM");
+
     let trade = TradeTick::new(
         id,
         Price::new(1987.0, 1),
@@ -1393,6 +1397,7 @@ fn test_filter_files_non_ascii_instrument_id() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
     let id = InstrumentId::from("CAFÉ.SIM");
+
     let trade = TradeTick::new(
         id,
         Price::new(1987.0, 1),
@@ -1459,11 +1464,13 @@ fn test_query_bars_non_ascii_instrument_id_partial_match() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let instrument_id = InstrumentId::from("CAFÉ.SIM");
+
     let bar_type = BarType::new(
         instrument_id,
         BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
         AggregationSource::External,
     );
+
     let bar = Bar::new(
         bar_type,
         Price::new(1.00001, 5),
@@ -1630,6 +1637,7 @@ fn test_rust_write_and_read_account_state() {
             true,
         )
         .unwrap();
+
     let loaded = batches
         .into_iter()
         .flat_map(|batch| {
@@ -4302,6 +4310,7 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
     let result = catalog
         .query::<QuoteTick>(None, None, None, None, None, true)
         .unwrap();
+
     let instrument_ids: Vec<String> = result
         .map(|data| match data.unwrap() {
             Data::Quote(quote) => quote.instrument_id.to_string(),
@@ -4501,11 +4510,13 @@ fn test_rust_custom_data_binary_roundtrip() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let instrument_id = InstrumentId::from("RUST.TEST");
+
     let data_type = DataType::new(
         "RustTestBytesCustomData",
         None,
         Some(instrument_id.to_string()),
     );
+
     let original_data = [
         RustTestBytesCustomData {
             value: Vec::new(),
@@ -4518,6 +4529,7 @@ fn test_rust_custom_data_binary_roundtrip() {
             ts_init: UnixNanos::from(2),
         },
     ];
+
     let custom_data: Vec<CustomData> = original_data
         .iter()
         .cloned()
@@ -4542,10 +4554,12 @@ fn test_rust_custom_data_binary_roundtrip() {
         .unwrap();
 
     assert_eq!(loaded.len(), original_data.len());
+
     for (expected, actual) in original_data.iter().zip(&loaded) {
         let Data::Custom(custom) = actual else {
             panic!("Expected custom data, was {actual:?}");
         };
+
         let actual = custom
             .data
             .as_any()
@@ -4568,6 +4582,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
 
     let instrument_id = InstrumentId::from("RUST.REMOTE");
     let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
     let original_data = [
         RustTestCustomData {
             instrument_id,
@@ -4584,6 +4599,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
             ts_init: UnixNanos::from(20),
         },
     ];
+
     let custom_data: Vec<CustomData> = original_data
         .iter()
         .cloned()
@@ -4595,6 +4611,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
         .unwrap();
 
     let ids = vec![instrument_id.to_string()];
+
     let discovered_files = catalog
         .list_parquet_files_with_criteria(
             &NautilusDataType::Custom {
@@ -4606,6 +4623,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
             None,
         )
         .unwrap();
+
     let explicit_files: Vec<String> = discovered_files
         .iter()
         .map(|path| catalog.reconstruct_full_uri(path))
@@ -4639,6 +4657,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
 
     for loaded in [&loaded_discovered, &loaded_explicit] {
         assert_eq!(loaded.len(), original_data.len());
+
         for (expected, actual) in original_data.iter().zip(loaded.iter()) {
             if let Data::Custom(custom) = actual {
                 assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
@@ -4755,6 +4774,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
         ts_event: UnixNanos::from(1),
         ts_init: UnixNanos::from(1),
     };
+
     let second = RustTestCustomData {
         instrument_id,
         value: 2.0,
@@ -4796,6 +4816,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
         .unwrap();
 
     assert_eq!(loaded.len(), 2);
+
     let values: Vec<f64> = loaded
         .iter()
         .map(|item| match item {
@@ -4810,6 +4831,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
             other => panic!("Expected Data::Custom variant, was {other:?}"),
         })
         .collect();
+
     assert_eq!(values, vec![1.0, 2.0]);
 }
 
@@ -4997,6 +5019,7 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
             ts_init: UnixNanos::from(2),
         },
     ];
+
     let custom_b = [RustTestCustomData {
         instrument_id: id_b,
         value: 10.0,
@@ -5564,11 +5587,13 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let mut reader = builder.build().unwrap();
@@ -5707,11 +5732,13 @@ fn test_convert_stream_to_data_ignores_flat_stream_file_with_non_timestamp_suffi
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let mut reader = builder.build().unwrap();
@@ -5754,6 +5781,7 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
 
     let mut metadata = HashMap::new();
     metadata.insert("instrument_id".to_string(), "AUD/USD.SIM".to_string());
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("ts_init", DataType::UInt64, false),
@@ -5799,11 +5827,13 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let parquet_schema = builder.schema().clone();
@@ -5871,6 +5901,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
 
     let mut metadata = HashMap::new();
     metadata.insert("bar_type".to_string(), bar_type_internal);
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("ts_init", DataType::UInt64, false),
@@ -5916,11 +5947,13 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     assert_eq!(
@@ -5977,9 +6010,11 @@ fn test_instrument_roundtrip_with_info_params() {
     assert_eq!(read.len(), 1, "Should read back exactly one instrument");
 
     let read_any = &read[0];
+
     let InstrumentAny::CurrencyPair(read_cp) = read_any else {
         panic!("Expected CurrencyPair");
     };
+
     assert_eq!(read_cp.id, instrument_id);
     assert_eq!(
         read_cp.info,
@@ -6130,9 +6165,11 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
     let ids = vec![instrument_id.to_string()];
     let read = catalog.query_instruments(Some(&ids)).unwrap();
     assert_eq!(read.len(), 1);
+
     let InstrumentAny::CryptoPerpetual(decoded) = &read[0] else {
         panic!("expected CryptoPerpetual");
     };
+
     assert_eq!(decoded.base_currency.code, unknown_code);
     assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }

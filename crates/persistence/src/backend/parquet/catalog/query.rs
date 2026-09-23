@@ -186,9 +186,11 @@ impl ParquetDataCatalog {
 
         for (index, file_path) in instrument_files.into_iter().enumerate() {
             let object_path = self.to_object_path_parsed(&file_path)?;
+
             let (_, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+
             validate_catalog_schema(&builder_schema)?;
             let metadata: std::collections::HashMap<String, String> =
                 builder_schema.metadata().clone();
@@ -241,9 +243,11 @@ impl ParquetDataCatalog {
             }
 
             let path_parts: Vec<&str> = path_str.split('/').collect();
+
             let Some(data_index) = path_parts.iter().position(|part| *part == "data") else {
                 continue;
             };
+
             let Some(type_dir) = path_parts.get(data_index + 1) else {
                 continue;
             };
@@ -302,9 +306,11 @@ impl ParquetDataCatalog {
 
         for file_path in instrument_files {
             let object_path = self.to_object_path_parsed(&file_path)?;
+
             let (batches, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+
             validate_catalog_schema(&builder_schema)?;
             let metadata = builder_schema.metadata().clone();
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
@@ -466,10 +472,12 @@ impl ParquetDataCatalog {
         self.clear_session_tables();
         self.register_remote_object_store()?;
         let data_type = T::catalog_data_type();
+
         let files = match files {
             Some(files) => files,
             None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
         };
+
         let paths = if optimize_file_loading {
             parent_directories(&files)
                 .into_iter()
@@ -481,6 +489,7 @@ impl ParquetDataCatalog {
                 .map(|file| self.resolve_path_for_datafusion(file))
                 .collect()
         };
+
         let mut sources = Vec::with_capacity(paths.len());
         for (index, path) in paths.into_iter().enumerate() {
             let table = format!("parquet_{index}");
@@ -496,6 +505,7 @@ impl ParquetDataCatalog {
                 )) as TypedPages<T>,
             );
         }
+
         Ok(Box::new(MergedPages::new(sources, self.batch_size)))
     }
 
@@ -552,6 +562,7 @@ impl ParquetDataCatalog {
                 let identifier = extract_identifier_from_path(file_uri).ok_or_else(|| {
                     anyhow::anyhow!("Cannot extract identifier from path '{file_uri}'")
                 })?;
+
                 let safe_sql_identifier = make_sql_safe_identifier(identifier);
                 let safe_filename = extract_sql_safe_filename(file_uri);
                 let table_name = format!(
@@ -712,6 +723,7 @@ impl ParquetDataCatalog {
         if display_batches.is_empty() {
             display_batches.push(empty_display_batch_with_identifier(data_type)?);
         }
+
         Ok(display_batches)
     }
 
@@ -833,6 +845,7 @@ impl ParquetDataCatalog {
 
         for file in files {
             let object_path = self.to_object_path_parsed(&file)?;
+
             let mut decode_metadata = self.execute_async(|| async {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
@@ -840,6 +853,7 @@ impl ParquetDataCatalog {
                 validate_catalog_schema(&schema)?;
                 Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
             })?;
+
             decode_metadata.extend(lookup_metadata.clone());
             let identifier = extract_identifier_from_path(&file)
                 .ok_or_else(|| anyhow::anyhow!("Cannot extract identifier from path '{file}'"))?;
@@ -872,6 +886,7 @@ impl ParquetDataCatalog {
                 )?);
             }
         }
+
         all_data.sort_by_key(HasTsInit::ts_init);
         Ok(all_data)
     }
@@ -965,6 +980,7 @@ impl ParquetDataCatalog {
                 end,
             )?);
         }
+
         files.sort();
 
         Ok(files)
@@ -1368,6 +1384,7 @@ fn parent_directories(files: &[String]) -> Vec<String> {
                 .map(|path| path.to_string_lossy().to_string())
         })
         .collect();
+
     directories.sort();
     directories.dedup();
     directories

@@ -74,6 +74,7 @@ pub fn augment_batch_with_data_type_column<S: BuildHasher>(
     dt_meta: Option<&HashMap<String, String, S>>,
 ) -> anyhow::Result<RecordBatch> {
     let num_rows = batch.num_rows();
+
     let data_type_array: Arc<dyn Array> = Arc::new(StringArray::from(
         (0..num_rows)
             .map(|_| Some(data_type_json))
@@ -92,6 +93,7 @@ pub fn augment_batch_with_data_type_column<S: BuildHasher>(
     if let Some(m) = dt_meta {
         meta.extend(m.iter().map(|(key, value)| (key.clone(), value.clone())));
     }
+
     let new_schema = Arc::new(Schema::new_with_metadata(fields, meta));
     let mut columns = batch.columns().to_vec();
     columns.push(data_type_array);
@@ -116,6 +118,7 @@ pub fn custom_data_path_components(type_name: &str, identifier: Option<&str>) ->
             components.push(safe);
         }
     }
+
     components
 }
 
@@ -197,6 +200,7 @@ pub fn prepare_custom_data_batch(
                  call register_custom_data_class or ensure_custom_data_registered before writing"
             )
         })?;
+
     let batch =
         augment_batch_with_data_type_column(&batch, &data_type_json, type_name, dt_meta.as_ref())?;
     let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
@@ -339,10 +343,12 @@ pub fn decode_custom_batches_to_data(
                     .map_err(|e| anyhow::anyhow!("Failed to create new batch: {e}"))?;
             }
         }
+
         let metadata = batch.schema().metadata().clone();
         let decoded = decode_batch_to_data(&metadata, batch, true)?;
         file_data.extend(decoded);
     }
+
     Ok(file_data)
 }
 

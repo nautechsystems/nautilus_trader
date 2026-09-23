@@ -420,6 +420,7 @@ fn merge_overlapping(intervals: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
             last.1 = last.1.max(interval.1);
             continue;
         }
+
         merged.push(interval);
     }
 

@@ -311,6 +311,7 @@ impl CatalogWorker {
 impl Drop for CatalogWorker {
     fn drop(&mut self) {
         let _ = self.sender.send(CatalogCommand::Shutdown);
+
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -405,6 +406,7 @@ fn run_catalog_worker(catalog: &mut DataCatalog, receiver: Receiver<CatalogComma
                         session_id
                     })
                 };
+
                 let _ = reply.send(result);
             }
             CatalogCommand::PullSession { session_id, reply } => {
@@ -481,6 +483,7 @@ fn drain_async_errors(errors: &mut Vec<anyhow::Error>) -> anyhow::Result<()> {
         .map(|e| format!("{e:#}"))
         .collect::<Vec<_>>()
         .join("; ");
+
     let Some(first) = errors.drain(..).next() else {
         return Ok(());
     };
@@ -506,6 +509,7 @@ fn pull_session(
     if !matches!(result, Ok(Some(_))) {
         sessions.remove(&session_id);
     }
+
     result
 }
 
@@ -575,6 +579,7 @@ mod tests {
             if self.fail {
                 anyhow::bail!("stub query failure");
             }
+
             Ok(DataBatch::Quote(vec![stub_quote()].into()))
         }
 
@@ -588,6 +593,7 @@ mod tests {
             if self.fail {
                 anyhow::bail!("stub query failure");
             }
+
             Ok(Box::new(TypedDataBatchSession::from_vec(
                 vec![stub_quote()],
                 chunk_size,
@@ -660,6 +666,7 @@ mod tests {
                     .unwrap_or("stub write failure");
                 anyhow::bail!(message.to_string());
             }
+
             Ok(())
         }
 
@@ -690,6 +697,7 @@ mod tests {
     #[rstest]
     fn test_query_batch_async_invokes_callback_on_worker_thread() {
         let query_thread = Arc::new(Mutex::new(None));
+
         let worker = CatalogWorker::start(Box::new(StubCatalog {
             fail: false,
             query_thread: query_thread.clone(),
@@ -739,6 +747,7 @@ mod tests {
     #[rstest]
     fn test_worker_owns_and_pulls_catalog_session() {
         let query_thread = Arc::new(Mutex::new(None));
+
         let worker = CatalogWorker::start(Box::new(StubCatalog {
             fail: false,
             query_thread: query_thread.clone(),
@@ -764,6 +773,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_id = worker.open_session(stub_query(), Some(1)).unwrap();
 
         let first_close = worker.close_session(session_id).unwrap();
@@ -831,6 +841,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_ids = (0..MAX_OPEN_SESSIONS)
             .map(|_| worker.open_session(stub_query(), Some(1)).unwrap())
             .collect::<Vec<_>>();
@@ -856,6 +867,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_id = worker.open_session(stub_query(), Some(1)).unwrap();
         let (tx, rx) = mpsc::channel();
 
@@ -870,6 +882,7 @@ mod tests {
                 }),
             )
             .unwrap();
+
         let (callback_thread, result) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
 
         assert_eq!(result.unwrap(), 1);

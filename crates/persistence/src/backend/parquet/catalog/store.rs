@@ -120,6 +120,7 @@ impl ParquetDataCatalog {
                 extended = true;
             }
         }
+
         anyhow::ensure!(
             extended,
             "Cannot extend file name for {data_type}: no instrument class holds {}; \
@@ -241,6 +242,7 @@ impl ParquetDataCatalog {
                     files.push(object.location.to_string());
                 }
             }
+
             Ok::<Vec<String>, anyhow::Error>(files)
         })
     }
@@ -277,6 +279,7 @@ impl ParquetDataCatalog {
         for data_type in parquet_catalog_data_type_path_prefixes(data_type) {
             instruments.extend(self.list_prefix_instruments(data_type.as_ref())?);
         }
+
         // The same identifier can live under more than one instrument class.
         instruments.sort();
         instruments.dedup();
@@ -306,6 +309,7 @@ impl ParquetDataCatalog {
                     instruments.insert(decode_object_store_segment(identifier.as_ref()));
                 }
             }
+
             Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
         })
     }
@@ -422,6 +426,7 @@ impl ParquetDataCatalog {
             while let Some(object) = stream.next().await {
                 objects.push(object?);
             }
+
             Ok(objects)
         })
     }
@@ -485,6 +490,7 @@ impl ParquetDataCatalog {
         if self.original_uri.starts_with("file://") {
             return append_path_to_file_uri(&self.original_uri, path);
         }
+
         self.reconstruct_full_uri(path)
     }
 
@@ -495,6 +501,7 @@ impl ParquetDataCatalog {
         if !resolved.ends_with('/') {
             resolved.push('/');
         }
+
         resolved
     }
 
@@ -612,6 +619,7 @@ impl ParquetDataCatalog {
                 components.push(safe_id);
             }
         }
+
         let path = make_object_store_path(&self.base_path, components);
         Ok(path)
     }
@@ -810,6 +818,7 @@ impl ParquetDataCatalog {
         if old_path == new_path {
             return Ok(());
         }
+
         self.execute_async(|| async {
             self.object_store
                 .rename(old_path, new_path)
@@ -894,6 +903,7 @@ impl ParquetDataCatalog {
                     }
                 }
             }
+
             directories.sort();
             return Ok(directories);
         }

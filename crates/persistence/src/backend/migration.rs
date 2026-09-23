@@ -77,11 +77,13 @@ pub trait ParquetCatalogSource: Sync {
     fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
         let normalized = normalize_path_separators(path);
         let base = self.base_path().trim_matches('/');
+
         let full = if base.is_empty() {
             normalized
         } else {
             format!("{base}/{}", normalized.trim_start_matches('/'))
         };
+
         ObjectPath::parse(full.trim_start_matches('/')).map_err(anyhow::Error::from)
     }
 }
@@ -125,6 +127,7 @@ impl CatalogMigrationReport {
                 .or_insert_with(CatalogMigrationTypeReport::default)
                 .planned_files += 1;
         }
+
         Self {
             dry_run,
             total_leaf_files: plan.total_leaf_files,
@@ -145,6 +148,7 @@ impl CatalogMigrationReport {
         } else {
             rows
         };
+
         self.migrated_files += 1;
         self.migrated_rows += rows;
         self.transcoded_rows += transcoded_rows;
@@ -214,6 +218,7 @@ impl Display for CatalogMigrationReport {
         for file in &self.unmigrated {
             writeln!(f, "Unmigrated {}: {}", file.path, file.reason)?;
         }
+
         Ok(())
     }
 }
@@ -232,6 +237,7 @@ pub fn parse_storage_option(option: &str) -> Result<(String, String), String> {
             "Storage option must use non-empty key=value: {option}"
         ));
     }
+
     Ok((key.to_string(), value.to_string()))
 }
 
@@ -340,6 +346,7 @@ impl CatalogMigrationPlan {
                 )
             })
             .collect::<Vec<_>>();
+
         messages.extend(
             self.unresolved_schemas
                 .iter()
@@ -462,9 +469,11 @@ pub fn read_planned_migration_file(
     file: &PlannedMigrationFile,
 ) -> anyhow::Result<Vec<RecordBatch>> {
     let object_path = source.to_object_path_parsed(&file.path)?;
+
     let (batches, schema) = execute_async(|| async {
         read_parquet_from_object_store(source.object_store(), &object_path).await
     })?;
+
     ensure_planned_file_unchanged(source, file, &object_path)?;
     let mut state = LegacyTranscodeState::default();
     let mut transcoded = Vec::new();
@@ -480,6 +489,7 @@ pub fn read_planned_migration_file(
         )?;
         transcoded.extend(result.batches);
     }
+
     let batches = transcoded;
     Ok(batches)
 }
@@ -529,6 +539,7 @@ pub(crate) fn feather_replay_identity(
         identifiers.sort();
         identifiers.dedup();
     }
+
     let identity = serde_json::json!({
         "source_uri": source_uri,
         "source_path": source_path,
@@ -544,6 +555,7 @@ pub(crate) fn feather_replay_identity(
 fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<ObjectMeta>> {
     let prefix =
         (!source.base_path().is_empty()).then(|| ObjectPath::from(source.base_path().to_string()));
+
     let mut objects = execute_async(|| async {
         Ok(source
             .object_store()
@@ -551,9 +563,11 @@ fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<
             .try_collect::<Vec<_>>()
             .await?)
     })?;
+
     // The OpenDAL filesystem adapter lists directory entries alongside leaves; an entry
     // that is the parent of another listed entry is a directory, not a migratable leaf.
     objects.sort_by(|left, right| left.location.as_ref().cmp(right.location.as_ref()));
+
     let parents = objects
         .windows(2)
         .filter(|pair| {
@@ -564,10 +578,12 @@ fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<
         })
         .map(|pair| pair[0].location.clone())
         .collect::<std::collections::HashSet<_>>();
+
     objects.retain(|object| {
         !parents.contains(&object.location)
             && !relative_object_path(source, &object.location).is_empty()
     });
+
     Ok(objects)
 }
 
@@ -586,6 +602,7 @@ fn relative_object_path(source: &dyn ParquetCatalogSource, path: &ObjectPath) ->
     if base.is_empty() {
         return path.to_string();
     }
+
     path.strip_prefix(&format!("{base}/"))
         .unwrap_or(path)
         .to_string()
@@ -593,6 +610,7 @@ fn relative_object_path(source: &dyn ParquetCatalogSource, path: &ObjectPath) ->
 
 fn classify_source_path(path: &str) -> SourceClassification {
     let parts = path.split('/').collect::<Vec<_>>();
+
     let Some(root) = parts.first().copied() else {
         return SourceClassification::Unmigrated("empty source path".to_string());
     };
@@ -645,6 +663,7 @@ fn classify_source_path(path: &str) -> SourceClassification {
     } else {
         "unrecognized catalog data directory"
     };
+
     SourceClassification::Unmigrated(reason.to_string())
 }
 
@@ -716,6 +735,7 @@ fn resolve_candidate_schemas(
     candidates: Vec<SchemaCandidate>,
 ) -> anyhow::Result<(Vec<PlannedMigrationFile>, Vec<UnresolvedSchema>)> {
     let object_store = source.object_store();
+
     let resolved = execute_async(|| async move {
         futures::stream::iter(candidates)
             .map(|candidate| {
@@ -731,6 +751,7 @@ fn resolve_candidate_schemas(
             .try_collect::<Vec<_>>()
             .await
     })?;
+
     let mut files = Vec::new();
     let mut unresolved = Vec::new();
 
@@ -753,6 +774,7 @@ fn resolve_candidate_schemas(
                     target_fingerprint: fingerprint,
                 },
             });
+
             continue;
         }
 
@@ -771,6 +793,7 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
             }
         }
@@ -809,8 +832,10 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
             };
+
             format!("instruments/{class}")
         } else {
             candidate.target_type_name.clone()
@@ -831,6 +856,7 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
             }
         }
@@ -847,6 +873,7 @@ fn resolve_candidate_schemas(
                     candidate.relative_path
                 ),
             });
+
             continue;
         }
 
@@ -887,6 +914,7 @@ fn resolve_candidate_schemas(
             transcode_kind: resolved.resolution.kind,
         })
         .collect();
+
     Ok((files, unresolved))
 }
 
@@ -970,6 +998,7 @@ fn split_batch_by_identifier(
     {
         return Ok(vec![(Some(identifier), IdentifierSource::Path, batch)]);
     }
+
     Ok(vec![(None, IdentifierSource::Absent, batch)])
 }
 
@@ -979,6 +1008,7 @@ fn metadata_identifier(type_name: &str, batch: &RecordBatch) -> Option<String> {
     } else {
         KEY_INSTRUMENT_ID
     };
+
     batch.schema().metadata().get(key).cloned()
 }
 
@@ -999,6 +1029,7 @@ fn identifier_column<'a>(
                 .ok_or_else(|| anyhow::anyhow!("Identifier column {name} is not string-like"));
         }
     }
+
     Ok(None)
 }
 
@@ -1013,6 +1044,7 @@ fn row_identifier_groups(
             .or_default()
             .push(u32::try_from(row)?);
     }
+
     Ok(groups)
 }
 
@@ -1032,9 +1064,11 @@ fn batch_with_identifier(
     batch: RecordBatch,
 ) -> anyhow::Result<RecordBatch> {
     let batch = record_batch_with_identifier_column(batch, identifier)?;
+
     let Some(identifier) = identifier else {
         return Ok(batch);
     };
+
     let metadata_key = if type_name == "bars" {
         "bar_type"
     } else if type_name.starts_with("custom/") {
@@ -1042,8 +1076,10 @@ fn batch_with_identifier(
     } else {
         KEY_INSTRUMENT_ID
     };
+
     let mut metadata = batch.schema().metadata().clone();
     metadata.insert(metadata_key.to_string(), identifier.to_string());
+
     let schema = Arc::new(Schema::new_with_metadata(
         batch.schema().fields().iter().cloned().collect::<Vec<_>>(),
         metadata,
@@ -1059,17 +1095,21 @@ fn record_identifier_from_path(file_path: &str, type_name: &str) -> Option<Strin
         if path_parts.get(start) != Some(&"data") {
             continue;
         }
+
         let type_start = start + 1;
         let type_end = type_start + type_parts.len();
         if path_parts.get(type_start..type_end) != Some(type_parts.as_slice()) {
             continue;
         }
+
         let remaining = &path_parts[type_end..];
         if remaining.len() <= 1 {
             return None;
         }
+
         return Some(remaining[0].to_string());
     }
+
     None
 }
 
@@ -1195,6 +1235,7 @@ mod tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -1214,11 +1255,13 @@ mod tests {
         let source_path = temp.path().join("source");
         let bar_dir = source_path.join("data").join("bars").join("AUDUSD.SIM");
         fs::create_dir_all(&bar_dir).unwrap();
+
         let precision_dir = if cfg!(feature = "high-precision") {
             "128-bit"
         } else {
             "64-bit"
         };
+
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -1254,6 +1297,7 @@ mod tests {
         let source_path = temp.path().join("source");
         let quote_dir = source_path.join("data").join("quotes").join("AUDUSD.SIM");
         fs::create_dir_all(&quote_dir).unwrap();
+
         let schema = Arc::new(Schema::new(vec![Field::new(
             "unknown",
             DataType::Int64,

@@ -111,17 +111,20 @@ pub(crate) fn normalize_legacy_parquet_columns(batch: &RecordBatch) -> anyhow::R
                 Some(metadata),
             ))));
         }
+
         let batch = normalize_legacy_info_column(batch)?;
         let instruments = decode_instrument_any_batch(&metadata, &batch)?;
         return Ok(InstrumentAny::encode_batch(&metadata, &instruments)?);
     }
 
     let normalize_legacy = is_nautilus_legacy_schema(batch.schema_ref());
+
     let batch = if normalize_legacy {
         normalize_dictionary_string_columns(batch)?
     } else {
         batch.clone()
     };
+
     let batch = normalize_legacy_fixed_columns(&batch)?;
     let batch = normalize_legacy_info_column(&batch)?;
     normalize_legacy_depth_columns(&batch)
@@ -140,12 +143,14 @@ pub(crate) fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
 
     let normalize_fixed = is_nautilus_legacy_schema(schema);
     let normalize_timestamps = is_nautilus_timestamp_schema(schema);
+
     let fields = schema
         .fields()
         .iter()
         .map(|field| {
             let data_type =
                 normalized_legacy_data_type(field.name(), field.data_type(), normalize_fixed);
+
             let data_type = if schema.metadata().contains_key("type_name")
                 && matches!(field.name().as_str(), "ts_event" | "ts_init")
                 && data_type == DataType::UInt64
@@ -156,10 +161,12 @@ pub(crate) fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
             } else {
                 data_type
             };
+
             let nullable = field.is_nullable()
                 || (normalize_fixed
                     && matches!(field.data_type(), DataType::FixedSizeBinary(8 | 16)))
                 || (field.name() == "info" && field.data_type() == &DataType::Binary);
+
             Arc::new(
                 field
                     .as_ref()
@@ -169,6 +176,7 @@ pub(crate) fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
             )
         })
         .collect::<Vec<_>>();
+
     normalize_legacy_depth_schema(Schema::new_with_metadata(fields, schema.metadata().clone()))
 }
 
@@ -179,6 +187,7 @@ fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
         .parse::<NautilusRecordType>()
         .ok()?;
     let current = catalog_record_schema(record_type).ok()?;
+
     let fields = schema
         .fields()
         .iter()
@@ -199,6 +208,7 @@ fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
             }
         })
         .collect::<Vec<_>>();
+
     Some(Schema::new_with_metadata(fields, schema.metadata().clone()))
 }
 
@@ -316,6 +326,7 @@ fn normalize_legacy_info_column(batch: &RecordBatch) -> anyhow::Result<RecordBat
     }
 
     let mut fields = batch.schema().fields().iter().cloned().collect::<Vec<_>>();
+
     fields[info_index] = Arc::new(
         fields[info_index]
             .as_ref()
@@ -325,6 +336,7 @@ fn normalize_legacy_info_column(batch: &RecordBatch) -> anyhow::Result<RecordBat
     );
     let mut columns = batch.columns().to_vec();
     columns[info_index] = Arc::new(builder.finish());
+
     let schema = Arc::new(Schema::new_with_metadata(
         fields,
         batch.schema().metadata().clone(),
@@ -354,6 +366,7 @@ fn normalize_legacy_depth_columns(batch: &RecordBatch) -> anyhow::Result<RecordB
     }
 
     let flat = batch.schema().index_of("bid_price_0").is_ok();
+
     let side_values = |side: &str, value: &str| {
         let name = format!("{side}_{value}");
         if flat {
@@ -367,15 +380,18 @@ fn normalize_legacy_depth_columns(batch: &RecordBatch) -> anyhow::Result<RecordB
         } else {
             if batch.column_by_name(&name).is_none() && matches!(value, "count" | "order_id") {
                 let width = legacy_fixed_list_width(batch, side)?;
+
                 let len = batch.num_rows().checked_mul(width).ok_or_else(|| {
                     anyhow::anyhow!("Legacy depth column '{name}' length overflow")
                 })?;
+
                 return match value {
                     "count" => Ok(Arc::new(UInt32Array::from(vec![0; len])) as ArrayRef),
                     "order_id" => Ok(Arc::new(UInt64Array::from(vec![0; len])) as ArrayRef),
                     _ => unreachable!("missing legacy depth defaults are fixed"),
                 };
             }
+
             depth_list_values(
                 batch
                     .column_by_name(&name)
@@ -383,6 +399,7 @@ fn normalize_legacy_depth_columns(batch: &RecordBatch) -> anyhow::Result<RecordB
             )
         }
     };
+
     let mut columns = vec![
         depth_side_array(
             &side_values("bid", "price")?,
@@ -408,6 +425,7 @@ fn normalize_legacy_depth_columns(batch: &RecordBatch) -> anyhow::Result<RecordB
             .filter(|(field, _)| !is_legacy_depth_column(field.name()))
             .map(|(_, column)| column.clone()),
     );
+
     let schema = Arc::new(normalize_legacy_depth_schema(
         batch.schema().as_ref().clone(),
     ));
@@ -438,6 +456,7 @@ fn has_legacy_depth_columns(schema: &Schema) -> bool {
                 .field_with_name(name)
                 .is_ok_and(|field| matches!(field.data_type(), DataType::FixedSizeList(_, _)))
         });
+
     let has_flat_levels = ["bid_price_0", "ask_price_0", "bid_size_0", "ask_size_0"]
         .iter()
         .all(|name| schema.index_of(name).is_ok());
@@ -457,6 +476,7 @@ fn depth_level_fields() -> Fields {
 
 fn depth_side_field(name: &str) -> Arc<Field> {
     let fields = depth_level_fields();
+
     Arc::new(Field::new(
         name,
         DataType::List(Arc::new(Field::new(
@@ -470,6 +490,7 @@ fn depth_side_field(name: &str) -> Arc<Field> {
 
 fn decimal_depth_list(batch: &RecordBatch, prefix: &str) -> anyhow::Result<ArrayRef> {
     let mut values = Vec::with_capacity(batch.num_rows() * DEPTH10_LEN);
+
     let arrays = (0..DEPTH10_LEN)
         .map(|level| {
             let name = format!("{prefix}_{level}");
@@ -485,6 +506,7 @@ fn decimal_depth_list(batch: &RecordBatch, prefix: &str) -> anyhow::Result<Array
             values.push((!array.is_null(row)).then(|| array.value(row)));
         }
     }
+
     let values = Decimal128Array::from(values).with_precision_and_scale(38, 16)?;
     Ok(depth_list_array(Arc::new(values), true))
 }
@@ -506,12 +528,14 @@ fn u64_depth_list(batch: &RecordBatch, prefix: &str) -> anyhow::Result<ArrayRef>
                 .transpose()
         })
         .collect::<Result<Vec<_>, _>>()?;
+
     let mut values = Vec::with_capacity(batch.num_rows() * DEPTH10_LEN);
     for row in 0..batch.num_rows() {
         for array in &arrays {
             values.push(array.map_or(0, |array| array.value(row)));
         }
     }
+
     Ok(depth_list_array(Arc::new(UInt64Array::from(values)), false))
 }
 
@@ -525,12 +549,14 @@ fn u32_depth_list(batch: &RecordBatch, prefix: &str) -> anyhow::Result<ArrayRef>
                 .ok_or_else(|| anyhow::anyhow!("Legacy depth column '{name}' must be UInt32"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+
     let mut values = Vec::with_capacity(batch.num_rows() * DEPTH10_LEN);
     for row in 0..batch.num_rows() {
         for array in &arrays {
             values.push(array.value(row));
         }
     }
+
     Ok(depth_list_array(Arc::new(UInt32Array::from(values)), false))
 }
 
@@ -584,6 +610,7 @@ fn depth_side_array(
             && order_ids.len() == expected_len,
         "Legacy depth columns must contain the same number of values"
     );
+
     let width = if rows == 0 {
         0
     } else {
@@ -607,11 +634,13 @@ fn depth_side_array(
             if prices.is_null(index) || sizes.is_null(index) {
                 continue;
             }
+
             open_prices.push(prices.value(index));
             open_sizes.push(sizes.value(index));
             open_counts.push(counts.value(index));
             open_order_ids.push(order_ids.value(index));
         }
+
         offsets.push(i32::try_from(open_prices.len())?);
     }
 
@@ -714,6 +743,7 @@ pub async fn write_batches_to_parquet(
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
     let (object_store, base_path, _) = create_object_store_from_path(path, storage_options)?;
+
     let object_path = if base_path.is_empty() {
         ObjectPath::from(path)
     } else {
@@ -748,6 +778,7 @@ pub async fn read_parquet_schema_from_object_store(
             arrow::datatypes::Field,
         >::new())));
     }
+
     let reader = BufReader::new(object_store, &object);
     let builder = ParquetRecordBatchStreamBuilder::new(reader).await?;
     Ok(builder.schema().clone())
@@ -775,6 +806,7 @@ pub async fn read_parquet_from_object_store(
             )),
         ));
     }
+
     let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
     let schema = builder.schema().clone();
     let reader = builder.build()?;
@@ -782,6 +814,7 @@ pub async fn read_parquet_from_object_store(
     for batch in reader {
         batches.push(batch?);
     }
+
     Ok((batches, schema))
 }
 
@@ -860,12 +893,14 @@ async fn write_batches_to_object_store_with_mode(
     if let Some(kv) = key_value_metadata {
         props_builder = props_builder.set_key_value_metadata(Some(kv));
     }
+
     let writer_props = props_builder.build();
 
     let mut writer = ArrowWriter::try_new(&mut buffer, schema, Some(writer_props))?;
     for batch in batches {
         writer.write(batch)?;
     }
+
     writer.close()?;
 
     // Upload the buffer to object store
@@ -887,12 +922,14 @@ fn parquet_sorting_columns(schema: &Schema) -> anyhow::Result<Option<Vec<Sorting
     if schema.index_of("ts_init").is_err() {
         return Ok(None);
     }
+
     let parquet_schema = ArrowSchemaConverter::new().convert(schema)?;
     let mut names = Vec::with_capacity(2);
     names.push("ts_init");
     if schema.index_of(KEY_IDENTIFIER).is_ok() {
         names.push(KEY_IDENTIFIER);
     }
+
     let columns = names
         .into_iter()
         .map(|name| {
@@ -907,6 +944,7 @@ fn parquet_sorting_columns(schema: &Schema) -> anyhow::Result<Option<Vec<Sorting
                         .is_some_and(|part| part == name)
                 })
                 .ok_or_else(|| anyhow::anyhow!("Parquet schema is missing sort column {name}"))?;
+
             Ok(SortingColumn {
                 column_idx: i32::try_from(index)?,
                 descending: false,
@@ -914,6 +952,7 @@ fn parquet_sorting_columns(schema: &Schema) -> anyhow::Result<Option<Vec<Sorting
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
+
     Ok(Some(columns))
 }
 
@@ -1162,6 +1201,7 @@ fn reconcile_consolidation_schema_with_sources(
         "Cannot consolidate Parquet files {current_path} and {candidate_path}: field schemas differ"
     );
     let mut candidate_field_metadata = Vec::new();
+
     let fields = current
         .fields()
         .iter()
@@ -1189,6 +1229,7 @@ fn reconcile_consolidation_schema_with_sources(
                     candidate_field_metadata.push((current.name().clone(), key.clone()));
                 }
             }
+
             Ok(Arc::new(current.as_ref().clone().with_metadata(metadata)))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1210,6 +1251,7 @@ fn reconcile_consolidation_schema_with_sources(
         metadata.remove(KEY_SIZE_PRECISION);
         metadata
     };
+
     let current_metadata = current.metadata();
     let candidate_metadata = candidate.metadata();
     let current_fallback = current_metadata
@@ -1275,6 +1317,7 @@ pub async fn min_max_from_parquet_metadata(
     column_name: &str,
 ) -> anyhow::Result<(u64, u64)> {
     let (object_store, base_path, _) = create_object_store_from_path(file_path, storage_options)?;
+
     let object_path = if base_path.is_empty() {
         ObjectPath::from(file_path)
     } else {
@@ -1452,6 +1495,7 @@ pub(crate) fn append_path_to_file_uri(base_uri: &str, path: &str) -> String {
                     .filter(|segment| !segment.is_empty()),
             );
         }
+
         return url.to_string();
     }
 
@@ -1676,6 +1720,7 @@ fn apply_azure_storage_options(
                         }
                     })
                     .collect();
+
                 builder = builder.with_sas_authorization(query_pairs);
             }
             "client_id" => {
@@ -1905,6 +1950,7 @@ mod tests {
     fn consolidation_field_metadata_conflict_names_the_winning_file() {
         let bare = Arc::new(Schema::new(vec![Field::new("info", DataType::Utf8, true)]));
         let annotated = Arc::new(Schema::new(vec![json_string_field("info", true)]));
+
         let conflicting = Arc::new(Schema::new(vec![
             Field::new("info", DataType::Utf8, true).with_metadata(HashMap::from([(
                 "ARROW:extension:name".to_string(),
@@ -1978,6 +2024,7 @@ mod tests {
     #[rstest]
     fn consolidation_field_metadata_does_not_replace_precision_source() {
         let precision_2 = consolidation_depth_schema("2", "3", "ETHUSDT.BINANCE");
+
         let fallback = Arc::new(Schema::new_with_metadata(
             vec![json_string_field("bids", false)],
             consolidation_depth_schema("0", "0", "ETHUSDT.BINANCE")
@@ -2035,14 +2082,17 @@ mod tests {
             Field::new("info", DataType::Utf8, true),
             Field::new("balances", DataType::Utf8, true),
         ]));
+
         let info = Arc::new(Schema::new(vec![
             json_string_field("info", true),
             Field::new("balances", DataType::Utf8, true),
         ]));
+
         let balances = Arc::new(Schema::new(vec![
             json_string_field("info", true),
             json_string_field("balances", true),
         ]));
+
         let conflicting = Arc::new(Schema::new(vec![
             Field::new("info", DataType::Utf8, true).with_metadata(HashMap::from([(
                 "ARROW:extension:name".to_string(),
@@ -2096,6 +2146,7 @@ mod tests {
         builder.append("AUD/USD.SIM").unwrap();
         builder.append("EUR/USD.SIM").unwrap();
         let dictionary = Arc::new(builder.finish()) as ArrayRef;
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("instrument_id", dictionary.data_type().clone(), false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -2135,6 +2186,7 @@ mod tests {
         let mut builder = StringDictionaryBuilder::<Int8Type>::new();
         builder.append("alpha").unwrap();
         let dictionary = Arc::new(builder.finish()) as ArrayRef;
+
         let schema = Arc::new(Schema::new(vec![Field::new(
             "label",
             dictionary.data_type().clone(),
@@ -2157,6 +2209,7 @@ mod tests {
                 .with_precision_and_scale(38, 16)
                 .unwrap(),
         ) as ArrayRef;
+
         let schema = Arc::new(Schema::new_with_metadata(
             vec![
                 Field::new("label", dictionary.data_type().clone(), false),
@@ -2226,12 +2279,14 @@ mod tests {
     #[rstest]
     fn normalize_legacy_parquet_columns_preserves_quote_price_columns() {
         let decimal = DataType::Decimal128(38, 16);
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("bid_price", decimal.clone(), false),
             Field::new("ask_price", decimal.clone(), false),
             Field::new("bid_size", decimal.clone(), false),
             Field::new("ask_size", decimal, false),
         ]));
+
         let values = || {
             Arc::new(
                 Decimal128Array::from(vec![1_i128])
@@ -2239,6 +2294,7 @@ mod tests {
                     .unwrap(),
             ) as ArrayRef
         };
+
         let batch =
             RecordBatch::try_new(schema.clone(), vec![values(), values(), values(), values()])
                 .unwrap();
@@ -2269,6 +2325,7 @@ mod tests {
                             .unwrap(),
                     ) as ArrayRef);
                 }
+
                 fields.push(Field::new(
                     format!("{side}_count_{level}"),
                     DataType::UInt32,
@@ -2283,6 +2340,7 @@ mod tests {
                 columns.push(Arc::new(UInt64Array::from(vec![44])) as ArrayRef);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -2303,6 +2361,7 @@ mod tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let counts = Arc::new(UInt32Array::from(vec![33; DEPTH10_LEN])) as ArrayRef;
         let order_ids = Arc::new(UInt64Array::from(vec![44; DEPTH10_LEN])) as ArrayRef;
         let mut fields = Vec::new();
@@ -2323,6 +2382,7 @@ mod tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -2333,6 +2393,7 @@ mod tests {
     #[rstest]
     fn normalize_legacy_depth_missing_counts_and_order_ids_uses_list_width() {
         const WIDTH: i32 = 3;
+
         let decimal_values = |value| {
             Arc::new(
                 Decimal128Array::from(vec![value; WIDTH as usize])
@@ -2340,6 +2401,7 @@ mod tests {
                     .unwrap(),
             ) as ArrayRef
         };
+
         let list = |values: ArrayRef| {
             Arc::new(FixedSizeListArray::new(
                 Arc::new(Field::new("item", values.data_type().clone(), false)),
@@ -2348,6 +2410,7 @@ mod tests {
                 None,
             )) as ArrayRef
         };
+
         let mut fields = Vec::new();
         let mut columns = Vec::new();
 
@@ -2364,6 +2427,7 @@ mod tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -2393,6 +2457,7 @@ mod tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let counts = Arc::new(UInt32Array::from(vec![33; DEPTH10_LEN])) as ArrayRef;
         let order_ids = Arc::new(UInt64Array::from(vec![44; DEPTH10_LEN])) as ArrayRef;
         let mut fields = Vec::new();
@@ -2424,6 +2489,7 @@ mod tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         assert!(is_nautilus_legacy_schema(batch.schema_ref()));
@@ -2456,6 +2522,7 @@ mod tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let fixed_size = || {
             let bytes = 22_u64.to_le_bytes();
             Arc::new(
@@ -2466,6 +2533,7 @@ mod tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let mut fields = Vec::new();
         let mut columns = Vec::new();
 
@@ -2519,6 +2587,7 @@ mod tests {
             fields.push(field);
             columns.push(column);
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
         assert!(is_nautilus_legacy_schema(batch.schema_ref()));
 
@@ -2550,6 +2619,7 @@ mod tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -2575,6 +2645,7 @@ mod tests {
                 Some(value),
             );
         }
+
         let batch = builder.build().unwrap().next().unwrap().unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -2636,6 +2707,7 @@ mod tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -2694,10 +2766,12 @@ mod tests {
                 builder.append(value).unwrap();
                 Arc::new(builder.finish()) as ArrayRef
             };
+
             let price = 11_i64.to_le_bytes();
             let size = 22_u64.to_le_bytes();
             let trade_ids = dictionary("trade-1");
             let identifiers = dictionary("AAPL.XNAS");
+
             let schema = Arc::new(Schema::new_with_metadata(
                 vec![
                     Field::new("price", DataType::FixedSizeBinary(8), false),
@@ -2742,6 +2816,7 @@ mod tests {
             } else {
                 "64-bit"
             };
+
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
@@ -2754,6 +2829,7 @@ mod tests {
                 RecordBatch::try_new(Arc::clone(&schema), batch.columns().to_vec()).unwrap();
             (schema, batch)
         };
+
         let normalized_schema = normalize_legacy_parquet_schema(schema.as_ref());
         let normalized_batch = normalize_legacy_parquet_columns(&batch).unwrap();
 
@@ -2832,10 +2908,12 @@ mod tests {
     async fn default_writer_sets_zstd_sorting_and_identifier_bloom_filter() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("layout.parquet");
+
         let object_store = Arc::new(
             object_store::local::LocalFileSystem::new_with_prefix(directory.path()).unwrap(),
         );
         let object_path = ObjectPath::from("layout.parquet");
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("identifier", DataType::Utf8, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -2909,6 +2987,7 @@ mod tests {
         if let Err(e) = &result {
             println!("Error: {e:?}");
         }
+
         assert!(result.is_ok());
         let (_, base_path, uri) = result.unwrap();
         assert_eq!(base_path, "");
@@ -2961,6 +3040,7 @@ mod tests {
         if let Err(e) = &result {
             println!("Azure Error: {e:?}");
         }
+
         assert!(result.is_ok());
         let (_, base_path, uri) = result.unwrap();
         assert_eq!(base_path, "path");
@@ -3080,6 +3160,7 @@ mod migration_tests {
             ts_event: 1_788_652_800_123_456_789_u64.into(),
             ts_init: 1_788_652_800_123_456_799_u64.into(),
         };
+
         let values = vec![
             first,
             QuoteTick {
@@ -3091,6 +3172,7 @@ mod migration_tests {
         let metadata = QuoteTick::get_metadata(&first.instrument_id, 2, 0);
         let expected = QuoteTick::encode_batch(&metadata, &values).unwrap();
         let source_type = DataType::Timestamp(TimeUnit::Nanosecond, timezone.map(Into::into));
+
         let fields = expected
             .schema()
             .fields()
@@ -3104,6 +3186,7 @@ mod migration_tests {
                 }
             })
             .collect::<Vec<_>>();
+
         let columns = expected
             .columns()
             .iter()
@@ -3120,6 +3203,7 @@ mod migration_tests {
                 }
             })
             .collect::<Vec<_>>();
+
         let source = RecordBatch::try_new(
             Arc::new(Schema::new_with_metadata(fields, metadata.clone())),
             columns,
@@ -3325,6 +3409,7 @@ mod migration_tests {
     fn consolidation_field_metadata_conflict_names_the_winning_file() {
         let bare = Arc::new(Schema::new(vec![Field::new("info", DataType::Utf8, true)]));
         let annotated = Arc::new(Schema::new(vec![json_string_field("info", true)]));
+
         let conflicting = Arc::new(Schema::new(vec![
             Field::new("info", DataType::Utf8, true).with_metadata(HashMap::from([(
                 "ARROW:extension:name".to_string(),
@@ -3398,6 +3483,7 @@ mod migration_tests {
     #[rstest]
     fn consolidation_field_metadata_does_not_replace_precision_source() {
         let precision_2 = consolidation_depth_schema("2", "3", "ETHUSDT.BINANCE");
+
         let fallback = Arc::new(Schema::new_with_metadata(
             vec![json_string_field("bids", false)],
             consolidation_depth_schema("0", "0", "ETHUSDT.BINANCE")
@@ -3455,14 +3541,17 @@ mod migration_tests {
             Field::new("info", DataType::Utf8, true),
             Field::new("balances", DataType::Utf8, true),
         ]));
+
         let info = Arc::new(Schema::new(vec![
             json_string_field("info", true),
             Field::new("balances", DataType::Utf8, true),
         ]));
+
         let balances = Arc::new(Schema::new(vec![
             json_string_field("info", true),
             json_string_field("balances", true),
         ]));
+
         let conflicting = Arc::new(Schema::new(vec![
             Field::new("info", DataType::Utf8, true).with_metadata(HashMap::from([(
                 "ARROW:extension:name".to_string(),
@@ -3516,6 +3605,7 @@ mod migration_tests {
         builder.append("AUD/USD.SIM").unwrap();
         builder.append("EUR/USD.SIM").unwrap();
         let dictionary = Arc::new(builder.finish()) as ArrayRef;
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("instrument_id", dictionary.data_type().clone(), false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -3555,6 +3645,7 @@ mod migration_tests {
         let mut builder = StringDictionaryBuilder::<Int8Type>::new();
         builder.append("alpha").unwrap();
         let dictionary = Arc::new(builder.finish()) as ArrayRef;
+
         let schema = Arc::new(Schema::new(vec![Field::new(
             "label",
             dictionary.data_type().clone(),
@@ -3577,6 +3668,7 @@ mod migration_tests {
                 .with_precision_and_scale(38, 16)
                 .unwrap(),
         ) as ArrayRef;
+
         let schema = Arc::new(Schema::new_with_metadata(
             vec![
                 Field::new("label", dictionary.data_type().clone(), false),
@@ -3646,12 +3738,14 @@ mod migration_tests {
     #[rstest]
     fn normalize_legacy_parquet_columns_preserves_quote_price_columns() {
         let decimal = DataType::Decimal128(38, 16);
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("bid_price", decimal.clone(), false),
             Field::new("ask_price", decimal.clone(), false),
             Field::new("bid_size", decimal.clone(), false),
             Field::new("ask_size", decimal, false),
         ]));
+
         let values = || {
             Arc::new(
                 Decimal128Array::from(vec![1_i128])
@@ -3659,6 +3753,7 @@ mod migration_tests {
                     .unwrap(),
             ) as ArrayRef
         };
+
         let batch =
             RecordBatch::try_new(schema.clone(), vec![values(), values(), values(), values()])
                 .unwrap();
@@ -3689,6 +3784,7 @@ mod migration_tests {
                             .unwrap(),
                     ) as ArrayRef);
                 }
+
                 fields.push(Field::new(
                     format!("{side}_count_{level}"),
                     DataType::UInt32,
@@ -3703,6 +3799,7 @@ mod migration_tests {
                 columns.push(Arc::new(UInt64Array::from(vec![44])) as ArrayRef);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -3723,6 +3820,7 @@ mod migration_tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let counts = Arc::new(UInt32Array::from(vec![33; DEPTH10_LEN])) as ArrayRef;
         let order_ids = Arc::new(UInt64Array::from(vec![44; DEPTH10_LEN])) as ArrayRef;
         let mut fields = Vec::new();
@@ -3743,6 +3841,7 @@ mod migration_tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -3753,6 +3852,7 @@ mod migration_tests {
     #[rstest]
     fn normalize_legacy_depth_missing_counts_and_order_ids_uses_list_width() {
         const WIDTH: i32 = 3;
+
         let decimal_values = |value| {
             Arc::new(
                 Decimal128Array::from(vec![value; WIDTH as usize])
@@ -3760,6 +3860,7 @@ mod migration_tests {
                     .unwrap(),
             ) as ArrayRef
         };
+
         let list = |values: ArrayRef| {
             Arc::new(FixedSizeListArray::new(
                 Arc::new(Field::new("item", values.data_type().clone(), false)),
@@ -3768,6 +3869,7 @@ mod migration_tests {
                 None,
             )) as ArrayRef
         };
+
         let mut fields = Vec::new();
         let mut columns = Vec::new();
 
@@ -3784,6 +3886,7 @@ mod migration_tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -3813,6 +3916,7 @@ mod migration_tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let counts = Arc::new(UInt32Array::from(vec![33; DEPTH10_LEN])) as ArrayRef;
         let order_ids = Arc::new(UInt64Array::from(vec![44; DEPTH10_LEN])) as ArrayRef;
         let mut fields = Vec::new();
@@ -3844,6 +3948,7 @@ mod migration_tests {
                 columns.push(column);
             }
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
 
         assert!(is_nautilus_legacy_schema(batch.schema_ref()));
@@ -3876,6 +3981,7 @@ mod migration_tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let fixed_size = || {
             let bytes = 22_u64.to_le_bytes();
             Arc::new(
@@ -3886,6 +3992,7 @@ mod migration_tests {
                 .unwrap(),
             ) as ArrayRef
         };
+
         let mut fields = Vec::new();
         let mut columns = Vec::new();
 
@@ -3939,6 +4046,7 @@ mod migration_tests {
             fields.push(field);
             columns.push(column);
         }
+
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
         assert!(is_nautilus_legacy_schema(batch.schema_ref()));
 
@@ -3970,6 +4078,7 @@ mod migration_tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -3995,6 +4104,7 @@ mod migration_tests {
                 Some(value),
             );
         }
+
         let batch = builder.build().unwrap().next().unwrap().unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
@@ -4056,6 +4166,7 @@ mod migration_tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -4114,10 +4225,12 @@ mod migration_tests {
                 builder.append(value).unwrap();
                 Arc::new(builder.finish()) as ArrayRef
             };
+
             let price = 11_i64.to_le_bytes();
             let size = 22_u64.to_le_bytes();
             let trade_ids = dictionary("trade-1");
             let identifiers = dictionary("AAPL.XNAS");
+
             let schema = Arc::new(Schema::new_with_metadata(
                 vec![
                     Field::new("price", DataType::FixedSizeBinary(8), false),
@@ -4162,6 +4275,7 @@ mod migration_tests {
             } else {
                 "64-bit"
             };
+
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
@@ -4174,6 +4288,7 @@ mod migration_tests {
                 RecordBatch::try_new(Arc::clone(&schema), batch.columns().to_vec()).unwrap();
             (schema, batch)
         };
+
         let normalized_schema = normalize_legacy_parquet_schema(schema.as_ref());
         let normalized_batch = normalize_legacy_parquet_columns(&batch).unwrap();
 
@@ -4252,10 +4367,12 @@ mod migration_tests {
     async fn default_writer_sets_zstd_sorting_and_identifier_bloom_filter() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("layout.parquet");
+
         let object_store = Arc::new(
             object_store::local::LocalFileSystem::new_with_prefix(directory.path()).unwrap(),
         );
         let object_path = ObjectPath::from("layout.parquet");
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("identifier", DataType::Utf8, false),
             Field::new("ts_init", DataType::UInt64, false),

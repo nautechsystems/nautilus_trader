@@ -83,6 +83,7 @@ impl ParquetDataCatalog {
         for batch in DataBatch::from_data_vec_grouped(data)? {
             write_catalog_batch(self, &batch, start, end, skip_disjoint_check)?;
         }
+
         Ok(())
     }
 
@@ -106,6 +107,7 @@ impl ParquetDataCatalog {
         for items in groups.into_values() {
             self.write_to_parquet(&items, start, end, skip_disjoint_check)?;
         }
+
         Ok(())
     }
 
@@ -249,6 +251,7 @@ impl ParquetDataCatalog {
 
         let data_type = T::catalog_data_type();
         let path_prefix = parquet_data_path_prefix(&data_type);
+
         let identifier = if matches!(data_type, super::NautilusDataType::Bar) {
             schema.metadata.get("bar_type").cloned()
         } else {
@@ -451,11 +454,13 @@ impl ParquetDataCatalog {
         replay_identity: Option<&str>,
     ) -> anyhow::Result<PathBuf> {
         let filename = timestamps_to_filename(start_ts, end_ts);
+
         let filename = replay_identity.map_or(filename.clone(), |identity| {
             let stem = filename.strip_suffix(".parquet").unwrap_or(&filename);
             let digest = blake3::hash(identity.as_bytes()).to_hex();
             format!("{stem}_{}.parquet", &digest[..16])
         });
+
         let path = PathBuf::from(directory).join(&filename);
         let object_path = self.to_object_path(&path.to_string_lossy())?;
 
@@ -526,8 +531,10 @@ impl ParquetDataCatalog {
                 {
                     return Ok(());
                 }
+
                 return Err(e);
             }
+
             Ok(())
         })?;
 
@@ -864,6 +871,7 @@ mod tests {
                     )),
                 });
             }
+
             self.inner.put_opts(location, payload, opts).await
         }
 
@@ -925,6 +933,7 @@ mod tests {
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
         };
+
         let batch = RecordBatch::try_new(
             Arc::new(Schema::new(vec![Field::new(
                 "ts_init",
@@ -962,6 +971,7 @@ mod tests {
             inner: InMemory::new(),
             create_calls: AtomicUsize::new(0),
         });
+
         let catalog = ParquetDataCatalog {
             base_path: "catalog".to_string(),
             original_uri: "memory://".to_string(),
@@ -971,6 +981,7 @@ mod tests {
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
         };
+
         let batch = RecordBatch::try_new(
             Arc::new(Schema::new(vec![Field::new(
                 "ts_init",

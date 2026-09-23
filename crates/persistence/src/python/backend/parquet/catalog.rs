@@ -121,6 +121,7 @@ fn reject_parquet_as_of(as_of: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     if as_of.is_some() {
         return Err(to_pyvalue_err("ParquetDataCatalog does not support as_of"));
     }
+
     Ok(())
 }
 
@@ -214,6 +215,7 @@ impl PyParquetDataCatalog {
                 })
                 .map_err(to_pyio_err);
         }
+
         let inner = &mut slf.inner;
         py.detach(|| {
             inner
@@ -509,6 +511,7 @@ impl PyParquetDataCatalog {
             let instrument = pyobject_to_instrument_any(py, py_item)?;
             instruments.push(instrument);
         }
+
         self.inner
             .write_instruments(instruments)
             .map(|paths| {
@@ -586,6 +589,7 @@ impl PyParquetDataCatalog {
         instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
     ) -> PyResult<Py<PyBytes>> {
         let instrument_type = instrument_type.map(|instrument_type| instrument_type.inner());
+
         let instruments = py
             .detach(|| {
                 self.inner.query_instruments_filtered_with_where_and_type(
@@ -597,6 +601,7 @@ impl PyParquetDataCatalog {
                 )
             })
             .map_err(|e| PyIOError::new_err(format!("Failed query instruments: {e}")))?;
+
         let batch = encode_instruments(&instruments)
             .map_err(|e| PyIOError::new_err(format!("Failed encode instruments: {e}")))?;
         let schema = batch.schema().as_ref().clone();
@@ -622,6 +627,7 @@ impl PyParquetDataCatalog {
         instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
     ) -> PyResult<Py<PyAny>> {
         let instrument_type = instrument_type.map(|instrument_type| instrument_type.inner());
+
         let instruments = py
             .detach(|| {
                 self.inner.query_instruments_filtered_with_where_and_type(
@@ -633,6 +639,7 @@ impl PyParquetDataCatalog {
                 )
             })
             .map_err(|e| PyIOError::new_err(format!("Failed query instruments: {e}")))?;
+
         let batch = encode_instruments(&instruments)
             .map_err(|e| PyIOError::new_err(format!("Failed encode instruments: {e}")))?;
         let schema = batch.schema().as_ref().clone();
@@ -929,6 +936,7 @@ impl PyParquetDataCatalog {
                     "write_custom_data requires CustomData wrappers; wrap with CustomData(data_type=DataType(cls, metadata=...), data=...)",
                 )
             })?;
+
             custom_items.push(custom);
         }
 
@@ -1035,6 +1043,7 @@ impl PyParquetDataCatalog {
         where_clause: Option<&str>,
     ) -> PyResult<Py<PyDict>> {
         let data_type = nautilus_data_type_from_py(data_type)?;
+
         let metadata = py
             .detach(|| {
                 CatalogReader::query_metadata(
@@ -1080,6 +1089,7 @@ impl PyParquetDataCatalog {
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
+
         let batches = py
             .detach(|| {
                 if display {
@@ -1091,6 +1101,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+
         let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pybytes(py, &schema, &batches)
@@ -1126,6 +1137,7 @@ impl PyParquetDataCatalog {
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
+
         let batches = py
             .detach(|| {
                 if display {
@@ -1137,6 +1149,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+
         let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pyarrow_stream(py, &schema, batches)
@@ -1191,6 +1204,7 @@ impl PyParquetDataCatalog {
         reject_parquet_as_of(as_of)?;
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+
         let batches = py
             .detach(|| {
                 if display {
@@ -1212,6 +1226,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+
         let schema = arrow_ipc_record_schema(record_type, &batches)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
 
@@ -1246,6 +1261,7 @@ impl PyParquetDataCatalog {
         reject_parquet_as_of(as_of)?;
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
+
         let batches = py
             .detach(|| {
                 if display {
@@ -1267,6 +1283,7 @@ impl PyParquetDataCatalog {
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+
         let schema = arrow_ipc_record_schema(record_type, &batches)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
 
@@ -1447,6 +1464,7 @@ impl PyParquetDataCatalog {
                         )
                     })
                     .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+
                 return instruments
                     .into_iter()
                     .map(|instrument| instrument_any_to_pyobject(py, instrument))
@@ -1462,6 +1480,7 @@ impl PyParquetDataCatalog {
         for item in data {
             python_objects.push(data_to_pyobject(py, item)?);
         }
+
         Ok(python_objects)
     }
 
@@ -1778,6 +1797,7 @@ impl PyParquetDataCatalog {
         for item in data {
             python_objects.push(data_to_pyobject(py, item)?);
         }
+
         Ok(python_objects)
     }
 
@@ -1801,6 +1821,7 @@ impl PyParquetDataCatalog {
         for item in data {
             python_objects.push(data_to_pyobject(py, item)?);
         }
+
         Ok(python_objects)
     }
 
@@ -1900,8 +1921,10 @@ impl PyParquetDataCatalog {
                 Data::Custom(custom) => Py::new(py, custom)?.into_any(),
                 _ => return Err(PyIOError::new_err("Expected custom data")),
             };
+
             python_objects.push(py_obj);
         }
+
         Ok(python_objects)
     }
 }

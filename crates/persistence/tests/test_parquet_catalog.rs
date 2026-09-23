@@ -612,6 +612,7 @@ fn test_rust_consolidate_depth_conflict_names_winning_precision_files() {
         catalog
             .write_to_parquet(&[depth], None, None, None)
             .unwrap();
+
         let source = catalog
             .query_files(
                 &NautilusDataType::OrderBookDepth.into(),
@@ -630,6 +631,7 @@ fn test_rust_consolidate_depth_conflict_names_winning_precision_files() {
                     == 2
             })
             .unwrap();
+
         let tagged = source.replace(".parquet", &format!("_{suffix}.parquet"));
         fs::rename(temp_dir.path().join(source), temp_dir.path().join(tagged)).unwrap();
     }
@@ -1006,6 +1008,7 @@ fn test_query_round_trip_non_ascii_instrument_id() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let id = InstrumentId::from("CAFÉ.SIM");
+
     let trade = TradeTick::new(
         id,
         Price::new(1987.0, 1),
@@ -1045,6 +1048,7 @@ fn test_filter_files_non_ascii_instrument_id() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
     let id = InstrumentId::from("CAFÉ.SIM");
+
     let trade = TradeTick::new(
         id,
         Price::new(1987.0, 1),
@@ -1173,11 +1177,13 @@ fn test_query_bars_non_ascii_instrument_id_partial_match() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let instrument_id = InstrumentId::from("CAFÉ.SIM");
+
     let bar_type = BarType::new(
         instrument_id,
         BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
         AggregationSource::External,
     );
+
     let bar = Bar::new(
         bar_type,
         Price::new(1.00001, 5),
@@ -1357,6 +1363,7 @@ fn test_query_order_book_depth_fixture() {
             true,
         )
         .unwrap();
+
     let expected = OrderBookDepth::new(
         InstrumentId::from("AAPL.XNAS"),
         [BookOrder::new(
@@ -1385,6 +1392,7 @@ fn test_query_order_book_depth_fixture() {
 #[rstest]
 fn test_rust_write_empty_order_book_depths() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
+
     let depth = OrderBookDepth::new(
         ethusdt_binance_id(),
         Vec::<BookOrder>::new(),
@@ -3743,6 +3751,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
 
     let instrument_id = InstrumentId::from("RUST.REMOTE");
     let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
     let original_data = [
         RustTestCustomData {
             instrument_id,
@@ -3759,6 +3768,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
             ts_init: UnixNanos::from(20),
         },
     ];
+
     let custom_data: Vec<CustomData> = original_data
         .iter()
         .cloned()
@@ -3770,6 +3780,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
         .unwrap();
 
     let ids = vec![instrument_id.to_string()];
+
     let discovered_files = catalog
         .list_parquet_files_with_criteria(
             &NautilusDataType::Custom {
@@ -3781,6 +3792,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
             None,
         )
         .unwrap();
+
     let explicit_files: Vec<String> = discovered_files
         .iter()
         .map(|path| catalog.reconstruct_full_uri(path))
@@ -3814,6 +3826,7 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
 
     for loaded in [&loaded_discovered, &loaded_explicit] {
         assert_eq!(loaded.len(), original_data.len());
+
         for (expected, actual) in original_data.iter().zip(loaded.iter()) {
             if let Data::Custom(custom) = actual {
                 assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
@@ -3930,6 +3943,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
         ts_event: UnixNanos::from(1),
         ts_init: UnixNanos::from(1),
     };
+
     let second = RustTestCustomData {
         instrument_id,
         value: 2.0,
@@ -3971,6 +3985,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
         .unwrap();
 
     assert_eq!(loaded.len(), 2);
+
     let values: Vec<f64> = loaded
         .iter()
         .map(|item| match item {
@@ -3985,6 +4000,7 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
             other => panic!("Expected Data::Custom variant, was {other:?}"),
         })
         .collect();
+
     assert_eq!(values, vec![1.0, 2.0]);
 }
 
@@ -4172,6 +4188,7 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
             ts_init: UnixNanos::from(2),
         },
     ];
+
     let custom_b = [RustTestCustomData {
         instrument_id: id_b,
         value: 10.0,
@@ -4634,11 +4651,13 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let mut reader = builder.build().unwrap();
@@ -4777,11 +4796,13 @@ fn test_convert_stream_to_data_ignores_flat_stream_file_with_non_timestamp_suffi
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let mut reader = builder.build().unwrap();
@@ -4824,6 +4845,7 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
 
     let mut metadata = HashMap::new();
     metadata.insert("instrument_id".to_string(), "AUD/USD.SIM".to_string());
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("ts_init", DataType::UInt64, false),
@@ -4869,11 +4891,13 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     let parquet_schema = builder.schema().clone();
@@ -4941,6 +4965,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
 
     let mut metadata = HashMap::new();
     metadata.insert("bar_type".to_string(), bar_type_internal);
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("ts_init", DataType::UInt64, false),
@@ -4986,11 +5011,13 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
     assert_eq!(files.len(), 1);
 
     let parquet_path = std::path::PathBuf::from(&files[0]);
+
     let parquet_path = if parquet_path.is_absolute() {
         parquet_path
     } else {
         temp_dir.path().join(parquet_path)
     };
+
     let parquet_file = fs::File::open(parquet_path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
     assert_eq!(
@@ -5056,9 +5083,11 @@ fn test_instrument_roundtrip_with_info_params() {
     assert_eq!(read.len(), 1, "Should read back exactly one instrument");
 
     let read_any = &read[0];
+
     let InstrumentAny::CurrencyPair(read_cp) = read_any else {
         panic!("Expected CurrencyPair");
     };
+
     assert_eq!(read_cp.id, instrument_id);
     assert_eq!(
         read_cp.info,
@@ -5463,6 +5492,7 @@ fn test_instrument_family_class_filter_applies_to_catalog_readers(
                 .unwrap(),
         );
     }
+
     let query =
         CatalogQuery::new(NautilusDataType::Instrument).with_instrument_type(instrument_type);
 
@@ -5623,9 +5653,11 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
     let ids = vec![instrument_id.to_string()];
     let read = catalog.query_instruments(Some(&ids)).unwrap();
     assert_eq!(read.len(), 1);
+
     let InstrumentAny::CryptoPerpetual(decoded) = &read[0] else {
         panic!("expected CryptoPerpetual");
     };
+
     assert_eq!(decoded.base_currency.code.as_str(), unknown_code);
     assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }
@@ -5636,6 +5668,7 @@ fn typed_session_merges_identifiers_and_keeps_equal_timestamps_together() {
     let mut first = [10, 30, 30, 50].map(create_quote_tick).to_vec();
     first[2].bid_size = Quantity::from("111");
     first[2].ts_event = UnixNanos::from(29_u64);
+
     let second = [20_u64, 30, 40]
         .map(|ts| {
             QuoteTick::new(
@@ -5649,6 +5682,7 @@ fn typed_session_merges_identifiers_and_keeps_equal_timestamps_together() {
             )
         })
         .to_vec();
+
     catalog.write_to_parquet(&first, None, None, None).unwrap();
     catalog.write_to_parquet(&second, None, None, None).unwrap();
     let query = CatalogQuery::new(NautilusDataType::QuoteTick);
@@ -5663,8 +5697,10 @@ fn typed_session_merges_identifiers_and_keeps_equal_timestamps_together() {
         let DataBatch::Quote(actual) = session.next_batch().unwrap().unwrap() else {
             panic!("expected quote batch");
         };
+
         assert_eq!(actual.as_ref(), rows.as_slice());
     }
+
     assert!(session.next_batch().unwrap().is_none());
 }
 
@@ -5683,9 +5719,11 @@ fn typed_session_preserves_exact_nanosecond_bounds_after_catalog_is_dropped() {
         .with_range(Some(rows[1].ts_init), Some(rows[1].ts_init));
     let mut session = CatalogReader::query_batch_session(&mut catalog, &query, Some(1)).unwrap();
     drop(catalog);
+
     let DataBatch::Quote(actual) = session.next_batch().unwrap().unwrap() else {
         panic!("expected quote batch");
     };
+
     assert_eq!(actual.as_ref(), &[rows[1]]);
     assert!(session.next_batch().unwrap().is_none());
 }
@@ -5734,6 +5772,7 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
 
     let (temp_dir, mut catalog) = create_temp_catalog();
     let instrument_id = "AUD/USD.SIM";
+
     let quote = |price: &str, ts: u64| {
         QuoteTick::new(
             InstrumentId::from(instrument_id),
@@ -5766,24 +5805,29 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
 
     for file in &files {
         let path = std::path::PathBuf::from(file);
+
         let path = if path.is_absolute() {
             path
         } else {
             temp_dir.path().join(path)
         };
+
         let reader = SerializedFileReader::new(fs::File::open(path).unwrap()).unwrap();
         let row_group = reader.metadata().row_group(0);
         let column = (0..row_group.num_columns())
             .map(|index| row_group.column(index))
             .find(|column| column.column_path().string() == "bid_price")
             .unwrap();
+
         let Some(Statistics::FixedLenByteArray(statistics)) = column.statistics() else {
             panic!("bid_price statistics are not decimal fixed-length values");
         };
+
         let min = i128::from_be_bytes(statistics.min_opt().unwrap().data().try_into().unwrap());
         let max = i128::from_be_bytes(statistics.max_opt().unwrap().data().try_into().unwrap());
         bounds.push((min, max));
     }
+
     bounds.sort_unstable();
     assert_eq!(
         bounds,
@@ -5794,12 +5838,15 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
     );
 
     let path = std::path::PathBuf::from(&files[0]);
+
     let path = if path.is_absolute() {
         path
     } else {
         temp_dir.path().join(path)
     };
+
     let directory = path.parent().unwrap().to_str().unwrap();
+
     let explain = get_runtime().block_on(async {
         let context = datafusion::prelude::SessionContext::new();
         context
@@ -5818,6 +5865,7 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
             .await
             .unwrap()
     });
+
     let plan = explain
         .iter()
         .flat_map(|batch| {
@@ -5832,6 +5880,7 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
         })
         .collect::<Vec<_>>()
         .join("\n");
+
     let pruning = plan
         .split("row_groups_pruned_statistics=")
         .nth(1)
@@ -6042,6 +6091,7 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
         .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>))
         .unwrap();
+
     let instrument_ids: Vec<String> = result
         .map(|data| match data.unwrap() {
             Data::Quote(quote) => quote.instrument_id.to_string(),
@@ -6170,6 +6220,7 @@ fn test_data_catalog_query_custom_data_applies_where_clause() {
 
     let instrument_id = InstrumentId::from("RUST.WHERE");
     let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
     let original_data = [
         RustTestCustomData {
             instrument_id,
@@ -6186,6 +6237,7 @@ fn test_data_catalog_query_custom_data_applies_where_clause() {
             ts_init: UnixNanos::from(2),
         },
     ];
+
     let custom_data: Vec<CustomData> = original_data
         .iter()
         .cloned()
@@ -6215,9 +6267,11 @@ fn test_data_catalog_query_custom_data_applies_where_clause() {
     .unwrap();
 
     assert_eq!(loaded.len(), 1);
+
     let Data::Custom(custom) = &loaded[0] else {
         panic!("Expected custom data, was {:?}", loaded[0]);
     };
+
     let actual = custom
         .data
         .as_any()
@@ -6319,6 +6373,7 @@ fn test_delta_batches_share_catalog_write_dispatch(#[case] enum_writer: bool) {
     ];
     let mut expected = Vec::new();
     let mut batches = Vec::new();
+
     for (instrument_index, instrument_id) in ids.into_iter().enumerate() {
         let mut rows = Vec::new();
 
@@ -6334,12 +6389,15 @@ fn test_delta_batches_share_catalog_write_dispatch(#[case] enum_writer: bool) {
                     if row_index == 1 {
                         delta.flags |= RecordFlag::F_LAST as u8;
                     }
+
                     delta
                 })
                 .collect::<Vec<_>>();
+
             rows.extend_from_slice(&deltas);
             batches.push(OrderBookDeltas::new(instrument_id, deltas));
         }
+
         expected.push(rows);
     }
 

@@ -245,6 +245,7 @@ impl DataQueryResult {
                     if chunk.is_empty() {
                         break;
                     }
+
                     data.extend(chunk);
                 }
 

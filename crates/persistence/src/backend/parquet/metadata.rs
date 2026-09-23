@@ -57,6 +57,7 @@ impl ParquetDataCatalog {
 
         for (index, file_uri) in files_list.iter().enumerate() {
             let object_path = self.to_object_path_parsed(file_uri)?;
+
             let metadata = self.execute_async(|| async {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)

@@ -68,6 +68,7 @@ fn runtime_queries_reject_legacy_catalogs(
         } else {
             relative
         };
+
         let target = temporary.path().join(relative);
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, bytes).unwrap();
@@ -192,6 +193,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     {
         order.order_id = 0;
     }
+
     let depths = catalog
         .query_typed_data::<OrderBookDepth>(None, None, None, None, None, true)
         .unwrap();
@@ -211,6 +213,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
             true,
         )
         .unwrap();
+
     let accounts = batches
         .into_iter()
         .flat_map(|batch| {
@@ -218,6 +221,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
             AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
         })
         .collect::<Vec<_>>();
+
     assert_eq!(
         serde_json::to_value(accounts).unwrap(),
         Value::Array(vec![expected["account_state"].clone()])
@@ -226,9 +230,11 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
         .unwrap();
     assert_eq!(custom.len(), 1);
+
     let Data::Custom(custom) = &custom[0] else {
         panic!("Expected custom data");
     };
+
     let custom = custom
         .data
         .as_any()
@@ -237,6 +243,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     assert_eq!(serde_json::to_value(custom).unwrap(), expected["custom"]);
 
     assert!(target.join("data/custom/RustTestCustomData").is_dir());
+
     for (relative, _) in catalog_files(&target) {
         if relative
             .extension()
@@ -244,6 +251,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         {
             continue;
         }
+
         let reader = ParquetRecordBatchReaderBuilder::try_new(
             fs::File::open(target.join(&relative)).unwrap(),
         )
@@ -454,6 +462,7 @@ fn migration_rejects_opaque_fixed_columns_before_writing() {
     let target = temporary.path().join("destination");
     let file = source.join("data/custom/OpaqueValue/TEST/value.parquet");
     fs::create_dir_all(file.parent().unwrap()).unwrap();
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("value", DataType::FixedSizeBinary(16), false),

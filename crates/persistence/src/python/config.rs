@@ -314,6 +314,7 @@ impl StreamingConfig {
                     "rotation_config cannot be combined with legacy rotation options",
                 ));
             }
+
             config.into()
         } else {
             match rotation_mode
@@ -326,6 +327,7 @@ impl StreamingConfig {
                     if max_size == 0 {
                         return Err(to_pyvalue_err("max_file_size must be positive"));
                     }
+
                     RotationConfig::Size { max_size }
                 }
                 "INTERVAL" => RotationConfig::Interval {
@@ -339,6 +341,7 @@ impl StreamingConfig {
                 mode => return Err(to_pyvalue_err(format!("Invalid rotation_mode: '{mode}'"))),
             }
         };
+
         let mut config = Self::new(
             catalog_path,
             fs_protocol.unwrap_or_else(default_fs_protocol),
@@ -456,10 +459,12 @@ impl StreamingConfig {
         let Some(filters) = &self.record_filters else {
             return Ok(None);
         };
+
         let result = PyDict::new(py);
         for filter in filters {
             result.set_item(filter.record_type.to_string(), filter.identifiers.clone())?;
         }
+
         Ok(Some(result.unbind()))
     }
 
@@ -484,10 +489,12 @@ impl DataCatalogConfig {
         fs_rust_storage_options: Option<std::collections::HashMap<String, String>>,
     ) -> pyo3::PyResult<Self> {
         let catalog_backend = catalog_backend.map(|backend| backend.inner());
+
         let params = Python::attach(|py| match params {
             Some(params) => from_pydict(py, &params),
             None => Ok(None),
         })?;
+
         Ok(Self::new(path, fs_protocol, catalog_backend)
             .with_params(params)
             .with_name(name)
@@ -613,6 +620,7 @@ fn py_streaming_types_from_any(
             py_streaming_type_from_any(&item?, &mut parsed)?;
         }
     }
+
     Ok(parsed)
 }
 
@@ -682,10 +690,12 @@ fn py_record_filters_from_any(
     let Some(record_filters) = record_filters else {
         return Ok(None);
     };
+
     let record_filters = record_filters.cast::<PyDict>()?;
     let mut filters = Vec::with_capacity(record_filters.len()?);
     for (record_type, identifiers) in record_filters {
         let record_type = py_record_type_from_any(&record_type)?;
+
         let identifiers = if identifiers.is_none() {
             None
         } else if let Ok(identifier) = identifiers.extract::<String>() {
@@ -693,6 +703,7 @@ fn py_record_filters_from_any(
         } else {
             Some(identifiers.extract::<Vec<String>>()?)
         };
+
         filters.push(StreamingRecordFilterConfig {
             record_type,
             identifiers,
@@ -707,5 +718,6 @@ fn positive_interval(interval_ns: Option<u64>) -> PyResult<DurationNanos> {
     if interval_ns == 0 {
         return Err(to_pyvalue_err("rotation_interval_ns must be positive"));
     }
+
     Ok(DurationNanos::new(interval_ns))
 }

@@ -97,6 +97,7 @@ fn extend_factories<T>(
             }
         }
     }
+
     Ok(registry)
 }
 
