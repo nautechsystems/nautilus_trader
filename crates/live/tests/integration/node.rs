@@ -67,14 +67,15 @@ use nautilus_model::{
     },
     events::{OrderEventAny, account::state::AccountState},
     identifiers::{
-        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId,
-        TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
+        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
     },
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -2955,6 +2956,203 @@ pub(crate) mod serial_tests {
             state.mass_status_requested.load(Ordering::Relaxed),
             reconciliation
         );
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+        node.dispose();
+    }
+
+    #[rstest]
+    #[case::flat_generated(PositionSide::Flat, true, None)]
+    #[case::flat_generation_disabled(
+        PositionSide::Flat,
+        false,
+        Some("generate_missing_orders is disabled")
+    )]
+    #[case::entry_price_mismatch(
+        PositionSide::Long,
+        true,
+        Some("position recovery did not restore the reported average entry price")
+    )]
+    #[case::entry_price_mismatch_generation_disabled(
+        PositionSide::Long,
+        false,
+        Some("generate_missing_orders is disabled")
+    )]
+    #[tokio::test]
+    async fn test_startup_retained_position_recovery(
+        #[case] side: PositionSide,
+        #[case] generate_missing_orders: bool,
+        #[case] expected_error: Option<&str>,
+        #[values(false, true)] run: bool,
+    ) {
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let client_id = ClientId::from("POSITION-STARTUP");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let state = StartupMassStatusClientState::default();
+
+        let mut mass_status = ExecutionMassStatus::new(
+            client_id,
+            account_id,
+            instrument_id.venue,
+            UnixNanos::default(),
+            None,
+        );
+
+        {
+            mass_status.add_position_reports(vec![PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                side,
+                if side == PositionSide::Flat {
+                    Quantity::from("0.000")
+                } else {
+                    Quantity::from("5.000")
+                },
+                UnixNanos::from(1_000_000),
+                UnixNanos::from(1_000_000),
+                None,
+                None,
+                if side == PositionSide::Flat {
+                    None
+                } else {
+                    Some(Decimal::from(3100))
+                },
+            )]);
+        }
+
+        *state.mass_status.lock() = Some(mass_status);
+
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                generate_missing_orders,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+
+        let factory = StartupMassStatusExecutionClientFactory::new(
+            state.clone(),
+            StartupMassStatusBehavior::Available,
+        )
+        .with_identity(client_id, account_id, instrument_id.venue);
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("PositionStartupNode")
+            .add_exec_client(
+                Some("position-startup".to_string()),
+                Box::new(factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .register_oms_type(StrategyId::external(), OmsType::Netting);
+        let instrument = InstrumentAny::CryptoPerpetual(instrument);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .strategy_id(StrategyId::external())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("5.000"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            Some(PositionId::from(format!("{instrument_id}-EXTERNAL"))),
+            Some(Price::from("3000.00")),
+            Some(Quantity::from("5.000")),
+            None,
+            None,
+            None,
+            Some(account_id),
+        );
+        let position = Position::new(&instrument, fill.into());
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument)
+            .unwrap();
+        add_reconciliation_test_account(&node);
+        let actor_start_count = Rc::new(Cell::new(0));
+        node.add_actor(PositionStartupActor {
+            core: DataActorCore::new(DataActorConfig::default()),
+            start_count: actor_start_count.clone(),
+        })
+        .unwrap();
+
+        let quantity_on_start = Rc::new(Cell::new(None));
+        node.add_strategy(PositionStartupStrategy {
+            core: StrategyCore::new(StrategyConfig::default()),
+            handle: node.handle(),
+            quantity_on_start: quantity_on_start.clone(),
+        })
+        .unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), async {
+            if run {
+                node.run().await
+            } else {
+                node.start().await
+            }
+        })
+        .await
+        .expect("startup must complete");
+
+        if let Some(reason) = expected_error {
+            let error = result.expect_err("unresolved retained position must prevent startup");
+
+            let venue_qty = if side == PositionSide::Flat {
+                "0"
+            } else {
+                "5.000"
+            };
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Unresolved positions during startup reconciliation for {client_id}: account={account_id}, instrument={instrument_id}, venue_position_id=None, venue_quantity={venue_qty}: {reason}"
+                )
+            );
+            assert_eq!(quantity_on_start.get(), None);
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            let positions =
+                cache.positions_open(None, Some(&instrument_id), None, Some(&account_id), None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].signed_decimal_qty(), Decimal::from(5));
+            assert_eq!(positions[0].avg_px_open, 3000.0);
+        } else {
+            result.unwrap();
+            assert_eq!(quantity_on_start.get(), Some(Decimal::ZERO));
+            assert_eq!(
+                node.kernel().cache().borrow().positions_open_count(
+                    None,
+                    Some(&instrument_id),
+                    None,
+                    Some(&account_id),
+                    None
+                ),
+                0
+            );
+        }
+
+        assert_eq!(
+            actor_start_count.get(),
+            usize::from(expected_error.is_none())
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
         assert_eq!(node.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));
         node.dispose();

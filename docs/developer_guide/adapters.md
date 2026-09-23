@@ -1126,6 +1126,31 @@ Commission construction is an exception to partial bounded history. Follow
 [commission failure handling](#commission-failure-handling) and fail the report request instead of
 returning a set that omits the affected fill.
 
+:::danger[Position report parsing is market exposure]
+**Parse position reports exactly. The engine treats each explicit report as the position, then
+aligns to it within reconciliation tolerances or fails closed.** A wrong quantity, a wrong side,
+a dropped row, or an invented flat becomes exposure a strategy will trade.
+
+By default the engine generates the orders and fills required to reach the report you emit. It
+cannot recover a position fact you dropped or invented.
+
+Emit a report only for a fact the venue stated:
+
+- Open quantity and direction, as an open report
+- No position, as an explicit flat report, and only after coverage proves that position is flat
+
+Do not emit a report for:
+
+- An omitted instrument without authoritative coverage
+- A null quantity
+- An unparsed row
+- A venue that does not publish positions
+
+Dropping a reported zero or flat, or inventing a zero without authoritative coverage, is an
+adapter coding error. A complete venue snapshot can establish flat only when its documented
+coverage includes the position; a missing or failed response cannot.
+:::
+
 When positions come from a cached stream, absence proves flat only when a complete snapshot from
 the current connection epoch positively covers that instrument. Invalidate snapshot coverage on
 reconnect, and keep a row uncovered when it could not be parsed or mapped. Emit an explicit flat
@@ -1170,9 +1195,10 @@ neither fails nor warns because the venue returned records for the rest.
 Historical queries reach past the loaded instrument set routinely, because expiries retire
 instruments that earlier fills still reference. Failing a bounded-history query for one expired
 instrument would withhold every other record it returned, so record the incompleteness through
-`set_report_window` and let the engine apply its bounded-history rules. The engine acts on that
-incompleteness only for a mass status that declares `lookback_start`; an adapter that declares no
-bound follows the compatibility fill-adjustment path instead.
+`set_report_window`. Incompleteness does not veto an explicit position report. A bounded fill for an
+instrument with no explicit position report does not change a position. Emit an explicit flat report
+only when coverage proves the venue has no position. Do not omit the row and expect the engine to
+infer flat.
 
 `reconciliation_instrument_ids` filters reports after the execution engine receives them, so it
 cannot prevent a resolution failure inside an adapter. Keep the adapter's scope in its instrument

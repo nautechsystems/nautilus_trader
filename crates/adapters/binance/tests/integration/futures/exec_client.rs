@@ -6073,7 +6073,7 @@ async fn test_position_report_generation_preserves_hedge_legs(
 #[rstest]
 #[case(ReportFixtureMode::HedgePositions, "0.002", 0, 4)]
 #[case(ReportFixtureMode::HedgePositionsEqual, "0.005", 0, 4)]
-#[case(ReportFixtureMode::HedgePositionsWithFills, "0.002", 2, 8)]
+#[case(ReportFixtureMode::HedgePositionsWithFills, "0.002", 2, 4)]
 #[case(ReportFixtureMode::HedgePositionsWithPartialFills, "0.002", 2, 8)]
 #[tokio::test]
 async fn test_startup_reconciliation_preserves_both_hedge_legs(
@@ -6137,6 +6137,8 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
     let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
     assert_eq!(result.events.len(), expected_event_count);
+    assert!(result.unresolved_positions.is_empty());
+
     {
         let cache_ref = cache.borrow();
         let long_position = cache_ref.position(&long_position_id).unwrap();
@@ -6168,11 +6170,17 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
                 .unwrap(),
         );
         assert_eq!(short_position.avg_px_open, 52000.0);
+
+        if expected_fill_count > 0 {
+            assert_eq!(long_position.trade_ids()[0], TradeId::from("12345678"));
+            assert_eq!(short_position.trade_ids()[0], TradeId::from("12345679"));
+        }
     }
 
     let replay = manager.reconcile_execution_mass_status(&replay_status, &engine);
 
     assert!(replay.events.is_empty());
+    assert!(replay.unresolved_positions.is_empty());
     assert_eq!(
         cache.borrow().positions(None, None, None, None, None).len(),
         2

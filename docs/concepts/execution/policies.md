@@ -176,11 +176,32 @@ Recovery means restoring available cached state, reconciling available venue rep
 the strategy-start barrier until startup reconciliation finishes. It does not prove that the venue
 returned complete history or that every unknown command outcome was resolved.
 
-An explicitly bounded report set changes NETTING position and portfolio economics only when the
-reports are complete and coherent, retained state is compatible, and replay matches one
-authoritative position report. Otherwise, NautilusTrader updates the reported order state without
-applying the unsupported fill to a position or portfolio. See
-[Bounded history safety](reconciliation.md#bounded-history-safety).
+:::info[Position reports are market exposure]
+**An explicit position report is authoritative. During startup reconciliation,
+the engine either aligns to that report within reconciliation tolerances or fails closed.**
+
+Authoritative position reports:
+
+- An explicit open report, including quantity and direction.
+- An explicit flat report.
+
+Not evidence of a flat position:
+
+- A missing report.
+- A null quantity.
+- A venue that does not publish positions.
+
+The fill window does not decide whether the report is authoritative. Missing reports do
+not mean flat.
+
+By default, `generate_missing_orders` is enabled. The engine generates the
+orders and fills needed to align local state to the report. Disabling generation
+does not allow an unresolved report through startup.
+
+This guarantee covers reports included by the position-report and instrument
+filters, with reconciliation enabled. Unresolved reports prevent actors and
+strategies from starting.
+:::
 
 Reports for orders absent from the cache can create external orders. Active claims assign an
 external order to a strategy; unclaimed orders use the `EXTERNAL` strategy. See

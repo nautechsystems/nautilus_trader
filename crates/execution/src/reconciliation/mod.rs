@@ -47,6 +47,7 @@ mod types;
 
 #[cfg(test)]
 mod proptests;
+
 #[cfg(test)]
 mod tests;
 
@@ -64,7 +65,7 @@ pub use orders::{
     should_reconciliation_update,
 };
 pub use positions::{
-    calculate_reconciliation_price, check_position_reconciliation,
+    calculate_reconciliation_price, check_position_reconciliation, position_prices_match,
     process_mass_status_for_reconciliation,
     process_mass_status_for_reconciliation_without_synthetic_reports,
 };

@@ -61,7 +61,6 @@ use rust_decimal::Decimal;
 /// throttles, venue report lookups) so that multiple accounts holding the same
 /// instrument do not share the same tracking entry.
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
-pub(super) type AccountInstrumentKey = (AccountId, InstrumentId);
 pub(super) type AccountInstrumentStrategyKey = (AccountId, InstrumentId, StrategyId);
 pub(super) type FillKey = (AccountId, InstrumentId, TradeId);
 
@@ -237,19 +236,6 @@ pub(super) struct RetainedFillState {
     pub(super) missing_order_ids: IndexSet<(AccountId, InstrumentId, ClientOrderId)>,
     pub(super) missing_venue_order_ids: IndexSet<(AccountId, InstrumentId, VenueOrderId)>,
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
-}
-
-/// Historical fills grouped for a synthetic reconciliation order.
-pub(super) struct HistoricalFillGroup {
-    pub(super) venue_order_id: VenueOrderId,
-    pub(super) account_id: AccountId,
-    pub(super) instrument_id: InstrumentId,
-    pub(super) strategy_id: StrategyId,
-    pub(super) order_side: OrderSide,
-    pub(super) quantity: Decimal,
-    pub(super) reduce_only: bool,
-    pub(super) ts_event: UnixNanos,
-    pub(super) ts_last: UnixNanos,
 }
 
 /// Tracks pending fill identities and their generated reconciliation events.
@@ -571,11 +557,11 @@ pub(super) fn should_project_fill(
     fill: &OrderFilled,
     retained_fill_state: &RetainedFillState,
     reported_fill_keys: &IndexSet<FillKey>,
-    order_only_venue_order_ids: &IndexSet<VenueOrderId>,
+    order_only_ids: &IndexSet<VenueOrderId>,
 ) -> bool {
     let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
     if retained_fill_state.fill_keys.contains(&fill_key)
-        || order_only_venue_order_ids.contains(&fill.venue_order_id)
+        || order_only_ids.contains(&fill.venue_order_id)
     {
         return true;
     }

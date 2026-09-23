@@ -3444,7 +3444,7 @@ async fn test_partial_window_known_fill_does_not_reapply_economics(
 }
 
 #[tokio::test]
-async fn test_split_lighter_reduce_only_lifecycle_does_not_apply_economics() {
+async fn test_split_lighter_reduce_only_lifecycle_preserves_explicit_flat() {
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
     let instrument_id = instrument.id();
@@ -3593,8 +3593,10 @@ async fn test_split_lighter_reduce_only_lifecycle_does_not_apply_economics() {
         0
     );
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(portfolio_events.len(), 1);
+    assert_eq!(portfolio_events.len(), 2);
     assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
+    assert!(matches!(portfolio_events[1], OrderEventAny::Filled(_)));
+    assert!(result.unresolved_positions.is_empty());
 }
 
 #[tokio::test]
@@ -3721,6 +3723,7 @@ async fn test_bounded_complete_lifecycle_applies_beside_split_close() {
         ]
     );
     assert_eq!(result.external_orders.len(), 3);
+    assert!(result.unresolved_positions.is_empty());
 
     let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
     let cache = ctx.cache.borrow();
@@ -3772,6 +3775,7 @@ async fn test_bounded_complete_lifecycle_applies_beside_split_close() {
             ("accepted", closing_venue_order_id),
             ("filled", closing_venue_order_id),
             ("accepted", split_venue_order_id),
+            ("filled", split_venue_order_id),
         ]
     );
 }
@@ -3928,13 +3932,13 @@ async fn test_bounded_hedge_fill_applies_economics_once() {
     false
 )]
 #[tokio::test]
-async fn test_bounded_reduce_only_fill_requires_sufficient_correlated_position(
+async fn test_bounded_reduce_only_history_reconciles_flat_or_remains_unresolved(
     #[case] position_strategy: &str,
     #[case] position_qty: &str,
     #[case] cached_order: bool,
     #[case] opening_side: OrderSide,
     #[case] closing_side: OrderSide,
-    #[case] expected_applied: bool,
+    #[case] closes_predecessor: bool,
 ) {
     let config = ExecutionManagerConfig {
         generate_missing_orders: false,
@@ -4094,47 +4098,50 @@ async fn test_bounded_reduce_only_fill_requires_sufficient_correlated_position(
     drop(order);
     let position = cache.position(&position_id).expect("cached predecessor");
 
-    if expected_applied {
+    if closes_predecessor {
         assert!(position.is_closed());
         assert_eq!(position.quantity, Quantity::zero(3));
         assert_eq!(position.trade_ids.len(), 2);
         assert!(position.trade_ids.contains(&opening_trade_id));
         assert!(position.trade_ids.contains(&closing_trade_id));
         assert_eq!(position.commissions(), vec![Money::from("0.30 USDT")]);
+    } else if position_strategy_id == close_strategy_id {
+        assert!(position.is_open());
+        assert_eq!(position.is_long(), closing_side == OrderSide::Buy);
+        assert_eq!(position.quantity, Quantity::from("0.500"));
+        assert_eq!(position.avg_px_open, 3100.0);
+        assert_eq!(position.trade_ids.len(), 1);
+        assert!(position.trade_ids.contains(&closing_trade_id));
+        assert_eq!(position.commissions(), vec![Money::from("0.10 USDT")]);
     } else {
         assert!(position.is_open());
         assert_eq!(position.is_long(), opening_side == OrderSide::Buy);
-        assert_eq!(position.is_short(), opening_side == OrderSide::Sell);
         assert_eq!(position.quantity, Quantity::from(position_qty));
         assert_eq!(position.trade_ids.len(), 1);
         assert!(position.trade_ids.contains(&opening_trade_id));
-        assert!(!position.trade_ids.contains(&closing_trade_id));
         assert_eq!(position.commissions(), vec![Money::from("0.10 USDT")]);
-
-        if position_strategy_id != close_strategy_id {
-            assert!(cache.position(&close_position_id).is_none());
-        }
+        assert!(cache.position(&close_position_id).is_none());
     }
+
+    assert_eq!(
+        result.unresolved_positions.len(),
+        usize::from(!closes_predecessor)
+    );
 
     drop(position);
     drop(cache);
 
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(
-        portfolio_events.len(),
-        usize::from(!cached_order) + usize::from(expected_applied)
-    );
+    assert_eq!(portfolio_events.len(), usize::from(!cached_order) + 1);
 
     if !cached_order {
         assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
     }
 
-    if expected_applied {
-        assert!(matches!(
-            portfolio_events.last(),
-            Some(OrderEventAny::Filled(_))
-        ));
-    }
+    assert!(matches!(
+        portfolio_events.last(),
+        Some(OrderEventAny::Filled(_))
+    ));
 }
 
 #[rstest]
@@ -4222,7 +4229,7 @@ async fn test_incomplete_bounded_reports_project_fills_order_only(#[case] has_fi
 }
 
 #[tokio::test]
-async fn test_bounded_active_partial_order_keeps_order_without_economics() {
+async fn test_bounded_active_partial_order_preserves_order_and_reconciles_flat() {
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
     let instrument_id = instrument.id();
@@ -4288,7 +4295,8 @@ async fn test_bounded_active_partial_order_keeps_order_without_economics() {
 
     msgbus::deregister_any(portfolio_endpoint);
 
-    assert_eq!(result.events.len(), 2);
+    assert_eq!(result.events.len(), 4);
+    assert!(result.unresolved_positions.is_empty());
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
 
     let OrderEventAny::Filled(fill) = &result.events[1] else {
@@ -4309,12 +4317,22 @@ async fn test_bounded_active_partial_order_keeps_order_without_economics() {
     assert_eq!(order.quantity(), Quantity::from("1.000"));
     assert_eq!(order.filled_qty(), Quantity::from("0.400"));
     assert_eq!(cache.orders_open(None, None, None, None, None).len(), 1);
-    assert_eq!(cache.positions(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 1);
     drop(order);
     drop(cache);
 
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(portfolio_events.len(), 1);
+    assert_eq!(portfolio_events.len(), 4);
+
+    let closing_fill = match &portfolio_events[3] {
+        OrderEventAny::Filled(fill) => fill,
+        event => panic!("Expected closing fill, was {event:?}"),
+    };
+
+    assert_eq!(closing_fill.order_side, OrderSide::Sell);
+    assert_eq!(closing_fill.last_qty, Quantity::from("0.400"));
+    assert_eq!(closing_fill.last_px, Price::from("3000.00"));
     assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
 }
 
@@ -4397,8 +4415,12 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     assert_eq!(historical_fill.order_side, order_side);
     assert_eq!(historical_fill.last_qty, Quantity::from("1.000"));
     assert_eq!(historical_fill.last_px, Price::from("3000.00"));
+    assert!(result.unresolved_positions.is_empty());
     assert_eq!(result.events.len(), if expected_applied { 2 } else { 4 });
-    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(
+        result.external_orders.len(),
+        if expected_applied { 1 } else { 2 }
+    );
 
     let cache = ctx.cache.borrow();
     let order = cache
@@ -4414,8 +4436,12 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     assert!(position.is_open());
     assert!(position.is_long());
     assert_eq!(position.quantity, Quantity::from("1.000"));
-    assert_eq!(position.trade_ids.contains(&trade_id), expected_applied);
-    assert_eq!(position.trade_ids.len(), 1);
+    assert_eq!(position.avg_px_open, 3000.0);
+    assert!(position.trade_ids.contains(&trade_id));
+    assert_eq!(
+        position.trade_ids.len(),
+        if expected_applied { 1 } else { 2 }
+    );
     drop(position);
     drop(order);
     drop(cache);
@@ -4424,15 +4450,15 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     let historical_portfolio_fill = portfolio_events.iter().any(
         |event| matches!(event, OrderEventAny::Filled(fill) if fill.venue_order_id == venue_order_id),
     );
-    assert_eq!(historical_portfolio_fill, expected_applied);
-    assert_eq!(portfolio_events.len(), if expected_applied { 2 } else { 3 });
+    assert!(historical_portfolio_fill);
+    assert_eq!(portfolio_events.len(), if expected_applied { 2 } else { 4 });
 }
 
 #[rstest]
 #[case::missing(0)]
-#[case::ambiguous(2)]
+#[case::duplicate_flat(2)]
 #[tokio::test]
-async fn test_bounded_complete_reports_require_unambiguous_position_coverage(
+async fn test_bounded_history_distinguishes_missing_and_explicit_flat_reports(
     #[case] position_report_count: usize,
 ) {
     let mut ctx = TestContext::new();
@@ -4499,7 +4525,11 @@ async fn test_bounded_complete_reports_require_unambiguous_position_coverage(
 
     msgbus::deregister_any(portfolio_endpoint);
 
-    assert_eq!(result.events.len(), 2);
+    assert_eq!(
+        result.events.len(),
+        if position_report_count == 0 { 2 } else { 4 }
+    );
+    assert!(result.unresolved_positions.is_empty());
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
 
     let OrderEventAny::Filled(fill) = &result.events[1] else {
@@ -4517,17 +4547,24 @@ async fn test_bounded_complete_reports_require_unambiguous_position_coverage(
         .expect("historical order");
     assert_eq!(order.status(), OrderStatus::Filled);
     assert_eq!(order.filled_qty(), Quantity::from("1.000"));
-    assert_eq!(cache.positions(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 0);
+    assert_eq!(
+        cache.positions(None, None, None, None, None).len(),
+        usize::from(position_report_count != 0)
+    );
     drop(order);
     drop(cache);
 
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(portfolio_events.len(), 1);
+    assert_eq!(
+        portfolio_events.len(),
+        if position_report_count == 0 { 1 } else { 4 }
+    );
     assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
 }
 
 #[tokio::test]
-async fn test_bounded_interleaved_multi_fill_orders_project_economics_order_only() {
+async fn test_bounded_interleaved_multi_fill_orders_reconcile_explicit_flat() {
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
     let instrument_id = instrument.id();
@@ -4646,17 +4683,32 @@ async fn test_bounded_interleaved_multi_fill_orders_project_economics_order_only
         assert_eq!(order.filled_qty(), Quantity::from("1.000"));
     }
 
-    assert_eq!(cache.positions(None, None, None, None, None).len(), 0);
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 1);
     drop(cache);
 
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(portfolio_events.len(), 2);
-    assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
-    assert!(matches!(portfolio_events[1], OrderEventAny::Accepted(_)));
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    let expected_portfolio_events: Vec<_> = result
+        .events
+        .iter()
+        .cloned()
+        .map(|mut event| {
+            if let OrderEventAny::Filled(fill) = &mut event {
+                fill.position_id = Some(position_id);
+            }
+
+            event
+        })
+        .collect();
+
+    assert_eq!(portfolio_events, expected_portfolio_events);
 }
 
 #[tokio::test]
-async fn test_bounded_same_timestamp_orders_project_economics_order_only() {
+async fn test_bounded_same_timestamp_orders_reconcile_explicit_flat() {
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
     let instrument_id = instrument.id();
@@ -4759,13 +4811,28 @@ async fn test_bounded_same_timestamp_orders_project_economics_order_only() {
         assert_eq!(order.filled_qty(), Quantity::from("1.000"));
     }
 
-    assert_eq!(cache.positions(None, None, None, None, None).len(), 0);
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 1);
     drop(cache);
 
     let portfolio_events = portfolio_events.get_messages();
-    assert_eq!(portfolio_events.len(), 2);
-    assert!(matches!(portfolio_events[0], OrderEventAny::Accepted(_)));
-    assert!(matches!(portfolio_events[1], OrderEventAny::Accepted(_)));
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    let expected_portfolio_events: Vec<_> = result
+        .events
+        .iter()
+        .cloned()
+        .map(|mut event| {
+            if let OrderEventAny::Filled(fill) = &mut event {
+                fill.position_id = Some(position_id);
+            }
+
+            event
+        })
+        .collect();
+
+    assert_eq!(portfolio_events, expected_portfolio_events);
 }
 
 #[expect(
@@ -7271,6 +7338,353 @@ async fn test_mass_status_netting_client_recovers_venue_position_id(
 }
 
 #[rstest]
+#[case::fractional_average("3000.01", dec!(3000.005), true)]
+#[case::tolerance_boundary("3000.30", dec!(3000), true)]
+#[case::outside_tolerance("3000.31", dec!(3000), false)]
+#[tokio::test]
+async fn test_mass_status_entry_price_tolerance(
+    #[case] cached_price: &str,
+    #[case] venue_price: Decimal,
+    #[case] matches: bool,
+    #[values(false, true)] hedging: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-ENTRY-PRICE");
+    let position = create_test_position(
+        &instrument,
+        position_id,
+        OrderSide::Buy,
+        "5.000",
+        cached_price,
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        hedging.then_some(position_id),
+        Some(venue_price),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(result.events.is_empty());
+    assert_eq!(result.unresolved_positions.len(), usize::from(!matches));
+
+    if !matches {
+        assert_eq!(
+            result.unresolved_positions[0],
+            format!(
+                "account={}, instrument={instrument_id}, venue_position_id={:?}, venue_quantity=5.000: position recovery did not restore the reported average entry price",
+                test_account_id(),
+                hedging.then_some(position_id),
+            )
+        );
+    }
+
+    assert_eq!(
+        ctx.cache.borrow().position_owned(&position_id),
+        Some(position)
+    );
+}
+
+#[tokio::test]
+async fn test_mass_status_netting_rejects_aggregate_mismatch() {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        generate_missing_orders: false,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-NET"),
+        OrderSide::Buy,
+        "5.000",
+        "3000.00",
+    );
+    ctx.add_instrument(instrument);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![
+        create_test_position_report(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Long,
+            "5.000",
+            "V-1",
+            dec!(3000),
+        ),
+        create_test_position_report(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Long,
+            "5.000",
+            "V-2",
+            dec!(3000),
+        ),
+    ]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(result.events.is_empty());
+    assert_eq!(result.unresolved_positions.len(), 2);
+    assert_eq!(
+        ctx.cache.borrow().position_owned(&position.id),
+        Some(position)
+    );
+}
+
+#[tokio::test]
+async fn test_bounded_filtered_position_preserves_order_history() {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        filter_position_reports: true,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    let mut orders = Vec::new();
+    let mut fills = Vec::new();
+
+    for (id, side, price, ts) in [
+        ("1", OrderSide::Buy, "3000.00", 1_000_000),
+        ("2", OrderSide::Sell, "3050.00", 2_000_000),
+        ("3", OrderSide::Buy, "3100.00", 3_000_000),
+    ] {
+        let (order, fill) = create_bounded_fill_lifecycle(
+            instrument_id,
+            VenueOrderId::from(id),
+            TradeId::from(id),
+            side,
+            "1.000",
+            price,
+            false,
+            UnixNanos::from(ts),
+        );
+        orders.push(order);
+        fills.push(fill);
+    }
+
+    let mut mass_status = create_mass_status(orders, fills);
+    mass_status.set_report_window(Some(UnixNanos::from(500_000)), true);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("2.000"),
+        UnixNanos::from(4_000_000),
+        UnixNanos::from(4_000_000),
+        None,
+        None,
+        Some(dec!(3200)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert_eq!(result.events.len(), 6);
+    assert_eq!(result.external_orders.len(), 3);
+    assert!(result.unresolved_positions.is_empty());
+    let cache = ctx.cache.borrow();
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 0);
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 3);
+
+    for id in ["1", "2", "3"] {
+        let order = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(order.venue_order_id(), Some(VenueOrderId::from(id)));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(order.trade_ids(), vec![&TradeId::from(id)]);
+    }
+}
+
+#[rstest]
+#[case::weighted_sides(Some(dec!(3200)), dec!(3300), true)]
+#[case::long_mismatch(Some(dec!(3400)), dec!(3300), false)]
+#[case::short_mismatch(Some(dec!(3200)), dec!(3500), false)]
+#[case::missing_contributor(None, dec!(3300), false)]
+#[case::zero_contributor(Some(Decimal::ZERO), dec!(3300), false)]
+#[tokio::test]
+async fn test_mass_status_entry_price_aggregates_each_side(
+    #[case] second_long_price: Option<Decimal>,
+    #[case] short_price: Decimal,
+    #[case] matches: bool,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        generate_missing_orders: false,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let positions = [
+        create_test_position(
+            &instrument,
+            PositionId::from("P-LONG-1"),
+            OrderSide::Buy,
+            "2.000",
+            "3000.00",
+        ),
+        create_test_position(
+            &instrument,
+            PositionId::from("P-LONG-2"),
+            OrderSide::Buy,
+            "6.000",
+            "3200.00",
+        ),
+        create_test_position(
+            &instrument,
+            PositionId::from("P-SHORT"),
+            OrderSide::Sell,
+            "3.000",
+            "3300.00",
+        ),
+    ];
+
+    ctx.add_instrument(instrument);
+
+    for position in &positions {
+        ctx.cache
+            .borrow_mut()
+            .add_position(position, OmsType::Netting)
+            .unwrap();
+    }
+
+    let mut reports = vec![
+        create_test_position_report(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Long,
+            "2.000",
+            "V-LONG-1",
+            dec!(3000),
+        ),
+        create_test_position_report(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Long,
+            "6.000",
+            "V-LONG-2",
+            dec!(3200),
+        ),
+        create_test_position_report(
+            test_account_id(),
+            instrument_id,
+            PositionSide::Short,
+            "3.000",
+            "V-SHORT",
+            short_price,
+        ),
+    ];
+    reports[1].avg_px_open = second_long_price;
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(reports);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(
+        result.unresolved_positions.len(),
+        if matches { 0 } else { 3 }
+    );
+
+    for position in positions {
+        assert_eq!(
+            ctx.cache.borrow().position_owned(&position.id),
+            Some(position)
+        );
+    }
+}
+
+#[rstest]
+#[case::long(OrderSide::Buy, PositionSide::Long)]
+#[case::short(OrderSide::Sell, PositionSide::Short)]
+#[tokio::test]
+async fn test_mass_status_reduction_uses_reported_average_and_validates_remaining_entry(
+    #[case] opening_side: OrderSide,
+    #[case] report_side: PositionSide,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-REDUCTION");
+    let position =
+        create_test_position(&instrument, position_id, opening_side, "20.000", "3000.00");
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        report_side,
+        Quantity::from("10.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(3100)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert_eq!(result.events.len(), 2);
+
+    let OrderEventAny::Filled(fill) = &result.events[1] else {
+        panic!("Expected reduction fill")
+    };
+
+    assert_eq!(
+        fill.order_side,
+        if opening_side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        }
+    );
+    assert_eq!(fill.last_qty, Quantity::from("10.000"));
+    assert_eq!(fill.last_px, Price::from("3100.00"));
+    let position = ctx.cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(position.quantity, Quantity::from("10.000"));
+    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(
+        result.unresolved_positions,
+        vec![format!(
+            "account={}, instrument={instrument_id}, venue_position_id=Some({position_id:?}), venue_quantity={}: position recovery did not restore the reported average entry price",
+            test_account_id(),
+            if opening_side == OrderSide::Buy {
+                "10.000"
+            } else {
+                "-10.000"
+            },
+        )]
+    );
+}
+
+#[rstest]
 #[case::missing_instrument(false, true, true, Some(dec!(3000.50)), "instrument missing from cache")]
 #[case::missing_account(true, false, true, Some(dec!(3000.50)), "account missing from cache")]
 #[case::disabled_generation(true, true, false, Some(dec!(3000.50)), "generate_missing_orders is disabled")]
@@ -7891,7 +8305,7 @@ async fn test_reconcile_mass_status_reconciles_partial_hedge_fill_to_position_re
 }
 
 #[tokio::test]
-async fn test_reconcile_mass_status_projects_partial_closing_hedge_history() {
+async fn test_reconcile_mass_status_leaves_hedge_reversal_identity_unresolved() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-001");
@@ -7947,9 +8361,26 @@ async fn test_reconcile_mass_status_projects_partial_closing_hedge_history() {
     assert_eq!(result.events.len(), 3);
 
     let cache = ctx.cache.borrow();
-    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 2);
+    let reported_position = cache.position(&venue_position_id).unwrap();
+    assert!(reported_position.is_closed());
+    assert_eq!(reported_position.quantity, Quantity::zero(3));
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
     assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].id, venue_position_id);
+    assert_ne!(positions[0].id, venue_position_id);
+    assert_eq!(
+        result.unresolved_positions,
+        vec![format!(
+            "account={}, instrument={instrument_id}, venue_position_id=Some({venue_position_id:?}), venue_quantity=5.0: position recovery did not restore the reported quantity",
+            test_account_id(),
+        )]
+    );
     assert_eq!(positions[0].side, PositionSide::Long);
     assert_eq!(positions[0].quantity, Quantity::from("5.0"));
     assert_eq!(positions[0].avg_px_open, 3000.0);
@@ -10289,13 +10720,16 @@ async fn test_adjust_fills_without_synthetic_reports_filters_to_current_lifecycl
     assert_eq!(result.fills.len(), 1, "Only O3 fills should remain");
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
-    // Two lifecycles whose current one (O3 + O4, 2.000 @ 3050) does not reconstruct the venue
-    // position (1.000 @ 3142.04), so the history is replaced by a synthetic fill. O9 is working
-    // with no fills and must survive as an external order; O4 is partially filled and goes with
-    // its discarded fill, otherwise its filled quantity would be inferred on top of the synthetic.
+async fn test_replace_current_lifecycle_preserves_working_orders(
+    #[values(false, true)] bounded: bool,
+    #[values(false, true)] terminal_report: bool,
+) {
     let mut ctx = TestContext::new();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
     let instrument_id = test_instrument_id();
     ctx.add_instrument(test_instrument());
     let ts_now: u64 = 1_000_000_000_000;
@@ -10368,6 +10802,18 @@ async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
             ),
         ],
     );
+
+    if terminal_report {
+        mass_status.add_order_reports(vec![create_order_status_report(
+            Some(ClientOrderId::from("C-003")),
+            VenueOrderId::from("V-003"),
+            instrument_id,
+            OrderStatus::Filled,
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+        )]);
+    }
+
     mass_status.add_position_reports(vec![PositionStatusReport::new(
         test_account_id(),
         instrument_id,
@@ -10379,6 +10825,10 @@ async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
         None,
         Some(dec!(3142.04)),
     )]);
+
+    if bounded {
+        mass_status.set_report_window(Some(UnixNanos::from(ts_now - 5_000_000_000)), true);
+    }
 
     let result = ctx
         .manager
@@ -10398,8 +10848,8 @@ async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
         result.events
     );
     assert!(
-        !accepted.contains(&ClientOrderId::from("C-004")),
-        "partially filled order kept without its fills, events: {:?}",
+        accepted.contains(&ClientOrderId::from("C-004")),
+        "partially filled working order not adopted, events: {:?}",
         result.events
     );
 
@@ -10411,9 +10861,88 @@ async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
             _ => None,
         })
         .collect();
-    assert_eq!(fills.len(), 1, "fills: {fills:?}");
-    assert!(fills[0].trade_id.as_str().starts_with("S-"));
-    assert_eq!(fills[0].last_qty, Quantity::from("1.000"));
+
+    assert_eq!(
+        fills.len(),
+        2 + usize::from(terminal_report),
+        "fills: {fills:?}"
+    );
+    let synthetic = fills
+        .iter()
+        .find(|fill| fill.trade_id.as_str().starts_with("S-"))
+        .unwrap();
+    assert!(synthetic.venue_order_id.as_str().starts_with("S-"));
+    assert_eq!(synthetic.last_qty, Quantity::from("1.000"));
+    assert!(result.unresolved_positions.is_empty());
+    let cache = ctx.cache.borrow();
+    if terminal_report {
+        let terminal = cache.order(&ClientOrderId::from("C-003")).unwrap();
+        assert_eq!(terminal.status(), OrderStatus::Filled);
+        assert_eq!(terminal.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(terminal.trade_ids(), vec![&TradeId::from("T-003")]);
+    }
+
+    let order = cache.order(&ClientOrderId::from("C-004")).unwrap();
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("V-004")));
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.quantity(), Quantity::from("2.000"));
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(order.leaves_qty(), Quantity::from("1.000"));
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("T-004")]);
+    assert_eq!(cache.orders_open(None, None, None, None, None).len(), 2);
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
+    assert_eq!(positions[0].avg_px_open, 3142.04);
+    drop(positions);
+    drop(order);
+    drop(cache);
+
+    let replayed = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    assert!(
+        replayed.unresolved_positions.is_empty(),
+        "{:?}",
+        replayed.unresolved_positions
+    );
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
+    assert_eq!(positions[0].avg_px_open, 3142.04);
+    drop(positions);
+    drop(cache);
+
+    let order = ctx.get_order(&ClientOrderId::from("C-004")).unwrap();
+    let fill: OrderFilled = TestOrderEventStubs::filled(
+        &order,
+        &test_instrument(),
+        Some(TradeId::from("T-005")),
+        None,
+        Some(Price::from("3200.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        None,
+        Some(UnixNanos::from(ts_now + 1)),
+        Some(test_account_id()),
+    )
+    .into();
+    ctx.exec_engine
+        .borrow_mut()
+        .process(&OrderEventAny::Filled(fill));
+
+    let order = ctx.get_order(&ClientOrderId::from("C-004")).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("2.000"));
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(2));
+    assert_eq!(positions[0].avg_px_open, 3171.02);
+    assert_eq!(positions[0].trade_ids.len(), 2);
+    assert!(positions[0].trade_ids.contains(&TradeId::from("T-005")));
+    assert!(!positions[0].trade_ids.contains(&TradeId::from("T-004")));
 }
 
 #[tokio::test]
@@ -14950,12 +15479,20 @@ async fn test_position_check_uses_routing_client_tolerance() {
     assert!(events.is_empty());
 }
 
+#[rstest]
+#[case::magnitude("5.000000", PositionSide::Long, "5.005000")]
+#[case::flat_dust("0.005000", PositionSide::Flat, "0.000000")]
+#[case::opposite_dust("0.003000", PositionSide::Short, "0.003000")]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_mass_status_netting_uses_routing_client_tolerance() {
+async fn test_mass_status_netting_uses_routing_client_tolerance(
+    #[case] cached_qty: &str,
+    #[case] report_side: PositionSide,
+    #[case] report_qty: &str,
+) {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
         position_check_threshold_ns: DurationNanos::ZERO,
@@ -14970,7 +15507,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
         &instrument,
         PositionId::from("P-ROUTING-TOLERANCE-MASS-STATUS"),
         OrderSide::Buy,
-        "5.000000",
+        cached_qty,
         "3000.00",
         account_id,
     );
@@ -14979,7 +15516,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
         account_id,
         instrument_id,
         PositionSide::Long,
-        Quantity::from("5.000000"),
+        Quantity::from(cached_qty),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
         None,
@@ -15016,8 +15553,8 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
     let drift_report = PositionStatusReport::new(
         account_id,
         instrument_id,
-        PositionSide::Long,
-        Quantity::from("5.005000"),
+        report_side,
+        Quantity::from(report_qty),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
         None,
