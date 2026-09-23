@@ -807,3 +807,99 @@ pub(super) struct PositionFillReportQueryResult {
     pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
     pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::{LiquiditySide, OrderSide},
+        identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
+        types::{Money, Price, Quantity},
+    };
+    use proptest::prelude::*;
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    #[rstest]
+    #[case::start(1_000, Some(1_000), Some(2_000), true)]
+    #[case::end(2_000, Some(1_000), Some(2_000), true)]
+    #[case::before(999, Some(1_000), Some(2_000), false)]
+    #[case::after(2_001, Some(1_000), Some(2_000), false)]
+    #[case::point(1_000, Some(1_000), Some(1_000), true)]
+    #[case::inverted(1_500, Some(2_000), Some(1_000), false)]
+    #[case::unbounded_zero(0, None, None, true)]
+    #[case::unbounded_max(u64::MAX, None, None, true)]
+    #[case::start_only(u64::MAX, Some(u64::MAX), None, true)]
+    #[case::end_only(0, None, Some(0), true)]
+    fn test_fill_report_window_boundaries(
+        #[case] event: u64,
+        #[case] start: Option<u64>,
+        #[case] end: Option<u64>,
+        #[case] expected: bool,
+        mut fill_report: FillReport,
+    ) {
+        fill_report.ts_event = UnixNanos::from(event);
+
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(fill_report.instrument_id),
+            None,
+            start.map(UnixNanos::from),
+            end.map(UnixNanos::from),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            fill_report_in_query_window(&fill_report, &command),
+            expected
+        );
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_fill_report_window_contains_exactly_inclusive_interval(
+            event in any::<u64>(),
+            start in proptest::option::of(any::<u64>()),
+            end in proptest::option::of(any::<u64>()),
+        ) {
+            let mut report = fill_report();
+            report.ts_event = UnixNanos::from(event);
+            let command = GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(report.instrument_id),
+                None,
+                start.map(UnixNanos::from),
+                end.map(UnixNanos::from),
+                None,
+                None,
+            );
+            let interval = start.unwrap_or(0)..=end.unwrap_or(u64::MAX);
+
+            prop_assert_eq!(fill_report_in_query_window(&report, &command), interval.contains(&event));
+        }
+    }
+
+    #[fixture]
+    fn fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("TEST-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            VenueOrderId::from("V-1"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1_500),
+            UnixNanos::from(2_000),
+            None,
+        )
+    }
+}

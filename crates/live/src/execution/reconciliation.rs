@@ -825,6 +825,48 @@ pub(super) mod tests {
 
     use super::*;
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_targeted_reports_missing_client_marks_coverage_incomplete(
+        #[values(false, true)] missing_first: bool,
+    ) {
+        let client = CommissionStubClient::new(CommissionOutcome::NoOverride);
+        let missing_id = ClientId::from("MISSING");
+        let mut responsible_clients = vec![client.client_id(), missing_id];
+
+        if missing_first {
+            responsible_clients.reverse();
+        }
+
+        let client_order_id = ClientOrderId::from("O-MISSING-CLIENT");
+
+        let query = TargetedOrderQuery {
+            client_order_id,
+            responsible_clients: responsible_clients.into_iter().collect(),
+            command: GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::from(123),
+                Some(InstrumentId::from("ETHUSDT-PERP.BINANCE")),
+                Some(client_order_id),
+                Some(VenueOrderId::from("V-MISSING-CLIENT")),
+                None,
+                None,
+            ),
+            report: None,
+            filled_qty: Quantity::from("0.0"),
+        };
+
+        let results = request_targeted_order_reports(vec![query], &[&client], Duration::ZERO).await;
+
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        assert_eq!(result.client_order_id, client_order_id);
+        assert_eq!(result.client_id, None);
+        assert_eq!(result.report, None);
+        assert!(result.fills.is_empty());
+        assert!(!result.coverage_complete);
+    }
+
     /// Configured result of a stub commission calculation.
     #[derive(Clone)]
     pub(crate) enum CommissionOutcome {
@@ -1403,6 +1445,53 @@ pub(super) mod tests {
         let result = position_qty_aggregates(quantities.into_iter().map(Decimal::from));
 
         assert_eq!(result, expected);
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_position_quantities_match_tolerance_and_side_exposure(
+            long in 100i64..1_000_000,
+            short in 100i64..1_000_000,
+            long_delta in -10i64..=10,
+            short_delta in -10i64..=10,
+            tolerance in 0i64..=20,
+            scale in 0u32..=6,
+            side_reports in any::<bool>(),
+        ) {
+            let venue_net = long + long_delta - short - short_delta;
+            let (venue_long, venue_short) = if side_reports {
+                (long + long_delta, short + short_delta)
+            } else {
+                (venue_net.max(0), (-venue_net).max(0))
+            };
+            let comparison = PositionQuantityComparison {
+                cached_positions: Vec::new(),
+                cached_signed_qty: Decimal::new(long - short, scale),
+                cached_long_qty: Decimal::new(long, scale),
+                cached_short_qty: Decimal::new(short, scale),
+                venue_signed_qty: Decimal::new(venue_net, scale),
+                venue_long_qty: Decimal::new(venue_long, scale),
+                venue_short_qty: Decimal::new(venue_short, scale),
+                nonflat_count: if side_reports { 2 } else { 1 },
+                venue_report: None,
+                venue_has_side_reports: side_reports,
+            };
+            let mut largest_error = (long_delta - short_delta).abs();
+
+            if side_reports {
+                largest_error = largest_error.max(long_delta.abs()).max(short_delta.abs());
+            }
+
+            prop_assert_eq!(
+                comparison.quantities_match(Decimal::new(tolerance, scale)),
+                largest_error <= tolerance,
+            );
+            prop_assert!(comparison.quantities_match(Decimal::new(largest_error, scale)));
+
+            if largest_error > 0 {
+                prop_assert!(!comparison.quantities_match(Decimal::new(largest_error - 1, scale)));
+            }
+        }
     }
 
     proptest! {

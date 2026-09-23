@@ -7343,6 +7343,8 @@ async fn test_mass_status_netting_client_recovers_venue_position_id(
 }
 
 #[rstest]
+#[case::zero_venue_price("3000.00", Decimal::ZERO, false)]
+#[case::negative_venue_price("3000.00", dec!(-1), false)]
 #[case::fractional_average("3000.01", dec!(3000.005), true)]
 #[case::tolerance_boundary("3000.30", dec!(3000), true)]
 #[case::outside_tolerance("3000.31", dec!(3000), false)]

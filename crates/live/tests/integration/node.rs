@@ -3760,18 +3760,24 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
+    #[case::expired(Duration::ZERO, false)]
+    #[case::pending(Duration::from_millis(50), true)]
     #[cfg_attr(
         not(all(feature = "simulation", madsim)),
         tokio::test(flavor = "current_thread")
     )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-    async fn test_startup_reconciliation_times_out_waiting_for_mass_status() {
+    async fn test_startup_reconciliation_times_out_waiting_for_mass_status(
+        #[case] timeout: Duration,
+        #[case] requested: bool,
+        #[values(false, true)] run: bool,
+    ) {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
-            timeout_reconciliation: Duration::from_millis(50),
+            timeout_reconciliation: timeout,
             timeout_disconnection: Duration::from_millis(50),
             ..Default::default()
         };
@@ -3783,7 +3789,14 @@ pub(crate) mod serial_tests {
         );
         let handle = node.handle();
 
-        let result = dst::time::timeout(Duration::from_secs(1), node.run()).await;
+        let result = dst::time::timeout(Duration::from_secs(1), async {
+            if run {
+                node.run().await
+            } else {
+                node.start().await
+            }
+        })
+        .await;
 
         assert!(
             result.is_ok(),
@@ -3791,13 +3804,24 @@ pub(crate) mod serial_tests {
         );
         let err = result
             .unwrap()
-            .expect_err("run should fail on startup reconciliation timeout");
+            .expect_err("startup should fail on reconciliation timeout");
         let err = format!("{err:#}");
-        assert!(
-            err.contains("Startup reconciliation timeout reached"),
-            "unexpected error: {err}"
+
+        let expected = if requested {
+            format!(
+                "Startup reconciliation timeout reached while requesting mass status from {}",
+                StartupMassStatusExecutionClient::CLIENT_ID,
+            )
+        } else {
+            "Startup reconciliation timeout reached".to_string()
+        };
+
+        assert_eq!(err, expected);
+        assert_eq!(
+            state.mass_status_requested.load(Ordering::Relaxed),
+            requested
         );
-        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert!(state.disconnect_attempted.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));
     }
