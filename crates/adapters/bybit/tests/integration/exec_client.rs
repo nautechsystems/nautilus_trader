@@ -78,7 +78,10 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
         VenueOrderId,
     },
-    orders::{MarketOrder, Order, OrderAny, TrailingStopMarketOrder},
+    orders::{
+        LimitIfTouchedOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny, StopLimitOrder,
+        StopMarketOrder, TrailingStopMarketOrder,
+    },
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -2893,6 +2896,394 @@ async fn test_exec_client_submit_order_unsupported_order_type_emits_order_denied
     assert!(
         text.contains("OrderDenied") && text.contains("UNSUPPORTED_ORDER_TYPE"),
         "Expected OrderDenied with unsupported-order-type reason, was {text}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_submit_conditional_order_on_option_denied() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(
+        Symbol::from("BTC-25SEP26-86500-C-USDT-OPTION"),
+        *BYBIT_VENUE,
+    );
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    let stop_market = OrderAny::StopMarket(StopMarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        ClientOrderId::from("test-option-conditional-1"),
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        Price::from("1500.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let stop_limit = OrderAny::StopLimit(StopLimitOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        ClientOrderId::from("test-option-conditional-2"),
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        Price::from("1490.00"),
+        Price::from("1500.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let market_if_touched = OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        ClientOrderId::from("test-option-conditional-3"),
+        OrderSide::Sell,
+        Quantity::from("0.01"),
+        Price::from("1600.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let limit_if_touched = OrderAny::LimitIfTouched(LimitIfTouchedOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        ClientOrderId::from("test-option-conditional-4"),
+        OrderSide::Sell,
+        Quantity::from("0.01"),
+        Price::from("1590.00"),
+        Price::from("1600.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    // Bybit does not support conditional orders for options, so each order is
+    // denied before submission without an OrderSubmitted event
+    for order in [stop_market, stop_limit, market_if_touched, limit_if_touched] {
+        let cid = order.client_order_id();
+        let init = order.init_event().clone();
+
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+
+        let cmd = SubmitOrder::new(
+            trader_id,
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            cid,
+            init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None, // correlation_id
+        );
+
+        client.submit_order(cmd).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for OrderDenied")
+            .expect("channel closed");
+        let text = match event {
+            ExecutionEvent::Order(ref order_event) => order_event.to_string(),
+            other => panic!("Expected OrderDenied, was {other:?}"),
+        };
+        assert!(
+            text.contains("OrderDenied") && text.contains("UNSUPPORTED_ORDER_TYPE"),
+            "Expected OrderDenied with unsupported-order-type reason, was {text}",
+        );
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_submit_order_list_denies_conditional_leg_on_option() {
+    use nautilus_common::messages::execution::SubmitOrderList;
+    use nautilus_model::orders::OrderList;
+
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(
+        Symbol::from("BTC-25SEP26-86500-C-USDT-OPTION"),
+        *BYBIT_VENUE,
+    );
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    // Valid market leg + StopMarket leg on an option instrument
+    let cid1 = ClientOrderId::from("test-option-list-order-1");
+    let cid2 = ClientOrderId::from("test-option-list-order-2");
+
+    let order1 = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid1,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let order2 = OrderAny::StopMarket(StopMarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid2,
+        OrderSide::Sell,
+        Quantity::from("0.01"),
+        Price::from("1400.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let init1 = order1.init_event().clone();
+    let init2 = order2.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order1, None, Some(client_id), false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(order2, None, Some(client_id), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("test-option-list-1"),
+        instrument_id,
+        strategy_id,
+        vec![cid1, cid2],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        order_list,
+        vec![init1, init2],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // correlation_id
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    // The whole list is denied: the offending StopMarket leg carries the specific
+    // UNSUPPORTED_ORDER_TYPE reason while the valid leg renders ORDER_LIST_DENIED.
+    let mut denied = Vec::new();
+
+    for _ in 0..2 {
+        match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(ref event)))
+                if event.to_string().contains("OrderDenied") =>
+            {
+                denied.push(event.to_string());
+            }
+            _ => break,
+        }
+    }
+
+    assert_eq!(
+        denied.len(),
+        2,
+        "Both orders should be denied when one leg is invalid"
+    );
+
+    let offender = denied
+        .iter()
+        .find(|text| text.contains("client_order_id=test-option-list-order-2"))
+        .expect("missing denied event for invalid leg");
+    assert!(
+        offender.contains("UNSUPPORTED_ORDER_TYPE"),
+        "offender reason was: {offender}"
+    );
+
+    let sibling = denied
+        .iter()
+        .find(|text| text.contains("client_order_id=test-option-list-order-1"))
+        .expect("missing denied event for valid leg");
+    assert!(
+        sibling.contains("ORDER_LIST_DENIED"),
+        "sibling reason was: {sibling}"
     );
 
     client.disconnect().await.unwrap();

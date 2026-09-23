@@ -1271,7 +1271,16 @@ impl ExecutionClient for BybitExecutionClient {
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
-        if Self::map_order_type(order.order_type()).is_err() {
+        let Ok((_, is_conditional)) = Self::map_order_type(order.order_type()) else {
+            let denied = OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
+            return Ok(());
+        };
+
+        // Bybit does not support conditional orders for options
+        if product_type == BybitProductType::Option && is_conditional {
             let denied = OrderDeniedReason::UnsupportedOrderType {
                 order_type: order.order_type(),
             };
@@ -1540,7 +1549,19 @@ impl ExecutionClient for BybitExecutionClient {
                     break;
                 }
 
-                if Self::map_order_type(order.order_type()).is_err() {
+                let Ok((_, is_conditional)) = Self::map_order_type(order.order_type()) else {
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::UnsupportedOrderType {
+                            order_type: order.order_type(),
+                        },
+                        list_denied,
+                    ));
+                    break;
+                };
+
+                // Bybit does not support conditional orders for options
+                if product_type == BybitProductType::Option && is_conditional {
                     denial = Some((
                         *cid,
                         OrderDeniedReason::UnsupportedOrderType {
