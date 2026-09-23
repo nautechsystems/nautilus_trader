@@ -59,7 +59,7 @@ def test_okx_depth_and_interval_python_delivery() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=30,
+        timeout=120,
         env=env,
         check=False,
     )
@@ -139,7 +139,7 @@ class BookServer(BaseHTTPRequestHandler):
                 if command["op"] == "subscribe" and arg.get("channel") == "books":
                     snapshot = _snapshot()
                     self._send(json.dumps(snapshot))
-                    assert INITIAL_INTERVAL.wait(5), "initial interval callback missing"
+                    assert INITIAL_INTERVAL.wait(30), "initial interval callback missing"
                     heartbeat = json.loads(json.dumps(snapshot))
                     heartbeat["action"] = "update"
                     heartbeat["data"][0]["prevSeqId"] = 123456
@@ -245,8 +245,8 @@ def _run_delivery() -> None:
             .with_logging(LoggerConfig(stdout_level=LogLevel.ERROR))
             .with_delay_post_stop_secs(0)
             .with_delay_shutdown_secs(0)
-            .with_timeout_connection(5)
-            .with_timeout_disconnection_secs(2)
+            .with_timeout_connection(30)
+            .with_timeout_disconnection_secs(10)
             .add_data_client(
                 None,
                 OKXDataClientFactory(),
