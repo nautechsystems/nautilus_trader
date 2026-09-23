@@ -964,6 +964,49 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        if cmd.order_side.is_some() {
+            // AX cancel-all has no side parameter, so select matching open
+            // orders and cancel their explicit IDs through the batch path.
+            let cancels: Vec<CancelOrder> = {
+                let cache = self.core.cache();
+                cache
+                    .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
+                    .iter()
+                    .map(|order| CancelOrder {
+                        trader_id: order.trader_id(),
+                        client_id: cmd.client_id,
+                        strategy_id: order.strategy_id(),
+                        instrument_id: order.instrument_id(),
+                        client_order_id: order.client_order_id(),
+                        venue_order_id: order.venue_order_id(),
+                        command_id: cmd.command_id,
+                        ts_init: cmd.ts_init,
+                        params: cmd.params.clone(),
+                        correlation_id: cmd.correlation_id,
+                        causation_id: cmd.causation_id,
+                    })
+                    .collect()
+            };
+
+            if cancels.is_empty() {
+                log::debug!("No open orders to cancel for {}", cmd.instrument_id);
+                return Ok(());
+            }
+
+            return self.batch_cancel_orders(BatchCancelOrders {
+                trader_id: cmd.trader_id,
+                client_id: cmd.client_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                cancels,
+                command_id: cmd.command_id,
+                ts_init: cmd.ts_init,
+                params: cmd.params,
+                correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
+            });
+        }
+
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;

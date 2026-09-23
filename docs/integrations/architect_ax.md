@@ -324,6 +324,11 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
+**Side filter**: AX cancel-all has no side parameter, so a `CancelAllOrders` command with
+`order_side` set cancels only open orders on that side for the instrument through individual
+cancel requests. A side-filtered request selects from open orders only, so an inflight
+(`SUBMITTED`) order not yet acknowledged by AX survives one.
+
 ### Position management
 
 | Feature         | Supported | Notes                                |
