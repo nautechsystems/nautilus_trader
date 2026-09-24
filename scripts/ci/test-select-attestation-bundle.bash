@@ -20,18 +20,30 @@ output="$case_root/second"
 run_selection "$output" failure "" success second.bundle failure ""
 grep -Fxq 'bundle-path=second.bundle' "$output"
 
-if run_selection "$case_root/missing" failure "" failure "" failure ""; then
-  echo "Expected failed attempts to produce no bundle" >&2
+status=0
+diagnostic=$(run_selection "$case_root/missing" failure "" failure "" failure "" 2>&1) || status=$?
+expected='::error::No build provenance bundle path was produced'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
-if run_selection "$case_root/empty" success "" success later.bundle failure ""; then
-  echo "Expected an empty successful bundle path to fail" >&2
+status=0
+diagnostic=$(run_selection "$case_root/empty" success "" success later.bundle failure "" 2>&1) || status=$?
+expected='::error::A successful attestation produced no bundle path'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
-if run_selection "$case_root/arguments" success only-two; then
-  echo "Expected an invalid argument count to fail" >&2
+status=0
+diagnostic=$(run_selection "$case_root/arguments" success only-two 2>&1) || status=$?
+expected='Usage: select-attestation-bundle.bash OUTCOME PATH OUTCOME PATH OUTCOME PATH'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
