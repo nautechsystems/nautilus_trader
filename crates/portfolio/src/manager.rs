@@ -1525,6 +1525,7 @@ mod tests {
             CryptoFuture, CurrencyPair, Instrument, InstrumentAny,
             stubs::{
                 audusd_sim, betting, currency_pair_btcusdt, currency_pair_ethusdt, default_fx_ccy,
+                ethbtc_quanto,
             },
         },
         orders::{OrderAny, OrderTestBuilder},
@@ -3269,6 +3270,179 @@ mod tests {
         assert_eq!(
             account.balance_locked(Some(usdt)),
             Some(Money::new(15.0, usdt))
+        );
+    }
+
+    #[rstest]
+    fn test_update_margins_lock_quanto_settlement_balance(mut ethbtc_quanto: CryptoFuture) {
+        let usdt = Currency::USDT();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::new(1_000.0, usdt),
+                Money::zero(usdt),
+                Money::new(1_000.0, usdt),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let account = MarginAccount::new(account_state, true);
+        let manager = AccountsManager::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::new(None, None))),
+        );
+        ethbtc_quanto.margin_init = Decimal::new(1, 1);
+        ethbtc_quanto.margin_maint = Decimal::new(5, 2);
+        let instrument_any = InstrumentAny::CryptoFuture(ethbtc_quanto.clone());
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(ethbtc_quanto.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100.000"))
+            .price(Price::from("0.05000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+        let position =
+            build_hedging_position(&instrument_any, OrderSide::Buy, "100.000", "0.05000", "P");
+
+        let (updated_account, _) = manager
+            .update_orders(
+                &AccountAny::Margin(account),
+                &instrument_any,
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+        let AccountAny::Margin(mut account) = updated_account else {
+            panic!("Expected MarginAccount");
+        };
+        manager
+            .update_positions_in_place(
+                &mut account,
+                &instrument_any,
+                vec![&position],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        // notional = 100 * 0.05 = 5 USDT
+        assert_eq!(
+            account.balance_locked(Some(usdt)),
+            Some(Money::new(0.75, usdt))
+        );
+        assert_eq!(
+            account.balance_free(Some(usdt)),
+            Some(Money::new(999.25, usdt))
+        );
+        assert_eq!(
+            account.initial_margin(ethbtc_quanto.id()),
+            Money::new(0.5, usdt)
+        );
+        assert_eq!(
+            account.maintenance_margin(ethbtc_quanto.id()),
+            Money::new(0.25, usdt)
+        );
+    }
+
+    #[rstest]
+    fn test_update_margins_convert_quanto_settlement_to_base_currency(
+        mut ethbtc_quanto: CryptoFuture,
+    ) {
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::new(1_000.0, usd),
+                Money::zero(usd),
+                Money::new(1_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd),
+        );
+        let account = MarginAccount::new(account_state, true);
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let usdtusd = default_fx_ccy(Symbol::from("USDT/USD"), Some(ethbtc_quanto.id().venue));
+        let quote = QuoteTick::new(
+            usdtusd.id(),
+            Price::from("0.99000"),
+            Price::from("1.01000"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(usdtusd))
+            .unwrap();
+        cache.borrow_mut().add_quote(quote).unwrap();
+        let manager = AccountsManager::new(Rc::new(RefCell::new(VirtualClock::new())), cache);
+        ethbtc_quanto.margin_init = Decimal::new(1, 1);
+        ethbtc_quanto.margin_maint = Decimal::new(4, 2);
+        let instrument_any = InstrumentAny::CryptoFuture(ethbtc_quanto.clone());
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(ethbtc_quanto.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000.000"))
+            .price(Price::from("0.05000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+        let position =
+            build_hedging_position(&instrument_any, OrderSide::Buy, "1000.000", "0.05000", "P");
+
+        let (updated_account, _) = manager
+            .update_orders(
+                &AccountAny::Margin(account),
+                &instrument_any,
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+        let AccountAny::Margin(mut account) = updated_account else {
+            panic!("Expected MarginAccount");
+        };
+        manager
+            .update_positions_in_place(
+                &mut account,
+                &instrument_any,
+                vec![&position],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        // 5 USDT initial and 2 USDT maintenance, converted at the USDT/USD bid of 0.99
+        assert_eq!(
+            account.initial_margin(ethbtc_quanto.id()),
+            Money::new(4.95, usd)
+        );
+        assert_eq!(
+            account.maintenance_margin(ethbtc_quanto.id()),
+            Money::new(1.98, usd)
         );
     }
 

@@ -79,12 +79,12 @@ use nautilus_model::{
         },
     },
     instruments::{
-        Commodity, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument, InstrumentAny,
-        OptionSpread, PerpetualContract,
+        Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument,
+        InstrumentAny, OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, btcusd_bybit, commodity_gold, crypto_perpetual_ethusdt,
-            currency_pair_btcusdt, default_fx_ccy, equity_aapl, futures_spread_es, gbpusd_sim,
-            option_spread, perpetual_contract_eurusd,
+            currency_pair_btcusdt, default_fx_ccy, equity_aapl, ethbtc_quanto, futures_spread_es,
+            gbpusd_sim, option_spread, perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -11645,6 +11645,96 @@ fn test_submit_order_margin_account_within_free_balance(
     let saved_execute_messages =
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1); // Passed through
+}
+
+#[rstest]
+#[case::within_balance("100 USDT", None)]
+#[case::exceeds_balance("0.4 USDT", Some(("0.4 USDT", "0.5 USDT")))]
+fn test_submit_order_margin_account_quanto_checks_settlement_balance(
+    #[case] balance: &str,
+    #[case] expected_denial: Option<(&str, &str)>,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+    mut ethbtc_quanto: CryptoFuture,
+) {
+    ethbtc_quanto.margin_init = dec!(0.1);
+    let instrument = InstrumentAny::CryptoFuture(ethbtc_quanto);
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    // Settlement is USDT: 100 @ 0.05 BTC requires 0.5 USDT margin
+    let margin_acct = margin_account_with_usdt_balance(balance, "0 USDT", balance);
+    simple_cache
+        .add_account(AccountAny::Margin(margin_acct))
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.05000"),
+        Price::from("0.05000"),
+        Quantity::from("1000.000"),
+        Quantity::from("1000.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100.000"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if let Some((free_balance, initial_margin)) = expected_denial {
+        assert_eq!(process_messages.len(), 1);
+        assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+        assert_eq!(
+            process_messages[0].message().unwrap(),
+            Ustr::from(
+                &OrderDeniedReason::InitialMarginExceedsFreeBalance {
+                    free_balance: Money::from(free_balance),
+                    initial_margin: Money::from(initial_margin),
+                }
+                .to_string()
+            )
+        );
+        assert_eq!(execute_messages.len(), 0);
+    } else {
+        assert_eq!(process_messages.len(), 0);
+        assert_eq!(execute_messages.len(), 1);
+    }
 }
 
 #[rstest]
