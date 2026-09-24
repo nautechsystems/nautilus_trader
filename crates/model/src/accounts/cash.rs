@@ -127,8 +127,6 @@ impl CashAccount {
     /// # Errors
     ///
     /// Returns an error if `allow_borrowing` is false and any balance has a negative total.
-    ///
-    /// TODO: Force stop backtest engine on error (like Python's `set_backtest_force_stop`)
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         if !self.allow_borrowing {
             for balance in balances {

@@ -711,12 +711,14 @@ impl BacktestEngine {
             anyhow::bail!("{error}");
         }
         self.check_module_errors()?;
+        self.check_balance_error()?;
 
         if let Err(e) = self.run_impl(start, end, run_config_id, streaming) {
             let callback_error = actor::callback_failure();
             if callback_error.is_some()
                 || e.is::<CallbackDispatchError>()
                 || self.funding_error.is_some()
+                || self.kernel.portfolio.borrow().balance_error().is_some()
                 || self
                     .venues
                     .values()
@@ -1013,9 +1015,9 @@ impl BacktestEngine {
     /// trigger abort cleanup, stopping the trader and engines.
     pub fn end(&mut self) -> anyhow::Result<()> {
         let result = self.end_impl();
-        if result
-            .as_ref()
-            .is_err_and(anyhow::Error::is::<CallbackDispatchError>)
+        if let Err(e) = &result
+            && (e.is::<CallbackDispatchError>()
+                || self.kernel.portfolio.borrow().balance_error().is_some())
         {
             self.abort_run();
         }
@@ -1030,6 +1032,7 @@ impl BacktestEngine {
         if let Some(error) = &self.funding_error {
             anyhow::bail!("{error}");
         }
+        self.check_balance_error()?;
 
         // Flush remaining timer events to the backtest end boundary so that
         // tail alerts/expiries scheduled after the last data point still fire.
@@ -1401,7 +1404,8 @@ impl BacktestEngine {
             .collect();
         drop(trader);
 
-        let outcome = if self.funding_error.is_some() {
+        let balance_error = self.kernel.portfolio.borrow().balance_error().is_some();
+        let outcome = if self.funding_error.is_some() || balance_error {
             CanonicalRunOutcome::Failed
         } else if self.run_finished.is_none() {
             CanonicalRunOutcome::Incomplete
@@ -1410,14 +1414,16 @@ impl BacktestEngine {
         } else {
             CanonicalRunOutcome::Completed
         };
-        let diagnostics = self
-            .funding_error
-            .as_ref()
-            .map(|_| CanonicalDiagnostic {
-                code: CanonicalDiagnosticCode::FundingSettlementFailed,
-            })
-            .into_iter()
-            .collect();
+        let diagnostics = [
+            self.funding_error
+                .as_ref()
+                .map(|_| CanonicalDiagnosticCode::FundingSettlementFailed),
+            balance_error.then_some(CanonicalDiagnosticCode::AccountBalanceRejected),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|code| CanonicalDiagnostic { code })
+        .collect();
         let statistics = nautilus_analysis::PortfolioStatistics {
             pnls: result.stats_pnls,
             returns: result.stats_returns,
@@ -1630,6 +1636,13 @@ impl BacktestEngine {
     fn check_module_errors(&self) -> anyhow::Result<()> {
         for exchange in self.venues.values() {
             exchange.borrow().check_module_error()?;
+        }
+        Ok(())
+    }
+
+    fn check_balance_error(&self) -> anyhow::Result<()> {
+        if let Some(error) = self.kernel.portfolio.borrow().balance_error() {
+            anyhow::bail!("{error}");
         }
         Ok(())
     }
@@ -2135,6 +2148,7 @@ impl BacktestEngine {
             drain_trading_cmd_queue();
             drain_data_cmd_queue();
             self.drain_exec_client_events();
+            self.check_balance_error()?;
 
             let callbacks_pending = actor::drain_callbacks(CALLBACK_DRAIN_BUDGET)?;
 
