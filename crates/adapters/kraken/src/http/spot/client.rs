@@ -91,6 +91,13 @@ use crate::{
 /// Default Kraken Spot REST API rate limit (requests per second).
 pub const KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND: u32 = 5;
 
+/// Caps offset pagination for report reads.
+///
+/// The loops below advance an offset until the venue returns an empty page. A venue that kept
+/// returning a non-empty page would otherwise leave a startup reconciliation read spinning, which
+/// is worse than failing it. Mirrors the cap OKX applies to its own pagination.
+const MAX_REPORT_PAGES: usize = 500;
+
 const KRAKEN_GLOBAL_RATE_KEY: &str = "kraken:spot:global";
 
 /// Maximum orders per batch cancel request for Kraken Spot API.
@@ -2246,8 +2253,17 @@ impl KrakenSpotHttpClient {
         let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
+        let mut pages = 0;
 
         loop {
+            if pages >= MAX_REPORT_PAGES {
+                log::warn!(
+                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; reporting the set as incomplete"
+                );
+                complete = false;
+                break;
+            }
+
             let closed_orders = self
                 .inner
                 .get_closed_orders(Some(true), None, start_ts, end_ts, Some(offset), None)
@@ -2256,6 +2272,8 @@ impl KrakenSpotHttpClient {
             if closed_orders.is_empty() {
                 break;
             }
+
+            pages += 1;
 
             for (order_id, order) in &closed_orders {
                 if let Some(ref target_id) = instrument_id {
@@ -2328,8 +2346,17 @@ impl KrakenSpotHttpClient {
         let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
+        let mut pages = 0;
 
         loop {
+            if pages >= MAX_REPORT_PAGES {
+                log::warn!(
+                    "TradesHistory pagination hit the cap of {MAX_REPORT_PAGES} pages; reporting the set as incomplete"
+                );
+                complete = false;
+                break;
+            }
+
             let trades = self
                 .inner
                 .get_trades_history(None, Some(true), start_ts, end_ts, Some(offset))
@@ -2338,6 +2365,8 @@ impl KrakenSpotHttpClient {
             if trades.is_empty() {
                 break;
             }
+
+            pages += 1;
 
             for (trade_id, trade) in &trades {
                 if let Some(ref target_id) = instrument_id {

@@ -23,7 +23,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -139,6 +139,17 @@ struct TestServerState {
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
     trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When true, the `TradesHistory` override is served on every request instead of once,
+    /// mimicking a venue that never returns an empty page.
+    trades_history_repeat: Arc<AtomicBool>,
+    /// Counts `/0/private/TradesHistory` requests, so a test can assert the exact page count.
+    trades_history_request_count: Arc<AtomicUsize>,
+    /// When set, `/0/private/ClosedOrders` returns this JSON once, then empty pages.
+    closed_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When true, the `ClosedOrders` override is served on every request instead of once.
+    closed_orders_repeat: Arc<AtomicBool>,
+    /// Counts `/0/private/ClosedOrders` requests, so a test can assert the exact page count.
+    closed_orders_request_count: Arc<AtomicUsize>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -148,6 +159,11 @@ impl Default for TestServerState {
         Self {
             command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
             trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_history_repeat: Arc::new(AtomicBool::new(false)),
+            trades_history_request_count: Arc::new(AtomicUsize::new(0)),
+            closed_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            closed_orders_repeat: Arc::new(AtomicBool::new(false)),
+            closed_orders_request_count: Arc::new(AtomicUsize::new(0)),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
@@ -444,10 +460,36 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
         "/0/private/OpenOrders" => json_response(load_test_data("http_open_orders.json")),
+        "/0/private/ClosedOrders" => {
+            state
+                .closed_orders_request_count
+                .fetch_add(1, Ordering::Relaxed);
+            {
+                let mut guard = state.closed_orders_json.lock().await;
+                if state.closed_orders_repeat.load(Ordering::Relaxed) {
+                    if let Some(json) = guard.clone() {
+                        return json_response(json);
+                    }
+                } else if let Some(json) = guard.take() {
+                    // Serve once, then empty pages so the caller's pagination terminates.
+                    *guard = Some(r#"{"error":[],"result":{"closed":{},"count":0}}"#.to_string());
+                    return json_response(json);
+                }
+            }
+
+            json_response(r#"{"error":[],"result":{"closed":{},"count":0}}"#.to_string())
+        }
         "/0/private/TradesHistory" => {
+            state
+                .trades_history_request_count
+                .fetch_add(1, Ordering::Relaxed);
             {
                 let mut guard = state.trades_history_json.lock().await;
-                if let Some(json) = guard.take() {
+                if state.trades_history_repeat.load(Ordering::Relaxed) {
+                    if let Some(json) = guard.clone() {
+                        return json_response(json);
+                    }
+                } else if let Some(json) = guard.take() {
                     // Serve once, then empty pages so the caller's pagination terminates.
                     *guard = Some(r#"{"error":[],"result":{"trades":{},"count":0}}"#.to_string());
                     return json_response(json);
@@ -687,6 +729,42 @@ fn create_test_execution_client(
     (client, rx, cache)
 }
 
+/// Builds a spot client whose request rate is not throttled.
+///
+/// The pagination cap test issues one request per page, which the default rate limit would make
+/// far too slow to run in CI.
+fn create_unthrottled_spot_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        cache.clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        max_requests_per_second: Some(100_000),
+        ..create_test_spot_exec_config(addr)
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
 fn create_test_spot_execution_client(
     addr: SocketAddr,
 ) -> (
@@ -764,6 +842,23 @@ fn spot_trades_json(pairs: &[&str]) -> String {
         .collect();
     format!(
         r#"{{"error":[],"result":{{"trades":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+fn spot_closed_orders_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""OCLOSED-{i}":{{"refid":null,"userref":0,"status":"closed","reason":"User requested","opentm":1688583840.8648,"closetm":1688590000.5432,"starttm":0,"expiretm":0,"descr":{{"pair":"{pair}","type":"buy","ordertype":"limit","price":"29500.0","price2":"0","leverage":"none","order":"buy 0.50000000 {pair} @ limit 29500.0","close":""}},"vol":"0.50000000","vol_exec":"0.50000000","cost":"14750.00000","fee":"22.12500","price":"29500.0","stopprice":"0.00000","limitprice":"0.00000","misc":"","oflags":""}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"closed":{{{}}},"count":{}}}}}"#,
         entries.join(","),
         pairs.len()
     )
@@ -874,6 +969,121 @@ async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
     );
     let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
     assert_eq!(fills, 0);
+}
+
+/// Mirrors `MAX_REPORT_PAGES` in the spot HTTP client, which is private to that crate.
+const SPOT_REPORT_PAGE_CAP: usize = 500;
+
+/// Report pagination must terminate even if the venue never returns an empty page.
+///
+/// The loops advance an offset until an empty page arrives. Without a cap, a venue that kept
+/// returning a non-empty page would leave a startup reconciliation read spinning, which is worse
+/// than failing it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_pagination_stops_at_the_cap_and_reports_incomplete() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: the same page served once terminates on the empty page and reports complete.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    let control_requests = state.trades_history_request_count.load(Ordering::Relaxed);
+
+    // The same page on every request. The read must still return, and must not claim completeness.
+    state.trades_history_repeat.store(true, Ordering::Relaxed);
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+
+    let snapshot = tokio::time::timeout(
+        Duration::from_secs(120),
+        client.generate_mass_status(Some(60)),
+    )
+    .await
+    .expect("a paginated read must terminate when the venue never returns an empty page")
+    .unwrap()
+    .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "a read cut short by the page cap must not report as complete"
+    );
+
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert!(
+        fills > control_fills,
+        "the capped read should return the pages it did read: {fills}"
+    );
+
+    // The bound itself, not just its existence: the read stops on the page after the cap, so the
+    // request count is exactly the cap. A one-page drift would not be visible in the assertions
+    // above.
+    assert_eq!(
+        state.trades_history_request_count.load(Ordering::Relaxed) - control_requests,
+        SPOT_REPORT_PAGE_CAP,
+    );
+}
+
+/// The closed-order read is capped on the same terms as the fill read.
+///
+/// Startup mass status asks for open orders only, so this loop is reached when a caller requests
+/// non-open orders. It pages the same way and needs the same bound.
+#[rstest]
+#[tokio::test]
+async fn test_spot_closed_order_pagination_stops_at_the_cap() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false, // open_only=false, so the closed-order pages are read
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    // Control: one page then an empty one terminates the loop, so only the closed order is read.
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+    let control = client.generate_order_status_reports(&cmd).await.unwrap();
+    let control_requests = state.closed_orders_request_count.load(Ordering::Relaxed);
+    assert_eq!(control_requests, 2, "one page, then the empty page");
+    assert!(
+        control
+            .iter()
+            .any(|report| report.order_status == OrderStatus::Filled),
+        "the control must actually read the closed order, or the cap run proves nothing"
+    );
+
+    // The same page on every request: the read can only return by way of the cap.
+    state.closed_orders_repeat.store(true, Ordering::Relaxed);
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        client.generate_order_status_reports(&cmd),
+    )
+    .await
+    .expect("a paginated read must terminate when the venue never returns an empty page")
+    .unwrap();
+
+    assert_eq!(
+        state.closed_orders_request_count.load(Ordering::Relaxed) - control_requests,
+        SPOT_REPORT_PAGE_CAP,
+    );
 }
 
 /// A bounded mass status must declare the cutoff it applied.
