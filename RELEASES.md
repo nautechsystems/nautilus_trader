@@ -186,6 +186,7 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
+- Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Upgraded `cargo-nextest` tool to v0.9.145
 - Upgraded `osv-scanner` tool to v2.6.0
 - Upgraded `prek` tool to v0.5.3
