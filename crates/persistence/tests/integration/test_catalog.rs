@@ -384,8 +384,16 @@ fn test_quote_tick_query_with_filter() {
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
+    // `ORDER BY ts_init` leaves rows sharing a `ts_init` unordered, and DataFusion's partitioning,
+    // which depends on the available cores, decides their order, so compare ties canonically
+    let canonical = |data: &[Data]| {
+        let mut data = data.to_vec();
+        data.sort_by_cached_key(|tick| (tick.ts_init(), format!("{tick:?}")));
+        data
+    };
+
     assert!(expected.len() < all.len());
-    assert_eq!(ticks, expected);
+    assert_eq!(canonical(&ticks), canonical(&expected));
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
