@@ -352,6 +352,9 @@ fn test_builder_accepts_live() {
 pub(crate) mod serial_tests {
     use super::*;
 
+    #[cfg(not(madsim))]
+    mod reconciliation_bench;
+
     #[derive(Clone, Debug, Default)]
     struct StartupMassStatusClientState {
         connected: Arc<AtomicBool>,
@@ -1104,6 +1107,7 @@ pub(crate) mod serial_tests {
         targeted_order_report: Option<OrderStatusReport>,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
+        report_release_once: bool,
         targeted_report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
@@ -1126,6 +1130,7 @@ pub(crate) mod serial_tests {
                 targeted_order_report: factory.targeted_order_report.clone(),
                 block_every_second_targeted_report: factory.block_every_second_targeted_report,
                 report_release: factory.report_release.clone(),
+                report_release_once: factory.report_release_once,
                 targeted_report_release: factory.targeted_report_release.clone(),
             }
         }
@@ -1156,6 +1161,7 @@ pub(crate) mod serial_tests {
         targeted_order_report: Option<OrderStatusReport>,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
+        report_release_once: bool,
         targeted_report_release: Option<Arc<tokio::sync::Notify>>,
         fill_reports_at_window_end: bool,
     }
@@ -1190,6 +1196,7 @@ pub(crate) mod serial_tests {
                 targeted_order_report: None,
                 block_every_second_targeted_report: false,
                 report_release,
+                report_release_once: false,
                 targeted_report_release: None,
             }
         }
@@ -1215,6 +1222,7 @@ pub(crate) mod serial_tests {
                 targeted_order_report: None,
                 block_every_second_targeted_report: false,
                 report_release: None,
+                report_release_once: false,
                 targeted_report_release: None,
             }
         }
@@ -1414,7 +1422,9 @@ pub(crate) mod serial_tests {
                 return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
             }
 
-            if let Some(release) = &self.report_release {
+            if let Some(release) = &self.report_release
+                && (!self.report_release_once || request_count == 1)
+            {
                 release.notified().await;
             }
 
@@ -1506,11 +1516,15 @@ pub(crate) mod serial_tests {
             self.state
                 .position_report_requested
                 .store(true, Ordering::Relaxed);
-            self.state
+            let request_count = self
+                .state
                 .position_report_count
-                .fetch_add(1, Ordering::Relaxed);
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
 
-            if let Some(release) = &self.report_release {
+            if let Some(release) = &self.report_release
+                && (!self.report_release_once || request_count == 1)
+            {
                 release.notified().await;
             }
 
