@@ -3863,6 +3863,44 @@ fn test_process_duplicate_leg_fill_without_order_does_not_reapply_position(
 }
 
 #[rstest]
+fn test_process_leg_fill_without_order_declines_only_duplicate(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (_instrument, fill, expected_position_id) =
+        prepare_leg_fill_without_order(&execution_engine);
+    let declined = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+
+    let declined_handler = TypedHandler::from({
+        let declined = declined.clone();
+        move |event: &OrderEventAny| {
+            declined.borrow_mut().push(event.clone());
+        }
+    });
+
+    msgbus::subscribe_order_events(
+        "events.order_fill_declined.*".into(),
+        declined_handler,
+        None,
+    );
+    let event = OrderEventAny::Filled(fill);
+
+    execution_engine.process(&event);
+    let declined_after_apply = declined.borrow().clone();
+    execution_engine.process(&event);
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&expected_position_id)
+        .expect("leg fill should open one position");
+
+    assert_eq!(declined_after_apply, Vec::<OrderEventAny>::new());
+    assert_eq!(*declined.borrow(), vec![event]);
+    assert_eq!(position.quantity, Quantity::from(1));
+}
+
+#[rstest]
 fn test_hedging_leg_fill_without_order_reuses_position_for_same_synthetic_leg(
     mut execution_engine: ExecutionEngine,
 ) {

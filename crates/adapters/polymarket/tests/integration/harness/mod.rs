@@ -23,7 +23,7 @@ use std::{
 use nautilus_common::clients::ExecutionClient;
 use nautilus_core::{UUID4, UnixNanos};
 pub(crate) use nautilus_live::testing::invariants;
-use nautilus_live::{ExecutionClientCore, testing::ExecutionHarness};
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, testing::ExecutionHarness};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
     data::QuoteTick,
@@ -53,16 +53,22 @@ pub(crate) const TRADER_ID: &str = "TESTER-001";
 pub(crate) struct Harness {
     execution: ExecutionHarness,
     pub(crate) mock_state: TestServerState,
+    pub(crate) sockets: SocketReconnectRegistry,
 }
 
 impl Harness {
     pub(crate) async fn build() -> Self {
+        Self::build_with_cache(|_| {}).await
+    }
+
+    pub(crate) async fn build_with_cache(seed: impl FnOnce(&ExecutionHarness)) -> Self {
         let trader_id = TraderId::from(TRADER_ID);
         let account_id = AccountId::from(ACCOUNT_ID);
         let instrument = instrument();
         let execution =
             ExecutionHarness::new(trader_id, *POLYMARKET_CLIENT_ID, account_id, instrument);
         add_account(&execution, account_id);
+        seed(&execution);
 
         let mock_state = TestServerState::default();
         mock_state.configure_default_order_success().await;
@@ -77,7 +83,10 @@ impl Harness {
             None,
             execution.cache().clone(),
         );
-        let mut client = PolymarketExecutionClient::new(core, execution_config(addr)).unwrap();
+        let sockets = SocketReconnectRegistry::default();
+        let mut client = sockets
+            .scope(|| PolymarketExecutionClient::new(core, execution_config(addr)))
+            .unwrap();
         let cached_instrument = execution
             .cache()
             .borrow()
@@ -97,6 +106,7 @@ impl Harness {
         Self {
             execution,
             mock_state,
+            sockets,
         }
     }
 }

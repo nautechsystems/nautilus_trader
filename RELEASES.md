@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added Architect AX instrument schedules and estimated funding metadata to response models
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
+- Added `events.order_fill_declined.{instrument_id}` topic republishing fills and voids the engine declines
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Kraken bounded mass-status window declaration for reconciliation lookbacks (#5043), thanks @zhaow-de
 - Added Lighter support for 64-bit market IDs at and above 4095
@@ -29,6 +30,8 @@ Released on TBD (UTC).
 - Added Lighter transport batching for batch cancellation and cancel-all requests (#4470)
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
+- Added Polymarket settlement evidence registry with targeted REST trade resolution (#4876)
+- Added Polymarket `MATCHED_NOT_BROADCASTED` trade status
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
 - Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
@@ -63,6 +66,9 @@ Released on TBD (UTC).
 - Changed kernel-wired Feather stream files to per-instrument directories
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
+- Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
+- Changed Polymarket fills on orders from before a reconnect or restart to wait for a terminal REST result
+- Changed Polymarket reconciliation reports to fail while trade settlement evidence is unresolved
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
 - Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
 - Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
@@ -170,6 +176,7 @@ Released on TBD (UTC).
 - Fixed OKX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
+- Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 
 ### Internal Improvements
@@ -221,6 +228,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Documented the adapter config field layout convention in the developer guide
+- Documented declined fill notification in the execution concepts guide
 - Documented shared order book recovery ownership and Lighter recovery limits
 - Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
@@ -231,6 +239,7 @@ Released on TBD (UTC).
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset
+- Documented Polymarket trade settlement, quarantine, and reconciliation precedence
 - Updated Databento and Tardis integration guides with new URL overrides
 
 ---

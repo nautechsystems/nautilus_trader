@@ -39,6 +39,7 @@ use thiserror::Error;
 use super::{
     order_builder::PolymarketOrderBuilder,
     parse::{InvalidMarketPriceError, adjust_market_buy_amount, calculate_market_price},
+    settlement::SettlementRegistry,
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
 use crate::{
@@ -113,6 +114,7 @@ pub(crate) struct OrderSubmitter {
     http_client: PolymarketClobHttpClient,
     order_builder: Arc<PolymarketOrderBuilder>,
     retry_manager: Arc<RetryManager<Error>>,
+    settlement: Arc<SettlementRegistry>,
 }
 
 impl OrderSubmitter {
@@ -120,11 +122,13 @@ impl OrderSubmitter {
         http_client: PolymarketClobHttpClient,
         order_builder: Arc<PolymarketOrderBuilder>,
         retry_config: RetryConfig,
+        settlement: Arc<SettlementRegistry>,
     ) -> Self {
         Self {
             http_client,
             order_builder,
             retry_manager: Arc::new(RetryManager::new(retry_config)),
+            settlement,
         }
     }
 
@@ -218,6 +222,8 @@ impl OrderSubmitter {
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
+        self.settlement
+            .note_order_submitted(expected_venue_order_id);
 
         let http_client = self.http_client.clone();
         let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
@@ -486,6 +492,8 @@ impl OrderSubmitter {
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&order, request.neg_risk)?;
+        self.settlement
+            .note_order_submitted(expected_venue_order_id);
 
         Ok(SignedLimitOrderSubmission {
             order,

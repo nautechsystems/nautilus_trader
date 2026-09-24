@@ -265,6 +265,9 @@ pub enum PolymarketTradeStatus {
     /// Sent to the executor service for on-chain submission.
     #[serde(alias = "TRADE_STATUS_MATCHED")]
     Matched,
+    /// Matched before the on-chain transaction was broadcast.
+    #[serde(alias = "TRADE_STATUS_MATCHED_NOT_BROADCASTED")]
+    MatchedNotBroadcasted,
     /// Mined on-chain, no finality threshold yet.
     #[serde(alias = "TRADE_STATUS_MINED")]
     Mined,
@@ -289,7 +292,10 @@ impl PolymarketTradeStatus {
     /// Returns `true` while settlement can still succeed or fail.
     #[must_use]
     pub const fn is_pending_settlement(&self) -> bool {
-        matches!(self, Self::Matched | Self::Mined | Self::Retrying)
+        matches!(
+            self,
+            Self::Matched | Self::MatchedNotBroadcasted | Self::Mined | Self::Retrying
+        )
     }
 }
 
@@ -518,6 +524,16 @@ mod tests {
     }
 
     #[rstest]
+    #[case("\"MATCHED_NOT_BROADCASTED\"")]
+    #[case("\"TRADE_STATUS_MATCHED_NOT_BROADCASTED\"")]
+    fn test_trade_status_deserializes_matched_not_broadcasted(#[case] wire: &str) {
+        assert_eq!(
+            serde_json::from_str::<PolymarketTradeStatus>(wire).unwrap(),
+            PolymarketTradeStatus::MatchedNotBroadcasted
+        );
+    }
+
+    #[rstest]
     #[case(PolymarketOrderSide::Buy, OrderSide::Buy)]
     #[case(PolymarketOrderSide::Sell, OrderSide::Sell)]
     fn test_order_side_to_nautilus(#[case] poly: PolymarketOrderSide, #[case] expected: OrderSide) {
@@ -615,6 +631,7 @@ mod tests {
     #[rstest]
     fn test_trade_status_is_pending_settlement() {
         assert!(PolymarketTradeStatus::Matched.is_pending_settlement());
+        assert!(PolymarketTradeStatus::MatchedNotBroadcasted.is_pending_settlement());
         assert!(PolymarketTradeStatus::Mined.is_pending_settlement());
         assert!(PolymarketTradeStatus::Retrying.is_pending_settlement());
         assert!(!PolymarketTradeStatus::Confirmed.is_pending_settlement());

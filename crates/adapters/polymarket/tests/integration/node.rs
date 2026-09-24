@@ -404,6 +404,16 @@ async fn failed_fill_routes_void_through_node_execution_manager() {
         wait_until_async(|| async { accepted.load(Ordering::Relaxed) }, DEADLINE).await;
         state.feed_user("ws_user_trade_full.json").await;
         wait_until_async(|| async { filled.load(Ordering::Relaxed) }, DEADLINE).await;
+        let mut rest_failed = load_json("http_trade_report.json");
+        rest_failed["id"] = serde_json::json!("trade-0xfull");
+        rest_failed["status"] = serde_json::json!("FAILED");
+        rest_failed["size"] = serde_json::json!("100.0000");
+        rest_failed["taker_order_id"] =
+            serde_json::json!(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID);
+        *state.trades_response_override.lock().await = Some(serde_json::json!({
+            "data": [rest_failed],
+            "next_cursor": "LTE="
+        }));
         state.feed_user("ws_user_trade_full_failed.json").await;
         wait_until_async(|| async { fill_voided.load(Ordering::Relaxed) }, DEADLINE).await;
         stop_handle.stop();

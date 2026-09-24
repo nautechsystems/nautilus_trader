@@ -527,6 +527,15 @@ report when that ID already exists on the order, regardless of its price or quan
 Synthetic and inferred reconciliation fills use deterministic IDs. Replaying the same inputs after
 a restart therefore produces the same `trade_id` and is deduplicated.
 
+### Declined fill notification
+
+When the `ExecutionEngine` rejects an `OrderFilled` or `OrderFillVoided` instead of applying it,
+for example as a duplicate, an overfill, or for an order it cannot find, it publishes the unchanged
+event on the `events.order_fill_declined.{instrument_id}` topic. Each rejection site logs the reason;
+the published event does not carry it. An adapter that tracks whether its fills and corrections were
+applied can subscribe to this topic. The engine does not publish on it for reconciliation
+projections, which update only the order.
+
 ### Configuration
 
 For live trading, enable overfill tolerance in the `LiveExecutionEngineConfig`:

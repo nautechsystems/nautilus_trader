@@ -26,7 +26,7 @@ use nautilus_model::{
     events::{OrderEventAny, OrderFilled, OrderUpdated},
     identifiers::{AccountId, VenueOrderId},
     orders::{Order, OrderAny},
-    reports::{FillReport, OrderStatusReport},
+    reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
@@ -35,10 +35,11 @@ use rust_decimal::Decimal;
 use super::{
     cancellations::execute_deferred_cancel,
     context::OrderContextRegistry,
-    order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
+    order_fill_tracker::{BufferedFill, OrderFillTrackerMap},
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
+    settlement::SettlementRegistry,
     submitter::{
         OrderSubmitter, SubmitResponseOutcome, immediate_rejection_reason, submit_response_outcome,
         submit_response_unknown_reason, submit_response_venue_order_id,
@@ -63,6 +64,7 @@ pub(super) async fn handle_batch_order_responses(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &Arc<SettlementRegistry>,
     order_contexts: &Arc<OrderContextRegistry>,
     ws_dispatch_state: &Arc<Mutex<WsDispatchState>>,
     pending_submits: &PendingSubmitTracker,
@@ -98,6 +100,7 @@ pub(super) async fn handle_batch_order_responses(
                     emitter,
                     clock,
                     fill_tracker,
+                    settlement,
                     order_contexts,
                     pending_submits,
                     pending_cancels,
@@ -112,9 +115,11 @@ pub(super) async fn handle_batch_order_responses(
             let deferred_cancel = handle_order_response(
                 Ok(response),
                 &batch_order.order,
+                *expected_venue_order_id,
                 emitter,
                 clock,
                 fill_tracker,
+                settlement,
                 order_contexts,
                 pending_cancels,
                 account_id,
@@ -143,6 +148,7 @@ pub(super) async fn handle_batch_order_responses(
             emitter,
             clock,
             fill_tracker,
+            settlement,
             order_contexts,
             pending_submits,
             pending_cancels,
@@ -291,12 +297,17 @@ pub(super) fn emit_signed_base_quantity_update(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "promotion drains through the tracker, registry, contexts, and dispatch state"
+)]
 pub(super) fn confirm_modify_replacement(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &SettlementRegistry,
     order_contexts: &OrderContextRegistry,
     ws_dispatch_state: &Arc<Mutex<WsDispatchState>>,
 ) -> bool {
@@ -343,6 +354,7 @@ pub(super) fn confirm_modify_replacement(
         fills,
         &buffered,
         fill_tracker,
+        settlement,
         emitter,
         clock,
     );
@@ -358,6 +370,7 @@ pub(super) async fn handle_single_order_response(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &Arc<SettlementRegistry>,
     order_contexts: &OrderContextRegistry,
     ws_dispatch_state: &Arc<Mutex<WsDispatchState>>,
     pending_submits: &PendingSubmitTracker,
@@ -370,9 +383,11 @@ pub(super) async fn handle_single_order_response(
             if let Some((order_id_str, venue_order_id)) = handle_order_response(
                 Ok(response),
                 &batch_order.order,
+                expected_venue_order_id,
                 emitter,
                 clock,
                 fill_tracker,
+                settlement,
                 order_contexts,
                 pending_cancels,
                 account_id,
@@ -418,6 +433,7 @@ pub(super) async fn handle_single_order_response(
                     emitter,
                     clock,
                     fill_tracker,
+                    settlement,
                     order_contexts,
                     pending_submits,
                     pending_cancels,
@@ -453,6 +469,7 @@ pub(super) fn handle_unknown_submit_result(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &SettlementRegistry,
     order_contexts: &OrderContextRegistry,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
@@ -475,12 +492,22 @@ pub(super) fn handle_unknown_submit_result(
         emitter,
         clock,
         fill_tracker,
+        settlement,
         order_contexts,
         fill_tracker_quantity,
         account_id,
         size_precision,
         price_precision,
     );
+
+    // Buffered stream evidence proved the venue took the order; otherwise REST must resolve it
+    if !fill_tracker.contains(&expected_venue_order_id) {
+        settlement.note_order_uncertain(
+            expected_venue_order_id,
+            order.instrument_id(),
+            clock.get_time_ns(),
+        );
+    }
 
     if pending_cancels.contains(&order.client_order_id()) {
         let order_id_str = expected_venue_order_id.to_string();
@@ -497,6 +524,7 @@ pub(super) fn drain_pending_reports_for_known_order(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &SettlementRegistry,
     order_contexts: &OrderContextRegistry,
     fill_tracker_quantity: Option<Quantity>,
     account_id: AccountId,
@@ -511,6 +539,7 @@ pub(super) fn drain_pending_reports_for_known_order(
             emitter,
             clock,
             fill_tracker,
+            settlement,
             order_contexts,
             fill_tracker_quantity,
             account_id,
@@ -556,6 +585,7 @@ pub(super) fn drain_pending_reports_for_known_order(
         buffered_fills,
         &buffered,
         fill_tracker,
+        settlement,
         emitter,
         clock,
     );
@@ -568,6 +598,7 @@ pub(super) fn accept_order_with_pending_fills(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &SettlementRegistry,
     order_contexts: &OrderContextRegistry,
     fill_tracker_quantity: Option<Quantity>,
     _account_id: AccountId,
@@ -601,6 +632,7 @@ pub(super) fn accept_order_with_pending_fills(
         fills,
         &[],
         fill_tracker,
+        settlement,
         emitter,
         clock,
     );
@@ -610,9 +642,11 @@ pub(super) fn accept_order_with_pending_fills(
 pub(super) fn handle_order_response(
     result: crate::http::error::Result<OrderResponse>,
     order: &OrderAny,
+    expected_venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    settlement: &SettlementRegistry,
     order_contexts: &OrderContextRegistry,
     pending_cancels: &PendingCancelTracker,
     _account_id: AccountId,
@@ -632,6 +666,7 @@ pub(super) fn handle_order_response(
                     let ts_now = clock.get_time_ns();
 
                     order_contexts.register_context(venue_order_id, OrderContext::from(order));
+                    settlement.note_order_accepted(expected_venue_order_id, venue_order_id);
                     if decision.emit_accepted && order_contexts.mark_accepted(venue_order_id) {
                         emitter.emit_order_accepted(order, venue_order_id, ts_now);
                     }
@@ -676,6 +711,7 @@ pub(super) fn handle_order_response(
                         fills,
                         &buffered,
                         fill_tracker,
+                        settlement,
                         emitter,
                         clock,
                     );
@@ -774,12 +810,14 @@ pub(crate) fn is_post_only_crossing(reason: &str) -> bool {
 /// overfill.
 fn emit_drained_fill(
     order: &OrderAny,
-    fill: &FillReport,
-    correction: Option<&FillCorrectionMetadata>,
+    buffered: &BufferedFill,
     fill_tracker: &OrderFillTrackerMap,
+    settlement: &SettlementRegistry,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
+    let fill = &buffered.report;
+
     let filled = OrderFilled::new(
         order.trader_id(),
         order.strategy_id(),
@@ -800,40 +838,47 @@ fn emit_drained_fill(
         false,
         fill.venue_position_id,
         Some(fill.commission),
-        correction.and_then(|metadata| metadata.info.clone()),
+        buffered
+            .correction
+            .as_ref()
+            .and_then(|metadata| metadata.info.clone()),
     );
-    fill_tracker.emit_buffered_fill(filled, correction, |filled, new_qty| {
-        if let Some(new_qty) = new_qty {
-            emit_buy_overfill_update(order, fill.venue_order_id, new_qty, emitter, clock);
-        }
-        emitter.send_order_event(OrderEventAny::Filled(filled));
-    });
+    fill_tracker.emit_buffered_fill(
+        filled,
+        || buffered.claim(settlement),
+        |filled, new_qty| {
+            if let Some(new_qty) = new_qty {
+                emit_buy_overfill_update(order, fill.venue_order_id, new_qty, emitter, clock);
+            }
+
+            settlement.note_leg_enqueued(&fill.trade_id);
+            emitter.send_order_event(OrderEventAny::Filled(filled));
+        },
+    );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "drained fills are gated by the registry and emitted through the tracker"
+)]
 fn emit_drained_activity(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     fills: Vec<BufferedFill>,
     reports: &[OrderStatusReport],
     fill_tracker: &OrderFillTrackerMap,
+    settlement: &SettlementRegistry,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
     let has_unconfirmed_fill = fills.iter().any(|fill| {
-        fill.correction.as_ref().is_some_and(|metadata| {
-            !metadata.is_confirmed && !fill_tracker.is_trade_confirmed(&metadata.correction_key)
-        })
+        fill.correction
+            .as_ref()
+            .is_some_and(|metadata| !settlement.is_trade_confirmed(&metadata.venue_trade_id))
     });
 
     for fill in fills {
-        emit_drained_fill(
-            order,
-            &fill.report,
-            fill.correction.as_ref(),
-            fill_tracker,
-            emitter,
-            clock,
-        );
+        emit_drained_fill(order, &fill, fill_tracker, settlement, emitter, clock);
     }
 
     for report in reports {
@@ -1146,6 +1191,7 @@ mod tests {
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
+        reports::FillReport,
         types::{Currency, Money},
     };
     use rstest::rstest;
@@ -1158,13 +1204,23 @@ mod tests {
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
             PolymarketOrderStatus, PolymarketOutcome, PolymarketTradeStatus,
         },
-        execution::reconciliation::FillReportScope,
+        execution::{
+            order_fill_tracker::FillCorrectionMetadata,
+            reconciliation::FillReportScope,
+            settlement::{
+                AdmittedLeg, TradeEvidence, admission::AdmittedTrade, admit_trade_evidence,
+                registry::tests::leg_application, state::LegApplication,
+            },
+        },
         http::{
-            models::GammaMarket,
+            models::{GammaMarket, PolymarketTradeReport},
             parse::{create_instrument_from_def, parse_gamma_market},
         },
         websocket::{
-            dispatch::{WsDispatchContext, WsDispatchState, dispatch_user_message},
+            dispatch::{
+                WsDispatchContext, WsDispatchState, dispatch_user_message,
+                execute_settlement_actions, rest_trade_info,
+            },
             messages::{PolymarketUserOrder, PolymarketUserTrade, UserWsMessage},
         },
     };
@@ -1179,6 +1235,21 @@ mod tests {
         let market: GammaMarket = load("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
+    }
+
+    fn bind_instrument_to_user_trade(instrument: &mut InstrumentAny, trade: &PolymarketUserTrade) {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option test instrument");
+        };
+
+        binary.outcome = Some(Ustr::from(trade.outcome.as_str()));
+        binary.info = Some(
+            serde_json::from_value(serde_json::json!({
+                "condition_id": trade.market.as_str(),
+                "token_id": trade.asset_id.as_str(),
+            }))
+            .expect("valid instrument binding metadata"),
+        );
     }
 
     fn set_taker_fee_rate(instrument: &mut InstrumentAny, rate: Decimal) {
@@ -1352,6 +1423,7 @@ mod tests {
         ));
         let state = Arc::new(Mutex::new(state));
         let tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let (emitter, _receiver) = test_emitter();
 
         let promoted = confirm_modify_replacement(
@@ -1360,6 +1432,7 @@ mod tests {
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &tracker,
+            &settlement,
             &registry,
             &state,
         );
@@ -1550,15 +1623,18 @@ mod tests {
         let venue_order_id = VenueOrderId::from("0xconfirmed");
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
 
         let deferred = handle_order_response(
             Ok(successful_order_response(venue_order_id, status)),
             &order,
+            venue_order_id,
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_cancels,
             AccountId::from("POLY-001"),
@@ -1605,15 +1681,18 @@ mod tests {
         );
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
 
         let deferred = handle_order_response(
             Ok(response),
             &order,
+            venue_order_id,
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_cancels,
             AccountId::from("POLY-001"),
@@ -1641,6 +1720,7 @@ mod tests {
         );
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
         pending_cancels.insert(order.client_order_id());
@@ -1648,9 +1728,11 @@ mod tests {
         let deferred = handle_order_response(
             Ok(response),
             &order,
+            venue_order_id,
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_cancels,
             AccountId::from("POLY-001"),
@@ -1670,6 +1752,7 @@ mod tests {
         let responses: Vec<OrderResponse> = load("http_batch_order_response.json");
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
 
@@ -1691,9 +1774,11 @@ mod tests {
             let deferred = handle_order_response(
                 Ok(response),
                 &order,
+                venue_order_id,
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 AccountId::from("POLY-001"),
@@ -1737,6 +1822,7 @@ mod tests {
         let (emitter, mut receiver) = test_emitter();
         let venue_order_id = VenueOrderId::from("0xmarket-sell");
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
 
@@ -1755,9 +1841,11 @@ mod tests {
         let deferred_cancel = handle_order_response(
             Ok(response),
             &order,
+            venue_order_id,
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_cancels,
             AccountId::from("POLY-001"),
@@ -1848,6 +1936,52 @@ mod tests {
         .expect("non-confirmed trades do not build fill reports");
 
         assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    #[case::matched(PolymarketTradeStatus::Matched, 0, true)]
+    #[case::matched_not_broadcasted(PolymarketTradeStatus::MatchedNotBroadcasted, 0, true)]
+    #[case::mined(PolymarketTradeStatus::Mined, 0, true)]
+    #[case::retrying(PolymarketTradeStatus::Retrying, 0, true)]
+    #[case::confirmed(PolymarketTradeStatus::Confirmed, 1, false)]
+    fn test_targeted_rest_trade_reports_only_confirmed_fills(
+        #[case] status: PolymarketTradeStatus,
+        #[case] expected_reports: usize,
+        #[case] expected_pending: bool,
+    ) {
+        let mut instrument = test_instrument();
+        let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.status = status;
+        bind_instrument_to_trade(&mut instrument, &trade);
+        let instrument_id = instrument.id();
+        let configured_address = trade.maker_orders[0].maker_address.clone();
+        let target_venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let instruments = AtomicMap::new();
+        instruments.insert(trade.asset_id, instrument);
+
+        let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            account_id: AccountId::from("POLY-001"),
+            user_address: &configured_address,
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            FillReportScope::new(Some(instrument_id), Some(target_venue_order_id)),
+            UnixNanos::from(1_000_000_000u64),
+            None,
+            None,
+        )
+        .expect("owned targeted trade classifies");
+
+        assert_eq!(reports.len(), expected_reports);
+        assert_eq!(discards.has_pending_target, expected_pending);
     }
 
     #[rstest]
@@ -2045,6 +2179,126 @@ mod tests {
     }
 
     #[rstest]
+    fn test_confirmed_maker_trade_admits_only_legs_in_requested_scope() {
+        let mut instrument = test_instrument();
+        let mut trade: PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        bind_instrument_to_trade(&mut instrument, &trade);
+        let instrument_id = instrument.id();
+        let configured_address = trade.maker_orders[0].maker_address.clone();
+        let scoped_venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+
+        // The second owned leg sits on another loaded instrument and contradicts its outcome
+        let other_token = Ustr::from("1111111111111111111111111111111111111111111111111111111111");
+        let mut other_instrument = test_instrument();
+        let mut other_binding = trade.clone();
+        other_binding.asset_id = other_token;
+        bind_instrument_to_trade(&mut other_instrument, &other_binding);
+        trade.maker_orders[1].maker_address = configured_address.clone();
+        trade.maker_orders[1].asset_id = other_token;
+        trade.maker_orders[1].outcome = PolymarketOutcome::no();
+
+        let instruments = AtomicMap::new();
+        instruments.insert(trade.asset_id, instrument);
+        instruments.insert(other_token, other_instrument);
+
+        let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            account_id: AccountId::from("POLY-001"),
+            user_address: &configured_address,
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let build = |scope| {
+            crate::execution::reconciliation::build_fill_reports_from_trades(
+                std::slice::from_ref(&trade),
+                &ctx,
+                &instruments,
+                scope,
+                UnixNanos::from(1_000_000_000u64),
+                None,
+                None,
+            )
+        };
+
+        let (scoped_reports, scoped_discards) =
+            build(FillReportScope::new(Some(instrument_id), None))
+                .expect("a leg outside the requested instrument is not validated");
+        let unscoped = build(FillReportScope::new(None, None));
+
+        assert_eq!(scoped_reports.len(), 1);
+        assert_eq!(scoped_reports[0].venue_order_id, scoped_venue_order_id);
+        assert_eq!(scoped_reports[0].instrument_id, instrument_id);
+        assert_eq!(scoped_reports[0].last_qty.as_decimal(), Decimal::from(25));
+        assert_eq!(
+            scoped_discards,
+            crate::execution::reconciliation::FillBuildDiscards::default()
+        );
+        assert!(
+            unscoped
+                .unwrap_err()
+                .to_string()
+                .contains("provider outcome No does not match instrument outcome Yes")
+        );
+    }
+
+    #[rstest]
+    #[case::unbounded(None)]
+    #[case::bounded(Some(UnixNanos::from(1u64)))]
+    fn test_confirmed_trade_without_match_time_fails_unbounded_and_counts_bounded(
+        #[case] lookback_start: Option<UnixNanos>,
+    ) {
+        let mut instrument = test_instrument();
+        let mut trade: PolymarketTradeReport = load("http_trade_report.json");
+        trade.match_time = "not-a-timestamp".to_string();
+        bind_instrument_to_trade(&mut instrument, &trade);
+        let instruments = AtomicMap::new();
+        instruments.insert(trade.asset_id, instrument);
+
+        let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            api_key: "00000000-0000-0000-0000-000000000001",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let result = crate::execution::reconciliation::build_fill_reports_from_trades(
+            std::slice::from_ref(&trade),
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, None),
+            UnixNanos::from(1_000_000_000u64),
+            None,
+            lookback_start,
+        );
+
+        match lookback_start {
+            None => assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "trade {} has no valid venue match timestamp (match_time=not-a-timestamp)",
+                    trade.id
+                ),
+            ),
+            Some(_) => {
+                let (reports, discards) = result.expect("a bounded report counts the trade");
+                assert!(reports.is_empty());
+                assert_eq!(
+                    discards,
+                    crate::execution::reconciliation::FillBuildDiscards {
+                        untimestamped_trades: 1,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+    }
+
+    #[rstest]
     fn test_unknown_submit_tracks_expected_id_for_ws_order_recovery() {
         let ws_order: PolymarketUserOrder = load("ws_user_order_placement.json");
         let instrument = test_instrument();
@@ -2053,6 +2307,7 @@ mod tests {
         let expected_venue_order_id = VenueOrderId::from(ws_order.id.as_str());
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2066,6 +2321,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_submits,
                 &pending_cancels,
@@ -2088,6 +2344,7 @@ mod tests {
             signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            settlement: &settlement,
             pending_submits: &pending_submits,
             order_contexts: &order_contexts,
             emitter: &emitter,
@@ -2119,6 +2376,7 @@ mod tests {
         let fill_ts = UnixNanos::from(1_700_000_000_000_000_000u64);
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2171,6 +2429,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_submits,
                 &pending_cancels,
@@ -2240,7 +2499,8 @@ mod tests {
         receiver.try_recv().expect("expected quantity update event");
 
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
-        let correction_key = "trade-confirmed-before-drain-order";
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        let venue_trade_id = "trade-confirmed-before-drain-order";
         assert!(
             fill_tracker
                 .accept_or_buffer_fill(
@@ -2252,14 +2512,30 @@ mod tests {
                         UnixNanos::from(900u64),
                     ),
                     FillCorrectionMetadata {
-                        correction_key: correction_key.to_string(),
+                        venue_trade_id: venue_trade_id.to_string(),
                         info: None,
-                        is_confirmed: false,
                     },
                 )
                 .is_none()
         );
-        fill_tracker.mark_trade_confirmed(correction_key);
+        settlement.note_order_submitted(venue_order_id);
+
+        let _ = settlement.admit_stream_trade(&AdmittedTrade {
+            venue_trade_id: venue_trade_id.to_string(),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![AdmittedLeg {
+                venue_order_id,
+                trade_id: TradeId::from("trade-1"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                liquidity_side: LiquiditySide::Taker,
+                last_qty: venue_fill_qty,
+                last_px: Price::new(0.50, 4),
+                commission: Money::zero(Currency::pUSD()),
+                ts_event: UnixNanos::from(900u64),
+            }],
+        });
+
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2273,6 +2549,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_submits,
                 &pending_cancels,
@@ -2329,6 +2606,7 @@ mod tests {
         let venue_order_id = VenueOrderId::from("0xdrain-terminal-order");
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2359,6 +2637,7 @@ mod tests {
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_submits,
             &pending_cancels,
@@ -2453,6 +2732,7 @@ mod tests {
         receiver.try_recv().expect("expected quantity update event");
 
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2493,6 +2773,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_submits,
                 &pending_cancels,
@@ -2532,6 +2813,7 @@ mod tests {
         let order = test_limit_order("O-DRAIN-FILLED-DUST", instrument_id);
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2572,6 +2854,7 @@ mod tests {
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_submits,
                 &pending_cancels,
@@ -2637,6 +2920,91 @@ mod tests {
         }
     }
 
+    // A WS taker trade that buffers ahead of the submit response and is then quarantined by a
+    // FAILED update must not drain as a fill: the registry withdraws its authorization and the
+    // tracker quantity rolls back, leaving the trade to targeted REST resolution.
+    #[rstest]
+    fn test_ws_taker_fill_quarantined_before_submit_response_is_not_drained() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let asset_id = instrument_id.symbol.inner();
+        let size_precision = instrument.size_precision();
+        let price_precision = instrument.price_precision();
+        let account_id = AccountId::from("POLY-001");
+        let venue_order_id = VenueOrderId::from("0xquarantined-before-drain");
+        let order = test_limit_order("O-QUARANTINED-BEFORE-DRAIN", instrument_id);
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(account_id);
+        let pending_submits = PendingSubmitTracker::default();
+        let pending_cancels = PendingCancelTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        let mut trade = test_taker_trade(asset_id, venue_order_id, "5", "0.50");
+        trade.status = PolymarketTradeStatus::Matched;
+        let mut instrument = instrument;
+        bind_instrument_to_user_trade(&mut instrument, &trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument);
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id,
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+
+        let mut state = WsDispatchState::default();
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+        let buffered = fill_tracker.has_pending_fill(&venue_order_id);
+        trade.status = PolymarketTradeStatus::Failed;
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+        let mut response: OrderResponse = load("http_order_response_ok.json");
+        response.order_id = Some(venue_order_id.to_string());
+
+        handle_order_response(
+            Ok(response),
+            &order,
+            venue_order_id,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &settlement,
+            &order_contexts,
+            &pending_cancels,
+            account_id,
+            size_precision,
+            price_precision,
+        );
+
+        let events: Vec<ExecutionEvent> = std::iter::from_fn(|| receiver.try_recv().ok()).collect();
+        assert!(buffered);
+        assert!(
+            matches!(
+                events.as_slice(),
+                [ExecutionEvent::Order(OrderEventAny::Accepted(_))]
+            ),
+            "expected only the acceptance, was {events:?}"
+        );
+        assert_eq!(
+            fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::zero(size_precision))
+        );
+        assert_eq!(
+            leg_application(&settlement, &TradeId::from(trade.id.as_str())),
+            Some(LegApplication::Absent)
+        );
+        assert_eq!(settlement.pending_resolutions(), vec![trade.id.clone()]);
+    }
+
     // A fast-filling marketable limit order whose WS taker trade arrives before the HTTP submit
     // response: the fill buffers (order not yet registered), then the submit response registers and
     // drains it under one tracker lock. A later FAILED update must still find and void that fill.
@@ -2683,29 +3051,37 @@ mod tests {
 
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
 
         // Step 1: the WS taker trade arrives BEFORE the submit response. The order is not yet
         // registered, so the fill buffers in the tracker rather than emitting.
+        let mut trade = test_taker_trade(asset_id, venue_order_id, "5.192081", "0.963");
+        trade.status = PolymarketTradeStatus::Matched;
+        let mut instrument = instrument;
+        bind_instrument_to_user_trade(&mut instrument, &trade);
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument);
+        // A connected client notes the expected venue order ID before the submit request leaves
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
         let ctx = WsDispatchContext {
             signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            settlement: &settlement,
             pending_submits: &pending_submits,
             order_contexts: &order_contexts,
             emitter: &emitter,
             account_id,
             clock: nautilus_core::time::get_atomic_clock_realtime(),
             user_address: "0xtest",
-            user_api_key: "test-key",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
         };
         let mut state = WsDispatchState::default();
-        let mut trade = test_taker_trade(asset_id, venue_order_id, "5.192081", "0.963");
-        trade.status = PolymarketTradeStatus::Matched;
         dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
 
         assert!(
@@ -2721,9 +3097,11 @@ mod tests {
             handle_order_response(
                 Ok(response),
                 &order,
+                venue_order_id,
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 account_id,
@@ -2755,12 +3133,41 @@ mod tests {
         };
 
         order.apply(accepted).unwrap();
-        order.apply(filled).unwrap();
+        order.apply(filled.clone()).unwrap();
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert!(!fill_tracker.has_pending_fill(&venue_order_id));
 
+        if let OrderEventAny::Filled(fill) = &filled {
+            let _ = settlement.observe_fill_applied(fill);
+        }
+
         trade.status = PolymarketTradeStatus::Failed;
-        assert!(dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state).is_some());
+        let failed_signals =
+            dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+        assert!(failed_signals.is_none());
+        assert!(receiver.try_recv().is_err());
+
+        let mut rest_failed: PolymarketTradeReport = load("http_trade_report.json");
+        rest_failed.id = trade.id.clone();
+        rest_failed.taker_order_id = trade.taker_order_id.clone();
+        rest_failed.asset_id = trade.asset_id;
+        rest_failed.market = trade.market;
+        rest_failed.outcome = trade.outcome;
+        rest_failed.status = PolymarketTradeStatus::Failed;
+        rest_failed.trader_side = PolymarketLiquiditySide::Taker;
+        rest_failed.owner = trade.owner.to_string();
+        rest_failed.maker_address = trade.maker_address.to_string();
+        let rest_evidence =
+            admit_trade_evidence(TradeEvidence::Rest(&rest_failed), &ctx.admission_context())
+                .expect("REST FAILED evidence admits");
+        let rest_actions = settlement.admit_rest_result(&rest_evidence);
+        execute_settlement_actions(
+            rest_actions,
+            rest_trade_info(&rest_failed).as_ref(),
+            &ctx,
+            &mut state,
+        );
+
         let voided = match receiver.try_recv().expect("expected fill correction") {
             ExecutionEvent::Order(OrderEventAny::FillVoided(event)) => event,
             other => panic!("expected fill-void event, was {other:?}"),
@@ -2793,6 +3200,7 @@ mod tests {
 
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
@@ -2804,6 +3212,7 @@ mod tests {
             signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            settlement: &settlement,
             pending_submits: &pending_submits,
             order_contexts: &order_contexts,
             emitter: &emitter,
@@ -2835,9 +3244,11 @@ mod tests {
             handle_order_response(
                 Ok(response),
                 &order,
+                venue_order_id,
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 account_id,
@@ -2910,31 +3321,36 @@ mod tests {
 
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_submits = PendingSubmitTracker::default();
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
 
         // WS taker fill of 12 shares (the marketable BUY filled below its limit) before the response.
+        let trade = test_taker_trade(asset_id, venue_order_id, "12", "0.50");
+        let mut instrument = instrument;
+        bind_instrument_to_user_trade(&mut instrument, &trade);
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument);
+        // A connected client notes the expected venue order ID before the submit request leaves
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
         let ctx = WsDispatchContext {
             signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            settlement: &settlement,
             pending_submits: &pending_submits,
             order_contexts: &order_contexts,
             emitter: &emitter,
             account_id,
             clock: nautilus_core::time::get_atomic_clock_realtime(),
             user_address: "0xtest",
-            user_api_key: "test-key",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
         };
         let mut state = WsDispatchState::default();
-        dispatch_user_message(
-            &UserWsMessage::Trade(test_taker_trade(asset_id, venue_order_id, "12", "0.50")),
-            &ctx,
-            &mut state,
-        );
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
         let response = OrderResponse {
             success: true,
@@ -2949,9 +3365,11 @@ mod tests {
         handle_order_response(
             Ok(response),
             &order,
+            venue_order_id,
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,
+            &settlement,
             &order_contexts,
             &pending_cancels,
             account_id,
@@ -2999,6 +3417,7 @@ mod tests {
         let order = test_limit_order("O-BATCH-EMPTY", instrument_id);
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
 
@@ -3017,9 +3436,11 @@ mod tests {
             handle_order_response(
                 Ok(response),
                 &order,
+                VenueOrderId::from("0xexpected"),
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 AccountId::from("POLY-001"),
@@ -3047,6 +3468,7 @@ mod tests {
         let order = test_limit_order("O-BATCH-REJECT", instrument.id());
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
 
@@ -3065,9 +3487,11 @@ mod tests {
             handle_order_response(
                 Ok(response),
                 &order,
+                VenueOrderId::from("0xexpected"),
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 AccountId::from("POLY-001"),
@@ -3100,6 +3524,7 @@ mod tests {
         let order = test_limit_order("O-REJECT", instrument_id);
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let pending_cancels = PendingCancelTracker::default();
         let order_contexts = OrderContextRegistry::default();
 
@@ -3118,9 +3543,11 @@ mod tests {
             handle_order_response(
                 Ok(response),
                 &order,
+                VenueOrderId::from("0xexpected"),
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
+                &settlement,
                 &order_contexts,
                 &pending_cancels,
                 AccountId::from("POLY-001"),

@@ -795,6 +795,7 @@ impl PolymarketExecutionClient {
                 &self.emitter,
                 self.clock,
                 &self.fill_tracker,
+                &self.settlement,
                 &self.order_contexts,
                 &self.ws_dispatch_state,
             );

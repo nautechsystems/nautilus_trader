@@ -185,9 +185,11 @@ pub(super) struct TestServerState {
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) single_order_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    pub(super) single_order_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
     pub(super) single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) single_order_get_count: Arc<AtomicUsize>,
     pub(super) trades_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) trades_filter_after: Arc<AtomicBool>,
     pub(super) positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) user_frames: tokio::sync::broadcast::Sender<String>,
     pub(super) user_socket_count: Arc<AtomicUsize>,
@@ -258,9 +260,11 @@ impl Default for TestServerState {
             orders_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             orders_get_count: Arc::new(AtomicUsize::new(0)),
             single_order_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            single_order_response_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             single_order_get_count: Arc::new(AtomicUsize::new(0)),
             trades_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_filter_after: Arc::new(AtomicBool::new(false)),
             positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
@@ -348,6 +352,15 @@ async fn handle_get_orders(
 async fn handle_get_order(State(state): State<TestServerState>, uri: Uri) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
     state.single_order_get_count.fetch_add(1, Ordering::AcqRel);
+    if let Some(status) = state
+        .single_order_response_statuses
+        .lock()
+        .await
+        .pop_front()
+    {
+        return (status, Json(json!({"error": "order lookup failed"}))).into_response();
+    }
+
     if let Some(resp) = state.single_order_responses.lock().await.pop_front() {
         return Json(resp).into_response();
     }
@@ -365,9 +378,27 @@ async fn handle_get_trades(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let after = query
+        .get("after")
+        .and_then(|value| value.parse::<u64>().ok());
     *state.last_query.lock().await = query;
     if let Some(override_value) = state.trades_response_override.lock().await.as_ref() {
-        return Json(override_value.clone()).into_response();
+        let mut page = override_value.clone();
+
+        // The venue's `after` keeps only rows matched later than the given Unix second
+        if state.trades_filter_after.load(Ordering::Acquire)
+            && let Some(after) = after
+            && let Some(rows) = page["data"].as_array_mut()
+        {
+            rows.retain(|row| {
+                row["match_time"]
+                    .as_str()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .is_some_and(|match_time| match_time > after)
+            });
+        }
+
+        return Json(page).into_response();
     }
     Json(load_json("http_trades_page.json")).into_response()
 }

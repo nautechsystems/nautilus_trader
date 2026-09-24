@@ -326,9 +326,7 @@ pub(super) fn parse_validated_fill_report(
 // panics-doc-ok (transitive via validating identifier constructors)
 /// Builds a [`FillReport`] from a [`PolymarketMakerOrder`] and trade-level context.
 ///
-/// Used by both the WS stream handler and REST fill report generation since both
-/// share the same [`PolymarketMakerOrder`] type for maker fills. Maker fills never
-/// pay commission per Polymarket's fee rules.
+/// Maker fills never pay commission per Polymarket's fee rules.
 ///
 /// # Errors
 ///

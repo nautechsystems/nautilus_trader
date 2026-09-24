@@ -2890,11 +2890,29 @@ impl ExecutionEngine {
         event: &OrderEventAny,
         apply_position: bool,
     ) {
+        let applied = self.apply_order_event(event, apply_position);
+
+        // Negative acknowledgment for clients awaiting application of an enqueued fill or void.
+        // The declined event itself is the acknowledgment; each drop site logs its reason.
+        if apply_position
+            && !applied
+            && matches!(
+                event,
+                OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_)
+            )
+        {
+            let topic = switchboard::get_order_fill_declined_topic(event.instrument_id());
+            msgbus::publish_order_event(topic, event);
+        }
+    }
+
+    /// Applies an order event, returning whether it was applied and published.
+    fn apply_order_event(&mut self, event: &OrderEventAny, apply_position: bool) -> bool {
         if let OrderEventAny::Filled(fill) = event
             && fill.last_qty.is_zero()
         {
             log::warn!("Skipping zero-quantity fill event: {fill}");
-            return;
+            return false;
         }
 
         self.event_count += 1;
@@ -2926,7 +2944,7 @@ impl ExecutionEngine {
                     "Cannot apply event to any order: {} not found in the cache with no VenueOrderId",
                     event.client_order_id()
                 );
-                return;
+                return false;
             };
 
             // Look up client order ID from venue order ID
@@ -2942,15 +2960,14 @@ impl ExecutionEngine {
                         fill.instrument_id
                     );
                     drop(cache);
-                    self.handle_leg_fill_without_order(fill.clone());
-                    return;
+                    return self.handle_leg_fill_without_order(fill.clone());
                 }
 
                 log::error!(
                     "Cannot apply event to any order: {} and {venue_order_id} not found in the cache",
                     event.client_order_id(),
                 );
-                return;
+                return false;
             };
 
             // Get order using found client order ID
@@ -2967,14 +2984,13 @@ impl ExecutionEngine {
                         fill.instrument_id
                     );
                     drop(cache);
-                    self.handle_leg_fill_without_order(fill.clone());
-                    return;
+                    return self.handle_leg_fill_without_order(fill.clone());
                 }
 
                 log::error!(
                     "Cannot apply event to any order: {client_order_id} and {venue_order_id} not found in cache",
                 );
-                return;
+                return false;
             }
         };
         let order_before_fill = if matches!(event, OrderEventAny::Filled(_)) {
@@ -2998,13 +3014,13 @@ impl ExecutionEngine {
                         "Cannot apply fill: order {} not found in the cache",
                         fill.client_order_id()
                     );
-                    return;
+                    return false;
                 };
                 let configured_oms_type = self.determine_oms_type(fill);
                 let Some(position_id) =
                     self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill))
                 else {
-                    return;
+                    return false;
                 };
                 let oms_type = self
                     .cache
@@ -3021,33 +3037,36 @@ impl ExecutionEngine {
                     self.validate_fill_for_order_projection(&order_before_fill, &fill)
                 };
 
-                if validation.is_ok() {
-                    if apply_position
-                        && !self.validate_fill_for_external_position(
-                            &order_before_fill,
-                            &fill,
-                            oms_type,
-                            position_id,
-                        )
-                    {
-                        return;
-                    }
-
-                    let event = OrderEventAny::Filled(fill.clone());
-                    let Some(order) =
-                        self.update_cached_order(client_order_id, &event, apply_position)
-                    else {
-                        return;
-                    };
-
-                    let position_events = if apply_position {
-                        self.handle_order_fill(&order, fill, oms_type)
-                    } else {
-                        Vec::new()
-                    };
-                    self.publish_order_event(&event);
-                    self.publish_position_events(position_events);
+                if validation.is_err() {
+                    return false;
                 }
+
+                if apply_position
+                    && !self.validate_fill_for_external_position(
+                        &order_before_fill,
+                        &fill,
+                        oms_type,
+                        position_id,
+                    )
+                {
+                    return false;
+                }
+
+                let event = OrderEventAny::Filled(fill.clone());
+
+                let Some(order) = self.update_cached_order(client_order_id, &event, apply_position)
+                else {
+                    return false;
+                };
+
+                let position_events = if apply_position {
+                    self.handle_order_fill(&order, fill, oms_type)
+                } else {
+                    Vec::new()
+                };
+
+                self.publish_order_event(&event);
+                self.publish_position_events(position_events);
             }
             OrderEventAny::FillVoided(voided) => {
                 let mut voided = voided.clone();
@@ -3058,7 +3077,7 @@ impl ExecutionEngine {
                     .map(|order| order.clone())
                 else {
                     log::error!("Cannot apply fill void: order {client_order_id} not found");
-                    return;
+                    return false;
                 };
                 let original_fill = order_before_void
                     .events()
@@ -3082,11 +3101,11 @@ impl ExecutionEngine {
                         log::warn!(
                             "Duplicate fill void rejected at order level: trade_id={trade_id}"
                         );
-                        return;
+                        return false;
                     }
                     Err(e) => {
                         log::error!("Cannot apply fill void to order: {e}");
-                        return;
+                        return false;
                     }
                 }
 
@@ -3099,7 +3118,7 @@ impl ExecutionEngine {
                         Ok(positions) => positions,
                         Err(e) => {
                             log::error!("Cannot apply fill void to positions: {e}");
-                            return;
+                            return false;
                         }
                     }
                 } else {
@@ -3117,7 +3136,7 @@ impl ExecutionEngine {
                 {
                     if let Err(e) = self.cache.borrow_mut().update_position(&position) {
                         log::error!("Cannot apply fill void to position {}: {e}", position.id);
-                        return;
+                        return false;
                     }
 
                     if absorbed_prior_cycles {
@@ -3147,7 +3166,7 @@ impl ExecutionEngine {
                     .update_cached_order(client_order_id, &event, true)
                     .is_none()
                 {
-                    return;
+                    return false;
                 }
 
                 if original_fill.is_some() {
@@ -3166,9 +3185,11 @@ impl ExecutionEngine {
                 }
             }
         }
+
+        true
     }
 
-    fn handle_leg_fill_without_order(&mut self, mut fill: OrderFilled) {
+    fn handle_leg_fill_without_order(&mut self, mut fill: OrderFilled) -> bool {
         let instrument =
             if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
                 instrument.clone()
@@ -3177,12 +3198,12 @@ impl ExecutionEngine {
                     "Cannot handle leg fill: no instrument found for {}, {fill}",
                     fill.instrument_id,
                 );
-                return;
+                return false;
             };
 
         if let Err(e) = self.cache.borrow().try_account(&fill.account_id) {
             log::error!("Cannot handle leg fill: {e}, {fill}");
-            return;
+            return false;
         }
 
         let oms_type = self.determine_oms_type(&fill);
@@ -3190,7 +3211,7 @@ impl ExecutionEngine {
         fill.position_id = Some(position_id);
 
         if !self.validate_fill_for_position(position_id, &fill) {
-            return;
+            return false;
         }
 
         let duplicate_position_fill = self.position_contains_trade_id(position_id, fill.trade_id);
@@ -3204,7 +3225,7 @@ impl ExecutionEngine {
                 fill.trade_id,
                 position_id
             );
-            return;
+            return false;
         }
 
         let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
@@ -3212,6 +3233,8 @@ impl ExecutionEngine {
         let position_events = self.handle_position_update(&instrument, fill, oms_type);
         self.publish_order_event(&event);
         self.publish_position_events(position_events);
+
+        true
     }
 
     fn determine_leg_fill_position_id(
@@ -4799,11 +4822,15 @@ mod tests {
         msgbus::{MessageBus, set_message_bus},
     };
     use nautilus_model::{
+        accounts::CashAccount,
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
-        events::{OrderFillVoided, order::spec::OrderFilledSpec},
+        events::{
+            OrderFillVoided,
+            order::spec::{OrderCanceledSpec, OrderFillVoidedSpec, OrderFilledSpec},
+        },
         identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
-        orders::builder::OrderTestBuilder,
+        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::PositionFillVoid,
         types::Price,
     };
@@ -5195,5 +5222,186 @@ mod tests {
             .build();
 
         Position::new(instrument, fill)
+    }
+
+    #[rstest]
+    fn declined_fill_and_void_publish_negative_acknowledgment() {
+        let (mut engine, instrument, nacks) = nack_engine();
+        let overfill = nack_order_fill(&instrument, "T-OVERFILL", Quantity::from(200));
+        let valid = nack_order_fill(&instrument, "T-VALID", Quantity::from(50));
+        let zero_void = nack_order_fill_void(&valid, Quantity::from(0));
+
+        engine.process(&OrderEventAny::Filled(overfill.clone()));
+        engine.process(&OrderEventAny::Filled(valid.clone()));
+        // A declined reconciliation projection is not an enqueued client event, so no NACK
+        engine.project_reconciliation_fill(&valid);
+        engine.process(&OrderEventAny::FillVoided(zero_void.clone()));
+
+        assert_eq!(
+            *nacks.borrow(),
+            vec![
+                OrderEventAny::Filled(overfill),
+                OrderEventAny::FillVoided(zero_void),
+            ]
+        );
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum DeclineCase {
+        ZeroQuantityFill,
+        DuplicateFill,
+        DuplicateVoid,
+        UnknownOrderFill,
+        UnknownOrderCancel,
+    }
+
+    #[rstest]
+    #[case::zero_quantity_fill(DeclineCase::ZeroQuantityFill)]
+    #[case::duplicate_fill(DeclineCase::DuplicateFill)]
+    #[case::duplicate_void(DeclineCase::DuplicateVoid)]
+    #[case::unknown_order_fill(DeclineCase::UnknownOrderFill)]
+    #[case::unknown_order_cancel(DeclineCase::UnknownOrderCancel)]
+    fn declined_order_event_negative_acknowledgment(#[case] case: DeclineCase) {
+        let (mut engine, instrument, nacks) = nack_engine();
+        let fill = nack_order_fill(&instrument, "T-CASE", Quantity::from(50));
+
+        let (events, expected) = match case {
+            DeclineCase::ZeroQuantityFill => {
+                let zero = OrderEventAny::Filled(nack_order_fill(
+                    &instrument,
+                    "T-ZERO",
+                    Quantity::from(0),
+                ));
+                (vec![zero.clone()], vec![zero])
+            }
+            DeclineCase::DuplicateFill => {
+                let filled = OrderEventAny::Filled(fill);
+                (vec![filled.clone(), filled.clone()], vec![filled])
+            }
+            DeclineCase::DuplicateVoid => {
+                let voided = OrderEventAny::FillVoided(nack_order_fill_void(&fill, fill.last_qty));
+                (
+                    vec![OrderEventAny::Filled(fill), voided.clone(), voided.clone()],
+                    vec![voided],
+                )
+            }
+            DeclineCase::UnknownOrderFill => {
+                let mut unknown = fill;
+                unknown.client_order_id = ClientOrderId::from("O-UNKNOWN");
+                unknown.venue_order_id = VenueOrderId::from("V-UNKNOWN");
+                let filled = OrderEventAny::Filled(unknown);
+                (vec![filled.clone()], vec![filled])
+            }
+            // Only fills and voids are awaited by clients, so other declined events never NACK
+            DeclineCase::UnknownOrderCancel => {
+                let canceled = OrderCanceledSpec::builder()
+                    .instrument_id(instrument.id())
+                    .client_order_id(ClientOrderId::from("O-UNKNOWN"))
+                    .venue_order_id(VenueOrderId::from("V-UNKNOWN"))
+                    .account_id(fill.account_id)
+                    .build();
+                (vec![OrderEventAny::Canceled(canceled)], Vec::new())
+            }
+        };
+
+        for event in &events {
+            engine.process(event);
+        }
+
+        assert_eq!(*nacks.borrow(), expected);
+    }
+
+    // Engine holding one accepted BUY 100 limit order O-NACK (venue V-NACK), with a recorder of
+    // every event republished on the fill-declined topics
+    fn nack_engine() -> (
+        ExecutionEngine,
+        InstrumentAny,
+        Rc<RefCell<Vec<OrderEventAny>>>,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_account(CashAccount::default().into())
+            .unwrap();
+
+        let engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-NACK"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .price(Price::from("1.00000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let account_id = AccountId::from("SIM-001");
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        cache.borrow_mut().update_order(&submitted).unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-NACK"));
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        let nacks: Rc<RefCell<Vec<OrderEventAny>>> = Rc::new(RefCell::new(Vec::new()));
+        let capture = Rc::clone(&nacks);
+        msgbus::subscribe_order_events(
+            "events.order_fill_declined.*".into(),
+            TypedHandler::from(move |event: &OrderEventAny| {
+                capture.borrow_mut().push(event.clone());
+            }),
+            None,
+        );
+
+        (engine, instrument, nacks)
+    }
+
+    fn nack_order_fill(
+        instrument: &InstrumentAny,
+        trade_id: &str,
+        last_qty: Quantity,
+    ) -> OrderFilled {
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-NACK"))
+            .venue_order_id(VenueOrderId::from("V-NACK"))
+            .account_id(AccountId::from("SIM-001"))
+            .trade_id(TradeId::from(trade_id))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .last_qty(last_qty)
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Taker)
+            .build()
+    }
+
+    fn nack_order_fill_void(fill: &OrderFilled, voided_qty: Quantity) -> OrderFillVoided {
+        OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .build()
     }
 }
