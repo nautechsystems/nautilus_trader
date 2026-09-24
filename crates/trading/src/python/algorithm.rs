@@ -684,10 +684,6 @@ impl DataActor for PyExecutionAlgorithm {
     clippy::large_types_passed_by_value,
     reason = "PyO3 callbacks accept Python-owned event values"
 )]
-#[expect(
-    clippy::unused_self,
-    reason = "default PyO3 callbacks must remain instance methods"
-)]
 impl PyExecutionAlgorithm {
     /// Creates a new [`PyExecutionAlgorithm`] instance.
     #[new]
@@ -1002,45 +998,45 @@ impl PyExecutionAlgorithm {
     }
 
     #[pyo3(name = "on_start")]
-    fn py_on_start(&mut self) {}
+    fn py_on_start(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_stop")]
-    fn py_on_stop(&mut self) {}
+    fn py_on_stop(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_resume")]
-    fn py_on_resume(&mut self) {}
+    fn py_on_resume(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_reset")]
-    fn py_on_reset(&mut self) {}
+    fn py_on_reset(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_dispose")]
-    fn py_on_dispose(&mut self) {}
+    fn py_on_dispose(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_degrade")]
-    fn py_on_degrade(&mut self) {}
+    fn py_on_degrade(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_fault")]
-    fn py_on_fault(&mut self) {}
+    fn py_on_fault(_slf: &Bound<'_, Self>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
-    fn py_on_time_event(&mut self, event: TimeEvent) {}
+    fn py_on_time_event(_slf: &Bound<'_, Self>, event: TimeEvent) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
-    fn py_on_signal(&mut self, signal: &Signal) {}
+    fn py_on_signal(_slf: &Bound<'_, Self>, signal: &Signal) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_queue_state")]
-    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+    fn py_on_queue_state(_slf: &Bound<'_, Self>, event: QueueStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
-    fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
+    fn py_on_socket_state(_slf: &Bound<'_, Self>, event: SocketStateChanged) {}
 
     #[allow(clippy::needless_pass_by_value)]
     #[pyo3(name = "execute")]
-    fn py_execute(&mut self, command: Py<PyAny>) -> PyResult<()> {
+    fn py_execute(_slf: &Bound<'_, Self>, command: Py<PyAny>) -> PyResult<()> {
         let _ = command;
         Err(to_pyruntime_err(
             "ExecutionAlgorithm.execute is invoked by the v2 runtime endpoint",
@@ -1049,11 +1045,11 @@ impl PyExecutionAlgorithm {
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order")]
-    fn py_on_order(&mut self, order: Py<PyAny>) {}
+    fn py_on_order(_slf: &Bound<'_, Self>, order: Py<PyAny>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_list")]
-    fn py_on_order_list(&mut self, order_list: Py<PyAny>, orders: Py<PyAny>) {}
+    fn py_on_order_list(_slf: &Bound<'_, Self>, order_list: Py<PyAny>, orders: Py<PyAny>) {}
 
     #[pyo3(name = "spawn_market")]
     #[pyo3(signature = (
@@ -1252,91 +1248,91 @@ impl PyExecutionAlgorithm {
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_initialized")]
-    fn py_on_order_initialized(&mut self, event: OrderInitialized) {}
+    fn py_on_order_initialized(_slf: &Bound<'_, Self>, event: OrderInitialized) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_event")]
-    fn py_on_order_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_order_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_denied")]
-    fn py_on_order_denied(&mut self, event: OrderDenied) {}
+    fn py_on_order_denied(_slf: &Bound<'_, Self>, event: OrderDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_emulated")]
-    fn py_on_order_emulated(&mut self, event: OrderEmulated) {}
+    fn py_on_order_emulated(_slf: &Bound<'_, Self>, event: OrderEmulated) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_released")]
-    fn py_on_order_released(&mut self, event: OrderReleased) {}
+    fn py_on_order_released(_slf: &Bound<'_, Self>, event: OrderReleased) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_submitted")]
-    fn py_on_order_submitted(&mut self, event: OrderSubmitted) {}
+    fn py_on_order_submitted(_slf: &Bound<'_, Self>, event: OrderSubmitted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_rejected")]
-    fn py_on_order_rejected(&mut self, event: OrderRejected) {}
+    fn py_on_order_rejected(_slf: &Bound<'_, Self>, event: OrderRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_accepted")]
-    fn py_on_order_accepted(&mut self, event: OrderAccepted) {}
+    fn py_on_order_accepted(_slf: &Bound<'_, Self>, event: OrderAccepted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_canceled")]
-    fn py_on_order_canceled(&mut self, event: OrderCanceled) {}
+    fn py_on_order_canceled(_slf: &Bound<'_, Self>, event: OrderCanceled) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_expired")]
-    fn py_on_order_expired(&mut self, event: OrderExpired) {}
+    fn py_on_order_expired(_slf: &Bound<'_, Self>, event: OrderExpired) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_triggered")]
-    fn py_on_order_triggered(&mut self, event: OrderTriggered) {}
+    fn py_on_order_triggered(_slf: &Bound<'_, Self>, event: OrderTriggered) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_update")]
-    fn py_on_order_pending_update(&mut self, event: OrderPendingUpdate) {}
+    fn py_on_order_pending_update(_slf: &Bound<'_, Self>, event: OrderPendingUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_cancel")]
-    fn py_on_order_pending_cancel(&mut self, event: OrderPendingCancel) {}
+    fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
-    fn py_on_order_modify_rejected(&mut self, event: OrderModifyRejected) {}
+    fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
-    fn py_on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {}
+    fn py_on_order_cancel_rejected(_slf: &Bound<'_, Self>, event: OrderCancelRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_updated")]
-    fn py_on_order_updated(&mut self, event: OrderUpdated) {}
+    fn py_on_order_updated(_slf: &Bound<'_, Self>, event: OrderUpdated) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
-    fn py_on_order_filled(&mut self, event: OrderFilled) {}
+    fn py_on_order_filled(_slf: &Bound<'_, Self>, event: OrderFilled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_fill_voided")]
-    fn py_on_order_fill_voided(&mut self, event: OrderFillVoided) {}
+    fn py_on_order_fill_voided(_slf: &Bound<'_, Self>, event: OrderFillVoided) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]
-    fn py_on_position_opened(&mut self, event: PositionOpened) {}
+    fn py_on_position_opened(_slf: &Bound<'_, Self>, event: PositionOpened) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_event")]
-    fn py_on_position_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_position_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_changed")]
-    fn py_on_position_changed(&mut self, event: PositionChanged) {}
+    fn py_on_position_changed(_slf: &Bound<'_, Self>, event: PositionChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_closed")]
-    fn py_on_position_closed(&mut self, event: PositionClosed) {}
+    fn py_on_position_closed(_slf: &Bound<'_, Self>, event: PositionClosed) {}
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -1621,8 +1617,9 @@ mod tests {
         types::{Price, Quantity},
     };
     use pyo3::{
+        IntoPyObjectExt,
         ffi::c_str,
-        types::{PyWeakrefMethods, PyWeakrefReference},
+        types::{PyList, PyWeakrefMethods, PyWeakrefReference},
     };
     use rstest::rstest;
     use ustr::Ustr;
@@ -2224,5 +2221,224 @@ class CallbackAlgorithm:
             .call1((raises,))
             .unwrap()
             .unbind()
+    }
+
+    #[rstest::rstest]
+    #[case("on_start")]
+    #[case("on_stop")]
+    #[case("on_resume")]
+    #[case("on_reset")]
+    #[case("on_dispose")]
+    #[case("on_degrade")]
+    #[case("on_fault")]
+    #[case("on_time_event")]
+    #[case("on_signal")]
+    #[case("on_queue_state")]
+    #[case("on_socket_state")]
+    #[case("on_order")]
+    #[case("on_order_list")]
+    #[case("on_order_initialized")]
+    #[case("on_order_event")]
+    #[case("on_order_denied")]
+    #[case("on_order_emulated")]
+    #[case("on_order_released")]
+    #[case("on_order_submitted")]
+    #[case("on_order_rejected")]
+    #[case("on_order_accepted")]
+    #[case("on_order_canceled")]
+    #[case("on_order_expired")]
+    #[case("on_order_triggered")]
+    #[case("on_order_pending_update")]
+    #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_rejected")]
+    #[case("on_order_updated")]
+    #[case("on_order_filled")]
+    #[case("on_order_fill_voided")]
+    #[case("on_position_opened")]
+    #[case("on_position_event")]
+    #[case("on_position_changed")]
+    #[case("on_position_closed")]
+    fn test_default_callback_during_exclusive_borrow(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let instrument = audusd_sim();
+            let fill = OrderFilledSpec::builder()
+                .instrument_id(instrument.id)
+                .position_id(PositionId::from("P-001"))
+                .build();
+            let position = Position::new(&InstrumentAny::CurrencyPair(instrument), fill.clone());
+
+            let argument = match method {
+                "on_start" | "on_stop" | "on_resume" | "on_reset" | "on_dispose" | "on_degrade"
+                | "on_fault" => None,
+                "on_time_event" => Some(
+                    TimeEvent::new(
+                        Ustr::from("CALLBACK"),
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        UnixNanos::default(),
+                    )
+                    .into_py_any(py)
+                    .unwrap(),
+                ),
+                "on_signal" => Some(
+                    Signal::new(
+                        Ustr::from("SIGNAL"),
+                        "1.0".to_string(),
+                        UnixNanos::default(),
+                        UnixNanos::default(),
+                    )
+                    .into_py_any(py)
+                    .unwrap(),
+                ),
+                "on_queue_state" => Some(sample_queue_state_changed().into_py_any(py).unwrap()),
+                "on_socket_state" => Some(sample_socket_state_changed().into_py_any(py).unwrap()),
+                "on_order" | "on_order_list" | "on_order_event" | "on_position_event" => {
+                    Some(py.None())
+                }
+                "on_order_initialized" => {
+                    Some(OrderInitialized::default().into_py_any(py).unwrap())
+                }
+                "on_order_denied" => Some(OrderDenied::default().into_py_any(py).unwrap()),
+                "on_order_emulated" => Some(OrderEmulated::default().into_py_any(py).unwrap()),
+                "on_order_released" => Some(OrderReleased::default().into_py_any(py).unwrap()),
+                "on_order_submitted" => Some(OrderSubmitted::default().into_py_any(py).unwrap()),
+                "on_order_rejected" => Some(OrderRejected::default().into_py_any(py).unwrap()),
+                "on_order_accepted" => Some(OrderAccepted::default().into_py_any(py).unwrap()),
+                "on_order_canceled" => Some(OrderCanceled::default().into_py_any(py).unwrap()),
+                "on_order_expired" => Some(OrderExpired::default().into_py_any(py).unwrap()),
+                "on_order_triggered" => Some(OrderTriggered::default().into_py_any(py).unwrap()),
+                "on_order_pending_update" => {
+                    Some(OrderPendingUpdate::default().into_py_any(py).unwrap())
+                }
+                "on_order_pending_cancel" => {
+                    Some(OrderPendingCancel::default().into_py_any(py).unwrap())
+                }
+                "on_order_modify_rejected" => {
+                    Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_rejected" => {
+                    Some(OrderCancelRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_updated" => Some(OrderUpdated::default().into_py_any(py).unwrap()),
+                "on_order_filled" => {
+                    Some(OrderFilledSpec::builder().build().into_py_any(py).unwrap())
+                }
+                "on_order_fill_voided" => Some(
+                    OrderFillVoidedSpec::builder()
+                        .build()
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_position_opened" => Some(
+                    PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::default())
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_position_changed" => Some(
+                    PositionChanged::create(&position, &fill, UUID4::new(), UnixNanos::default())
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_position_closed" => Some(
+                    PositionClosed::create(&position, &fill, UUID4::new(), UnixNanos::default())
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                _ => unreachable!(),
+            };
+
+            let instance = py.get_type::<PyExecutionAlgorithm>().call0().unwrap();
+            let _borrow = instance
+                .extract::<pyo3::PyRefMut<'_, PyExecutionAlgorithm>>()
+                .unwrap();
+
+            let result = match argument {
+                Some(argument) if method == "on_order_list" => {
+                    instance.call_method1(method, (argument, PyList::empty(py)))
+                }
+                Some(argument) => instance.call_method1(method, (argument,)),
+                None => instance.call_method0(method),
+            }
+            .unwrap();
+
+            assert!(result.is_none());
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_modify_order_no_changes_returns_error_without_logging(#[case] same_values: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let mut algorithm = PyExecutionAlgorithm::new(None);
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            Component::register(
+                &mut algorithm,
+                TraderId::from("TRADER-001"),
+                clock,
+                cache.clone(),
+            )
+            .unwrap();
+            let strategy_id = StrategyId::from("S-001");
+            let instance = Py::new(py, algorithm).unwrap();
+            let client_order_id = ClientOrderId::from("O-NO-CHANGE-001");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .strategy_id(strategy_id)
+                .client_order_id(client_order_id)
+                .price(Price::from("1.23456"))
+                .quantity(Quantity::from(123))
+                .submit(true)
+                .build();
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, true)
+                .unwrap();
+            let argument =
+                nautilus_model::python::orders::order_any_to_pyobject(py, order.clone()).unwrap();
+            let quantity = same_values.then_some(order.quantity());
+            let price = same_values.then_some(order.price().unwrap());
+            arm_shutdown_on_error(true);
+            let result = instance.call_method1(py, "modify_order", (argument, quantity, price));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            let e = result.unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert_eq!(
+                e.to_string(),
+                "RuntimeError: Cannot create command ModifyOrder: quantity, price, and trigger were either None or the same as existing values"
+            );
+            assert_eq!(trigger, None);
+            assert_eq!(cache.borrow().order(&client_order_id).unwrap(), &order);
+        });
+    }
+
+    #[rstest]
+    fn test_execute_refusal_during_exclusive_borrow() {
+        Python::initialize();
+        Python::attach(|py| {
+            let instance = py.get_type::<PyExecutionAlgorithm>().call0().unwrap();
+            let _borrow = instance
+                .extract::<PyRefMut<'_, PyExecutionAlgorithm>>()
+                .unwrap();
+            let e = instance.call_method1("execute", (py.None(),)).unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert_eq!(
+                e.to_string(),
+                "RuntimeError: ExecutionAlgorithm.execute is invoked by the v2 runtime endpoint"
+            );
+        });
     }
 }

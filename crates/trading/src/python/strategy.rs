@@ -1649,10 +1649,6 @@ impl PyStrategy {
     clippy::large_types_passed_by_value,
     reason = "PyO3 callbacks accept Python-owned event values"
 )]
-#[expect(
-    clippy::unused_self,
-    reason = "default PyO3 callbacks must remain instance methods"
-)]
 impl PyStrategy {
     /// Creates a new [`PyStrategy`] instance.
     ///
@@ -2280,252 +2276,255 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "on_start")]
-    fn py_on_start(&mut self) {}
+    fn py_on_start(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_stop")]
-    fn py_on_stop(&mut self) {}
+    fn py_on_stop(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_resume")]
-    fn py_on_resume(&mut self) {}
+    fn py_on_resume(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_reset")]
-    fn py_on_reset(&mut self) {}
+    fn py_on_reset(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_dispose")]
-    fn py_on_dispose(&mut self) {}
+    fn py_on_dispose(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_degrade")]
-    fn py_on_degrade(&mut self) {}
+    fn py_on_degrade(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_fault")]
-    fn py_on_fault(&mut self) {}
+    fn py_on_fault(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_save")]
-    fn py_on_save(&self, py: Python<'_>) -> Py<PyDict> {
+    fn py_on_save(_slf: &Bound<'_, Self>, py: Python<'_>) -> Py<PyDict> {
         PyDict::new(py).unbind()
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_load")]
-    fn py_on_load(&mut self, state: &Bound<'_, PyDict>) {}
+    fn py_on_load(_slf: &Bound<'_, Self>, state: &Bound<'_, PyDict>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
-    fn py_on_time_event(&mut self, event: TimeEvent) {}
+    fn py_on_time_event(_slf: &Bound<'_, Self>, event: TimeEvent) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_data")]
-    fn py_on_data(&mut self, data: Py<PyAny>) {}
+    fn py_on_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
-    fn py_on_signal(&mut self, signal: &Signal) {}
+    fn py_on_signal(_slf: &Bound<'_, Self>, signal: &Signal) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_queue_state")]
-    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+    fn py_on_queue_state(_slf: &Bound<'_, Self>, event: QueueStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
-    fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
+    fn py_on_socket_state(_slf: &Bound<'_, Self>, event: SocketStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_instrument")]
-    fn py_on_instrument(&mut self, instrument: Py<PyAny>) {}
+    fn py_on_instrument(_slf: &Bound<'_, Self>, instrument: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_quote")]
-    fn py_on_quote(&mut self, quote: QuoteTick) {}
+    fn py_on_quote(_slf: &Bound<'_, Self>, quote: QuoteTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_trade")]
-    fn py_on_trade(&mut self, trade: TradeTick) {}
+    fn py_on_trade(_slf: &Bound<'_, Self>, trade: TradeTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_bar")]
-    fn py_on_bar(&mut self, bar: Bar) {}
+    fn py_on_bar(_slf: &Bound<'_, Self>, bar: Bar) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_book_deltas")]
-    fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
+    fn py_on_book_deltas(_slf: &Bound<'_, Self>, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book_depth")]
-    fn py_on_book_depth(&mut self, depth: &OrderBookDepth) {}
+    fn py_on_book_depth(_slf: &Bound<'_, Self>, depth: &OrderBookDepth) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
-    fn py_on_book(&mut self, book: &OrderBook) {}
+    fn py_on_book(_slf: &Bound<'_, Self>, book: &OrderBook) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_mark_price")]
-    fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) {}
+    fn py_on_mark_price(_slf: &Bound<'_, Self>, mark_price: MarkPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_index_price")]
-    fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) {}
+    fn py_on_index_price(_slf: &Bound<'_, Self>, index_price: IndexPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_funding_rate")]
-    fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) {}
+    fn py_on_funding_rate(_slf: &Bound<'_, Self>, funding_rate: FundingRateUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
-    fn py_on_instrument_status(&mut self, status: InstrumentStatus) {}
+    fn py_on_instrument_status(_slf: &Bound<'_, Self>, status: InstrumentStatus) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_close")]
-    fn py_on_instrument_close(&mut self, close: InstrumentClose) {}
+    fn py_on_instrument_close(_slf: &Bound<'_, Self>, close: InstrumentClose) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_option_greeks")]
-    fn py_on_option_greeks(&mut self, greeks: OptionGreeks) {}
+    fn py_on_option_greeks(_slf: &Bound<'_, Self>, greeks: OptionGreeks) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_option_chain")]
-    fn py_on_option_chain(&mut self, slice: OptionChainSlice) {}
+    fn py_on_option_chain(_slf: &Bound<'_, Self>, slice: OptionChainSlice) {}
 
     #[pyo3(name = "on_market_exit")]
-    fn py_on_market_exit(&mut self) {}
+    fn py_on_market_exit(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "post_market_exit")]
-    fn py_post_market_exit(&mut self) {}
+    fn py_post_market_exit(_slf: &Bound<'_, Self>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_initialized")]
-    fn py_on_order_initialized(&mut self, event: OrderInitialized) {}
+    fn py_on_order_initialized(_slf: &Bound<'_, Self>, event: OrderInitialized) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_event")]
-    fn py_on_order_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_order_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_denied")]
-    fn py_on_order_denied(&mut self, event: OrderDenied) {}
+    fn py_on_order_denied(_slf: &Bound<'_, Self>, event: OrderDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_emulated")]
-    fn py_on_order_emulated(&mut self, event: OrderEmulated) {}
+    fn py_on_order_emulated(_slf: &Bound<'_, Self>, event: OrderEmulated) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_released")]
-    fn py_on_order_released(&mut self, event: OrderReleased) {}
+    fn py_on_order_released(_slf: &Bound<'_, Self>, event: OrderReleased) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_submitted")]
-    fn py_on_order_submitted(&mut self, event: OrderSubmitted) {}
+    fn py_on_order_submitted(_slf: &Bound<'_, Self>, event: OrderSubmitted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_rejected")]
-    fn py_on_order_rejected(&mut self, event: OrderRejected) {}
+    fn py_on_order_rejected(_slf: &Bound<'_, Self>, event: OrderRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_accepted")]
-    fn py_on_order_accepted(&mut self, event: OrderAccepted) {}
+    fn py_on_order_accepted(_slf: &Bound<'_, Self>, event: OrderAccepted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_expired")]
-    fn py_on_order_expired(&mut self, event: OrderExpired) {}
+    fn py_on_order_expired(_slf: &Bound<'_, Self>, event: OrderExpired) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_triggered")]
-    fn py_on_order_triggered(&mut self, event: OrderTriggered) {}
+    fn py_on_order_triggered(_slf: &Bound<'_, Self>, event: OrderTriggered) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_update")]
-    fn py_on_order_pending_update(&mut self, event: OrderPendingUpdate) {}
+    fn py_on_order_pending_update(_slf: &Bound<'_, Self>, event: OrderPendingUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_cancel")]
-    fn py_on_order_pending_cancel(&mut self, event: OrderPendingCancel) {}
+    fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
-    fn py_on_order_modify_rejected(&mut self, event: OrderModifyRejected) {}
+    fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
-    fn py_on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {}
+    fn py_on_order_cancel_rejected(_slf: &Bound<'_, Self>, event: OrderCancelRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_updated")]
-    fn py_on_order_updated(&mut self, event: OrderUpdated) {}
+    fn py_on_order_updated(_slf: &Bound<'_, Self>, event: OrderUpdated) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_canceled")]
-    fn py_on_order_canceled(&mut self, event: OrderCanceled) {}
+    fn py_on_order_canceled(_slf: &Bound<'_, Self>, event: OrderCanceled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
-    fn py_on_order_filled(&mut self, event: OrderFilled) {}
+    fn py_on_order_filled(_slf: &Bound<'_, Self>, event: OrderFilled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_fill_voided")]
-    fn py_on_order_fill_voided(&mut self, event: OrderFillVoided) {}
+    fn py_on_order_fill_voided(_slf: &Bound<'_, Self>, event: OrderFillVoided) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]
-    fn py_on_position_opened(&mut self, event: PositionOpened) {}
+    fn py_on_position_opened(_slf: &Bound<'_, Self>, event: PositionOpened) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_event")]
-    fn py_on_position_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_position_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_changed")]
-    fn py_on_position_changed(&mut self, event: PositionChanged) {}
+    fn py_on_position_changed(_slf: &Bound<'_, Self>, event: PositionChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_closed")]
-    fn py_on_position_closed(&mut self, event: PositionClosed) {}
+    fn py_on_position_closed(_slf: &Bound<'_, Self>, event: PositionClosed) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
-    fn py_on_historical_data(&mut self, data: Py<PyAny>) {
+    fn py_on_historical_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_deltas")]
-    fn py_on_historical_book_deltas(&mut self, deltas: Vec<OrderBookDelta>) {}
+    fn py_on_historical_book_deltas(_slf: &Bound<'_, Self>, deltas: Vec<OrderBookDelta>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_depth")]
-    fn py_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth>) {}
+    fn py_on_historical_book_depth(_slf: &Bound<'_, Self>, depths: Vec<OrderBookDepth>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_quotes")]
-    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) {
+    fn py_on_historical_quotes(_slf: &Bound<'_, Self>, quotes: Vec<QuoteTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_trades")]
-    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) {
+    fn py_on_historical_trades(_slf: &Bound<'_, Self>, trades: Vec<TradeTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_funding_rates")]
-    fn py_on_historical_funding_rates(&mut self, funding_rates: Vec<FundingRateUpdate>) {
+    fn py_on_historical_funding_rates(
+        _slf: &Bound<'_, Self>,
+        funding_rates: Vec<FundingRateUpdate>,
+    ) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_bars")]
-    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) {
+    fn py_on_historical_bars(_slf: &Bound<'_, Self>, bars: Vec<Bar>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_mark_prices")]
-    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) {
+    fn py_on_historical_mark_prices(_slf: &Bound<'_, Self>, mark_prices: Vec<MarkPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_index_prices")]
-    fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
+    fn py_on_historical_index_prices(_slf: &Bound<'_, Self>, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
@@ -3768,7 +3767,7 @@ mod tests {
         },
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
-            OmsType, OrderSide, OrderType, PositionSide, TimeInForce,
+            OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -3790,7 +3789,7 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use pyo3::{
-        Bound, Py, PyAny, PyResult, Python,
+        Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
@@ -6247,6 +6246,430 @@ class IndicatorEventStrategy:
                 weakref.upgrade().is_none(),
                 "an unregistered Strategy must be collected once its last Python owner is dropped",
             );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_start")]
+    #[case("on_stop")]
+    #[case("on_resume")]
+    #[case("on_reset")]
+    #[case("on_dispose")]
+    #[case("on_degrade")]
+    #[case("on_fault")]
+    #[case("on_save")]
+    #[case("on_load")]
+    #[case("on_time_event")]
+    #[case("on_data")]
+    #[case("on_signal")]
+    #[case("on_queue_state")]
+    #[case("on_socket_state")]
+    #[case("on_instrument")]
+    #[case("on_quote")]
+    #[case("on_trade")]
+    #[case("on_bar")]
+    #[case("on_book_deltas")]
+    #[case("on_book_depth")]
+    #[case("on_book")]
+    #[case("on_mark_price")]
+    #[case("on_index_price")]
+    #[case("on_funding_rate")]
+    #[case("on_instrument_status")]
+    #[case("on_instrument_close")]
+    #[case("on_option_greeks")]
+    #[case("on_option_chain")]
+    #[case("on_market_exit")]
+    #[case("post_market_exit")]
+    #[case("on_order_initialized")]
+    #[case("on_order_event")]
+    #[case("on_order_denied")]
+    #[case("on_order_emulated")]
+    #[case("on_order_released")]
+    #[case("on_order_submitted")]
+    #[case("on_order_rejected")]
+    #[case("on_order_accepted")]
+    #[case("on_order_expired")]
+    #[case("on_order_triggered")]
+    #[case("on_order_pending_update")]
+    #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_rejected")]
+    #[case("on_order_updated")]
+    #[case("on_order_canceled")]
+    #[case("on_order_filled")]
+    #[case("on_order_fill_voided")]
+    #[case("on_position_opened")]
+    #[case("on_position_event")]
+    #[case("on_position_changed")]
+    #[case("on_position_closed")]
+    #[case("on_historical_data")]
+    #[case("on_historical_book_deltas")]
+    #[case("on_historical_book_depth")]
+    #[case("on_historical_quotes")]
+    #[case("on_historical_trades")]
+    #[case("on_historical_funding_rates")]
+    #[case("on_historical_bars")]
+    #[case("on_historical_mark_prices")]
+    #[case("on_historical_index_prices")]
+    fn test_default_callback_during_exclusive_borrow(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let argument = match method {
+                "on_start" | "on_stop" | "on_resume" | "on_reset" | "on_dispose" | "on_degrade"
+                | "on_fault" | "on_save" | "on_market_exit" | "post_market_exit" => None,
+                "on_load" => Some(PyDict::new(py).into_any().unbind()),
+                "on_time_event" => Some(sample_time_event().into_py_any(py).unwrap()),
+                "on_data" | "on_instrument" | "on_order_event" | "on_position_event"
+                | "on_historical_data" => Some(py.None()),
+                "on_signal" => Some(sample_signal().into_py_any(py).unwrap()),
+                "on_queue_state" => Some(sample_queue_state_changed().into_py_any(py).unwrap()),
+                "on_socket_state" => Some(sample_socket_state_changed().into_py_any(py).unwrap()),
+                "on_quote" => Some(sample_quote().into_py_any(py).unwrap()),
+                "on_trade" => Some(sample_trade().into_py_any(py).unwrap()),
+                "on_bar" => Some(sample_bar().into_py_any(py).unwrap()),
+                "on_book_deltas" => Some(sample_book_deltas().into_py_any(py).unwrap()),
+                "on_book_depth" => Some(sample_book_depth().into_py_any(py).unwrap()),
+                "on_book" => Some(sample_book().into_py_any(py).unwrap()),
+                "on_mark_price" => Some(sample_mark_price().into_py_any(py).unwrap()),
+                "on_index_price" => Some(sample_index_price().into_py_any(py).unwrap()),
+                "on_funding_rate" => Some(sample_funding_rate().into_py_any(py).unwrap()),
+                "on_instrument_status" => Some(sample_instrument_status().into_py_any(py).unwrap()),
+                "on_instrument_close" => Some(sample_instrument_close().into_py_any(py).unwrap()),
+                "on_option_greeks" => Some(sample_option_greeks().into_py_any(py).unwrap()),
+                "on_option_chain" => Some(sample_option_chain().into_py_any(py).unwrap()),
+                "on_order_initialized" => {
+                    Some(OrderInitialized::default().into_py_any(py).unwrap())
+                }
+                "on_order_denied" => Some(OrderDenied::default().into_py_any(py).unwrap()),
+                "on_order_emulated" => Some(OrderEmulated::default().into_py_any(py).unwrap()),
+                "on_order_released" => Some(OrderReleased::default().into_py_any(py).unwrap()),
+                "on_order_submitted" => Some(OrderSubmitted::default().into_py_any(py).unwrap()),
+                "on_order_rejected" => Some(OrderRejected::default().into_py_any(py).unwrap()),
+                "on_order_accepted" => Some(OrderAccepted::default().into_py_any(py).unwrap()),
+                "on_order_expired" => Some(OrderExpired::default().into_py_any(py).unwrap()),
+                "on_order_triggered" => Some(OrderTriggered::default().into_py_any(py).unwrap()),
+                "on_order_pending_update" => {
+                    Some(OrderPendingUpdate::default().into_py_any(py).unwrap())
+                }
+                "on_order_pending_cancel" => {
+                    Some(OrderPendingCancel::default().into_py_any(py).unwrap())
+                }
+                "on_order_modify_rejected" => {
+                    Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_rejected" => {
+                    Some(OrderCancelRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_updated" => Some(OrderUpdated::default().into_py_any(py).unwrap()),
+                "on_order_canceled" => Some(OrderCanceled::default().into_py_any(py).unwrap()),
+                "on_order_filled" => {
+                    Some(OrderFilledSpec::builder().build().into_py_any(py).unwrap())
+                }
+                "on_order_fill_voided" => Some(
+                    OrderFillVoidedSpec::builder()
+                        .build()
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_position_opened" => Some(sample_position_opened().into_py_any(py).unwrap()),
+                "on_position_changed" => Some(sample_position_changed().into_py_any(py).unwrap()),
+                "on_position_closed" => Some(sample_position_closed().into_py_any(py).unwrap()),
+                "on_historical_book_deltas"
+                | "on_historical_book_depth"
+                | "on_historical_quotes"
+                | "on_historical_trades"
+                | "on_historical_funding_rates"
+                | "on_historical_bars"
+                | "on_historical_mark_prices"
+                | "on_historical_index_prices" => Some(PyList::empty(py).into_any().unbind()),
+                _ => unreachable!(),
+            };
+
+            let instance = py.get_type::<PyStrategy>().call0().unwrap();
+            let _borrow = instance
+                .extract::<pyo3::PyRefMut<'_, PyStrategy>>()
+                .unwrap();
+
+            let result = match argument {
+                Some(argument) => instance.call_method1(method, (argument,)),
+                None => instance.call_method0(method),
+            }
+            .unwrap();
+
+            if method == "on_save" {
+                assert_eq!(result.len().unwrap(), 0);
+            } else {
+                assert!(result.is_none());
+            }
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_modify_order_no_changes_returns_error_without_logging(#[case] same_values: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (_, strategy) = create_registered_tracking_strategy(py);
+            let strategy_id = strategy.strategy_id();
+            let cache = strategy.inner().core.cache_rc();
+            let instance = Py::new(py, strategy).unwrap();
+            let client_order_id = ClientOrderId::from("O-NO-CHANGE-001");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .strategy_id(strategy_id)
+                .client_order_id(client_order_id)
+                .price(Price::from("1.23456"))
+                .quantity(Quantity::from(123))
+                .submit(true)
+                .build();
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, true)
+                .unwrap();
+            let argument = client_order_id.into_py_any(py).unwrap();
+            let quantity = same_values.then_some(order.quantity());
+            let price = same_values.then_some(order.price().unwrap());
+            arm_shutdown_on_error(true);
+            let result = instance.call_method1(py, "modify_order", (argument, quantity, price));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            let e = result.unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert_eq!(
+                e.to_string(),
+                "RuntimeError: Cannot create command ModifyOrder: quantity, price, and trigger were either None or the same as existing values"
+            );
+            assert_eq!(trigger, None);
+            assert_eq!(cache.borrow().order(&client_order_id).unwrap(), &order);
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_submit_order_list_validation_returns_error_without_logging(
+        #[case] duplicate_ids: bool,
+    ) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (_, strategy) = create_registered_tracking_strategy(py);
+            let client_order_id = ClientOrderId::from("O-LIST-DUPLICATE-001");
+            let cache = strategy.inner().core.cache_rc();
+            let order =
+                sample_python_market_order(py, strategy.strategy_id(), client_order_id).unwrap();
+
+            let orders = if duplicate_ids {
+                vec![order.clone_ref(py), order]
+            } else {
+                Vec::new()
+            };
+
+            let instance = Py::new(py, strategy).unwrap();
+            arm_shutdown_on_error(true);
+            let result =
+                instance.call_method1(py, "submit_order_list", (PyList::new(py, orders).unwrap(),));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            let e = result.unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert!(e.to_string().contains(if duplicate_ids {
+                "duplicate"
+            } else {
+                "no orders to submit"
+            }));
+            assert_eq!(trigger, None);
+            assert!(!cache.borrow().order_exists(&client_order_id));
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("submit_order", "default")]
+    #[case("modify_order", "default")]
+    #[case("submit_order", "super")]
+    #[case("modify_order", "super")]
+    #[case("submit_order", "getter")]
+    #[case("modify_order", "getter")]
+    fn test_order_command_callback_borrowing(#[case] method: &str, #[case] callback: &str) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            globals
+                .set_item("Strategy", py.get_type::<PyStrategy>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    r#"
+class CommandStrategy(Strategy):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+        self.callback = "default"
+
+    def on_start(self):
+        pass
+
+    def on_order_event(self, event):
+
+        if self.callback == "getter":
+            self.calls.append("enter")
+            self.cache
+        else:
+            super().on_order_event(event)
+        self.calls.append("exit")
+"#
+                ),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let instance = py
+                .eval(c_str!("CommandStrategy()"), Some(&globals), None)
+                .unwrap();
+            instance.setattr("callback", callback).unwrap();
+            if callback == "default" {
+                instance.get_type().delattr("on_order_event").unwrap();
+            }
+
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+            let strategy_id;
+            {
+                let mut strategy = instance
+                    .extract::<pyo3::PyRefMut<'_, PyStrategy>>()
+                    .unwrap();
+                strategy
+                    .register(
+                        TraderId::from("TRADER-001"),
+                        clock,
+                        cache.clone(),
+                        portfolio,
+                    )
+                    .unwrap();
+                strategy.register_in_global_registries().unwrap();
+                Component::start(strategy.inner_mut()).unwrap();
+                strategy_id = strategy.strategy_id();
+            }
+
+            let actor_id = strategy_id.inner();
+
+            let handler = msgbus::TypedHandler::from(move |event: &OrderEventAny| {
+                let mut strategy = nautilus_common::actor::registry::try_get_actor_unchecked::<
+                    super::PyStrategyInner,
+                >(&actor_id)
+                .unwrap();
+                Strategy::handle_order_event(&mut *strategy, event.clone());
+            });
+
+            let topic = format!("events.order.{strategy_id}");
+            msgbus::subscribe_order_events(topic.clone().into(), handler.clone(), None);
+            let (risk_handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                risk_handler,
+            );
+            let client_order_id = ClientOrderId::from("O-CALLBACK-001");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(strategy_id)
+                .instrument_id(sample_instrument().id)
+                .client_order_id(client_order_id)
+                .price(Price::from("1.23456"))
+                .quantity(Quantity::from(123))
+                .submit(method == "modify_order")
+                .build();
+
+            if method == "modify_order" {
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, true)
+                    .unwrap();
+            }
+
+            arm_shutdown_on_error(true);
+
+            let result = if method == "submit_order" {
+                instance.call_method1(method, (order_any_to_pyobject(py, order).unwrap(),))
+            } else {
+                instance.call_method1(method, (client_order_id, Quantity::from(234)))
+            };
+
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+            msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+            assert!(result.unwrap().is_none());
+            assert_eq!(messages.get_messages().len(), 1);
+            assert_eq!(
+                cache.borrow().order(&client_order_id).unwrap().status(),
+                if method == "submit_order" {
+                    OrderStatus::Initialized
+                } else {
+                    OrderStatus::PendingUpdate
+                }
+            );
+            let calls = instance
+                .getattr("calls")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+
+            match callback {
+                "default" => {
+                    assert_eq!(calls, Vec::<String>::new());
+                    assert_eq!(trigger, None);
+                }
+                "super" => {
+                    assert_eq!(calls, ["exit"]);
+                    assert_eq!(trigger, None);
+                }
+                "getter" => {
+                    assert_eq!(calls, ["enter"]);
+                    let trigger = trigger.unwrap();
+                    assert_eq!(trigger.component, actor_id);
+                    assert!(
+                        trigger
+                            .message
+                            .starts_with("Python on_order_event failed:\n")
+                    );
+                    assert!(
+                        trigger
+                            .message
+                            .contains("RuntimeError: Already mutably borrowed")
+                    );
+                }
+                _ => unreachable!(),
+            }
         });
     }
 }

@@ -202,7 +202,6 @@ pub trait Strategy: DataActor {
         Self: StrategyNative,
     {
         if orders.is_empty() {
-            log::error!("OrderList denied: no orders to submit");
             anyhow::bail!("OrderList denied: no orders to submit");
         }
 
@@ -255,7 +254,6 @@ pub trait Strategy: DataActor {
         };
 
         if let Err(e) = order_list.validate() {
-            log::error!("OrderList denied: {e}");
             anyhow::bail!("OrderList denied: {e}");
         }
 
@@ -335,7 +333,9 @@ pub trait Strategy: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered or order modification fails.
+    /// Returns an error if the strategy is not registered, no supplied value changes,
+    /// or order modification fails. A supplied quantity counts as an update while
+    /// the order is pending update, even when the quantity is unchanged.
     fn modify_order(
         &mut self,
         client_order_id: ClientOrderId,
@@ -392,11 +392,10 @@ pub trait Strategy: DataActor {
         }
 
         if !updating {
-            log::error!(
+            anyhow::bail!(
                 "Cannot create command ModifyOrder: quantity, price, and trigger were either None \
                 or the same as existing values"
             );
-            return Ok(());
         }
 
         if order.is_closed() || order.is_pending_cancel() {
@@ -1082,19 +1081,18 @@ pub trait Strategy: DataActor {
             );
         }
 
-        let mut first_error = None;
+        let mut error = None;
 
         for (client_order_id, client_id) in cancel_routes {
             if let Err(e) = self.cancel_order(client_order_id, client_id, params.clone()) {
-                if first_error.is_none() {
-                    first_error = Some(e);
-                } else {
-                    log::error!("Error canceling {client_order_id}: {e}");
-                }
+                error = Some(match error {
+                    Some(previous) => anyhow::anyhow!("{previous}; {e}"),
+                    None => e,
+                });
             }
         }
 
-        first_error.map_or(Ok(()), Err)
+        error.map_or(Ok(()), Err)
     }
 
     /// Closes a position by submitting a market order for the opposite side.
@@ -2484,6 +2482,10 @@ mod tests {
         clock::{Clock, VirtualClock},
         component::{Component, deregister_component, register_component_actor},
         enums::ComponentState,
+        logging::{
+            arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+            take_shutdown_on_error_trigger,
+        },
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
@@ -5056,7 +5058,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cancel_all_orders_strategy_only_continues_after_error_and_returns_first_error() {
+    fn test_cancel_all_orders_strategy_only_continues_after_error_and_returns_error() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -7134,5 +7136,68 @@ mod tests {
         assert_eq!(custom.config().order_id_tag, config.order_id_tag);
         assert_eq!(custom.actor_id(), ActorId::from("MACRO-001"));
         assert!(custom.external_order_instrument_ids().is_none());
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_returns_all_errors_without_logging() {
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        let mut first = make_accepted_market_order("O-CANCEL-001");
+        let mut second = make_accepted_market_order("O-CANCEL-002");
+        for order in [&mut first, &mut second] {
+            let OrderAny::Market(order) = order else {
+                unreachable!()
+            };
+
+            order.account_id = None;
+        }
+
+        let third = make_accepted_market_order("O-CANCEL-003");
+        for order in [&first, &second, &third] {
+            add_order_to_cache(&strategy, order);
+        }
+
+        strategy.core.cache_rc().borrow_mut().build_index();
+        arm_shutdown_on_error(true);
+        let result = strategy.cancel_all_orders(first.instrument_id(), None, None, true, None);
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Cannot generate pending cancel event for O-CANCEL-001: account_id is not set; Cannot generate pending cancel event for O-CANCEL-002: account_id is not set"
+        );
+        assert_eq!(trigger, None);
+        let messages = messages.get_messages();
+        assert_eq!(messages.len(), 1);
+        assert!(
+            matches!(&messages[0], TradingCommand::CancelOrder(command) if command.client_order_id == third.client_order_id())
+        );
+        let cache = strategy.cache();
+        assert_eq!(
+            cache.order(&first.client_order_id()).unwrap().status(),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            cache.order(&second.client_order_id()).unwrap().status(),
+            OrderStatus::Accepted
+        );
+        assert_eq!(
+            cache.order(&third.client_order_id()).unwrap().status(),
+            OrderStatus::PendingCancel
+        );
     }
 }
