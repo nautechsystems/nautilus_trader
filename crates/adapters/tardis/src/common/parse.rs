@@ -82,6 +82,11 @@ where
         fn visit_str<E: de::Error>(self, v: &str) -> Result<f64, E> {
             v.parse().map_err(de::Error::custom)
         }
+        fn visit_map<M: de::MapAccess<'de>>(self, map: M) -> Result<f64, M::Error> {
+            serde_json::Number::deserialize(de::value::MapAccessDeserializer::new(map))?
+                .as_f64()
+                .ok_or_else(|| de::Error::custom("number is outside f64 bounds"))
+        }
     }
     deserializer.deserialize_any(F64OrString)
 }
@@ -121,6 +126,9 @@ where
         }
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Option<f64>, E> {
             v.parse().map(Some).map_err(de::Error::custom)
+        }
+        fn visit_map<M: de::MapAccess<'de>>(self, map: M) -> Result<Option<f64>, M::Error> {
+            deserialize_f64_or_string(de::value::MapAccessDeserializer::new(map)).map(Some)
         }
     }
     deserializer.deserialize_any(OptF64OrString)
@@ -426,6 +434,51 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("1e400")]
+    #[case("-1e400")]
+    fn test_deserialize_numeric_out_of_range(#[case] input: &str) {
+        let required = deserialize_f64_or_string(&mut serde_json::Deserializer::from_str(input));
+        let optional =
+            deserialize_opt_f64_or_string(&mut serde_json::Deserializer::from_str(input));
+
+        assert!(required.is_err());
+        assert!(optional.is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!(1.25), 1.25)]
+    #[case(serde_json::json!(25), 25.0)]
+    #[case(serde_json::json!(-3), -3.0)]
+    #[case(serde_json::json!("2.5e2"), 250.0)]
+    fn test_deserialize_numeric_fields(#[case] input: serde_json::Value, #[case] expected: f64) {
+        let json = input.to_string();
+        let required = deserialize_f64_or_string(&mut serde_json::Deserializer::from_str(&json));
+        let optional =
+            deserialize_opt_f64_or_string(&mut serde_json::Deserializer::from_str(&json));
+
+        assert_eq!(required.unwrap(), expected);
+        assert_eq!(optional.unwrap(), Some(expected));
+    }
+
+    #[rstest]
+    fn test_deserialize_numeric_null() {
+        let required = deserialize_f64_or_string(serde_json::Value::Null);
+        let optional = deserialize_opt_f64_or_string(serde_json::Value::Null);
+
+        assert!(required.is_err());
+        assert_eq!(optional.unwrap(), None);
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({"number": "1.5"}))]
+    #[case(serde_json::json!(true))]
+    #[case(serde_json::json!("invalid"))]
+    fn test_deserialize_numeric_invalid(#[case] input: serde_json::Value) {
+        assert!(deserialize_f64_or_string(input.clone()).is_err());
+        assert!(deserialize_opt_f64_or_string(input).is_err());
+    }
 
     #[rstest]
     #[case(0.0, 0, false)]

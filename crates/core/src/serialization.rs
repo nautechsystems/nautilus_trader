@@ -28,7 +28,7 @@ use bytes::Bytes;
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
-    de::{Error, Unexpected, Visitor},
+    de::{Error, MapAccess, Unexpected, Visitor, value::MapAccessDeserializer},
     ser::SerializeSeq,
 };
 use ustr::Ustr;
@@ -78,7 +78,7 @@ pub mod sorted_hashset {
 /// Handles all JSON numeric representations: strings, integers, floats, and null.
 struct DecimalVisitor;
 
-impl Visitor<'_> for DecimalVisitor {
+impl<'de> Visitor<'de> for DecimalVisitor {
     type Value = Decimal;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -123,6 +123,11 @@ impl Visitor<'_> for DecimalVisitor {
         Decimal::try_from(v).map_err(E::custom)
     }
 
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        let number = serde_json::Number::deserialize(MapAccessDeserializer::new(map))?;
+        self.visit_str(&number.to_string())
+    }
+
     // Null → zero (matches existing behavior)
     fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
         Ok(Decimal::ZERO)
@@ -139,7 +144,7 @@ impl Visitor<'_> for DecimalVisitor {
 /// Uses `deserialize_any` approach to handle all JSON value types uniformly.
 struct OptionalDecimalVisitor;
 
-impl Visitor<'_> for OptionalDecimalVisitor {
+impl<'de> Visitor<'de> for OptionalDecimalVisitor {
     type Value = Option<Decimal>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -177,6 +182,10 @@ impl Visitor<'_> for OptionalDecimalVisitor {
 
     fn visit_f64<E: Error>(self, v: f64) -> Result<Self::Value, E> {
         DecimalVisitor.visit_f64(v).map(Some)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        DecimalVisitor.visit_map(map).map(Some)
     }
 
     // Null → None
@@ -1208,6 +1217,7 @@ mod tests {
     #[rstest]
     #[case(r#"{"value": 123.456, "optional_value": 789.012}"#, dec!(123.456), Some(dec!(789.012)))]
     #[case(r#"{"value": "123.456", "optional_value": "789.012"}"#, dec!(123.456), Some(dec!(789.012)))]
+    #[case(r#"{"value": 1.25e-3, "optional_value": 2.5e2}"#, dec!(0.00125), Some(dec!(250)))]
     #[case(r#"{"value": 100, "optional_value": null}"#, dec!(100), None)]
     #[case(r#"{"value": null, "optional_value": null}"#, Decimal::ZERO, None)]
     fn test_deserialize_flexible_decimal(
@@ -1341,6 +1351,7 @@ mod tests {
     #[rstest]
     #[case(r#"{"value": "8e28"}"#)] // above Decimal::MAX
     #[case(r#"{"value": "1e1000000000"}"#)] // absurd exponent must fail without expansion
+    #[case(r#"{"value": {"number": "1.5"}}"#)]
     #[case(r#"{"value": "not-a-number"}"#)]
     #[case(r#"{"value": "1.2.3e1"}"#)] // multiple decimal points
     #[case(r#"{"value": ".e1"}"#)] // empty coefficient
