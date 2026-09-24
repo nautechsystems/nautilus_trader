@@ -219,9 +219,17 @@ two traders can reuse the same client order or position IDs. `flush_on_start` de
 trader's rows. Currencies, instruments, instrument closes, market data, and general data stay
 shared across traders.
 
-Account events persisted before trader scoping have no trader, so no node loads them. The node logs
-the affected accounts on connect. Assign each one to its trader with
-`nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>`.
+:::warning
+Upgrading an existing database is a required migration step. Account events persisted before
+trader scoping have no trader, and nothing establishes which trader owns them, so connecting fails
+while any exist. This blocks every node using that database. The error lists the affected accounts.
+Run `nautilus database init`, then assign each account to its trader:
+
+```bash
+nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
+```
+
+:::
 
 :::warning
 Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the

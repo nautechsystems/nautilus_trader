@@ -2536,70 +2536,80 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_account_events_without_trader_load_only_after_assignment() {
+    async fn test_connect_fails_until_account_events_without_trader_are_assigned() {
         let trader_a = TraderId::from("TRADER-001");
         let trader_b = TraderId::from("TRADER-002");
-        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+        let mut writer = get_test_pg_cache_database_for_trader(trader_a)
             .await
             .unwrap();
-        reset_test_database(&pg_cache_a).await;
-        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
-            .await
-            .unwrap();
-        pg_cache_a.add_currency(&Currency::USD()).unwrap();
+        reset_test_database(&writer).await;
+        writer.add_currency(&Currency::USD()).unwrap();
 
         let account = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
             false,
             false,
         ));
-        pg_cache_a.add_account(&account).unwrap();
+        writer.add_account(&account).unwrap();
         wait_until_async(
-            || async { count_rows(&pg_cache_a.pool, "account_event").await == 1 },
+            || async { count_rows(&writer.pool, "account_event").await == 1 },
             Duration::from_secs(5),
         )
         .await;
+        writer.close().unwrap();
 
         // Account events persisted before trader-scoped persistence carry no trader
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
         sqlx::query(r#"UPDATE "account_event" SET trader_id = NULL"#)
-            .execute(&pg_cache_a.pool)
+            .execute(&pg)
             .await
             .unwrap();
 
-        assert!(pg_cache_a.load_accounts().await.unwrap().is_empty());
-        assert_eq!(
-            DatabaseQueries::load_unassigned_account_ids(&pg_cache_a.pool)
-                .await
-                .unwrap(),
-            vec![account.id()]
-        );
+        // Every trader sharing the database is blocked until the account is assigned
+        let mut blocked_errors = Vec::new();
+        for trader_id in [trader_a, trader_b] {
+            blocked_errors.push(
+                get_test_pg_cache_database_for_trader(trader_id)
+                    .await
+                    .err()
+                    .map(|e| e.to_string()),
+            );
+        }
 
-        let assigned =
-            DatabaseQueries::assign_account_trader(&pg_cache_a.pool, &account.id(), &trader_a)
-                .await
-                .unwrap();
+        // Assignment connects directly, as the CLI does, so it works while the cache is blocked
+        let assigned = DatabaseQueries::assign_account_trader(&pg, &account.id(), &trader_a).await;
         let reassigned =
-            DatabaseQueries::assign_account_trader(&pg_cache_a.pool, &account.id(), &trader_b)
-                .await
-                .unwrap();
+            DatabaseQueries::assign_account_trader(&pg, &account.id(), &trader_b).await;
+        let unassigned = DatabaseQueries::load_unassigned_account_ids(&pg).await;
 
-        assert_eq!(assigned, 1);
-        assert_eq!(reassigned, 0);
-        assert!(
-            DatabaseQueries::load_unassigned_account_ids(&pg_cache_a.pool)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert_entirely_equal(
-            &pg_cache_a.load_accounts().await.unwrap()[&account.id()],
-            &account,
-        );
-        assert!(pg_cache_b.load_accounts().await.unwrap().is_empty());
+        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        let accounts_a = pg_cache_a.load_accounts().await.unwrap();
+        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
 
-        reset_test_database(&pg_cache_a).await;
+        // Clean up before asserting, so a failure cannot leave later tests blocked
+        DatabaseQueries::truncate(&pg).await.unwrap();
         pg_cache_a.close().unwrap();
         pg_cache_b.close().unwrap();
+
+        for error in blocked_errors {
+            let error = error.expect("connect should fail while account events have no trader");
+            assert!(
+                error.contains(account.id().as_str())
+                    && error.contains("nautilus database assign-account"),
+                "was: {error}"
+            );
+        }
+        assert_eq!(assigned.unwrap(), 1);
+        assert_eq!(reassigned.unwrap(), 0);
+        assert!(unassigned.unwrap().is_empty());
+        assert_entirely_equal(&accounts_a[&account.id()], &account);
+        assert!(accounts_b.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread")]

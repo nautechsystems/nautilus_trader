@@ -632,7 +632,8 @@ Use a CLI built from the same checkout as these schema files. The initialization
 re-run, including after an earlier run stopped partway through.
 
 `nautilus database assign-account` assigns account events persisted before trader-scoped caching to
-a trader, so that trader's node loads them:
+a trader. A Postgres cache refuses to connect while such events exist, so run it for each account
+listed in that error:
 
 ```bash
 nautilus database assign-account --account-id SIM-001 --trader-id TRADER-001

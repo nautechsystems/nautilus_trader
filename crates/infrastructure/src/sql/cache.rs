@@ -141,6 +141,22 @@ mod tests {
         assert_eq!(config.database, Some("nautilus".to_string()));
     }
 
+    #[tokio::test]
+    async fn test_check_account_ownership_propagates_query_failure() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").port(1));
+        pool.close().await;
+
+        let error = check_account_ownership(&pool).await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to check account event ownership"),
+            "was: {error}"
+        );
+    }
+
     #[rstest]
     fn test_deserialize_postgres_cache_config_rejects_type_selector() {
         let config_json = json!({
@@ -217,12 +233,13 @@ impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
     ///
     /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
-    /// stamped with it. Account events with no trader are reported and not loaded.
+    /// stamped with it.
     ///
     /// # Errors
     ///
-    /// Returns an error if establishing the database connection fails, or if the schema is out of
-    /// date.
+    /// Returns an error if establishing the database connection fails, if the schema is out of
+    /// date, if any account events have no trader (the error lists the accounts to assign), or if
+    /// checking account ownership fails.
     ///
     /// # Panics
     ///
@@ -239,7 +256,7 @@ impl PostgresCacheDatabase {
             get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         check_schema_migrated(&pool).await?;
-        report_unassigned_accounts(&pool).await;
+        check_account_ownership(&pool).await?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         let handle = get_runtime().spawn(async move {
@@ -452,22 +469,33 @@ async fn check_trader_keys(pool: &PgPool) -> Result<(), sqlx::Error> {
     ))
 }
 
-// Account events written before trader-scoped persistence carry no trader, so no trader-scoped
-// cache loads them. Report them rather than excluding them silently.
-async fn report_unassigned_accounts(pool: &PgPool) {
-    match DatabaseQueries::load_unassigned_account_ids(pool).await {
-        Ok(account_ids) if account_ids.is_empty() => {}
-        Ok(account_ids) => {
-            let account_ids: Vec<String> = account_ids.iter().map(ToString::to_string).collect();
-            log::error!(
-                "Postgres cache has account events with no trader for {}; they are not loaded \
-                 until assigned: run `nautilus database assign-account --account-id <ACCOUNT_ID> \
-                 --trader-id <TRADER_ID>` for each account",
-                account_ids.join(", "),
-            );
-        }
-        Err(e) => log::error!("Failed to check for unassigned account events: {e}"),
+// Account events written before trader-scoped persistence carry no trader. Nothing establishes which
+// trader owns them, so connecting would silently omit persisted account state: refuse until every
+// such account is assigned. `nautilus database assign-account` connects directly, so it stays usable
+// while this blocks the cache.
+async fn check_account_ownership(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let account_ids = DatabaseQueries::load_unassigned_account_ids(pool)
+        .await
+        .map_err(|e| {
+            sqlx::Error::Configuration(
+                format!("Failed to check account event ownership: {e}").into(),
+            )
+        })?;
+
+    if account_ids.is_empty() {
+        return Ok(());
     }
+
+    let account_ids: Vec<String> = account_ids.iter().map(ToString::to_string).collect();
+    Err(sqlx::Error::Configuration(
+        format!(
+            "Postgres cache has account events with no trader for {}: assign each account with \
+             `nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>` \
+             before connecting",
+            account_ids.join(", "),
+        )
+        .into(),
+    ))
 }
 
 async fn handle_query(

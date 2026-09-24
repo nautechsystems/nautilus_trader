@@ -45,12 +45,13 @@ impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
     ///
     /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
-    /// stamped with it. Account events with no trader are reported and not loaded.
+    /// stamped with it.
     ///
     /// # Errors
     ///
-    /// Returns an error if establishing the database connection fails, or if the schema is out of
-    /// date.
+    /// Returns an error if establishing the database connection fails, if the schema is out of
+    /// date, if any account events have no trader (the error lists the accounts to assign), or if
+    /// checking account ownership fails.
     #[staticmethod]
     #[pyo3(name = "connect")]
     #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None, *, trader_id))]
