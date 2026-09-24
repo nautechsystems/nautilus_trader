@@ -66,8 +66,8 @@ impl PyFillModel {
         &mut self,
         _instrument: &Bound<'_, PyAny>,
         _order: &Bound<'_, PyAny>,
-        _best_bid: Price,
-        _best_ask: Price,
+        _best_bid: Option<Price>,
+        _best_ask: Option<Price>,
     ) -> Option<OrderBook> {
         None
     }
@@ -111,8 +111,8 @@ impl FillModel for PythonFillModel {
         &mut self,
         instrument: &InstrumentAny,
         order: &OrderAny,
-        best_bid: Price,
-        best_ask: Price,
+        best_bid: Option<Price>,
+        best_ask: Option<Price>,
     ) -> anyhow::Result<Option<OrderBook>> {
         Python::attach(|py| -> anyhow::Result<Option<OrderBook>> {
             let obj = self.obj.bind(py);
@@ -350,7 +350,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_python_fill_model_handle_calls_python_liquidity_method() {
+    fn test_python_fill_model_handle_calls_python_liquidity_method(
+        #[values(None, Some(Price::from("0.80000")))] best_bid: Option<Price>,
+        #[values(None, Some(Price::from("0.80010")))] best_ask: Option<Price>,
+    ) {
         Python::initialize();
 
         Python::attach(|py| {
@@ -366,8 +369,10 @@ mod tests {
                         "type('CustomFillModel', (), {\
                             'is_limit_filled': lambda self: True, \
                             'is_slipped': lambda self: False, \
+                            'quotes': [], \
                             'get_orderbook_for_fill_simulation': \
-                                lambda self, instrument, order, best_bid, best_ask: None\
+                                lambda self, instrument, order, best_bid, best_ask: \
+                                    self.quotes.append((best_bid, best_ask))\
                         })()"
                     ),
                     None,
@@ -377,15 +382,13 @@ mod tests {
             let mut handle = pyobject_to_fill_model_handle(&model).unwrap();
 
             let book = handle
-                .get_orderbook_for_fill_simulation(
-                    &instrument,
-                    &order,
-                    Price::from("0.80000"),
-                    Price::from("0.80010"),
-                )
+                .get_orderbook_for_fill_simulation(&instrument, &order, best_bid, best_ask)
                 .unwrap();
 
             assert!(book.is_none());
+            let quotes: Vec<(Option<Price>, Option<Price>)> =
+                model.getattr("quotes").unwrap().extract().unwrap();
+            assert_eq!(quotes, vec![(best_bid, best_ask)]);
         });
     }
 
@@ -418,8 +421,8 @@ mod tests {
                 .get_orderbook_for_fill_simulation(
                     &instrument,
                     &order,
-                    Price::from("0.80000"),
-                    Price::from("0.80010"),
+                    Some(Price::from("0.80000")),
+                    Some(Price::from("0.80010")),
                 )
                 .unwrap();
 

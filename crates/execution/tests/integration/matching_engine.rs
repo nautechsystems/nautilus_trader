@@ -18622,8 +18622,8 @@ impl FillModel for SyntheticLimitFillModel {
         &mut self,
         _instrument: &InstrumentAny,
         _order: &OrderAny,
-        _best_bid: Price,
-        _best_ask: Price,
+        _best_bid: Option<Price>,
+        _best_ask: Option<Price>,
     ) -> anyhow::Result<Option<OrderBook>> {
         Ok(Some(self.book.clone()))
     }

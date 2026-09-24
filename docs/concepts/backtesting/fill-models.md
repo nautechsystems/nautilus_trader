@@ -119,6 +119,8 @@ venue = BacktestVenueConfig(
 The current high-level venue configuration accepts built-in fill models. It does not load fill
 models from import-path configuration objects.
 
+### Custom fill models
+
 The low-level `BacktestEngine.add_venue()` method also accepts a custom Python object. It must
 implement:
 
@@ -132,6 +134,11 @@ It may also implement:
 
 Subclassing `nautilus_trader.execution.FillModel` supplies default implementations for these
 methods. This custom-object protocol applies to the low-level engine only.
+
+The liquidity hook receives `None` for a missing historical bid or ask. Custom models must handle
+these optional prices. Returning `None` uses the standard fill logic; returning an `OrderBook`
+restricts fills to that book's eligible liquidity, even when no fills are available. Partial custom
+fills are not topped up with historical liquidity or the L1 remainder-fill rule.
 
 ## Probabilistic parameters
 

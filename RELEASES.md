@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
 - Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
 - Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
+- Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
 - Changed `Strategy.modify_order` and `ExecutionAlgorithm.modify_order` to return errors for invalid no-change requests
@@ -109,6 +110,7 @@ Released on TBD (UTC).
 - Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
+- Fixed custom fill books falling back to historical liquidity or exceeding their available quantity
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
 - Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
