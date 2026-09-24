@@ -243,6 +243,11 @@ impl DataBackendSession {
 pub(crate) fn session_config() -> SessionConfig {
     SessionConfig::new()
         .set_str("datafusion.optimizer.repartition_file_scans", "false")
+        // Repartitioning filtered batches can reorder rows with equal ts_init
+        .set_str(
+            "datafusion.optimizer.enable_round_robin_repartition",
+            "false",
+        )
         .set_str("datafusion.optimizer.prefer_existing_sort", "true")
 }
 
@@ -559,6 +564,7 @@ mod tests {
         let optimizer = &config.options().optimizer;
 
         assert!(!optimizer.repartition_file_scans);
+        assert!(!optimizer.enable_round_robin_repartition);
         assert!(optimizer.prefer_existing_sort);
     }
 

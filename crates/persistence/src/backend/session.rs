@@ -535,7 +535,7 @@ impl Drop for DataQueryResult {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::atomic::AtomicUsize, task::Poll};
+    use std::{collections::HashMap, fs::File, sync::atomic::AtomicUsize, task::Poll};
 
     use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
     use nautilus_common::live::get_runtime;
@@ -548,6 +548,8 @@ mod tests {
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
     };
+    use nautilus_testkit::common::get_test_data_file_path;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     #[cfg(feature = "python")]
     use pyo3::{Py, Python, exceptions::PyRuntimeError, types::PyAnyMethods};
     use rstest::rstest;
@@ -555,6 +557,37 @@ mod tests {
     use super::*;
 
     const INSTRUMENT_ID: &str = "EUR/USD.SIM";
+
+    #[rstest]
+    fn filtered_query_preserves_equal_timestamp_order(#[values(1, 2, 4, 8)] partitions: usize) {
+        let path = get_test_data_file_path("nautilus/arrow/quotes-3-groups-filter-query.parquet");
+        let bound = UnixNanos::from(1_701_388_832_486_000_000);
+        let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap()).unwrap();
+        let metadata = builder.schema().metadata().clone();
+        let reader = builder.build().unwrap();
+        let expected: Vec<Data> = reader
+            .flat_map(|batch| QuoteTick::decode_data_batch(&metadata, batch.unwrap()).unwrap())
+            .filter(|tick| tick.ts_init() >= bound)
+            .collect();
+        let mut session = DataBackendSession::new(10);
+        session.session_ctx =
+            SessionContext::new_with_config(session_config().with_target_partitions(partitions));
+        session
+            .add_file::<QuoteTick>(
+                "quotes",
+                &path,
+                Some("SELECT * FROM quotes WHERE ts_init >= to_timestamp_nanos(1701388832486000000) ORDER BY ts_init"),
+                None,
+            )
+            .unwrap();
+        let actual: Vec<Data> = session
+            .get_query_result()
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(expected.len(), 10_001);
+        assert_eq!(actual, expected);
+    }
 
     fn quote(ts_init: u64) -> QuoteTick {
         QuoteTick::new(
