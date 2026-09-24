@@ -37,9 +37,6 @@ audit-as-crates-io = false
 [policy.nautilus-binance]
 audit-as-crates-io = false
 
-[policy.nautilus-bitmex]
-audit-as-crates-io = false
-
 [policy.nautilus-blockchain]
 audit-as-crates-io = false
 
@@ -113,9 +110,6 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.nautilus-persistence]
-audit-as-crates-io = false
-
-[policy.nautilus-persistence-macros]
 audit-as-crates-io = false
 
 [policy.nautilus-plugin]

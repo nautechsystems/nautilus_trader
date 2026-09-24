@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
+- Added Kraken bounded mass-status window declaration for reconciliation lookbacks (#5043), thanks @zhaow-de
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Lighter `use_gtd` to choose venue or local GTD expiry (#4997), thanks @graceyangfan
@@ -86,6 +87,7 @@ Released on TBD (UTC).
 - Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications, thanks for reporting @kta1kri
 - Fixed quote-quantity conversion overflow panics during order risk checks
 - Fixed fill OMS resolution to use the owning execution client instead of venue or default routes
+- Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
@@ -107,6 +109,7 @@ Released on TBD (UTC).
 - Fixed backtest data-type and missing-engine errors to name the valid case (#4977), thanks @abhijeetvichare76
 - Fixed unclear errors for missing local Parquet catalog paths (#4950), thanks for reporting @Artur-Sulej
 - Fixed Windows drive-path catalog file URIs (#4646), thanks for reporting @autotrader2025
+- Fixed catalog instrument listing ignoring `base_path` on remote stores such as `s3://` (#5052), thanks @xWaita
 - Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
@@ -165,16 +168,22 @@ Released on TBD (UTC).
 - Upgraded `osv-scanner` tool to v2.6.0
 - Upgraded `prek` tool to v0.5.3
 - Upgraded `uv` tool to v0.12.15
+- Upgraded `typos` pre-commit hook to v1.50.2
 - Upgraded `clap` crate to v4.6.7
+- Upgraded `codspeed-criterion-compat` crate to v5.0.2
 - Upgraded `datafusion` crate to v55.1.0
+- Upgraded `hyper-rustls` crate to v0.27.10
 - Upgraded `jiff` crate to v0.2.37
+- Upgraded `rand` crate to v0.10.3
 - Upgraded `redb` crate to v4.3.0
 - Upgraded `ruint` crate to v1.20.1
 - Upgraded `smallvec` crate to v1.16.1
 - Upgraded `sockudo-ws` crate to v2.1.0
+- Upgraded `syn` crate to v3.0.6
 - Upgraded `polars` package (test) to v1.44.2
+- Upgraded `plotly` package to v7.1.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.8
-- Upgraded `ty` package (dev) to v0.0.80
+- Upgraded `ty` package (dev) to v0.0.81
 - Upgraded `uvicorn` package (test) to v0.53.0
 
 ### Documentation Updates

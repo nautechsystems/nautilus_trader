@@ -31,4 +31,6 @@ ignore = [
   # quick-xml DoS, transitive via the DataFusion-aligned object_store 0.13 release
   "RUSTSEC-2026-0194",
   "RUSTSEC-2026-0195",
+  # faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller
+  "RUSTSEC-2026-0306",
 ]
