@@ -337,10 +337,19 @@ time rather than silently coercing them.
 :::note
 **Cancel all orders**:
 
-- With no side filter, Spot cancels all open orders across all symbols, while
-  Futures cancels all orders for the requested instrument.
-- With a side filter, both clients select matching cached orders for the
-  requested instrument and cancel them individually.
+- Spot selects the matching open and in-flight orders for the requested instrument
+  and cancels them by explicit order ID, with or without a side filter, so a
+  request never reaches another instrument. In-flight orders are included because
+  the venue can have accepted an order the cache still records as submitted.
+- Futures uses the venue's symbol-scoped bulk cancellation when no side filter is
+  given, and selects matching cached open and in-flight orders by explicit order ID
+  when one is.
+- Selected IDs go through the batch-cancel endpoint and are auto-chunked into
+  batches of 50. Kraken keys the two identifier kinds separately, so venue order
+  IDs are sent as `orders` and client order IDs as `cl_ord_ids`; the batch limit
+  counts both together. Each cancel keeps the owning strategy of the order it targets,
+  and aggregate or ambiguous responses are left to reconciliation rather than
+  producing per-order outcomes.
 
 :::
 
