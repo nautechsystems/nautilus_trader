@@ -4119,6 +4119,50 @@ fn test_project_reconciliation_fill_applies_no_portfolio_economics_on_cash_accou
 }
 
 #[rstest]
+#[case::process(false)]
+#[case::projection(true)]
+fn test_overfill_rejection_logs_reason_once(
+    mut execution_engine: ExecutionEngine,
+    #[case] project: bool,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let last_qty = Quantity::from(200_000);
+    let fill: OrderFilled = OrderFilledTestBuilder::new(&order, &instrument)
+        .last_qty(last_qty)
+        .build()
+        .into();
+    capture_reconciliation_logs();
+
+    if project {
+        execution_engine.project_reconciliation_fill(&fill);
+    } else {
+        execution_engine.process(&OrderEventAny::Filled(fill));
+    }
+
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![(
+            Level::Error,
+            format!(
+                "Order overfill rejected: {} potential_overfill=100000, current_filled=0, \
+                last_qty=200000, quantity=100000. Set `allow_overfills=true` in \
+                ExecutionEngineConfig to allow overfills.",
+                order.client_order_id(),
+            ),
+        )],
+    );
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .filled_qty(),
+        Quantity::from(0),
+    );
+}
+
+#[rstest]
 #[case::cached("ordinary", "cached")]
 #[case::account("ordinary", "account")]
 #[case::missing("ordinary", "missing")]
