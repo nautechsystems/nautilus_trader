@@ -276,7 +276,7 @@ pub fn is_available(
 
     if let Some(effective_date) = effective {
         // Effective date must be within availability period
-        if available_since >= effective_date || available_to <= effective_date {
+        if available_since > effective_date || available_to <= effective_date {
             return false;
         }
 
@@ -325,7 +325,8 @@ mod tests {
     #[case::effective_within_start_end(Some(100), Some(200), None, Some(150), true)]
     #[case::effective_before_start(Some(150), Some(200), None, Some(120), false)]
     #[case::effective_after_end(Some(100), Some(150), None, Some(180), false)]
-    #[case::effective_equals_available_since(None, None, None, Some(100), false)]
+    #[case::effective_equals_available_since(None, None, None, Some(100), true)]
+    #[case::effective_equals_available_since_with_offset(None, None, Some(10), Some(110), true)]
     #[case::effective_equals_available_to(None, None, None, Some(200), false)]
     fn test_is_available(
         #[case] start: Option<u64>,
@@ -353,6 +354,24 @@ mod tests {
     }
 
     #[rstest]
+    #[case::before_rename(199, "XBT/USDT")]
+    #[case::at_rename(200, "BTC/USDT")]
+    #[case::after_rename(201, "BTC/USDT")]
+    fn test_renamed_instrument_availability(#[case] effective: u64, #[case] expected: &str) {
+        let mut previous = create_test_instrument(100, Some(200));
+        previous.id = "XBT/USDT".into();
+        let mut current = create_test_instrument(200, None);
+        current.id = "BTC/USDT".into();
+        let available = [previous, current]
+            .into_iter()
+            .filter(|info| is_available(info, None, None, None, Some(UnixNanos::from(effective))))
+            .map(|info| info.id.to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(available, vec![expected]);
+    }
+
+    #[rstest]
     fn test_infinite_available_to() {
         // Create instrument with infinite availability (no end date)
         let info = create_test_instrument(100, None);
@@ -375,8 +394,7 @@ mod tests {
             Some(UnixNanos::from(101))
         ));
 
-        // Should not be available for effective date before or equal to available_since
-        assert!(!is_available(
+        assert!(is_available(
             &info,
             None,
             None,
@@ -397,8 +415,7 @@ mod tests {
         // Create instrument with fixed availability 100-200
         let info = create_test_instrument(100, Some(200));
 
-        // Without offset, effective date of 100 is invalid (boundary condition)
-        assert!(!is_available(
+        assert!(is_available(
             &info,
             None,
             None,
@@ -406,7 +423,7 @@ mod tests {
             Some(UnixNanos::from(100))
         ));
 
-        // With offset of 10, effective date of 100 should still be invalid (since available_since becomes 110)
+        // With offset of 10, effective date of 100 should be invalid (since available_since becomes 110)
         assert!(!is_available(
             &info,
             None,
@@ -458,7 +475,7 @@ mod tests {
         let offset = DurationNanos::new(86_400_000);
 
         let offset_boundary = UnixNanos::from(1_682_294_400_000 + 86_400_000);
-        assert!(!is_available(
+        assert!(is_available(
             &info,
             None,
             None,
@@ -466,9 +483,8 @@ mod tests {
             Some(offset_boundary)
         ));
 
-        // Effective date at exactly the start should fail
         let start_date = UnixNanos::from(1682294400000);
-        assert!(!is_available(&info, None, None, None, Some(start_date)));
+        assert!(is_available(&info, None, None, None, Some(start_date)));
 
         // Effective date at exactly the end should fail
         let end_date = UnixNanos::from(1712061000000);
@@ -586,7 +602,7 @@ mod tests {
 
         // Test with offset equal to zero (no effect)
         let zero_offset = DurationNanos::ZERO;
-        assert!(!is_available(
+        assert!(is_available(
             &info,
             None,
             None,

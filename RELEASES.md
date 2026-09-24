@@ -178,6 +178,7 @@ Released on TBD (UTC).
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
+- Fixed Tardis instrument filtering excluding the exact availability start timestamp
 
 ### Internal Improvements
 
