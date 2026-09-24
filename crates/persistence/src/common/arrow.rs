@@ -315,3 +315,71 @@ pub(crate) fn empty_display_batch_with_identifier(
     let schema = schema_with_identifier_column(&catalog_display_schema(data_type)?);
     Ok(RecordBatch::new_empty(Arc::new(schema)))
 }
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+    use nautilus_serialization::arrow::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn quote(instrument_id: &str, price: &str, ts: u64) -> Data {
+        Data::Quote(QuoteTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from(price),
+            Price::from(price),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        ))
+    }
+
+    #[rstest]
+    fn data_to_arrow_batches_groups_by_identifier_and_precision() {
+        let data = vec![
+            quote("ETHUSDT.BINANCE", "1.00", 1),
+            quote("AUD/USD.SIM", "1.00000", 2),
+            quote("AUD/USD.SIM", "1.000000", 3),
+            quote("AUD/USD.SIM", "1.00001", 4),
+        ];
+
+        let batches = data_to_arrow_batches(&NautilusDataType::QuoteTick, data).unwrap();
+
+        let groups = batches
+            .iter()
+            .map(|batch| {
+                let metadata = batch.schema().metadata().clone();
+                (
+                    metadata[KEY_INSTRUMENT_ID].clone(),
+                    metadata[KEY_PRICE_PRECISION].clone(),
+                    batch.num_rows(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            groups,
+            vec![
+                ("AUD/USD.SIM".to_string(), "5".to_string(), 2),
+                ("AUD/USD.SIM".to_string(), "6".to_string(), 1),
+                ("ETHUSDT.BINANCE".to_string(), "2".to_string(), 1),
+            ],
+        );
+    }
+
+    #[rstest]
+    fn data_to_arrow_batches_rejects_instruments() {
+        let error = data_to_arrow_batches(&NautilusDataType::Instrument, Vec::new()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Instrument definitions do not have one shared Arrow schema"
+        );
+    }
+}

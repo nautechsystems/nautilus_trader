@@ -564,6 +564,64 @@ mod tests {
     }
 
     #[rstest]
+    #[case::prefixed_custom(
+        "catalog/backtest/run-1/data/custom/MyType/inst/0001.feather",
+        "custom/MyType",
+        Some("inst")
+    )]
+    #[case::custom_without_identifier(
+        "backtest/run-1/data/custom/MyType/0001.feather",
+        "custom/MyType",
+        None
+    )]
+    #[case::identifier_named_custom(
+        "backtest/run-1/bars/custom/0001.feather",
+        "bars",
+        Some("custom")
+    )]
+    #[case::type_without_identifier("backtest/run-1/quotes/0001.feather", "quotes", None)]
+    fn session_feather_paths_recover_type_and_identifier_from_layouts(
+        #[case] path: &str,
+        #[case] expected_type: &str,
+        #[case] expected_identifier: Option<&str>,
+    ) {
+        assert_eq!(
+            type_name_from_session_feather_path(path, "backtest", "run-1").unwrap(),
+            expected_type,
+        );
+        assert_eq!(
+            identifier_from_session_feather_path(path, "backtest", "run-1").as_deref(),
+            expected_identifier,
+        );
+    }
+
+    #[rstest]
+    #[case::missing_type_segment(
+        "backtest/run-1",
+        "Cannot infer data type from Feather session path 'backtest/run-1' for backtest/run-1"
+    )]
+    #[case::other_instance(
+        "backtest/run-2/quotes/0001.feather",
+        "Cannot infer data type from Feather session path 'backtest/run-2/quotes/0001.feather' for backtest/run-1"
+    )]
+    #[case::missing_custom_type(
+        "backtest/run-1/data/custom",
+        "Cannot infer custom data type from Feather session path 'backtest/run-1/data/custom' for backtest/run-1"
+    )]
+    fn session_feather_paths_reject_unrecognized_layouts(
+        #[case] path: &str,
+        #[case] expected: &str,
+    ) {
+        let error = type_name_from_session_feather_path(path, "backtest", "run-1").unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            identifier_from_session_feather_path(path, "backtest", "run-1"),
+            None
+        );
+    }
+
+    #[rstest]
     fn session_feather_paths_recover_type_and_identifier_with_backslashes() {
         let path = r"backtest\run-1\quotes\EURUSD.SIM\0001.feather";
         assert_eq!(

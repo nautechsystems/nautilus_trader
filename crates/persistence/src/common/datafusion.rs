@@ -512,6 +512,11 @@ mod tests {
         time::Duration,
     };
 
+    use datafusion::{
+        arrow::array::{FixedSizeBinaryArray, UInt32Array},
+        datasource::MemTable,
+        execution::object_store::ObjectStoreUrl,
+    };
     use nautilus_common::live::get_runtime;
     use nautilus_model::{
         data::{DataBatch, QuoteTick},
@@ -608,6 +613,8 @@ mod tests {
         let mut session = DataBackendSession::new(10);
 
         session.register_storage_backend(&storage).unwrap();
+
+        assert_registered_object_store(&session, &storage);
     }
 
     #[rstest]
@@ -618,6 +625,165 @@ mod tests {
         let mut session = DataBackendSession::new(10);
 
         session.register_storage_backend(&storage).unwrap();
+
+        assert_registered_object_store(&session, &storage);
+    }
+
+    fn assert_registered_object_store(session: &DataBackendSession, storage: &StorageBackend) {
+        let root_url = ObjectStoreUrl::parse(storage.datafusion_root_url().unwrap()).unwrap();
+        let registered = session
+            .session_ctx
+            .runtime_env()
+            .object_store(root_url)
+            .unwrap();
+
+        assert!(std::ptr::addr_eq(
+            Arc::as_ptr(&registered),
+            Arc::as_ptr(&storage.object_store),
+        ));
+    }
+
+    fn memory_table(column: &str) -> Arc<dyn TableProvider> {
+        let schema = Arc::new(Schema::new(vec![Field::new(column, DataType::Utf8, true)]));
+        Arc::new(MemTable::try_new(schema, vec![Vec::new()]).unwrap())
+    }
+
+    #[rstest]
+    fn register_table_provider_keeps_first_registration() {
+        let mut session = DataBackendSession::new(10);
+
+        session
+            .register_table_provider("records", memory_table("first"))
+            .unwrap();
+        session
+            .register_table_provider("records", memory_table("second"))
+            .unwrap();
+        let provider =
+            futures::executor::block_on(session.session_ctx.table_provider("records")).unwrap();
+
+        assert_eq!(provider.schema().field(0).name(), "first");
+    }
+
+    #[rstest]
+    fn session_config_keeps_file_scan_order() {
+        let config = session_config();
+        let optimizer = &config.options().optimizer;
+
+        assert!(!optimizer.repartition_file_scans);
+        assert!(optimizer.prefer_existing_sort);
+    }
+
+    #[rstest]
+    fn typed_session_reports_reset_as_unsupported() {
+        let mut session = TypedDataBatchSession::from_vec(vec![typed_quote(1)], None);
+
+        assert!(!session.reset().unwrap());
+    }
+
+    #[rstest]
+    fn identifiers_from_record_batches_reads_utf8_view_columns() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "identifier",
+            DataType::Utf8View,
+            true,
+        )]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(StringViewArray::from(vec![
+                Some("ESZ4.XCME"),
+                None,
+                Some("ESM4.XCME"),
+            ])) as ArrayRef],
+        )
+        .unwrap();
+
+        let identifiers = identifiers_from_record_batches(&[batch]).unwrap();
+
+        assert_eq!(identifiers, vec!["ESM4.XCME", "ESZ4.XCME"]);
+    }
+
+    #[rstest]
+    #[case::missing_column("instrument_id", DataType::Utf8, "identifier column not found")]
+    #[case::unsupported_type(
+        "identifier",
+        DataType::Int32,
+        "identifier column must be Utf8 or Utf8View"
+    )]
+    fn identifiers_from_record_batches_rejects_invalid_columns(
+        #[case] name: &str,
+        #[case] data_type: DataType,
+        #[case] expected: &str,
+    ) {
+        let column = new_null_array(&data_type, 1);
+        let schema = Arc::new(Schema::new(vec![Field::new(name, data_type, true)]));
+        let batch = RecordBatch::try_new(schema, vec![column]).unwrap();
+
+        let error = identifiers_from_record_batches(&[batch]).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    fn binary_view_cast_to_fixed_size_binary_preserves_nulls() {
+        let values = vec![Some(b"ab".as_slice()), None, Some(b"cd".as_slice())];
+        let column = Arc::new(BinaryViewArray::from(values.clone())) as ArrayRef;
+
+        let cast = cast_column_to_data_type(&column, &DataType::FixedSizeBinary(2)).unwrap();
+
+        let expected =
+            FixedSizeBinaryArray::try_from_sparse_iter_with_size(values.into_iter(), 2).unwrap();
+        assert_eq!(cast.to_data(), expected.to_data());
+    }
+
+    #[rstest]
+    fn list_cast_to_fixed_size_list_rejects_wrong_row_length() {
+        let field = Arc::new(Field::new("element", DataType::UInt32, false));
+        let list = Arc::new(
+            ListArray::try_new(
+                field.clone(),
+                OffsetBuffer::new(ScalarBuffer::from(vec![0_i32, 3])),
+                Arc::new(UInt32Array::from(vec![1_u32, 2, 3])),
+                None,
+            )
+            .unwrap(),
+        ) as ArrayRef;
+
+        let error =
+            cast_column_to_data_type(&list, &DataType::FixedSizeList(field, 2)).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Execution error: List row 0 has length 3, expected 2"
+        );
+    }
+
+    struct DropSignal(mpsc::Sender<()>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            let _ = self.0.send(());
+        }
+    }
+
+    #[rstest]
+    fn blocking_batch_stream_drop_stops_producer() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (dropped_sender, dropped_receiver) = mpsc::channel();
+        let signal = DropSignal(dropped_sender);
+
+        let stream = futures::stream::pending::<i32>().chain(futures::stream::once(async move {
+            drop(signal);
+            0
+        }));
+
+        let stream = BlockingBatchStream::from_stream_with_runtime(stream, runtime.handle());
+
+        drop(stream);
+
+        assert_eq!(
+            dropped_receiver.recv_timeout(Duration::from_secs(5)),
+            Ok(())
+        );
     }
 
     #[rstest]

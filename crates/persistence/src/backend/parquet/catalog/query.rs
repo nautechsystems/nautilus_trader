@@ -203,7 +203,9 @@ impl ParquetDataCatalog {
                 index,
                 extract_sql_safe_filename(&file_path)
             );
-            let query = build_query(&table_name, start, end, Some(where_clause));
+
+            // The range filter below applies `start` to keep the latest pre-start definition
+            let query = build_query(&table_name, None, end, Some(where_clause));
             let resolved_path = self.resolve_path_for_datafusion(&file_path);
             let batches = self.session.collect_parquet_files_batches(
                 &table_name,

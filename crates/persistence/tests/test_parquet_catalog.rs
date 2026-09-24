@@ -4185,6 +4185,114 @@ fn test_rust_custom_data_roundtrip() {
     }
 }
 
+fn rust_test_custom_data_range(instrument_id: InstrumentId, ts_inits: &[u64]) -> Vec<CustomData> {
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+    ts_inits
+        .iter()
+        .map(|&ts| {
+            CustomData::new(
+                Arc::new(RustTestCustomData {
+                    instrument_id,
+                    value: 1.0,
+                    flag: true,
+                    ts_event: UnixNanos::from(ts),
+                    ts_init: UnixNanos::from(ts),
+                }),
+                data_type.clone(),
+            )
+        })
+        .collect()
+}
+
+fn rust_test_custom_data_ts_inits(
+    catalog: &mut ParquetDataCatalog,
+    instrument_id: InstrumentId,
+) -> Vec<u64> {
+    let ids = vec![instrument_id.to_string()];
+    catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap()
+        .iter()
+        .map(|data| data.ts_init().as_u64())
+        .collect()
+}
+
+#[rstest]
+fn test_delete_data_range_preserves_custom_data_outside_range() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let ts_inits = (1..=10).collect::<Vec<_>>();
+    catalog
+        .write_custom_data_batch(
+            rust_test_custom_data_range(instrument_id, &ts_inits),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            },
+            Some(&instrument_id.to_string()),
+            Some(UnixNanos::from(4)),
+            Some(UnixNanos::from(6)),
+        )
+        .unwrap();
+
+    assert_eq!(
+        rust_test_custom_data_ts_inits(&mut catalog, instrument_id),
+        vec![1, 2, 3, 7, 8, 9, 10],
+    );
+}
+
+#[rstest]
+fn test_consolidate_data_by_period_keeps_custom_data() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.TEST");
+
+    for ts_inits in [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]] {
+        catalog
+            .write_custom_data_batch(
+                rust_test_custom_data_range(instrument_id, &ts_inits),
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }),
+            Some(&instrument_id.to_string()),
+            Some(1_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(
+        rust_test_custom_data_ts_inits(&mut catalog, instrument_id),
+        (1..=10).collect::<Vec<_>>(),
+    );
+}
+
 #[rstest]
 fn test_rust_custom_data_remote_query_registers_object_store() {
     ensure_test_custom_data_registered();
@@ -6436,6 +6544,47 @@ fn test_instrument_update_query_excludes_pre_start_snapshot() {
 
     assert_eq!(data.len(), 1);
     assert_eq!(data[0].ts_init(), UnixNanos::from(10));
+}
+
+#[rstest]
+#[case::without_where_clause(None)]
+#[case::with_where_clause(Some("1 = 1"))]
+fn test_instrument_range_query_returns_latest_definition_before_start(
+    #[case] where_clause: Option<&str>,
+) {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let mut first = crypto_perpetual_ethusdt();
+    first.ts_event = UnixNanos::from(1);
+    first.ts_init = UnixNanos::from(1);
+    let mut second = first.clone();
+    second.ts_event = UnixNanos::from(3);
+    second.ts_init = UnixNanos::from(3);
+    let mut after_end = first.clone();
+    after_end.ts_event = UnixNanos::from(12);
+    after_end.ts_init = UnixNanos::from(12);
+    CatalogWriter::write_instruments(
+        &mut catalog,
+        &[
+            InstrumentAny::CryptoPerpetual(first),
+            InstrumentAny::CryptoPerpetual(second),
+            InstrumentAny::CryptoPerpetual(after_end),
+        ],
+    )
+    .unwrap();
+
+    let instruments = CatalogReader::instruments(
+        &mut catalog,
+        &CatalogInstrumentQuery::new()
+            .with_range(Some(UnixNanos::from(5)), Some(UnixNanos::from(10)))
+            .with_where_clause(where_clause.map(str::to_string)),
+    )
+    .unwrap();
+
+    let ts_inits = instruments
+        .iter()
+        .map(|instrument| HasTsInit::ts_init(instrument).as_u64())
+        .collect::<Vec<_>>();
+    assert_eq!(ts_inits, vec![3]);
 }
 
 #[rstest]

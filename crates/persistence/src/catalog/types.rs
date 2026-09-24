@@ -695,6 +695,7 @@ pub(crate) fn filter_instrument_query_result(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::stubs::{audusd_sim, crypto_perpetual_ethusdt, equity_aapl};
     use rstest::rstest;
     use strum::IntoEnumIterator;
 
@@ -815,5 +816,260 @@ mod tests {
             custom_data_read_prefixes("RustTestCustomData")[1].as_ref(),
             "custom_rust_test_custom_data",
         );
+    }
+
+    macro_rules! assert_data_type_path_prefixes_match_writer {
+        ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+            $(
+                assert_eq!(
+                    NautilusDataType::$variant.path_prefix(),
+                    <$type as CatalogPathPrefix>::path_prefix(),
+                );
+            )+
+        };
+    }
+
+    macro_rules! assert_record_type_path_prefixes_match_writer {
+        ($($variant:ident),+ $(,)?) => {
+            $(
+                assert_eq!(
+                    NautilusRecordType::$variant.path_prefix(),
+                    <$variant as CatalogPathPrefix>::path_prefix(),
+                );
+            )+
+
+            let checked = vec![$(NautilusRecordType::$variant),+];
+            #[cfg(feature = "defi")]
+            let expected = NautilusRecordType::iter()
+                .filter(|record_type| *record_type != NautilusRecordType::Defi)
+                .collect::<Vec<_>>();
+            #[cfg(not(feature = "defi"))]
+            let expected = NautilusRecordType::iter().collect::<Vec<_>>();
+            assert_eq!(checked, expected);
+        };
+    }
+
+    #[rstest]
+    fn data_type_path_prefixes_match_writer_prefixes() {
+        nautilus_model::for_each_data_type!(assert_data_type_path_prefixes_match_writer);
+    }
+
+    #[rstest]
+    fn record_type_path_prefixes_match_writer_prefixes() {
+        assert_record_type_path_prefixes_match_writer!(
+            AccountState,
+            OrderInitialized,
+            OrderDenied,
+            OrderEmulated,
+            OrderSubmitted,
+            OrderAccepted,
+            OrderRejected,
+            OrderPendingCancel,
+            OrderCanceled,
+            OrderCancelRejected,
+            OrderExpired,
+            OrderTriggered,
+            OrderPendingUpdate,
+            OrderReleased,
+            OrderModifyRejected,
+            OrderUpdated,
+            OrderFilled,
+            OrderFillVoided,
+            PositionOpened,
+            PositionChanged,
+            PositionClosed,
+            PositionAdjusted,
+            OrderSnapshot,
+            PositionSnapshot,
+            OrderStatusReport,
+            FillReport,
+            PositionStatusReport,
+            ExecutionMassStatus,
+        );
+    }
+
+    #[rstest]
+    #[case(CatalogDataType::Data(NautilusDataType::Instrument), "instruments")]
+    #[case(CatalogDataType::Data(NautilusDataType::QuoteTick), "quotes")]
+    #[case(CatalogDataType::Record(NautilusRecordType::FillReport), "fill_report")]
+    #[case(CatalogDataType::Instrument(NautilusInstrumentType::Equity), "equity")]
+    fn parquet_table_stems_name_each_catalog_type(
+        #[case] data_type: CatalogDataType,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(parquet_catalog_data_type_table_stem(&data_type), expected);
+    }
+
+    #[rstest]
+    fn data_type_from_data_path_prefix_parses_custom_prefix() {
+        assert_eq!(
+            data_type_from_data_path_prefix("custom/SensorReading").unwrap(),
+            NautilusDataType::Custom {
+                type_name: "SensorReading".to_string(),
+            },
+        );
+    }
+
+    #[rstest]
+    #[case("custom")]
+    #[case("CustomData")]
+    fn data_type_from_data_path_prefix_rejects_custom_without_type_name(#[case] type_name: &str) {
+        let error = data_type_from_data_path_prefix(type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "custom data queries require custom/<type_name> or Custom:<type_name>",
+        );
+    }
+
+    #[rstest]
+    fn instrument_and_record_query_builders_set_every_field() {
+        let mut params = Params::new();
+        params.insert("only_last".to_string(), false.into());
+
+        let instrument_query = CatalogInstrumentQuery::new()
+            .with_instrument_ids(Some(vec!["AUD/USD.SIM".to_string()]))
+            .with_range(Some(UnixNanos::from(1)), Some(UnixNanos::from(2)))
+            .with_where_clause(Some("venue = 'SIM'".to_string()))
+            .with_instrument_type(Some(NautilusInstrumentType::CurrencyPair));
+        let record_query = CatalogRecordQuery::new(NautilusRecordType::FillReport)
+            .with_identifier(Some("O-1".to_string()))
+            .with_range(Some(UnixNanos::from(3)), Some(UnixNanos::from(4)))
+            .with_where_clause(Some("trade_id = 'T-1'".to_string()))
+            .with_params(Some(params.clone()))
+            .with_as_of(CatalogAsOf::Version(7));
+
+        assert_eq!(
+            instrument_query,
+            CatalogInstrumentQuery {
+                instrument_ids: Some(vec!["AUD/USD.SIM".to_string()]),
+                start: Some(UnixNanos::from(1)),
+                end: Some(UnixNanos::from(2)),
+                where_clause: Some("venue = 'SIM'".to_string()),
+                instrument_type: Some(NautilusInstrumentType::CurrencyPair),
+            },
+        );
+        assert_eq!(
+            record_query,
+            CatalogRecordQuery {
+                record_type: NautilusRecordType::FillReport,
+                identifier: Some("O-1".to_string()),
+                start: Some(UnixNanos::from(3)),
+                end: Some(UnixNanos::from(4)),
+                where_clause: Some("trade_id = 'T-1'".to_string()),
+                params: Some(params),
+                as_of: CatalogAsOf::Version(7),
+            },
+        );
+    }
+
+    fn ethusdt_at(ts: u64) -> InstrumentAny {
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.ts_event = UnixNanos::from(ts);
+        instrument.ts_init = UnixNanos::from(ts);
+        InstrumentAny::CryptoPerpetual(instrument)
+    }
+
+    fn audusd_at(ts: u64) -> InstrumentAny {
+        let mut instrument = audusd_sim();
+        instrument.ts_event = UnixNanos::from(ts);
+        instrument.ts_init = UnixNanos::from(ts);
+        InstrumentAny::CurrencyPair(instrument)
+    }
+
+    fn aapl_at(ts: u64) -> InstrumentAny {
+        let mut instrument = equity_aapl();
+        instrument.ts_event = UnixNanos::from(ts);
+        instrument.ts_init = UnixNanos::from(ts);
+        InstrumentAny::Equity(instrument)
+    }
+
+    fn instrument_versions(instruments: &[InstrumentAny]) -> Vec<(String, u64)> {
+        instruments
+            .iter()
+            .map(|instrument| {
+                (
+                    instrument.id().to_string(),
+                    HasTsInit::ts_init(instrument).as_u64(),
+                )
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[case::latest_before_start_listed_last(
+        vec![ethusdt_at(1), ethusdt_at(3), audusd_at(2), audusd_at(6), aapl_at(12)],
+        Some(5),
+        Some(10),
+        &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6)],
+    )]
+    #[case::latest_before_start_listed_first(
+        vec![ethusdt_at(3), ethusdt_at(1), audusd_at(6), audusd_at(2), aapl_at(12)],
+        Some(5),
+        Some(10),
+        &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6)],
+    )]
+    #[case::end_only(
+        vec![ethusdt_at(3), audusd_at(6), aapl_at(12), ethusdt_at(1)],
+        None,
+        Some(10),
+        &[("ETHUSDT-PERP.BINANCE", 1), ("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6)],
+    )]
+    #[case::start_only(
+        vec![ethusdt_at(1), ethusdt_at(3), audusd_at(6), aapl_at(12)],
+        Some(5),
+        None,
+        &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6), ("AAPL.XNAS", 12)],
+    )]
+    #[case::unbounded(
+        vec![aapl_at(12), ethusdt_at(3), audusd_at(6)],
+        None,
+        None,
+        &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6), ("AAPL.XNAS", 12)],
+    )]
+    fn filter_instruments_for_request_range_selects_versions(
+        #[case] instruments: Vec<InstrumentAny>,
+        #[case] start: Option<u64>,
+        #[case] end: Option<u64>,
+        #[case] expected: &[(&str, u64)],
+    ) {
+        let filtered = filter_instruments_for_request_range(
+            instruments,
+            start.map(UnixNanos::from),
+            end.map(UnixNanos::from),
+        );
+
+        let expected = expected
+            .iter()
+            .map(|&(id, ts)| (id.to_string(), ts))
+            .collect::<Vec<_>>();
+        assert_eq!(instrument_versions(&filtered), expected);
+    }
+
+    #[rstest]
+    #[case::only_last_absent(None, &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6)])]
+    #[case::only_last_true(Some(true), &[("ETHUSDT-PERP.BINANCE", 3), ("AUD/USD.SIM", 6)])]
+    #[case::only_last_false(Some(false), &[("AUD/USD.SIM", 6)])]
+    fn filter_instrument_query_result_drops_pre_start_versions_only_when_requested(
+        #[case] only_last: Option<bool>,
+        #[case] expected: &[(&str, u64)],
+    ) {
+        let params = only_last.map(|only_last| {
+            let mut params = Params::new();
+            params.insert("only_last".to_string(), only_last.into());
+            params
+        });
+
+        let filtered = filter_instrument_query_result(
+            vec![ethusdt_at(3), audusd_at(6)],
+            Some(UnixNanos::from(5)),
+            params.as_ref(),
+        );
+
+        let expected = expected
+            .iter()
+            .map(|&(id, ts)| (id.to_string(), ts))
+            .collect::<Vec<_>>();
+        assert_eq!(instrument_versions(&filtered), expected);
     }
 }
