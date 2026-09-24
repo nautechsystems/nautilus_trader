@@ -89,7 +89,11 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderError, OrderList},
     position::Position,
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, check_fixed_precision},
+        price::PriceRaw,
+    },
 };
 pub use position::CacheSnapshotRef;
 use position::PositionSnapshotFrame;
@@ -5560,11 +5564,6 @@ impl Cache {
     // -- DATA QUERIES ----------------------------------------------------------------------------
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `price_type` is [`PriceType::Mid`] and the quote price precision is already at
-    /// the maximum fixed precision.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -5577,13 +5576,49 @@ impl Cache {
                 .get(instrument_id)
                 .and_then(|quotes| quotes.front().map(|quote| quote.ask_price)),
             PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
-                quotes.front().map(|quote| {
-                    let mid = (quote.ask_price.as_decimal() + quote.bid_price.as_decimal())
-                        / Decimal::TWO;
+                let quote = quotes.front()?;
+                let bid = quote.bid_price;
+                let ask = quote.ask_price;
+                if bid.is_undefined() || bid.is_error() || ask.is_undefined() || ask.is_error() {
+                    return None;
+                }
 
-                    Price::from_decimal_dp(mid, quote.bid_price.precision + 1)
-                        .expect("Invalid mid price for Cache::price")
-                })
+                // Also rejects `ERROR_PRICE`, whose precision is 255
+                let precision = bid.precision;
+                check_fixed_precision(precision).ok()?;
+
+                #[allow(
+                    clippy::useless_conversion,
+                    reason = "i128::from is a widening conversion when PriceRaw is i64"
+                )]
+                let (mut bid_raw, mut ask_raw) = (i128::from(bid.raw()), i128::from(ask.raw()));
+
+                if precision < FIXED_PRECISION {
+                    let factor = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
+                    bid_raw = (bid_raw / factor) * factor;
+                    ask_raw = (ask_raw / factor) * factor;
+                }
+                let sum = bid_raw.checked_add(ask_raw)?;
+
+                if precision < FIXED_PRECISION {
+                    let raw = PriceRaw::try_from(sum / 2).ok()?;
+                    return Price::from_raw_checked(raw, precision + 1).ok();
+                }
+
+                if let Some(price) = sum
+                    .checked_mul(5)
+                    .and_then(|raw| PriceRaw::try_from(raw).ok())
+                    .and_then(|raw| Price::from_raw_checked(raw, precision + 1).ok())
+                {
+                    return Some(price);
+                }
+
+                if sum % 2 == 0 {
+                    let raw = PriceRaw::try_from(sum / 2).ok()?;
+                    Price::from_raw_checked(raw, precision).ok()
+                } else {
+                    None
+                }
             }),
             PriceType::Last => self
                 .trades
