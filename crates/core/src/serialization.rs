@@ -33,6 +33,9 @@ use serde::{
 };
 use ustr::Ustr;
 
+/// Exact decimal parsing and JSON serialization contracts.
+pub mod decimal;
+
 /// Sorted serialization for `AHashSet<T>` where element order must be deterministic.
 ///
 /// Use with `#[serde(with = "nautilus_core::serialization::sorted_hashset")]`.
@@ -108,11 +111,12 @@ impl<'de> Visitor<'de> for DecimalVisitor {
     }
 
     fn visit_i128<E: Error>(self, v: i128) -> Result<Self::Value, E> {
-        Ok(Decimal::from(v))
+        Decimal::try_from_i128_with_scale(v, 0).map_err(E::custom)
     }
 
     fn visit_u128<E: Error>(self, v: u128) -> Result<Self::Value, E> {
-        Ok(Decimal::from(v))
+        let v = i128::try_from(v).map_err(E::custom)?;
+        Decimal::try_from_i128_with_scale(v, 0).map_err(E::custom)
     }
 
     // Float handling - direct conversion

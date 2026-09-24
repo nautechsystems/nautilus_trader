@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Benchmarks comparing old `serde_json::Value` approach vs new `DecimalVisitor`.
+//! Benchmarks for buffered, visitor-based, and exact raw-token decimal deserialization.
 
-use std::str::FromStr;
+use std::{hint::black_box, str::FromStr};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use nautilus_core::serialization::decimal;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Deserializer, de::Error};
 
 /// Old approach: allocates intermediate `serde_json::Value`.
@@ -122,5 +124,45 @@ fn bench_realistic_batch(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_decimal_types, bench_realistic_batch);
+fn bench_exact_decimal(c: &mut Criterion) {
+    #[derive(Deserialize)]
+    struct Exact(#[serde(deserialize_with = "decimal::deserialize_json")] Decimal);
+
+    let cases = [
+        ("123456789.123456789", dec!(123456789.123456789)),
+        ("0.12345678901234568", dec!(0.12345678901234568)),
+        ("9007199254740993", dec!(9007199254740993)),
+        ("18446744073709551617", dec!(18446744073709551617)),
+        (
+            "79228162514264337593543950335",
+            dec!(79228162514264337593543950335),
+        ),
+        (
+            "-79228162514264337593543950335",
+            dec!(-79228162514264337593543950335),
+        ),
+        ("1e-28", dec!(0.0000000000000000000000000001)),
+        ("10e-29", dec!(0.0000000000000000000000000001)),
+    ];
+    let mut group = c.benchmark_group("decimal_exact");
+
+    for (token, expected) in cases {
+        let quoted = serde_json::to_string(token).unwrap();
+        for (representation, json) in [("quoted", quoted.as_str()), ("unquoted", token)] {
+            assert_eq!(serde_json::from_str::<Exact>(json).unwrap().0, expected);
+            group.bench_with_input(BenchmarkId::new(representation, token), json, |b, json| {
+                b.iter(|| serde_json::from_str::<Exact>(black_box(json)).unwrap());
+            });
+        }
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_decimal_types,
+    bench_realistic_batch,
+    bench_exact_decimal
+);
 criterion_main!(benches);
