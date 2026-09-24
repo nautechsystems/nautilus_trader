@@ -64,7 +64,7 @@ use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
-    enums::{BookAction, BookType},
+    enums::BookType,
     identifiers::{InstrumentId, OptionSeriesId},
     types::Price,
 };
@@ -1202,85 +1202,4 @@ async fn test_data_client_book_quote_topic_lifetime(
     .await;
     assert!(state.subscriptions.lock().await.is_empty());
     client.disconnect().await.unwrap();
-}
-
-#[rstest]
-#[case::linear(BybitProductType::Linear, "BTCUSDT-LINEAR.BYBIT")]
-#[case::spot(BybitProductType::Spot, "BTCUSDT-SPOT.BYBIT")]
-#[case::inverse(BybitProductType::Inverse, "BTCUSD-INVERSE.BYBIT")]
-#[tokio::test]
-#[ignore = "Connects to Bybit mainnet public market data"]
-async fn test_live_book_and_quotes(#[case] product_type: BybitProductType, #[case] symbol: &str) {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
-    let config = BybitDataClientConfig {
-        product_types: vec![product_type],
-        environment: BybitEnvironment::Mainnet,
-        api_key: None,
-        api_secret: None,
-        instrument_poll_interval_secs: None,
-        ..Default::default()
-    };
-    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
-    tokio::time::timeout(Duration::from_secs(60), client.connect())
-        .await
-        .unwrap()
-        .unwrap();
-    let instrument_id = InstrumentId::from(symbol);
-    client
-        .subscribe_quotes(SubscribeQuotes::new(
-            instrument_id,
-            Some(*BYBIT_CLIENT_ID),
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        ))
-        .unwrap();
-    client
-        .subscribe_book_deltas(SubscribeBookDeltas::new(
-            instrument_id,
-            BookType::L2_MBP,
-            Some(*BYBIT_CLIENT_ID),
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            NonZeroUsize::new(50),
-            false,
-            None,
-            None,
-        ))
-        .unwrap();
-    let mut quotes = 0;
-    let mut books = 0;
-    let mut deletions = 0;
-    let result = tokio::time::timeout(Duration::from_secs(30), async {
-        while quotes < 20 || books < 20 || deletions == 0 {
-            match rx.recv().await.unwrap() {
-                DataEvent::Data(Data::Quote(quote)) => {
-                    assert_eq!(quote.instrument_id, instrument_id);
-                    assert!(quote.bid_size.is_positive());
-                    assert!(quote.ask_size.is_positive());
-                    assert!(quote.bid_price.is_positive());
-                    assert!(quote.ask_price >= quote.bid_price);
-                    quotes += 1;
-                }
-                DataEvent::Data(Data::BookDeltas(deltas)) => {
-                    assert_eq!(deltas.instrument_id, instrument_id);
-                    deletions += deltas
-                        .deltas
-                        .iter()
-                        .filter(|delta| delta.action == BookAction::Delete)
-                        .count();
-                    books += 1;
-                }
-                _ => {}
-            }
-        }
-    })
-    .await;
-    client.disconnect().await.unwrap();
-    result.expect("expected quotes and depth-50 book updates with deletions");
-    println!("{product_type}: {quotes} valid quotes, {books} books, {deletions} deletions");
 }

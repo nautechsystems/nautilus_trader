@@ -113,14 +113,21 @@ def main() -> None:
         "source": UPSTREAM_SOURCE,
         "upstream_version": UPSTREAM_VERSION,
         "upstream_revision": UPSTREAM_REVISION,
-        "generated_by": "tests/oracle-py/generate_session_signatures.py",
+        "generated_by": "scripts/oracle-py/polymarket/generate_session_signatures.py",
         "procedure": "EIP-712 order -> Deposit Wallet signature -> SESSION_KEY envelope",
         "chain_id": 137,
         "private_key": PRIVATE_KEY,
         "order": order,
         "vectors": vectors,
     }
-    output = Path(__file__).resolve().parents[2] / "test_data/session_signatures.json"
+    output = (
+        Path(__file__).resolve().parents[3]
+        / "crates"
+        / "adapters"
+        / "polymarket"
+        / "test_data"
+        / "session_signatures.json"
+    )
     output.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
 
 

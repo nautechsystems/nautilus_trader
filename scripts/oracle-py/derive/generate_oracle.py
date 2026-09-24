@@ -33,12 +33,12 @@ Regenerating the fixture:
     git checkout <upstream_revision>  # UPSTREAM_REVISION in this script
     python3 -m venv .venv
     .venv/bin/pip install .
-    .venv/bin/python <nautilus_trader repository root>/crates/adapters/derive/tests/oracle-py/
+    .venv/bin/python <nautilus_trader repository root>/scripts/oracle-py/derive/
         generate_oracle.py
 
 The generator resolves its default output path from its own location, so it
-writes the fixture into `test_data/common/` regardless of the working
-directory.
+writes the fixture into the crate's `test_data/common/` directory regardless
+of the working directory.
 
 The upstream revision below is the pin recorded in the fixture metadata. Moving
 to a new revision (for example a future V3 signer) is a re-pin plus a
@@ -65,7 +65,10 @@ UPSTREAM_REVISION = "d1914d61985e33559244da242892c7255b6fd0ca"
 UPSTREAM_SOURCE = "github.com/derivexyz/v2-action-signing-python"
 
 DEFAULT_OUT = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
+    / "crates"
+    / "adapters"
+    / "derive"
     / "test_data"
     / "common"
     / "signing_trade_action_vectors.json"
@@ -262,7 +265,7 @@ def main() -> int:
             "source": UPSTREAM_SOURCE,
             "upstream_version": UPSTREAM_VERSION,
             "upstream_revision": UPSTREAM_REVISION,
-            "generated_by": "crates/adapters/derive/tests/oracle-py/generate_oracle.py",
+            "generated_by": "scripts/oracle-py/derive/generate_oracle.py",
             "procedure": (
                 "Clone and install the upstream SDK at "
                 f"{UPSTREAM_REVISION}, then run generate_oracle.py; the full "

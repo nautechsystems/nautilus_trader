@@ -31,11 +31,11 @@ added.
 
 ```bash
 git clone --depth 1 https://github.com/elliottech/lighter-python.git /tmp/lighter-python
-cd crates/adapters/lighter/tests/oracle-py
+cd scripts/oracle-py/lighter
 python3 generate_oracle.py \
     --signer /tmp/lighter-python/lighter/signers/lighter-signer-linux-amd64.so \
-    --out ../../test_data/signing_tx_oracle.json \
-    --auth-out ../../test_data/signing_auth_token_oracle.json
+    --out ../../../crates/adapters/lighter/test_data/signing_tx_oracle.json \
+    --auth-out ../../../crates/adapters/lighter/test_data/signing_auth_token_oracle.json
 ```
 
 `--auth-out` is optional. When set, the script also drives the signer's
