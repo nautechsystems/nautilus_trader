@@ -35,7 +35,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub use crate::common::paths::normalize_path_to_uri;
-use crate::common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri};
+use crate::{
+    backend::parquet::io::create_object_store_from_path,
+    common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri},
+};
 
 /// File name used to represent run sessions, including runs that wrote no data files.
 pub const RUN_MANIFEST_FILENAME: &str = "_nautilus_run_manifest.json";
@@ -199,15 +202,8 @@ impl StorageBackend {
         kind: &str,
         instance_id: &str,
     ) -> anyhow::Result<Option<RunManifest>> {
-        let path = self.run_manifest_path(kind, instance_id);
-        match self.object_store.get(&path).await {
-            Ok(result) => {
-                let bytes = result.bytes().await?;
-                Ok(Some(serde_json::from_slice(&bytes)?))
-            }
-            Err(ObjectStoreError::NotFound { .. }) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        self.read_run_manifest_at(&self.run_manifest_path(kind, instance_id))
+            .await
     }
 
     /// Lists run IDs from directories and manifests for one session kind.
@@ -243,17 +239,23 @@ impl StorageBackend {
         let mut manifests = Vec::new();
 
         for file in files {
-            match self.object_store.get(&ObjectPath::from(file)).await {
-                Ok(result) => {
-                    let bytes = result.bytes().await?;
-                    manifests.push(serde_json::from_slice(&bytes)?);
-                }
-                Err(ObjectStoreError::NotFound { .. }) => {}
-                Err(e) => return Err(e.into()),
+            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::from(file)).await? {
+                manifests.push(manifest);
             }
         }
 
         Ok(manifests)
+    }
+
+    async fn read_run_manifest_at(&self, path: &ObjectPath) -> anyhow::Result<Option<RunManifest>> {
+        match self.object_store.get(path).await {
+            Ok(result) => {
+                let bytes = result.bytes().await?;
+                Ok(Some(serde_json::from_slice(&bytes)?))
+            }
+            Err(ObjectStoreError::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn run_manifest_path(&self, kind: &str, instance_id: &str) -> ObjectPath {
@@ -354,7 +356,7 @@ pub fn create_storage_backend_from_path(
     }
 
     let (object_store, base_path, original_uri) =
-        crate::backend::parquet::io::create_object_store_from_path(&uri, storage_options)?;
+        create_object_store_from_path(&uri, storage_options)?;
     Ok(storage_backend(object_store, base_path, original_uri))
 }
 
@@ -457,8 +459,6 @@ impl ObjectStore for SortedListObjectStore {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "cloud")]
-    use object_store::{ObjectStoreExt, path::Path as ObjectPath};
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -577,6 +577,17 @@ mod tests {
         assert_eq!(manifest.status, "completed");
         assert!(manifest.empty);
         assert_eq!(manifest.schema_version, 1);
+    }
+
+    #[rstest]
+    fn read_run_manifest_returns_none_for_missing_run() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+
+        let manifest =
+            futures::executor::block_on(storage.read_run_manifest("backtest", "missing-run"))
+                .unwrap();
+
+        assert_eq!(manifest, None);
     }
 
     #[rstest]

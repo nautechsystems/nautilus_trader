@@ -48,7 +48,7 @@ const COMMAND_QUEUE_CAPACITY: usize = 10;
 ///
 /// Each open session holds its backend query state until it is drained or closed, so the count is
 /// bounded to turn a caller that never closes sessions into an error instead of an unbounded leak.
-pub(crate) const MAX_OPEN_SESSIONS: usize = 64;
+const MAX_OPEN_SESSIONS: usize = 64;
 
 #[derive(Debug)]
 pub struct CatalogWriteJob {
@@ -513,10 +513,6 @@ fn pull_session(
     result
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -536,7 +532,7 @@ mod tests {
     use super::*;
     use crate::catalog::{
         session::{DataBatchQuery, TypedDataBatchSession},
-        traits::{CatalogMetadata, CatalogReader, CatalogRecordQuery, CatalogWriter, RecordBatch},
+        traits::{CatalogReader, CatalogWriter, RecordBatch},
     };
 
     struct FailingSession;
@@ -600,52 +596,6 @@ mod tests {
                 vec![stub_quote()],
                 chunk_size,
             )))
-        }
-
-        fn query_metadata(
-            &mut self,
-            _query: &CatalogQuery,
-        ) -> anyhow::Result<Vec<CatalogMetadata>> {
-            Ok(Vec::new())
-        }
-
-        fn get_missing_intervals_for_request(
-            &mut self,
-            _start: UnixNanos,
-            _end: UnixNanos,
-            _data_type: NautilusDataType,
-            _identifier: Option<&str>,
-        ) -> anyhow::Result<Vec<(u64, u64)>> {
-            Ok(Vec::new())
-        }
-
-        fn query_last_timestamp(
-            &mut self,
-            _data_type: NautilusDataType,
-            _identifier: Option<&str>,
-        ) -> anyhow::Result<Option<u64>> {
-            Ok(None)
-        }
-
-        fn query_display_record_batches(
-            &mut self,
-            _query: &CatalogQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
-        }
-
-        fn query_record_batches(
-            &mut self,
-            _query: &CatalogRecordQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
-        }
-
-        fn query_record_display_batches(
-            &mut self,
-            _query: &CatalogRecordQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
         }
     }
 

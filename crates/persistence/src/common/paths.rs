@@ -44,9 +44,7 @@ pub fn normalize_path_separators(path: &str) -> String {
 /// Extracts path components using platform-appropriate path parsing.
 #[must_use]
 pub fn extract_path_components(path_str: &str) -> Vec<String> {
-    // Normalize separators and split
-    let normalized = normalize_path_separators(path_str);
-    normalized
+    normalize_path_separators(path_str)
         .split('/')
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
@@ -69,15 +67,12 @@ where
     S: AsRef<str>,
 {
     let mut parts = Vec::new();
+    let normalized_base = normalize_path_separators(base_path)
+        .trim_end_matches('/')
+        .to_string();
 
-    if !base_path.is_empty() {
-        let normalized_base = normalize_path_separators(base_path)
-            .trim_end_matches('/')
-            .to_string();
-
-        if !normalized_base.is_empty() {
-            parts.push(normalized_base);
-        }
+    if !normalized_base.is_empty() {
+        parts.push(normalized_base);
     }
 
     for component in components {
@@ -268,16 +263,9 @@ pub(crate) fn type_name_from_session_feather_path(
     kind: &str,
     instance_id: &str,
 ) -> anyhow::Result<String> {
-    let normalized = normalize_path_separators(path);
-    let components: Vec<&str> = normalized
-        .trim_matches('/')
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect();
+    let components = extract_path_components(path);
     let type_index = session_type_index(&components, kind, instance_id, path)?;
-    if components.get(type_index) == Some(&"data")
-        && components.get(type_index + 1) == Some(&"custom")
-    {
+    if has_custom_data_prefix(&components, type_index) {
         let type_name = components.get(type_index + 2).ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot infer custom data type from Feather session path '{path}' for {kind}/{instance_id}"
@@ -287,8 +275,8 @@ pub(crate) fn type_name_from_session_feather_path(
         return Ok(format!("custom/{type_name}"));
     }
 
-    let type_segment = components[type_index];
-    let file_name = components.last().copied().unwrap_or(type_segment);
+    let type_segment = components[type_index].as_str();
+    let file_name = components.last().map_or(type_segment, String::as_str);
 
     let type_name = if type_segment.ends_with(".feather") {
         file_name
@@ -310,23 +298,16 @@ pub(crate) fn identifier_from_session_feather_path(
     kind: &str,
     instance_id: &str,
 ) -> Option<String> {
-    let normalized = normalize_path_separators(path);
-    let components: Vec<&str> = normalized
-        .trim_matches('/')
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect();
+    let components = extract_path_components(path);
     let type_index = session_type_index(&components, kind, instance_id, path).ok()?;
-    if components.get(type_index) == Some(&"data")
-        && components.get(type_index + 1) == Some(&"custom")
-    {
+    if has_custom_data_prefix(&components, type_index) {
         let identifier_start = type_index + 3;
         let file_index = components.len().checked_sub(1)?;
         if identifier_start >= file_index {
             return None;
         }
 
-        return Some(components[identifier_start].to_string());
+        return Some(components[identifier_start].clone());
     }
 
     let identifier = components.get(type_index + 1)?;
@@ -336,11 +317,11 @@ pub(crate) fn identifier_from_session_feather_path(
         return None;
     }
 
-    (identifier != file_name).then(|| (*identifier).to_string())
+    (identifier != file_name).then(|| identifier.clone())
 }
 
 fn session_type_index(
-    components: &[&str],
+    components: &[String],
     kind: &str,
     instance_id: &str,
     path: &str,
@@ -355,6 +336,13 @@ fn session_type_index(
                 "Cannot infer data type from Feather session path '{path}' for {kind}/{instance_id}"
             )
         })
+}
+
+fn has_custom_data_prefix(components: &[String], type_index: usize) -> bool {
+    components.get(type_index).is_some_and(|c| c == "data")
+        && components
+            .get(type_index + 1)
+            .is_some_and(|c| c == "custom")
 }
 
 #[cfg(test)]

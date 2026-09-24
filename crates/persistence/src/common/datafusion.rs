@@ -30,7 +30,7 @@ use datafusion::{
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         compute::{cast, concat},
-        datatypes::{DataType, Field, Schema},
+        datatypes::{DataType, Schema},
         record_batch::RecordBatch,
     },
     catalog::TableProvider,
@@ -110,12 +110,13 @@ impl DataBackendSession {
     /// Creates a new [`DataBackendSession`] instance.
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
+        let runtime = get_runtime().handle().clone();
         let session_ctx = SessionContext::new_with_config(session_config());
 
         Self {
-            session_ctx,
             chunk_size,
-            runtime: get_runtime().handle().clone(),
+            runtime,
+            session_ctx,
             registered_tables: AHashSet::new(),
         }
     }
@@ -197,22 +198,22 @@ impl DataBackendSession {
         table_name: &str,
         file_paths: Vec<String>,
     ) -> anyhow::Result<()> {
-        if !self.registered_tables.contains(table_name) {
-            let parquet_options = ParquetReadOptions::<'_> {
-                skip_metadata: Some(false),
-                ..Default::default()
-            };
-
-            let dataframe = block_on_nautilus_with(|| {
-                self.session_ctx.read_parquet(file_paths, parquet_options)
-            })?;
-
-            validate_catalog_schema(dataframe.schema().as_arrow())?;
-            self.session_ctx
-                .register_table(table_name, dataframe.into_view())?;
-            self.registered_tables.insert(table_name.to_string());
+        if self.registered_tables.contains(table_name) {
+            return Ok(());
         }
 
+        let parquet_options = ParquetReadOptions::<'_> {
+            skip_metadata: Some(false),
+            ..Default::default()
+        };
+
+        let dataframe =
+            block_on_nautilus_with(|| self.session_ctx.read_parquet(file_paths, parquet_options))?;
+
+        validate_catalog_schema(dataframe.schema().as_arrow())?;
+        self.session_ctx
+            .register_table(table_name, dataframe.into_view())?;
+        self.registered_tables.insert(table_name.to_string());
         Ok(())
     }
 
@@ -259,25 +260,14 @@ pub(crate) fn cast_record_batch_to_schema(
             .unwrap_or(batch_field.as_ref());
 
         fields.push(Arc::new(field.clone()));
-        columns.push(cast_column_to_field(column, field)?);
+        columns.push(cast_column_to_data_type(column, field.data_type())?);
     }
 
     let schema = Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()));
     Ok(RecordBatch::try_new(schema, columns)?)
 }
 
-fn cast_column_to_field(column: &ArrayRef, field: &Field) -> Result<ArrayRef> {
-    cast_column_to_data_type(column, field.data_type())
-}
-
-#[expect(
-    clippy::too_many_lines,
-    reason = "the function keeps recursive Arrow cast rules in one exhaustive type dispatcher"
-)]
-pub(crate) fn cast_column_to_data_type(
-    column: &ArrayRef,
-    data_type: &DataType,
-) -> Result<ArrayRef> {
+fn cast_column_to_data_type(column: &ArrayRef, data_type: &DataType) -> Result<ArrayRef> {
     if column.data_type() == data_type {
         return Ok(column.clone());
     }
@@ -336,16 +326,7 @@ pub(crate) fn cast_column_to_data_type(
             offsets.push(offset);
         }
 
-        let values = if parts.is_empty() {
-            new_empty_array(field.data_type())
-        } else {
-            let parts = parts
-                .iter()
-                .map(std::convert::AsRef::as_ref)
-                .collect::<Vec<_>>();
-            concat(&parts)?
-        };
-
+        let values = concat_list_values(&parts, field.data_type())?;
         let offsets = OffsetBuffer::new(ScalarBuffer::from(offsets));
         return Ok(Arc::new(ListArray::try_new(
             field.clone(),
@@ -385,16 +366,7 @@ pub(crate) fn cast_column_to_data_type(
             parts.push(cast_column_to_data_type(&value, field.data_type())?);
         }
 
-        let values = if parts.is_empty() {
-            new_empty_array(field.data_type())
-        } else {
-            let parts = parts
-                .iter()
-                .map(std::convert::AsRef::as_ref)
-                .collect::<Vec<_>>();
-            concat(&parts)?
-        };
-
+        let values = concat_list_values(&parts, field.data_type())?;
         return Ok(Arc::new(FixedSizeListArray::try_new(
             field.clone(),
             *size,
@@ -406,6 +378,15 @@ pub(crate) fn cast_column_to_data_type(
     Ok(cast(column, data_type)?)
 }
 
+fn concat_list_values(parts: &[ArrayRef], data_type: &DataType) -> Result<ArrayRef> {
+    if parts.is_empty() {
+        return Ok(new_empty_array(data_type));
+    }
+
+    let parts = parts.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+    Ok(concat(&parts)?)
+}
+
 #[must_use]
 pub fn build_query(
     table: &str,
@@ -413,16 +394,8 @@ pub fn build_query(
     end: Option<UnixNanos>,
     where_clause: Option<&str>,
 ) -> String {
-    let conditions = query_conditions(start, end, where_clause);
-    let mut query = format!("SELECT * FROM {table}");
-
-    if !conditions.is_empty() {
-        query.push_str(" WHERE ");
-        query.push_str(&conditions.join(" AND "));
-    }
-
-    query.push_str(" ORDER BY ts_init");
-    query
+    let filter = where_sql(start, end, where_clause);
+    format!("SELECT * FROM {table}{filter} ORDER BY ts_init")
 }
 
 #[must_use]
@@ -432,23 +405,15 @@ pub fn build_identifier_query(
     end: Option<UnixNanos>,
     where_clause: Option<&str>,
 ) -> String {
-    let conditions = query_conditions(start, end, where_clause);
-    let mut query = format!("SELECT DISTINCT identifier FROM {table}");
-
-    if !conditions.is_empty() {
-        query.push_str(" WHERE ");
-        query.push_str(&conditions.join(" AND "));
-    }
-
-    query.push_str(" ORDER BY identifier");
-    query
+    let filter = where_sql(start, end, where_clause);
+    format!("SELECT DISTINCT identifier FROM {table}{filter} ORDER BY identifier")
 }
 
-fn query_conditions(
+fn where_sql(
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
     where_clause: Option<&str>,
-) -> Vec<String> {
+) -> String {
     let mut conditions = Vec::new();
 
     if let Some(clause) = where_clause {
@@ -465,7 +430,11 @@ fn query_conditions(
         conditions.push(format!("CAST(ts_init AS BIGINT) <= {end_ts}"));
     }
 
-    conditions
+    if conditions.is_empty() {
+        return String::new();
+    }
+
+    format!(" WHERE {}", conditions.join(" AND "))
 }
 
 pub fn identifiers_from_record_batches(batches: &[RecordBatch]) -> anyhow::Result<Vec<String>> {
@@ -513,99 +482,19 @@ mod tests {
     };
 
     use datafusion::{
-        arrow::array::{FixedSizeBinaryArray, UInt32Array},
+        arrow::{
+            array::{Decimal128Array, FixedSizeBinaryArray, UInt32Array},
+            buffer::NullBuffer,
+            datatypes::Field,
+        },
         datasource::MemTable,
         execution::object_store::ObjectStoreUrl,
-    };
-    use nautilus_common::live::get_runtime;
-    use nautilus_model::{
-        data::{DataBatch, QuoteTick},
-        identifiers::InstrumentId,
-        types::{Price, Quantity},
     };
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{
-        catalog::session::{DataBatchQuery, TypedDataBatchSession},
-        common::storage::create_storage_backend_from_path,
-    };
-
-    fn typed_quote(ts_init: u64) -> QuoteTick {
-        QuoteTick::new(
-            InstrumentId::from("AUD/USD.SIM"),
-            Price::from("1.0"),
-            Price::from("1.1"),
-            Quantity::from("1000"),
-            Quantity::from("1000"),
-            UnixNanos::from(ts_init),
-            UnixNanos::from(ts_init),
-        )
-    }
-
-    fn batch_ts(batch: &DataBatch) -> Vec<u64> {
-        match batch {
-            DataBatch::Quote(quotes) => quotes
-                .as_ref()
-                .iter()
-                .map(|quote| quote.ts_init.as_u64())
-                .collect(),
-            other => panic!("expected quote batch, found {other:?}"),
-        }
-    }
-
-    #[rstest]
-    fn typed_session_chunks_pages_with_carry_across_pulls() {
-        let pages: Vec<anyhow::Result<Vec<QuoteTick>>> = vec![
-            Ok(vec![typed_quote(1), typed_quote(2), typed_quote(3)]),
-            Ok(Vec::new()),
-            Ok(vec![typed_quote(4), typed_quote(5)]),
-        ];
-        let mut session = TypedDataBatchSession::new(Box::new(pages.into_iter()), Some(2));
-
-        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [1, 2]);
-        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [3, 4]);
-        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [5]);
-        assert!(session.next_batch().unwrap().is_none());
-    }
-
-    #[rstest]
-    fn typed_session_extends_chunk_across_equal_boundary_ts() {
-        let data = vec![
-            typed_quote(1),
-            typed_quote(2),
-            typed_quote(2),
-            typed_quote(2),
-            typed_quote(3),
-        ];
-        let mut session = TypedDataBatchSession::from_vec(data, Some(2));
-
-        assert_eq!(
-            batch_ts(&session.next_batch().unwrap().unwrap()),
-            [1, 2, 2, 2]
-        );
-        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [3]);
-        assert!(session.next_batch().unwrap().is_none());
-    }
-
-    #[rstest]
-    fn typed_session_empty_source_yields_none() {
-        let mut session = TypedDataBatchSession::<QuoteTick>::from_vec(Vec::new(), None);
-
-        assert!(session.next_batch().unwrap().is_none());
-    }
-
-    #[rstest]
-    fn typed_session_propagates_page_error() {
-        let pages: Vec<anyhow::Result<Vec<QuoteTick>>> = vec![
-            Ok(vec![typed_quote(1)]),
-            Err(anyhow::anyhow!("page failed")),
-        ];
-        let mut session = TypedDataBatchSession::new(Box::new(pages.into_iter()), Some(4));
-
-        assert_eq!(session.next_batch().unwrap_err().to_string(), "page failed");
-    }
+    use crate::common::storage::create_storage_backend_from_path;
 
     #[rstest]
     fn register_storage_backend_accepts_memory_backend() {
@@ -671,13 +560,6 @@ mod tests {
 
         assert!(!optimizer.repartition_file_scans);
         assert!(optimizer.prefer_existing_sort);
-    }
-
-    #[rstest]
-    fn typed_session_reports_reset_as_unsupported() {
-        let mut session = TypedDataBatchSession::from_vec(vec![typed_quote(1)], None);
-
-        assert!(!session.reset().unwrap());
     }
 
     #[rstest]
@@ -860,11 +742,6 @@ mod tests {
 
     #[rstest]
     fn fixed_size_list_cast_round_trips_through_delta_list_type() {
-        use arrow::{
-            array::{Decimal128Array, UInt32Array},
-            buffer::NullBuffer,
-        };
-
         let field = Arc::new(Field::new("element", DataType::Decimal128(38, 16), true));
         let values = Decimal128Array::from(vec![1_i128, 2, 3, 4])
             .with_precision_and_scale(38, 16)

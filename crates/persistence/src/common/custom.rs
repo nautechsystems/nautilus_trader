@@ -19,11 +19,6 @@
 //! (Parquet/Feather), and custom-data write preparation, path construction, and decode logic
 //! so the catalog delegates here instead of inlining custom-specific branching.
 
-#![expect(
-    clippy::missing_panics_doc,
-    reason = "custom Arrow conversion validates non-empty inputs before internal unwraps"
-)]
-
 use std::{
     collections::{BTreeMap, HashMap},
     hash::BuildHasher,
@@ -74,12 +69,8 @@ pub fn augment_batch_with_data_type_column<S: BuildHasher>(
     dt_meta: Option<&HashMap<String, String, S>>,
 ) -> anyhow::Result<RecordBatch> {
     let num_rows = batch.num_rows();
-
-    let data_type_array: Arc<dyn Array> = Arc::new(StringArray::from(
-        (0..num_rows)
-            .map(|_| Some(data_type_json))
-            .collect::<Vec<_>>(),
-    ));
+    let data_type_array: Arc<dyn Array> =
+        Arc::new(StringArray::from(vec![data_type_json; num_rows]));
     let schema = batch.schema();
     let mut fields: Vec<_> = schema.fields().iter().cloned().collect();
     fields.push(Arc::new(Field::new(
@@ -97,9 +88,8 @@ pub fn augment_batch_with_data_type_column<S: BuildHasher>(
     let new_schema = Arc::new(Schema::new_with_metadata(fields, meta));
     let mut columns = batch.columns().to_vec();
     columns.push(data_type_array);
-    let new_batch = RecordBatch::try_new(new_schema, columns)
-        .map_err(|e| anyhow::anyhow!("Failed to merge custom data type metadata: {e}"))?;
-    Ok(new_batch)
+    RecordBatch::try_new(new_schema, columns)
+        .map_err(|e| anyhow::anyhow!("Failed to merge custom data type metadata: {e}"))
 }
 
 /// Returns path components for custom data: `["data", "custom", type_name, identifier]`.
@@ -155,11 +145,10 @@ pub fn group_custom_data_by_type<'a>(
 pub fn prepare_custom_data_batch(
     data: &[&CustomData],
 ) -> anyhow::Result<(RecordBatch, String, Option<String>, UnixNanos, UnixNanos)> {
-    if data.is_empty() {
+    let Some(first_custom) = data.first() else {
         anyhow::bail!("prepare_custom_data_batch called with empty data");
-    }
+    };
 
-    let first_custom = data.first().unwrap();
     let type_name = first_custom.data.type_name();
     let identifier = first_custom.data_type.identifier().map(String::from);
     let metadata_str = first_custom.data_type.metadata_str();
@@ -169,6 +158,9 @@ pub fn prepare_custom_data_batch(
         .to_persistence_json()
         .map_err(|e| anyhow::anyhow!("Failed to serialize data_type for persistence: {e}"))?;
 
+    let mut start_ts = first_custom.data.ts_init();
+    let mut end_ts = start_ts;
+
     for custom in data {
         anyhow::ensure!(
             custom.data.type_name() == type_name
@@ -176,17 +168,13 @@ pub fn prepare_custom_data_batch(
                 && custom.data_type.metadata_str() == metadata_str,
             "Cannot prepare one custom data batch from mixed DataType values",
         );
-    }
 
-    let items: Vec<Arc<dyn CustomDataTrait>> = data.iter().map(|c| Arc::clone(&c.data)).collect();
-    let mut start_ts = items[0].ts_init();
-    let mut end_ts = start_ts;
-
-    for item in &items[1..] {
-        let ts_init = item.ts_init();
+        let ts_init = custom.data.ts_init();
         start_ts = start_ts.min(ts_init);
         end_ts = end_ts.max(ts_init);
     }
+
+    let items: Vec<Arc<dyn CustomDataTrait>> = data.iter().map(|c| Arc::clone(&c.data)).collect();
 
     if let Some(schema) = get_arrow_schema(type_name) {
         validate_custom_catalog_schema(type_name, &schema)?;
@@ -321,30 +309,29 @@ pub fn decode_custom_batches_to_data(
     batches: Vec<RecordBatch>,
     use_ts_event_for_ts_init: bool,
 ) -> anyhow::Result<Vec<Data>> {
-    if batches.is_empty() {
+    let Some(first_batch) = batches.first() else {
         return Ok(Vec::new());
-    }
+    };
+
+    let schema = first_batch.schema();
+
+    let ts_columns = if use_ts_event_for_ts_init {
+        schema
+            .index_of("ts_event")
+            .ok()
+            .zip(schema.index_of("ts_init").ok())
+    } else {
+        None
+    };
 
     let mut file_data = Vec::new();
-    let schema = batches
-        .first()
-        .map(arrow::array::RecordBatch::schema)
-        .expect("empty batches returned above");
 
     for mut batch in batches {
-        if use_ts_event_for_ts_init {
-            let column_names: Vec<String> =
-                schema.fields().iter().map(|f| f.name().clone()).collect();
-
-            if let (Some(ts_event_idx), Some(ts_init_idx)) = (
-                column_names.iter().position(|n| n == "ts_event"),
-                column_names.iter().position(|n| n == "ts_init"),
-            ) {
-                let mut new_columns = batch.columns().to_vec();
-                new_columns[ts_init_idx] = new_columns[ts_event_idx].clone();
-                batch = RecordBatch::try_new(schema.clone(), new_columns)
-                    .map_err(|e| anyhow::anyhow!("Failed to create new batch: {e}"))?;
-            }
+        if let Some((ts_event_idx, ts_init_idx)) = ts_columns {
+            let mut new_columns = batch.columns().to_vec();
+            new_columns[ts_init_idx] = new_columns[ts_event_idx].clone();
+            batch = RecordBatch::try_new(schema.clone(), new_columns)
+                .map_err(|e| anyhow::anyhow!("Failed to create new batch: {e}"))?;
         }
 
         let metadata = batch.schema().metadata().clone();
@@ -511,6 +498,46 @@ mod tests {
             error.to_string(),
             "prepare_custom_data_batch called with empty data"
         );
+    }
+
+    #[rstest]
+    #[case::identifier(test_custom("B", 2, 2, None))]
+    #[case::metadata({
+        let mut metadata = Params::new();
+        metadata.insert("source".to_string(), "replay".into());
+        test_custom("A", 2, 2, Some(metadata))
+    })]
+    fn prepare_custom_data_batch_rejects_mixed_data_types(#[case] other: CustomData) {
+        let first = test_custom("A", 1, 1, None);
+
+        let error = prepare_custom_data_batch(&[&first, &other]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot prepare one custom data batch from mixed DataType values"
+        );
+    }
+
+    #[rstest]
+    fn prepare_custom_data_batch_reports_ts_init_range_of_unordered_rows() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let data = [
+            test_custom("A", 21, 21, None),
+            test_custom("A", 11, 11, None),
+            test_custom("A", 31, 31, None),
+        ];
+        let refs = data.iter().collect::<Vec<_>>();
+
+        let (_, _, _, start, end) = prepare_custom_data_batch(&refs).unwrap();
+
+        assert_eq!((start, end), (UnixNanos::from(11), UnixNanos::from(31)));
+    }
+
+    #[rstest]
+    fn decode_custom_batches_to_data_returns_empty_for_no_batches() {
+        let decoded = decode_custom_batches_to_data(Vec::new(), true).unwrap();
+
+        assert_eq!(decoded, Vec::<Data>::new());
     }
 
     #[rstest]

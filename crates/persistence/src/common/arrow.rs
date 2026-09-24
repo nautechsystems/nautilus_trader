@@ -110,7 +110,7 @@ pub(crate) fn data_to_arrow_batches(
 
 #[cfg(feature = "python")]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct BatchIdentity {
+struct BatchIdentity {
     identifier: String,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
@@ -132,7 +132,7 @@ impl BatchIdentity {
 }
 
 #[cfg(feature = "python")]
-pub(crate) trait CatalogBatchIdentity {
+trait CatalogBatchIdentity {
     fn batch_identity(&self) -> BatchIdentity;
 }
 
@@ -240,7 +240,7 @@ impl_batch_identity!(
 // Groups order lexically and retain input order within each group. Precision is part of the key,
 // so one identifier can produce separate batches after a precision change.
 #[cfg(feature = "python")]
-pub(crate) fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
+fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
 where
     T: CatalogBatchIdentity + EncodeToRecordBatch,
 {

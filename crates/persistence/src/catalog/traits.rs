@@ -422,28 +422,15 @@ mod tests {
     }
 
     #[rstest]
-    fn reader_only_catalog_uses_optional_capability_defaults() {
-        let mut catalog = ReaderOnlyCatalog;
-
-        let error = catalog
-            .query_metadata(&CatalogQuery::new(NautilusDataType::QuoteTick))
-            .unwrap_err();
-
-        match error.downcast_ref::<PersistenceError>() {
-            Some(PersistenceError::Unsupported(operation)) => {
-                assert_eq!(operation, "query_metadata");
-            }
-            other => panic!("Expected an unsupported capability error, received {other:?}"),
-        }
-    }
-
-    #[rstest]
     fn reader_only_catalog_reports_every_unimplemented_capability_as_unsupported() {
         let mut catalog = ReaderOnlyCatalog;
 
         let errors = [
             catalog
                 .query_identifiers(&CatalogQuery::new(NautilusDataType::QuoteTick))
+                .unwrap_err(),
+            catalog
+                .query_metadata(&CatalogQuery::new(NautilusDataType::QuoteTick))
                 .unwrap_err(),
             catalog
                 .get_missing_intervals_for_request(
@@ -476,6 +463,7 @@ mod tests {
             operations,
             vec![
                 "query_identifiers",
+                "query_metadata",
                 "get_missing_intervals_for_request",
                 "query_last_timestamp",
                 "query_display_record_batches",

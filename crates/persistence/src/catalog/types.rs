@@ -633,12 +633,11 @@ impl NautilusRecordTypePrefix for NautilusRecordType {
 }
 
 pub(crate) fn filter_instruments_for_request_range(
-    instruments: Vec<InstrumentAny>,
+    mut instruments: Vec<InstrumentAny>,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
 ) -> Vec<InstrumentAny> {
     if start.is_none() && end.is_none() {
-        let mut instruments = instruments;
         instruments.sort_by_key(HasTsInit::ts_init);
         return instruments;
     }
@@ -658,14 +657,11 @@ pub(crate) fn filter_instruments_for_request_range(
         } else if let Some(start) = start
             && ts_init < start
             && end.is_none_or(|value| ts_init <= value)
+            && latest_before_start
+                .get(&instrument_id)
+                .is_none_or(|existing| HasTsInit::ts_init(existing).as_u64() < ts_init)
         {
-            match latest_before_start.get(&instrument_id) {
-                Some(existing)
-                    if HasTsInit::ts_init(existing) >= HasTsInit::ts_init(&instrument) => {}
-                _ => {
-                    latest_before_start.insert(instrument_id, instrument);
-                }
-            }
+            latest_before_start.insert(instrument_id, instrument);
         }
     }
 
