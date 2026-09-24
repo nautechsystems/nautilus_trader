@@ -2218,17 +2218,28 @@ mod serial_tests {
         Position::new(instrument, fill)
     }
 
-    // Persists an order, a NETTING position, the order-position index, a client claim and both
-    // snapshots under the shared IDs, as a trader's node would
+    // A cash account under the shared account ID, with a trader-specific balance
+    fn shared_account(balance: &str) -> AccountAny {
+        AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd(balance, "0 USD", balance),
+            false,
+            false,
+        ))
+    }
+
+    // Persists an order, a NETTING position, the order-position index, a client claim, both
+    // snapshots and an account under the shared IDs, as a trader's node would
     fn write_shared_state(
         pg_cache: &PostgresCacheDatabase,
         instrument: &InstrumentAny,
         trader_id: TraderId,
         quantity: &str,
+        balance: &str,
         client_id: ClientId,
-    ) -> (OrderAny, Position) {
+    ) -> (OrderAny, Position, AccountAny) {
         let order = shared_order(instrument, trader_id, quantity);
         let position = shared_position(instrument, &order, quantity);
+        let account = shared_account(balance);
 
         pg_cache.add_order(&order, None).unwrap();
         pg_cache.add_position(&position).unwrap();
@@ -2242,8 +2253,9 @@ mod serial_tests {
         pg_cache
             .snapshot_position_state(&position, UnixNanos::from(1_000_000_000), None)
             .unwrap();
+        pg_cache.add_account(&account).unwrap();
 
-        (order, position)
+        (order, position, account)
     }
 
     async fn count_rows(pool: &PgPool, table: &str) -> i64 {
@@ -2259,6 +2271,7 @@ mod serial_tests {
                 count_rows(pool, "order").await == expected
                     && count_rows(pool, "position").await == expected
                     && count_rows(pool, "order_position_index").await == expected
+                    && count_rows(pool, "account_event").await == expected
             },
             Duration::from_secs(5),
         )
@@ -2270,6 +2283,7 @@ mod serial_tests {
         pg_cache: &PostgresCacheDatabase,
         order: &OrderAny,
         position: &Position,
+        account: &AccountAny,
         client_id: ClientId,
     ) {
         let client_order_id = order.client_order_id();
@@ -2313,6 +2327,10 @@ mod serial_tests {
         let clients = pg_cache.load_index_order_client().unwrap();
         assert_eq!(clients.len(), 1);
         assert_eq!(clients.get(&client_order_id), Some(&client_id));
+
+        let accounts = pg_cache.load_accounts().await.unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_entirely_equal(&accounts[&account.id()], account);
     }
 
     async fn assert_no_trader_state(pg_cache: &PostgresCacheDatabase, position_id: &PositionId) {
@@ -2354,10 +2372,22 @@ mod serial_tests {
             .unwrap();
         add_test_instrument(&pg_cache_a, &instrument).await;
 
-        let (order_a, position_a) =
-            write_shared_state(&pg_cache_a, &instrument, trader_a, "1.0", client_a);
-        let (order_b, position_b) =
-            write_shared_state(&pg_cache_b, &instrument, trader_b, "2.0", client_b);
+        let (order_a, position_a, account_a) = write_shared_state(
+            &pg_cache_a,
+            &instrument,
+            trader_a,
+            "1.0",
+            "1000000 USD",
+            client_a,
+        );
+        let (order_b, position_b, account_b) = write_shared_state(
+            &pg_cache_b,
+            &instrument,
+            trader_b,
+            "2.0",
+            "500000 USD",
+            client_b,
+        );
         assert_eq!(order_a.client_order_id(), order_b.client_order_id());
         assert_eq!(position_a.id, position_b.id);
         wait_for_shared_rows(&pg_cache_a.pool, 2).await;
@@ -2374,8 +2404,8 @@ mod serial_tests {
             .await
             .unwrap();
 
-        assert_shared_state(&restarted_a, &order_a, &position_a, client_a).await;
-        assert_shared_state(&restarted_b, &order_b, &position_b, client_b).await;
+        assert_shared_state(&restarted_a, &order_a, &position_a, &account_a, client_a).await;
+        assert_shared_state(&restarted_b, &order_b, &position_b, &account_b, client_b).await;
 
         reset_test_database(&restarted_a).await;
         restarted_a.close().unwrap();
@@ -2397,18 +2427,20 @@ mod serial_tests {
             .unwrap();
         add_test_instrument(&pg_cache_a, &instrument).await;
 
-        let (_, position_a) = write_shared_state(
+        let (_, position_a, _) = write_shared_state(
             &pg_cache_a,
             &instrument,
             trader_a,
             "1.0",
+            "1000000 USD",
             ClientId::new("CLIENT-A"),
         );
-        let (_, position_b) = write_shared_state(
+        let (_, position_b, _) = write_shared_state(
             &pg_cache_b,
             &instrument,
             trader_b,
             "2.0",
+            "500000 USD",
             ClientId::new("CLIENT-B"),
         );
         wait_for_shared_rows(&pg_cache_a.pool, 2).await;
@@ -2460,20 +2492,32 @@ mod serial_tests {
             .unwrap();
         add_test_instrument(&pg_cache_a, &instrument).await;
 
-        let (order_a, position_a) =
-            write_shared_state(&pg_cache_a, &instrument, trader_a, "1.0", client_a);
-        let (order_b, position_b) =
-            write_shared_state(&pg_cache_b, &instrument, trader_b, "2.0", client_b);
+        let (order_a, position_a, account_a) = write_shared_state(
+            &pg_cache_a,
+            &instrument,
+            trader_a,
+            "1.0",
+            "1000000 USD",
+            client_a,
+        );
+        let (order_b, position_b, account_b) = write_shared_state(
+            &pg_cache_b,
+            &instrument,
+            trader_b,
+            "2.0",
+            "500000 USD",
+            client_b,
+        );
         wait_for_shared_rows(&pg_cache_a.pool, 2).await;
 
         if flush_a {
             pg_cache_a.flush().unwrap();
             assert_no_trader_state(&pg_cache_a, &position_a.id).await;
-            assert_shared_state(&pg_cache_b, &order_b, &position_b, client_b).await;
+            assert_shared_state(&pg_cache_b, &order_b, &position_b, &account_b, client_b).await;
         } else {
             pg_cache_b.flush().unwrap();
             assert_no_trader_state(&pg_cache_b, &position_b.id).await;
-            assert_shared_state(&pg_cache_a, &order_a, &position_a, client_a).await;
+            assert_shared_state(&pg_cache_a, &order_a, &position_a, &account_a, client_a).await;
         }
 
         // Shared reference data survives a trader's flush
@@ -2583,19 +2627,22 @@ mod serial_tests {
             DatabaseQueries::assign_account_trader(&pg, &account.id(), &trader_b).await;
         let unassigned = DatabaseQueries::load_unassigned_account_ids(&pg).await;
 
-        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
-            .await
-            .unwrap();
-        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
-            .await
-            .unwrap();
-        let accounts_a = pg_cache_a.load_accounts().await.unwrap();
-        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
+        // Reconnect and load without panicking, so the cleanup below always runs
+        let reconnected = async {
+            let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a).await?;
+            let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b).await?;
+            let accounts_a = pg_cache_a.load_accounts().await?;
+            let accounts_b = pg_cache_b.load_accounts().await?;
+            pg_cache_a.close()?;
+            pg_cache_b.close()?;
+            anyhow::Ok((accounts_a, accounts_b))
+        }
+        .await;
 
         // Clean up before asserting, so a failure cannot leave later tests blocked
         DatabaseQueries::truncate(&pg).await.unwrap();
-        pg_cache_a.close().unwrap();
-        pg_cache_b.close().unwrap();
+
+        let (accounts_a, accounts_b) = reconnected.unwrap();
 
         for error in blocked_errors {
             let error = error.expect("connect should fail while account events have no trader");
