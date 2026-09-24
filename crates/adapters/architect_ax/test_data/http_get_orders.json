@@ -14,6 +14,8 @@
       "o": "PARTIALLY_FILLED",
       "d": "B",
       "tif": "GTC",
+      "po": true,
+      "rb": "rej",
       "cid": 12345,
       "r": null,
       "tag": "strategy-1",
@@ -36,7 +38,8 @@
       "cid": null,
       "r": null,
       "tag": null,
-      "txt": null
+      "txt": null,
+      "po": false
     }
   ],
   "total_count": 2,

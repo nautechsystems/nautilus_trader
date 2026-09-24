@@ -1,0 +1,28 @@
+{
+  "t": "j",
+  "ts": 1790228424,
+  "tn": 530305151,
+  "eid": "fixture-live-0147",
+  "o": {
+    "oid": "fixture-live-0148",
+    "u": "fixture-0001",
+    "aid": "fixture-0001",
+    "s": "EURUSD-PERP",
+    "p": "1.1393",
+    "q": 100,
+    "xq": 0,
+    "rq": 0,
+    "o": "REJECTED",
+    "d": "B",
+    "tif": "GTC",
+    "cid": 10077,
+    "tag": "fixture-live-0047",
+    "po": true,
+    "rb": "rej",
+    "txt": "post-only order would cross the book",
+    "ts": 1790228424,
+    "tn": 522951519
+  },
+  "r": null,
+  "txt": "post-only order would cross the book"
+}

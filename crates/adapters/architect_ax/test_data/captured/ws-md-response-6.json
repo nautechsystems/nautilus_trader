@@ -1,0 +1,7 @@
+{
+  "rid": 6,
+  "error": {
+    "message": "Symbol INVALID-AUDIT is not available",
+    "code": 404
+  }
+}

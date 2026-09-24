@@ -469,6 +469,10 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::SetClient(client)).await?;
 
+        if !self.subscriptions.all_topics().is_empty() {
+            self.send_cmd(HandlerCommand::ReplaySubscriptions).await?;
+        }
+
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
 

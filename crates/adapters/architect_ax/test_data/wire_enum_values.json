@@ -1,0 +1,138 @@
+{
+  "CandleWidth": [
+    "1s",
+    "5s",
+    "1m",
+    "5m",
+    "15m",
+    "1h",
+    "1d"
+  ],
+  "EstimatedFundingRateStatus": [
+    "ready",
+    "settlement_pending",
+    "unavailable"
+  ],
+  "FundingSlotStatus": [
+    "realized",
+    "projected",
+    "skipped",
+    "pending"
+  ],
+  "FundingVariant": [
+    "daily_close",
+    "intraday_twap"
+  ],
+  "InstrumentCategory": [
+    "compute",
+    "crypto",
+    "energy",
+    "energy_etfs",
+    "equities",
+    "fx",
+    "metals",
+    "treasuries"
+  ],
+  "InstrumentState": [
+    "CLOSED_FROZEN",
+    "PRE_OPEN",
+    "OPEN",
+    "CLOSED",
+    "DELISTED",
+    "HALTED",
+    "MATCH_AND_CLOSE_AUCTION",
+    "UNKNOWN"
+  ],
+  "Side": [
+    "B",
+    "S"
+  ],
+  "OrderRejectReason": [
+    "CLOSE_ONLY",
+    "INSUFFICIENT_MARGIN",
+    "MAX_OPEN_ORDERS_EXCEEDED",
+    "UNKNOWN_SYMBOL",
+    "EXCHANGE_CLOSED",
+    "INCORRECT_QUANTITY",
+    "INVALID_PRICE_INCREMENT",
+    "INCORRECT_ORDER_TYPE",
+    "PRICE_OUT_OF_BOUNDS",
+    "NO_LIQUIDITY",
+    "INSUFFICIENT_CREDIT_LIMIT",
+    "ORIGINAL_ORDER_TERMINATED",
+    "DUPLICATE_CLIENT_ORDER_ID",
+    "UNKNOWN"
+  ],
+  "OrderState": [
+    "PENDING",
+    "ACCEPTED",
+    "PARTIALLY_FILLED",
+    "FILLED",
+    "CANCELED",
+    "REJECTED",
+    "EXPIRED",
+    "REPLACED",
+    "DONE_FOR_DAY",
+    "UNKNOWN"
+  ],
+  "RepriceBehavior": [
+    "rej",
+    "bo",
+    "tbl"
+  ],
+  "TimeInForce": [
+    "GTC",
+    "IOC",
+    "DAY"
+  ],
+  "Environment": [
+    "SANDBOX",
+    "PRODUCTION"
+  ],
+  "MarketDataLevel": [
+    "LEVEL_1",
+    "LEVEL_2",
+    "LEVEL_3",
+    "TRADES"
+  ],
+  "MdRequestType": [
+    "subscribe",
+    "unsubscribe",
+    "subscribe_candles",
+    "unsubscribe_candles"
+  ],
+  "OrderRequestType": [
+    "p",
+    "x",
+    "o"
+  ],
+  "MdWsMessageType": [
+    "h",
+    "s",
+    "t",
+    "c",
+    "1",
+    "2",
+    "3"
+  ],
+  "OrderWsMessageType": [
+    "h",
+    "e",
+    "n",
+    "c",
+    "r",
+    "j",
+    "x",
+    "d",
+    "p",
+    "f"
+  ],
+  "CancelReason": [
+    "USER_REQUESTED",
+    "UNKNOWN"
+  ],
+  "CancelRejectionReason": [
+    "ORDER_NOT_FOUND",
+    "UNKNOWN"
+  ]
+}

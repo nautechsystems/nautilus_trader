@@ -1,0 +1,7 @@
+{
+  "rid": 3,
+  "err": {
+    "code": 404,
+    "msg": "estimated funding rate is not available for this symbol"
+  }
+}

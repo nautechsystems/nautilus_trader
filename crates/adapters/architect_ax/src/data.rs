@@ -637,7 +637,7 @@ impl DataClient for AxDataClient {
     }
 
     fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        log::warn!("Index prices not supported by AX Exchange");
+        log::warn!("Index price subscriptions are not supported by the Architect AX adapter");
         Ok(())
     }
 
@@ -1492,14 +1492,18 @@ mod tests {
 
     fn ticker_message(state: AxInstrumentState) -> AxMdTicker {
         AxMdTicker {
+            bp: None,
+            ap: None,
+            lst: None,
+            ef: None,
             ts: 1_700_000_000,
             tn: 0,
             s: Ustr::from("EURUSD-PERP"),
-            p: rust_decimal::Decimal::ZERO,
+            p: Some(rust_decimal::Decimal::ZERO),
             q: 0,
-            o: rust_decimal::Decimal::ZERO,
-            l: rust_decimal::Decimal::ZERO,
-            h: rust_decimal::Decimal::ZERO,
+            o: Some(rust_decimal::Decimal::ZERO),
+            l: Some(rust_decimal::Decimal::ZERO),
+            h: Some(rust_decimal::Decimal::ZERO),
             v: 0,
             oi: None,
             m: None,
@@ -1546,7 +1550,7 @@ mod tests {
         let mut instrument_states = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
-        let msg = AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open));
+        let msg = AxMdMessage::Ticker(Box::new(ticker_message(AxInstrumentState::Open)));
         handle_md_message(
             msg.clone(),
             &tx.clone().into(),
@@ -1603,7 +1607,7 @@ mod tests {
         let clock = get_atomic_clock_realtime();
 
         handle_md_message(
-            AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open)),
+            AxMdMessage::Ticker(Box::new(ticker_message(AxInstrumentState::Open))),
             &tx.clone().into(),
             &instruments,
             &sdt,
@@ -1613,7 +1617,7 @@ mod tests {
             clock,
         );
         handle_md_message(
-            AxMdMessage::Ticker(ticker_message(AxInstrumentState::Closed)),
+            AxMdMessage::Ticker(Box::new(ticker_message(AxInstrumentState::Closed))),
             &tx.into(),
             &instruments,
             &sdt,
@@ -1653,7 +1657,7 @@ mod tests {
         let clock = get_atomic_clock_realtime();
 
         handle_md_message(
-            AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open)),
+            AxMdMessage::Ticker(Box::new(ticker_message(AxInstrumentState::Open))),
             &tx.into(),
             &instruments,
             &sdt,

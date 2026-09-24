@@ -15,7 +15,7 @@
 
 //! Integration tests for the Ax HTTP client using a mock Axum server.
 
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, extract::Query, http::StatusCode, response::Json, routing::get};
 use jiff::civil::Date;
@@ -700,6 +700,96 @@ async fn test_domain_http_request_order_status_carries_reject_reason() {
 }
 
 #[rstest]
+#[case("CANCELED", 0, true, OrderStatus::Canceled)]
+#[case("CANCELED", 50, true, OrderStatus::Canceled)]
+#[case("EXPIRED", 0, true, OrderStatus::Expired)]
+#[case("REJECTED", 0, true, OrderStatus::Rejected)]
+#[case("REPLACED", 0, true, OrderStatus::Canceled)]
+#[case("CANCELED", 0, false, OrderStatus::Canceled)]
+#[tokio::test]
+async fn test_domain_http_terminal_order_status_preserves_original_quantity(
+    #[case] state: &str,
+    #[case] filled: u64,
+    #[case] history_available: bool,
+    #[case] expected_status: OrderStatus,
+) {
+    let mut status = load_test_data("captured/order-status-canceled.json");
+    status["status"]["state"] = state.into();
+    status["status"]["filled_quantity"] = filled.into();
+    let order_id = status["status"]["order_id"].as_str().unwrap().to_string();
+    let mut history = load_test_data("captured/orders-live.json");
+    history["orders"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|order| history_available && order["oid"].as_str() == Some(order_id.as_str()));
+
+    if history_available {
+        assert_eq!(history["orders"].as_array().unwrap().len(), 1);
+        history["orders"][0]["q"] = 200.into();
+        history["orders"][0]["xq"] = filled.into();
+    }
+
+    let expected_order_id = order_id.clone();
+
+    let router = create_base_router()
+        .route("/order-status", get(move || async move { Json(status) }))
+        .route(
+            "/orders",
+            get(
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    assert_eq!(params.get("order_id"), Some(&expected_order_id));
+                    assert_eq!(params.get("limit").map(String::as_str), Some("1"));
+                    Json(history)
+                },
+            ),
+        );
+
+    let addr = start_server(router).await;
+    let base_url = format!("http://{addr}");
+    let client = AxHttpClient::new(
+        Some(base_url.clone()),
+        Some(base_url),
+        60,
+        0,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let result = client
+        .request_order_status(
+            AccountId::from("AX-001"),
+            InstrumentId::from("EURUSD-PERP.AX"),
+            Some(ClientOrderId::from("O-TERMINAL")),
+            Some(VenueOrderId::from(order_id)),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+        )
+        .await;
+
+    if history_available {
+        let report = result.unwrap();
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity.as_decimal(), dec!(200));
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::from(filled));
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("O-TERMINAL"))
+        );
+    } else {
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("original quantity")
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_domain_http_request_account_fees_reaches_instruments() {
     let addr = start_test_server().await;
@@ -1299,4 +1389,59 @@ async fn test_http_empty_instruments_response() {
     let result = client.get_instruments().await.unwrap();
 
     assert!(result.instruments.is_empty());
+}
+
+#[rstest]
+#[case::open_state(
+    ReportFamily::OpenOrders,
+    "o",
+    "FUTURE_STATE",
+    "Unmapped AX order status"
+)]
+#[case::historical_state(
+    ReportFamily::HistoricalOrders,
+    "o",
+    "FUTURE_STATE",
+    "Unmapped AX order status"
+)]
+#[case::open_tif(
+    ReportFamily::OpenOrders,
+    "tif",
+    "FUTURE_TIF",
+    "Unmapped AX time in force"
+)]
+#[case::historical_tif(
+    ReportFamily::HistoricalOrders,
+    "tif",
+    "FUTURE_TIF",
+    "Unmapped AX time in force"
+)]
+#[tokio::test]
+async fn test_unknown_order_classification_aborts_complete_snapshot(
+    #[case] family: ReportFamily,
+    #[case] field: &str,
+    #[case] wire: &str,
+    #[case] expected: &str,
+) {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    set_report_payload(&state, family, "EURUSD-PERP").await;
+
+    let payload = match family {
+        ReportFamily::OpenOrders => &state.open_orders_payload,
+        ReportFamily::HistoricalOrders => &state.orders_payload,
+        _ => unreachable!(),
+    };
+
+    payload.lock().await.as_mut().unwrap()["orders"][1][field] = json!(wire);
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let error = request_report_instrument_ids(&client, family)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "failed to parse AX order OID-UNCACHED-2");
+    assert_eq!(error.root_cause().to_string(), expected);
 }

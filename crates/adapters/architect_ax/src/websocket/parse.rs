@@ -81,11 +81,19 @@ pub fn parse_md_message(raw: &str) -> Result<AxMdMessage, serde_json::Error> {
     // Slow path: subscription responses and errors (no "t" field, rare)
     let value: serde_json::Value = serde_json::from_str(raw)?;
 
-    if value.get("result").is_some() {
+    if value
+        .get("result")
+        .or_else(|| value.get("res"))
+        .is_some_and(|v| !v.is_null())
+    {
         return serde_json::from_value(value).map(AxMdMessage::SubscriptionResponse);
     }
 
-    if value.get("error").is_some() {
+    if value
+        .get("error")
+        .or_else(|| value.get("err"))
+        .is_some_and(|v| !v.is_null())
+    {
         return serde_json::from_value::<AxMdErrorResponse>(value)
             .map(|resp| AxMdMessage::Error(resp.into()));
     }
@@ -128,11 +136,15 @@ pub(crate) fn parse_order_message(raw: &str) -> Result<AxOrdersWsFrame, serde_js
     // Slow path: responses and errors (infrequent, use Value dispatch)
     let value: serde_json::Value = serde_json::from_str(raw)?;
 
-    if value.get("err").is_some() {
+    if value
+        .get("err")
+        .or_else(|| value.get("error"))
+        .is_some_and(|v| !v.is_null())
+    {
         return serde_json::from_value(value).map(AxOrdersWsFrame::Error);
     }
 
-    if let Some(res) = value.get("res") {
+    if let Some(res) = value.get("res").or_else(|| value.get("result")) {
         if res.get("orders").is_some() {
             return serde_json::from_value(value)
                 .map(|r| AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(r)));
@@ -298,8 +310,11 @@ mod tests {
             panic!("expected Replaced event");
         };
 
-        assert_eq!(replaced.no.oid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
-        assert_eq!(replaced.no.rq, 100);
+        assert_eq!(
+            replaced.no.as_ref().unwrap().oid,
+            "O-01KWY01WX8JT4DABKC6FRS5NT4"
+        );
+        assert_eq!(replaced.no.as_ref().unwrap().rq, 100);
     }
 
     #[rstest]
@@ -320,5 +335,216 @@ mod tests {
             error.to_string().contains(expected_error),
             "expected {expected_error:?} in {error}",
         );
+    }
+
+    #[rstest]
+    #[case("rid", "result", "error")]
+    #[case("request_id", "res", "err")]
+    fn test_md_response_aliases(#[case] id: &str, #[case] result: &str, #[case] error: &str) {
+        let mut success: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/captured/ws-md-response-1.json"
+        ))
+        .unwrap();
+        let mut failure: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/captured/ws-md-response-6.json"
+        ))
+        .unwrap();
+
+        for value in [&mut success, &mut failure] {
+            let obj = value.as_object_mut().unwrap();
+            let rid = obj.remove("rid").unwrap();
+            obj.insert(id.into(), rid);
+        }
+
+        let res = success.as_object_mut().unwrap().remove("result").unwrap();
+        success[result] = res;
+        let err = failure.as_object_mut().unwrap().remove("error").unwrap();
+        failure[error] = err;
+
+        let AxMdMessage::SubscriptionResponse(response) =
+            parse_md_message(&success.to_string()).unwrap()
+        else {
+            panic!("expected subscription response")
+        };
+
+        let AxMdMessage::Error(response_error) = parse_md_message(&failure.to_string()).unwrap()
+        else {
+            panic!("expected error response")
+        };
+
+        assert_eq!(response.rid, 1);
+        assert_eq!(response_error.request_id, Some(6));
+        assert_eq!(
+            response_error.message,
+            failure[error]["message"].as_str().unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case("rid", "res", "err")]
+    #[case("request_id", "result", "error")]
+    fn test_orders_response_aliases_and_null_error(
+        #[case] id: &str,
+        #[case] result: &str,
+        #[case] error: &str,
+    ) {
+        let mut value: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/captured/ws-orders-response-0.json"
+        ))
+        .unwrap();
+        let obj = value.as_object_mut().unwrap();
+        let rid = obj.remove("rid").unwrap();
+        let res = obj.remove("res").unwrap();
+        obj.remove("err");
+        obj.insert(id.into(), rid);
+        obj.insert(result.into(), res);
+        obj.insert(error.into(), serde_json::Value::Null);
+
+        let AxOrdersWsFrame::Response(AxWsOrderResponse::List(response)) =
+            parse_order_message(&value.to_string()).unwrap()
+        else {
+            panic!("expected login response")
+        };
+
+        assert_eq!(response.rid, 0);
+        assert_eq!(response.res.li, value[result]["li"].as_str().unwrap());
+        assert_eq!(response.res.cod, value[result]["cod"].as_bool());
+        assert_eq!(response.res.chb, value[result]["chb"].as_u64());
+    }
+
+    #[rstest]
+    fn test_in_place_amendment_has_no_replacement_identity() {
+        let raw = include_str!("../../test_data/ws_order_amended.json");
+
+        let AxOrdersWsFrame::Event(event) = parse_order_message(raw).unwrap() else {
+            panic!("expected event")
+        };
+
+        let AxWsOrderEvent::Replaced(message) = *event else {
+            panic!("expected amendment")
+        };
+
+        assert_eq!(message.noid, None);
+        assert!(message.no.is_none());
+        assert_eq!(message.ro.q, 150);
+        assert_eq!(message.ro.rq, 150);
+        assert_eq!(message.ro.o, crate::common::enums::AxOrderStatus::Accepted);
+    }
+
+    #[rstest]
+    #[case(include_str!("../../test_data/captured/ws-md-1.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-2.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-3.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-c.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-h.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-response-1.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-response-2.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-response-3.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-response-4.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-response-6.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-s.json"))]
+    #[case(include_str!("../../test_data/captured/ws-md-t.json"))]
+    fn test_current_market_data_capture(#[case] raw: &str) {
+        let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let parsed = parse_md_message(raw).unwrap();
+
+        let (tag, ts) = match parsed {
+            AxMdMessage::BookL1(book) => ("1", book.ts),
+            AxMdMessage::BookL2(book) => {
+                assert!(book.st);
+                ("2", book.ts)
+            }
+            AxMdMessage::BookL3(book) => {
+                assert!(book.st);
+                ("3", book.ts)
+            }
+            AxMdMessage::Trade(trade) => ("t", trade.ts),
+            AxMdMessage::Candle(candle) => ("c", candle.ts),
+            AxMdMessage::Ticker(ticker) => ("s", ticker.ts),
+            AxMdMessage::Heartbeat(heartbeat) => ("h", heartbeat.ts),
+            AxMdMessage::SubscriptionResponse(response) => {
+                assert_eq!(response.rid, value["rid"].as_i64().unwrap());
+                assert_eq!(
+                    response
+                        .result
+                        .subscribed
+                        .as_deref()
+                        .or(response.result.subscribed_candle.as_deref()),
+                    value["result"]["subscribed"]
+                        .as_str()
+                        .or(value["result"]["subscribed_candle"].as_str())
+                );
+                return;
+            }
+            AxMdMessage::Error(error) => {
+                assert_eq!(error.request_id, value["rid"].as_i64());
+                assert_eq!(error.message, value["error"]["message"].as_str().unwrap());
+                return;
+            }
+        };
+
+        assert_eq!(tag, value["t"].as_str().unwrap());
+        assert_eq!(ts, value["ts"].as_i64().unwrap());
+    }
+
+    #[rstest]
+    #[case(include_str!("../../test_data/captured/ws-orders-response-2.json"))]
+    #[case(include_str!("../../test_data/captured/ws-orders-response-3.json"))]
+    fn test_orders_error_alias(#[case] raw: &str) {
+        let mut value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        let rid = obj.remove("rid").unwrap();
+        let error = obj.remove("err").unwrap();
+        obj.insert("request_id".into(), rid);
+        obj.insert("error".into(), error);
+
+        let AxOrdersWsFrame::Error(response) = parse_order_message(&value.to_string()).unwrap()
+        else {
+            panic!("expected error")
+        };
+
+        assert_eq!(response.rid, value["request_id"].as_i64().unwrap());
+        assert_eq!(response.err.code, value["error"]["code"].as_i64());
+        assert_eq!(response.err.msg.as_deref(), value["error"]["msg"].as_str());
+    }
+    #[rstest]
+    #[case(false, false)]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[case(true, true)]
+    fn test_sparse_order_error_preserves_request_identity(
+        #[case] code: bool,
+        #[case] message: bool,
+    ) {
+        let mut value: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_order_error_response.json"))
+                .unwrap();
+        let expected_id = value["rid"].as_i64();
+        let expected_code = code.then(|| value["err"]["code"].as_i64().unwrap().to_string());
+
+        let expected_message = if message {
+            value["err"]["msg"].as_str().unwrap().to_owned()
+        } else {
+            "AX request failed without an error message".to_owned()
+        };
+
+        if !code {
+            value["err"].as_object_mut().unwrap().remove("code");
+        }
+
+        if !message {
+            value["err"].as_object_mut().unwrap().remove("msg");
+        }
+
+        let AxOrdersWsFrame::Error(response) = parse_order_message(&value.to_string()).unwrap()
+        else {
+            panic!("expected error")
+        };
+
+        let error: crate::websocket::messages::AxWsError = response.into();
+
+        assert_eq!(error.request_id, expected_id);
+        assert_eq!(error.code, expected_code);
+        assert_eq!(error.message, expected_message);
     }
 }

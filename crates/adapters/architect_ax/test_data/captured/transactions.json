@@ -1,0 +1,56 @@
+{
+  "transactions": [
+    {
+      "account_id": "fixture-0001",
+      "event_id": "01M36R56V1Y3FHYKR0A7DBDVB0",
+      "symbol": "USD",
+      "timestamp": "2026-09-23T09:04:43.869841610Z",
+      "amount": "-0.03",
+      "transaction_type": "pnl",
+      "reference_id": "ax-fill://fixture-0002",
+      "initiated_by_user_id": null
+    },
+    {
+      "account_id": "fixture-0001",
+      "event_id": "01M36R56V15TSPNGC9ZA7JPGY0",
+      "symbol": "USD",
+      "timestamp": "2026-09-23T09:04:43.869841610Z",
+      "amount": "-0.013096",
+      "transaction_type": "fee",
+      "reference_id": "ax-fill://fixture-0002",
+      "initiated_by_user_id": null
+    },
+    {
+      "account_id": "fixture-0001",
+      "event_id": "01M36R55VJZ7WK2XMHWW6RG6B0",
+      "symbol": "USD",
+      "timestamp": "2026-09-23T09:04:42.863520365Z",
+      "amount": "-0.03",
+      "transaction_type": "pnl",
+      "reference_id": "ax-fill://fixture-0004",
+      "initiated_by_user_id": null
+    },
+    {
+      "account_id": "fixture-0001",
+      "event_id": "01M36R55VJ6AFHXNFSSDJQVPA0",
+      "symbol": "USD",
+      "timestamp": "2026-09-23T09:04:42.863520365Z",
+      "amount": "-0.02618",
+      "transaction_type": "fee",
+      "reference_id": "ax-fill://fixture-0004",
+      "initiated_by_user_id": null
+    },
+    {
+      "account_id": "fixture-0001",
+      "event_id": "01M36R54WDHV0PHZ55YF7F4ZKG",
+      "symbol": "USD",
+      "timestamp": "2026-09-23T09:04:41.865874059Z",
+      "amount": "-0.013096",
+      "transaction_type": "fee",
+      "reference_id": "ax-fill://fixture-0006",
+      "initiated_by_user_id": null
+    }
+  ],
+  "next_cursor": "1790154281865874059:839:fixture-0001",
+  "limit": 5
+}

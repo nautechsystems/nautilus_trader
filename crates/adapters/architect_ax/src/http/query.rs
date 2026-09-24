@@ -218,7 +218,7 @@ pub struct GetFillsParams {
     pub end_timestamp_ns: i64,
     /// Optional account ID. AX uses the primary account when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub account_id: Option<String>,
+    pub account_id: Option<Ustr>,
     /// Optional symbol filter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<Ustr>,
@@ -256,13 +256,13 @@ impl GetFillsParams {
 #[derive(Clone, Debug, Deserialize)]
 pub struct GetTransactionsParams {
     /// Transaction types to filter by.
-    pub transaction_types: Vec<String>,
+    pub transaction_types: Vec<Ustr>,
     /// Start timestamp in nanoseconds.
     pub start_timestamp_ns: i64,
     /// End timestamp in nanoseconds.
     pub end_timestamp_ns: i64,
     /// Optional account ID. AX uses the primary account when omitted.
-    pub account_id: Option<String>,
+    pub account_id: Option<Ustr>,
     /// Cursor for the next page.
     pub cursor: Option<String>,
     /// Maximum number of records to return.
@@ -279,14 +279,21 @@ impl Serialize for GetTransactionsParams {
         let mut query = Vec::with_capacity(7);
 
         if !self.transaction_types.is_empty() {
-            query.push(("transaction_types", self.transaction_types.join(",")));
+            query.push((
+                "transaction_types",
+                self.transaction_types
+                    .iter()
+                    .map(Ustr::as_str)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
         }
 
         query.push(("start_timestamp_ns", self.start_timestamp_ns.to_string()));
         query.push(("end_timestamp_ns", self.end_timestamp_ns.to_string()));
 
         if let Some(account_id) = &self.account_id {
-            query.push(("account_id", account_id.clone()));
+            query.push(("account_id", account_id.to_string()));
         }
 
         if let Some(cursor) = &self.cursor {
@@ -309,7 +316,7 @@ impl GetTransactionsParams {
     /// Creates a new [`GetTransactionsParams`].
     #[must_use]
     pub fn new(
-        transaction_types: Vec<String>,
+        transaction_types: Vec<Ustr>,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Self {
@@ -411,7 +418,7 @@ impl GetOrderStatusParams {
 pub struct GetOpenOrdersParams {
     /// Optional account ID. AX uses the primary account when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub account_id: Option<String>,
+    pub account_id: Option<Ustr>,
     /// Maximum number of open orders to return.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i32>,
@@ -458,7 +465,7 @@ pub struct GetOrdersParams {
     /// Filter by multiple order IDs.
     pub order_ids: Vec<String>,
     /// Filter by account ID.
-    pub account_id: Option<String>,
+    pub account_id: Option<Ustr>,
     /// Cursor for the next page.
     pub cursor: Option<String>,
 }
@@ -511,7 +518,7 @@ impl Serialize for GetOrdersParams {
         }
 
         if let Some(account_id) = &self.account_id {
-            query.push(("account_id", account_id.clone()));
+            query.push(("account_id", account_id.to_string()));
         }
 
         if let Some(cursor) = &self.cursor {
@@ -623,7 +630,7 @@ mod tests {
     #[rstest]
     fn test_get_fills_params_serialization() {
         let mut params = GetFillsParams::new(1000000000, 2000000000);
-        params.account_id = Some("account-1".to_string());
+        params.account_id = Some(Ustr::from("account-1"));
         params.symbol = Some(Ustr::from("GBPUSD-PERP"));
         params.cursor = Some("opaque+/=".to_string());
         params.limit = Some(100);
@@ -641,11 +648,11 @@ mod tests {
     #[rstest]
     fn test_get_transactions_params_serialization() {
         let mut params = GetTransactionsParams::new(
-            vec!["FUNDING".to_string(), "TRADE".to_string()],
+            vec![Ustr::from("FUNDING"), Ustr::from("TRADE")],
             1000000000,
             2000000000,
         );
-        params.account_id = Some("account-1".to_string());
+        params.account_id = Some(Ustr::from("account-1"));
         params.cursor = Some("opaque+/=".to_string());
         params.limit = Some(100);
         params.sort_ts = Some("desc".to_string());
@@ -678,7 +685,7 @@ mod tests {
     #[rstest]
     fn test_get_open_orders_params_serialization() {
         let params = GetOpenOrdersParams {
-            account_id: Some("account-1".to_string()),
+            account_id: Some(Ustr::from("account-1")),
             limit: Some(100),
             offset: Some(200),
             sort_ts: Some("desc".to_string()),
@@ -720,7 +727,7 @@ mod tests {
             order_state: Some(AxOrderStatus::Filled),
             order_id: Some("ORD-1".to_string()),
             order_ids: vec!["ORD-2".to_string(), "ORD-3".to_string()],
-            account_id: Some("account-1".to_string()),
+            account_id: Some(Ustr::from("account-1")),
             cursor: Some("next".to_string()),
             start_timestamp_ns: Some(1000000000),
             end_timestamp_ns: Some(2000000000),

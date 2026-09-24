@@ -431,12 +431,15 @@ impl AxHttpClient {
     ///
     /// The caller must supply `order_side`, `order_type`, and `time_in_force`
     /// because the endpoint does not return these fields.
+    /// Canceled, expired, and rejected orders with no remaining quantity use `/orders`
+    /// to recover their original quantity.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
+    /// - The original quantity is unavailable in order history.
     #[pyo3(name = "request_order_status")]
     #[pyo3(signature = (
         account_id,
@@ -491,10 +494,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     #[pyo3(name = "request_order_status_reports", signature = (account_id, client_order_ids=None))]
     fn py_request_order_status_reports<'py>(
         &self,

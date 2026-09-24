@@ -57,6 +57,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -67,7 +68,7 @@ use crate::{
             AX_FILLS_MAX_LOOKBACK_DAYS, AX_POST_ONLY_REJECT, AX_VENUE,
         },
         credential::Credential,
-        enums::{AxOrderSide, AxTimeInForce},
+        enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
         parse::{
             ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, client_order_id_to_cid,
             quantity_to_contracts,
@@ -1474,8 +1475,10 @@ fn dispatch_order_event(
                 }
             };
 
+            let order = msg.no.as_deref().unwrap_or(&msg.ro);
+
             if let Some(event) = create_order_updated(
-                &msg.no,
+                order,
                 &msg.ro,
                 replacement_venue_order_id,
                 (msg.ts, msg.tn),
@@ -1485,7 +1488,7 @@ fn dispatch_order_event(
             ) {
                 emitter.send_order_event(OrderEventAny::Updated(event));
             } else if let Some(report) = create_order_status_report(
-                &msg.no,
+                order,
                 OrderStatus::Accepted,
                 msg.ts,
                 msg.tn,
@@ -1557,6 +1560,17 @@ fn dispatch_fill_event(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     clock: &'static AtomicTime,
 ) {
+    if order.o == AxOrderStatus::Unknown || order.tif == AxTimeInForce::Unknown {
+        log::warn!(
+            "Unknown AX order classification in fill, order_id={}, instrument={}, trade_id={}, state={}, time_in_force={}",
+            order.oid,
+            order.s,
+            execution.tid,
+            order.o,
+            order.tif,
+        );
+    }
+
     if let Some(event) = create_order_filled(order, execution, ts, tn, caches, account_id, clock) {
         emitter.send_order_event(OrderEventAny::Filled(event));
     } else if let Some(report) = create_fill_report(
@@ -1598,15 +1612,13 @@ pub(crate) fn lookup_order_metadata<'a>(
 pub(crate) fn replacement_venue_order_id(
     message: &crate::websocket::messages::AxWsOrderReplaced,
 ) -> anyhow::Result<VenueOrderId> {
-    if message.noid != message.no.oid {
-        anyhow::bail!(
-            "noid '{}' does not match new order oid '{}'",
-            message.noid,
-            message.no.oid
-        );
+    match (&message.noid, &message.no) {
+        (Some(noid), Some(order)) if noid == &order.oid => {
+            VenueOrderId::new_checked(noid).map_err(anyhow::Error::from)
+        }
+        (None, None) => VenueOrderId::new_checked(&message.ro.oid).map_err(anyhow::Error::from),
+        _ => anyhow::bail!("Inconsistent AX replacement order identity"),
     }
-
-    VenueOrderId::new_checked(&message.noid).map_err(anyhow::Error::from)
 }
 
 pub(crate) fn create_order_accepted(
@@ -1678,7 +1690,7 @@ pub(crate) fn create_order_updated(
         .map_err(|e| log::error!("{e}"))
         .ok()?;
 
-    let quantity = Quantity::new(order.q as f64, size_precision);
+    let quantity = Quantity::from_decimal_dp(Decimal::from(order.q), size_precision).ok()?;
     let price = Price::from_decimal_dp(order.p, price_precision).ok();
 
     Some(OrderUpdated::new(
@@ -1716,7 +1728,8 @@ pub(crate) fn create_order_filled(
         .map_err(|e| log::error!("{e}"))
         .ok()?;
 
-    let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
+    let last_qty =
+        Quantity::from_decimal_dp(Decimal::from(execution.q), metadata.size_precision).ok()?;
     let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
     let order_side = OrderSide::from(order.d);
@@ -1929,10 +1942,21 @@ fn create_order_status_report(
     let venue_order_id = VenueOrderId::new(&order.oid);
     let instrument_id = instrument.id();
     let order_side = OrderSide::from(order.d);
-    let time_in_force = order.tif.into();
 
-    let quantity = Quantity::new(order.q as f64, instrument.size_precision());
-    let filled_qty = Quantity::new(order.xq as f64, instrument.size_precision());
+    let time_in_force = TimeInForce::try_from(order.tif)
+        .map_err(|e| {
+            log::warn!(
+                "Cannot map AX order time in force, order_id={}, instrument={}, error={e}",
+                order.oid,
+                order.s
+            );
+        })
+        .ok()?;
+
+    let quantity =
+        Quantity::from_decimal_dp(Decimal::from(order.q), instrument.size_precision()).ok()?;
+    let filled_qty =
+        Quantity::from_decimal_dp(Decimal::from(order.xq), instrument.size_precision()).ok()?;
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
         .map_err(|e| log::error!("{e}"))
@@ -1967,6 +1991,8 @@ fn create_order_status_report(
         report = report.with_price(price);
     }
 
+    report = report.with_post_only(order.po);
+
     Some(report)
 }
 
@@ -1987,7 +2013,8 @@ fn create_fill_report(
     let instrument_id = instrument.id();
     let order_side = order.d.into();
 
-    let last_qty = Quantity::new(execution.q as f64, instrument.size_precision());
+    let last_qty =
+        Quantity::from_decimal_dp(Decimal::from(execution.q), instrument.size_precision()).ok()?;
     let last_px = Price::from_decimal_dp(execution.p, instrument.price_precision()).ok()?;
 
     let liquidity_side = if execution.agg {
@@ -2167,8 +2194,12 @@ mod tests {
 
     fn test_ws_order(oid: &str, price: Decimal, qty: u64) -> AxWsOrder {
         AxWsOrder {
+            aid: None,
+            po: false,
+            rb: None,
+            r: None,
             oid: oid.to_string(),
-            u: "user".to_string(),
+            u: Ustr::from("user"),
             s: Ustr::from("BTC-PERP"),
             p: price,
             q: qty,
@@ -2278,6 +2309,7 @@ mod tests {
 
     fn test_execution(tid: &str, price: Decimal, qty: u64, agg: bool) -> AxWsTradeExecution {
         AxWsTradeExecution {
+            aid: None,
             tid: tid.to_string(),
             s: Ustr::from("BTC-PERP"),
             q: qty,
@@ -3227,5 +3259,127 @@ mod tests {
         };
 
         assert_eq!(classify_ax_ws_failure(&error), expected);
+    }
+
+    #[rstest]
+    #[case(include_str!("../test_data/ws_order_filled_unknown_state.json"))]
+    #[case(include_str!("../test_data/ws_order_filled_unknown_tif.json"))]
+    fn test_dispatch_fill_with_unknown_sibling_classification(#[case] raw: &str) {
+        let event: AxWsOrderEvent = serde_json::from_str(raw).unwrap();
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let client_order_id = ClientOrderId::from("O-UNKNOWN-STATE");
+        let venue_order_id = VenueOrderId::new("O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        let caches = test_caches();
+        caches.orders_metadata.insert(
+            client_order_id,
+            test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX")),
+        );
+        caches
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TESTER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        let instruments = AtomicMap::new();
+
+        dispatch_order_event(event, &emitter, &caches, account_id, &instruments, clock);
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = rx.try_recv().unwrap() else {
+            panic!("expected fill")
+        };
+
+        assert_eq!(fill.venue_order_id, venue_order_id);
+        assert_eq!(fill.client_order_id, client_order_id);
+        assert_eq!(fill.trade_id.as_str(), "T-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(fill.last_qty.as_decimal(), dec!(100));
+        assert_eq!(fill.last_px.as_decimal(), dec!(50000));
+        assert_eq!(fill.ts_event, UnixNanos::from(1609459200123456789));
+        assert!(rx.try_recv().is_err());
+        assert!(caches.orders_metadata.is_empty());
+        assert!(caches.venue_to_client_id.is_empty());
+    }
+
+    #[rstest]
+    fn test_amendment_keeps_venue_identity_and_updates_quantity() {
+        let message: crate::websocket::messages::AxWsOrderReplaced =
+            serde_json::from_str(include_str!("../test_data/ws_order_amended.json")).unwrap();
+        let venue_order_id = VenueOrderId::new(&message.ro.oid);
+        let client_order_id = ClientOrderId::from("O-AMEND");
+        let caches = test_caches();
+        caches.orders_metadata.insert(
+            client_order_id,
+            test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX")),
+        );
+        caches
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TESTER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        let instruments = AtomicMap::new();
+
+        dispatch_order_event(
+            AxWsOrderEvent::Replaced(message),
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(update)) = rx.try_recv().unwrap() else {
+            panic!("expected update")
+        };
+
+        assert_eq!(update.venue_order_id, Some(venue_order_id));
+        assert_eq!(update.client_order_id, client_order_id);
+        assert_eq!(update.quantity.as_decimal(), dec!(150));
+        assert_eq!(
+            *caches.venue_to_client_id.get(&venue_order_id).unwrap(),
+            client_order_id
+        );
+        assert_eq!(caches.venue_to_client_id.len(), 1);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[case(true, true)]
+    fn test_replacement_rejects_inconsistent_identity(
+        #[case] has_id: bool,
+        #[case] has_order: bool,
+    ) {
+        let mut message: crate::websocket::messages::AxWsOrderReplaced =
+            serde_json::from_str(include_str!("../test_data/ws_order_replaced_live.json")).unwrap();
+        message.noid = has_id.then(|| "MISMATCHED".to_owned());
+
+        if !has_order {
+            message.no = None;
+        }
+
+        assert_eq!(
+            replacement_venue_order_id(&message)
+                .unwrap_err()
+                .to_string(),
+            "Inconsistent AX replacement order identity"
+        );
     }
 }

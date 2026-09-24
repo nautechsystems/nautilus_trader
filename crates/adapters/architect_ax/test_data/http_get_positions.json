@@ -6,7 +6,8 @@
       "signed_quantity": 2,
       "signed_notional": "90000.00",
       "timestamp": "2023-11-07T12:30:45Z",
-      "realized_pnl": "1250.50"
+      "realized_pnl": "1250.50",
+      "signed_cost_basis": "90000.00"
     },
     {
       "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
@@ -14,7 +15,8 @@
       "signed_quantity": -5,
       "signed_notional": "-14000.00",
       "timestamp": "2023-11-07T10:15:30Z",
-      "realized_pnl": "-125.75"
+      "realized_pnl": "-125.75",
+      "signed_cost_basis": "-14000.00"
     }
   ]
 }

@@ -17,6 +17,8 @@ Released on TBD (UTC).
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
+- Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
+- Added Architect AX instrument schedules and estimated funding metadata to response models
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
@@ -136,6 +138,11 @@ Released on TBD (UTC).
 - Fixed `CryptoOption` applying a one-contract minimum when `min_quantity` is unspecified
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
+- Fixed Architect AX market data subscriptions not resuming after an explicit reconnect
+- Fixed Architect AX terminal order queries losing the original order quantity
+- Fixed Architect AX order report parsing of post-only flags, timestamps, and terminal states
+- Fixed Architect AX position entry prices to use cost basis when available
+- Fixed Architect AX fills being dropped for unknown sibling order states
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
@@ -187,6 +194,7 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
+- Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Upgraded `cargo-nextest` tool to v0.9.145
 - Upgraded `osv-scanner` tool to v2.6.0
@@ -219,6 +227,7 @@ Released on TBD (UTC).
 - Documented shared book snapshot defaults and live validation levels
 - Documented legacy custom data layout discovery and migration
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
+- Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset

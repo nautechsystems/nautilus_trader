@@ -1077,7 +1077,7 @@ async fn test_generate_order_status_reports_filters() {
     let payload = serde_json::json!({
         "orders": [
             {
-                "tn": 1704067200,
+                "tn": 0,
                 "ts": 1704067200,
                 "d": "B",
                 "o": "ACCEPTED",
@@ -1093,7 +1093,7 @@ async fn test_generate_order_status_reports_filters() {
                 "tag": null
             },
             {
-                "tn": 1704067201,
+                "tn": 0,
                 "ts": 1704067201,
                 "d": "S",
                 "o": "FILLED",
@@ -1109,7 +1109,7 @@ async fn test_generate_order_status_reports_filters() {
                 "tag": null
             },
             {
-                "tn": 1704067203,
+                "tn": 0,
                 "ts": 1704067203,
                 "d": "B",
                 "o": "PENDING",
@@ -1125,7 +1125,7 @@ async fn test_generate_order_status_reports_filters() {
                 "tag": null
             },
             {
-                "tn": 1704067202,
+                "tn": 0,
                 "ts": 1704067202,
                 "d": "B",
                 "o": "ACCEPTED",
@@ -1273,7 +1273,7 @@ async fn test_generate_order_status_reports_reads_all_partial_pages() {
     let orders = (0..101)
         .map(|index| {
             serde_json::json!({
-                "tn": 1_704_067_200 + index,
+                "tn": index,
                 "ts": 1_704_067_200 + index,
                 "d": "B",
                 "o": "ACCEPTED",
@@ -1329,7 +1329,7 @@ async fn test_generate_order_status_reports_reads_all_partial_pages() {
 async fn test_generate_order_status_reports_rejects_duplicate_order_ids() {
     let (addr, state) = start_test_server().await.unwrap();
     let order = serde_json::json!({
-        "tn": 1_704_067_200,
+        "tn": 0,
         "ts": 1_704_067_200,
         "d": "B",
         "o": "ACCEPTED",

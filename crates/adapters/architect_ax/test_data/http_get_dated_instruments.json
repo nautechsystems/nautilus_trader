@@ -17,7 +17,8 @@
       "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
       "contract_mark_price": "Average price on AX at London 4pm",
       "contract_size": "1 ounce per contract",
-      "price_quotation": "U.S. dollars per ounce"
+      "price_quotation": "U.S. dollars per ounce",
+      "additional_product_specs": {}
     },
     {
       "symbol": "XAU-2026-DEC",
@@ -36,7 +37,8 @@
       "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
       "contract_mark_price": "Average price on AX at London 4pm",
       "contract_size": "1 ounce per contract",
-      "price_quotation": "U.S. dollars per ounce"
+      "price_quotation": "U.S. dollars per ounce",
+      "additional_product_specs": {}
     }
   ]
 }

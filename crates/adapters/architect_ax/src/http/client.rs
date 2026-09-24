@@ -36,7 +36,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
-    enums::{BookType, OrderSide, OrderType, TimeInForce},
+    enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
@@ -71,8 +71,8 @@ use super::{
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
-        parse_order_detail_status_report, parse_order_status_report, parse_position_status_report,
-        parse_trade_tick,
+        parse_order_detail_status_report, parse_order_status, parse_order_status_report,
+        parse_position_status_report, parse_trade_tick,
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
@@ -961,7 +961,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_transactions(
         &self,
-        transaction_types: Vec<String>,
+        transaction_types: Vec<Ustr>,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Result<AxTransactionsResponse, AxHttpError> {
@@ -1866,12 +1866,15 @@ impl AxHttpClient {
     ///
     /// The caller must supply `order_side`, `order_type`, and `time_in_force`
     /// because the endpoint does not return these fields.
+    /// Canceled, expired, and rejected orders with no remaining quantity use `/orders`
+    /// to recover their original quantity.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
+    /// - The original quantity is unavailable in order history.
     #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status(
         &self,
@@ -1899,11 +1902,42 @@ impl AxHttpClient {
             .map_or(0, |i| i.size_precision());
 
         let voi = VenueOrderId::new(&detail.order_id);
-        let order_status = detail.state.into();
+        let order_status = parse_order_status(detail.state, time_in_force)?;
         let filled = detail.filled_quantity.unwrap_or(0);
         let remaining = detail.remaining_quantity.unwrap_or(0);
-        let quantity = Quantity::new((filled + remaining) as f64, size_precision);
-        let filled_qty = Quantity::new(filled as f64, size_precision);
+
+        let total = if remaining == 0
+            && matches!(
+                order_status,
+                OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected
+            ) {
+            let response = self
+                .inner
+                .get_orders(&GetOrdersParams {
+                    order_id: Some(detail.order_id.clone()),
+                    limit: Some(1),
+                    ..Default::default()
+                })
+                .await?;
+
+            let order = response
+                .orders
+                .iter()
+                .find(|order| order.oid == detail.order_id)
+                .with_context(|| {
+                    format!(
+                        "AX order {} original quantity unavailable in history",
+                        detail.order_id
+                    )
+                })?;
+
+            Decimal::from(order.q)
+        } else {
+            Decimal::from(filled) + Decimal::from(remaining)
+        };
+
+        let quantity = Quantity::from_decimal_dp(total, size_precision)?;
+        let filled_qty = Quantity::from_decimal_dp(Decimal::from(filled), size_precision)?;
         let ts_init = self.generate_ts_init();
 
         let resolved_coid = client_order_id.or_else(|| detail.clord_id.map(cid_to_client_order_id));
@@ -1946,10 +1980,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     pub async fn request_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2059,18 +2090,15 @@ impl AxHttpClient {
         for order in &orders {
             let instrument = self.resolve_report_instrument(order.s).await?;
 
-            match parse_order_status_report(
+            let report = parse_order_status_report(
                 order,
                 account_id,
                 &instrument,
                 ts_init,
                 cid_resolver.as_ref(),
-            ) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {}: {e}", order.oid);
-                }
-            }
+            )
+            .with_context(|| format!("failed to parse AX order {}", order.oid))?;
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2089,10 +2117,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request or pagination contract fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2149,18 +2174,15 @@ impl AxHttpClient {
         for order in &orders {
             let instrument = self.resolve_report_instrument(order.s).await?;
 
-            match parse_order_detail_status_report(
+            let report = parse_order_detail_status_report(
                 order,
                 account_id,
                 &instrument,
                 ts_init,
                 cid_resolver.as_ref(),
-            ) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {}: {e}", order.oid);
-                }
-            }
+            )
+            .with_context(|| format!("failed to parse AX order {}", order.oid))?;
+            reports.push(report);
         }
 
         Ok(reports)
