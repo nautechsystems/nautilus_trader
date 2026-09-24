@@ -910,6 +910,69 @@ fn test_dispose_clears_engines(crypto_perpetual_ethusdt: CryptoPerpetual) {
 }
 
 #[rstest]
+fn test_run_after_completion_disposal_errors(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    assert_eq!(node.run().unwrap().len(), 1);
+    assert!(node.get_engine(&config_id).is_some());
+
+    let error = node.run().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+    assert!(node.get_engine(&config_id).is_some());
+}
+
+#[rstest]
+fn test_run_after_node_disposal_errors(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.dispose();
+
+    let error = node.run().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+    assert!(node.get_engines().is_empty());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_build_after_disposal_errors(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] dispose_on_completion: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    if dispose_on_completion {
+        node.run().unwrap();
+    } else {
+        node.dispose();
+    }
+
+    let error = node.build().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
 fn test_load_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
