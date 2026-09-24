@@ -665,10 +665,12 @@ impl DatabaseQueries {
 
     /// Inserts or updates an order event entry via the provided `pool`.
     ///
+    /// An event already persisted for another trader is left unchanged.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if
-    /// serialization of `exec_algorithm_params` fails.
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, if serialization of
+    /// `exec_algorithm_params` fails, or if the event is already persisted for another trader.
     #[expect(
         clippy::too_many_lines,
         reason = "order event persistence maps the full database schema in one transaction"
@@ -719,7 +721,7 @@ impl DatabaseQueries {
             .transpose()
             .map_err(|e| anyhow::anyhow!("Failed to serialize order event info: {e}"))?;
 
-        sqlx::query(r#"
+        let inserted = sqlx::query(r#"
             INSERT INTO "order_event" (
                 id, kind, client_order_id, order_type, order_side, trader_id, client_id, reason, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
@@ -736,14 +738,14 @@ impl DatabaseQueries {
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, reason = $8, strategy_id = $9, instrument_id = $10, trade_id = $11, currency = $12,
+                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, client_id = $7, reason = $8, strategy_id = $9, instrument_id = $10, trade_id = $11, currency = $12,
                 quantity = $13, time_in_force = $14, liquidity_side = $15, post_only = $16, reduce_only = $17, quote_quantity = $18, reconciliation = $19, price = $20, last_px = $21,
                 last_qty = $22, trigger_price = $23, trigger_type = $24, limit_offset = $25, trailing_offset = $26, trailing_offset_type = $27, expire_time = $28, display_qty = $29,
                 emulation_trigger = $30, trigger_instrument_id = $31, contingency_type = $32, order_list_id = $33, linked_order_ids = $34, parent_order_id = $35, exec_algorithm_id = $36,
                 exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44,
                 exec_algorithm_params = $45, tags = $46, released_price = $47, protection_price = $48, due_post_only = $49, correction_id = $50,
                 is_reopened = $51, info = $52, causation_id = $53, updated_at = CURRENT_TIMESTAMP
-
+            WHERE "order_event".trader_id = $6
         "#)
             .bind(order_event.id().to_string())
             .bind(order_event.type_name())
@@ -811,8 +813,18 @@ impl DatabaseQueries {
             .bind(order_event.causation_id().map(|x| x.to_string()))
             .execute(&mut *transaction)
             .await
-            .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert into order_event table: {e}"))?;
+
+        // Event IDs are shared when two traders persist the same event, and the existing row
+        // belongs to its first writer
+        if inserted.rows_affected() == 0 {
+            anyhow::bail!(
+                "Order event {} is already persisted for another trader, not {}",
+                order_event.id(),
+                order_event.trader_id()
+            );
+        }
+
         transaction
             .commit()
             .await
@@ -1164,11 +1176,14 @@ impl DatabaseQueries {
         })
     }
 
-    /// Inserts or updates an `AccountState` event via the provided `pool`.
+    /// Inserts or updates an `AccountState` event for `trader_id` via the provided `pool`.
+    ///
+    /// An event already persisted for another trader, or awaiting assignment, is left unchanged.
     ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if the event is already
+    /// persisted for another trader or awaiting assignment.
     pub async fn add_account(
         pool: &PgPool,
         updated: bool,
@@ -1222,7 +1237,7 @@ impl DatabaseQueries {
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into account table: {e}"))?;
 
-        sqlx::query(r#"
+        let inserted = sqlx::query(r#"
             INSERT INTO "account_event" (
                 id, kind, account_id, trader_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
             ) VALUES (
@@ -1231,9 +1246,10 @@ impl DatabaseQueries {
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, account_id = $3, trader_id = $10,
+                kind = $2, account_id = $3,
                 base_currency = $4, balances = $5, margins = $6, is_reported = $7,
                 ts_event = $8, ts_init = $9, updated_at = CURRENT_TIMESTAMP
+            WHERE "account_event".trader_id = $10
         "#)
             .bind(account_event.event_id.to_string())
             .bind(account_event.account_type.to_string())
@@ -1247,8 +1263,18 @@ impl DatabaseQueries {
             .bind(trader_id.to_string())
             .execute(&mut *transaction)
             .await
-            .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert into account_event table: {e}"))?;
+
+        // Event IDs are shared when two traders persist the same account state, and the existing
+        // row belongs to its first writer (or awaits assignment if it has no trader)
+        if inserted.rows_affected() == 0 {
+            anyhow::bail!(
+                "Account event {} for {} is already persisted for another trader, not {trader_id}",
+                account_event.event_id,
+                account_event.account_id
+            );
+        }
+
         transaction
             .commit()
             .await

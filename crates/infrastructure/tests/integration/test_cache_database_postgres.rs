@@ -2580,6 +2580,118 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_same_account_event_in_both_caches_keeps_first_trader_state() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        pg_cache_a.add_currency(&Currency::USD()).unwrap();
+
+        // Both caches persist the same `AccountState`, so both writes carry the same event ID
+        let account = shared_account("1000000 USD");
+        pg_cache_a.add_account(&account).unwrap();
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "account_event").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let conflict = DatabaseQueries::add_account(
+            &pg_cache_b.pool,
+            false,
+            account.last_event().unwrap(),
+            &trader_b,
+        )
+        .await;
+        pg_cache_b.add_account(&account).unwrap();
+        pg_cache_b.flush().unwrap();
+
+        let mut pg_cache_a = pg_cache_a;
+        pg_cache_a.close().unwrap();
+        let mut restarted_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let accounts_a = restarted_a.load_accounts().await.unwrap();
+        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
+        let owners: Vec<Option<String>> =
+            sqlx::query_scalar(r#"SELECT trader_id FROM "account_event""#)
+                .fetch_all(&restarted_a.pool)
+                .await
+                .unwrap();
+
+        reset_test_database(&restarted_a).await;
+        restarted_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+
+        let error = conflict.unwrap_err().to_string();
+        assert!(
+            error.contains("is already persisted for another trader"),
+            "was: {error}"
+        );
+        assert_eq!(owners, vec![Some(trader_a.to_string())]);
+        assert_entirely_equal(&accounts_a[&account.id()], &account);
+        assert!(accounts_b.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_same_order_event_in_both_caches_keeps_first_trader_state() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        add_test_instrument(&pg_cache_a, &instrument).await;
+
+        let order = shared_order(&instrument, trader_a, "1.0");
+        pg_cache_a.add_order(&order, None).unwrap();
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "order_event").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Re-persisting the event under another trader keeps its ID
+        let mut initialized = order.init_event().clone();
+        initialized.trader_id = trader_b;
+        let conflict =
+            DatabaseQueries::add_order_event(&pg_cache_b.pool, Box::new(initialized), None).await;
+        pg_cache_b.flush().unwrap();
+
+        let orders_a = pg_cache_a.load_orders().await.unwrap();
+        let orders_b = pg_cache_b.load_orders().await.unwrap();
+        let owners: Vec<Option<String>> =
+            sqlx::query_scalar(r#"SELECT trader_id FROM "order_event""#)
+                .fetch_all(&pg_cache_a.pool)
+                .await
+                .unwrap();
+
+        let mut pg_cache_a = pg_cache_a;
+        reset_test_database(&pg_cache_a).await;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+
+        let error = conflict.unwrap_err().to_string();
+        assert!(
+            error.contains("is already persisted for another trader"),
+            "was: {error}"
+        );
+        assert_eq!(owners, vec![Some(trader_a.to_string())]);
+        assert_eq!(orders_a.len(), 1);
+        assert_entirely_equal(&orders_a[&order.client_order_id()], &order);
+        assert!(orders_b.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_connect_fails_until_account_events_without_trader_are_assigned() {
         let trader_a = TraderId::from("TRADER-001");
         let trader_b = TraderId::from("TRADER-002");
