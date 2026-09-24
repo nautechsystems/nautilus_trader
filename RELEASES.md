@@ -163,6 +163,7 @@ Released on TBD (UTC).
 - Fixed OKX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
+- Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 
 ### Internal Improvements
 

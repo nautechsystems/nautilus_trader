@@ -26,6 +26,10 @@ The adapter is implemented in Rust with optional Python bindings. Its components
 NautilusTrader, so it does not require a separate Tardis client library installation. Consult the
 [Tardis documentation](https://docs.tardis.dev/) for the upstream APIs, formats, and server.
 
+The minimum tested Tardis Node version used by Tardis Machine is **18.2.2**. This release fixes
+Deribit order book normalization when queued updates already covered by a snapshot arrive after it.
+NautilusTrader does not pin the version in your Tardis Machine deployment.
+
 ## Supported formats
 
 Tardis provides *normalized* market data, a unified format consistent across supported exchanges.
@@ -122,7 +126,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `BITFINEX`         | `bitfinex`, `bitfinex-derivatives`                                                                           |
 | `BITFLYER`         | `bitflyer`                                                                                                   |
 | `BITGET`           | `bitget`, `bitget-futures`                                                                                   |
-| `BITMEX`           | `bitmex`                                                                                                     |
+| `BITMEX`           | `bitmex` (*historical data only*)                                                                            |
 | `BITNOMIAL`        | `bitnomial`                                                                                                  |
 | `BITSTAMP`         | `bitstamp`                                                                                                   |
 | `BLOCKCHAIN_COM`   | `blockchain-com`                                                                                             |
@@ -161,6 +165,9 @@ Some exchange IDs represent delisted venues retained for historical data. Consul
 [historical data details](https://docs.tardis.dev/historical-data-details) for availability and
 delisting status.
 
+Tardis Node [18.2.3](https://github.com/tardis-dev/tardis-node/releases/tag/18.2.3) removes BitMEX
+real-time streaming. Historical BitMEX replay, channels, and normalization remain supported.
+
 ## Environment variables
 
 The following environment variables are used by Tardis and NautilusTrader.
@@ -179,6 +186,16 @@ pro and business Tardis subscriptions.
 The [Tardis Machine Server](https://docs.tardis.dev/tardis-machine/quickstart) is a locally
 runnable server with built-in data caching. It provides tick-level historical and consolidated
 real-time cryptocurrency market data through HTTP and WebSocket APIs.
+
+:::warning
+Cancelling a historical WebSocket replay before it finishes can terminate Tardis Machine 18.2.2
+with Tardis Node 18.2.3 on Node.js 26.7.0. The replay can leave a cached-file handle open, causing
+an `ERR_INVALID_STATE` error when garbage collection closes it. The server exit also interrupts
+other connected clients.
+
+Let replays finish where practical. Running the same server on Node.js 24.19.0 avoids the observed
+crash, but still produces a `DEP0137` warning: it does not fix the upstream file-handle leak.
+:::
 
 You can run complete Tardis Machine WebSocket replays from Python or Rust and write the results in
 Nautilus Parquet format. Both interfaces call the same Rust replay implementation.
@@ -788,11 +805,15 @@ with a Nautilus node. The configuration selects one mode:
 
 - A non-empty `options` list connects to the historical `ws-replay-normalized` endpoint.
 - When `options` is empty, a non-empty `stream_options` list connects to the real-time
-  `ws-stream-normalized` endpoint and reconnects automatically after an interruption.
+  `ws-stream-normalized` endpoint and reconnects automatically after a recoverable interruption.
 
 One list must be non-empty. If both are set, `options` selects historical replay mode. These request
 options determine the upstream exchanges, symbols, and data types. Nautilus subscription commands
 do not add or remove data from the Tardis Machine WebSocket.
+
+When `options` is empty, a BitMEX entry in `stream_options` fails before any network request.
+Use historical `options` for BitMEX replay. An unsupported-exchange close from Tardis Machine
+terminates the live stream without reconnecting.
 
 The data client adds `derivative_ticker` to every configured request so it can publish funding
 rates, mark prices, and index prices when their values change. It also supports the other outputs in
@@ -836,6 +857,22 @@ downstream dedup intact.
 `TardisDataClient` does not implement Nautilus data requests, including instrument, order book,
 quote, trade, funding rate, and bar requests. Configure historical replay through `options`, or use
 `run_tardis_machine_replay` for catalog workflows.
+
+## Testing Tardis Node compatibility
+
+The Deribit regression feeds a snapshot, covered queued updates, and a fresh update through the
+installed Tardis Node normalizer, then checks the complete Nautilus order book. It requires Node.js
+compatible with the tested `tardis-dev` package and runs separately from the default Rust tests.
+From the repository root:
+
+```bash
+tardis_test_dir=$(mktemp -d)
+npm install --prefix "$tardis_test_dir" --ignore-scripts --no-audit --no-fund tardis-dev@18.2.2
+TARDIS_NODE_MODULE="$tardis_test_dir/node_modules/tardis-dev" \
+  CARGO_BUILD_JOBS=4 NEXTEST_TEST_THREADS=4 cargo nextest run --locked -p nautilus-tardis \
+  --cargo-profile nextest --run-ignored only -E 'test(test_deribit_snapshot_queued_updates_with_tardis_node)'
+rm -rf "$tardis_test_dir"
+```
 
 ## Contributing
 

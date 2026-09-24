@@ -38,7 +38,7 @@ use nautilus_tardis::{
     common::{consts::TARDIS, enums::TardisExchange},
     config::TardisDataClientConfig,
     factories::TardisDataClientFactory,
-    machine::types::ReplayNormalizedRequestOptions,
+    machine::types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions},
 };
 use rstest::rstest;
 
@@ -166,8 +166,10 @@ async fn test_stop_then_disconnect_completes() {
 }
 
 #[rstest]
+#[case(false)]
+#[case(true)]
 #[tokio::test]
-async fn test_connect_uses_tardis_http_url_override() {
+async fn test_connect_uses_tardis_http_url_override(#[case] with_stream_options: bool) {
     use axum::{
         Router,
         extract::{
@@ -227,6 +229,17 @@ async fn test_connect_uses_tardis_http_url_override() {
             data_types: vec!["trade".to_string()],
             with_disconnect_messages: Some(false),
         }],
+        stream_options: if with_stream_options {
+            vec![StreamNormalizedRequestOptions {
+                exchange: TardisExchange::Bitmex,
+                symbols: Some(vec!["XBTUSD".to_string()]),
+                data_types: vec!["trade".to_string()],
+                with_disconnect_messages: None,
+                timeout_interval_ms: None,
+            }]
+        } else {
+            Vec::new()
+        },
         ..Default::default()
     };
 
@@ -241,7 +254,7 @@ async fn test_connect_uses_tardis_http_url_override() {
 
     // The instrument bootstrap must hit the configured HTTP override: with the
     // override unset, requests would go to `api.tardis.dev` instead.
-    assert!(http_state.instrument_hits.load(Ordering::Relaxed) > 0);
+    assert_eq!(http_state.instrument_hits.load(Ordering::Relaxed), 1);
 
     client.disconnect().await.unwrap();
 }
