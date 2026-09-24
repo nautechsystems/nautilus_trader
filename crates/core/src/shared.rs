@@ -34,6 +34,8 @@
 //!   `ExecutionClient` which references the exchange, the exchange holds a [`SharedCell`] to the
 //!   client and the client holds a [`WeakCell`] back to the exchange.
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{
     cell::{BorrowError, BorrowMutError, Ref, RefCell, RefMut},
     hash::{Hash, Hasher},
@@ -47,7 +49,7 @@ pub struct SharedCell<T>(Rc<RefCell<T>>);
 
 impl<T> Clone for SharedCell<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self(Rc::clone(&self.0))
     }
 }
 
@@ -183,7 +185,7 @@ pub struct WeakCell<T>(Weak<RefCell<T>>);
 
 impl<T> Clone for WeakCell<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self(Weak::clone(&self.0))
     }
 }
 
@@ -238,7 +240,7 @@ mod tests {
     #[rstest]
     fn test_shared_cell_clone_shares_value() {
         let cell = SharedCell::new(10);
-        let clone = cell.clone();
+        let clone = SharedCell::clone(&cell);
         *cell.borrow_mut() = 20;
         assert_eq!(*clone.borrow(), 20);
     }
@@ -253,7 +255,7 @@ mod tests {
         assert_eq!(cell.weak_count(), 1);
         assert_eq!(cell.strong_count(), 1);
 
-        let clone = cell.clone();
+        let clone = SharedCell::clone(&cell);
         assert_eq!(cell.strong_count(), 2);
         drop(clone);
         assert_eq!(cell.strong_count(), 1);
@@ -329,7 +331,7 @@ mod tests {
     #[rstest]
     fn test_partial_eq_is_pointer_identity() {
         let a = SharedCell::new(10);
-        let b = a.clone();
+        let b = SharedCell::clone(&a);
         let c = SharedCell::new(10);
 
         assert_eq!(a, b);
@@ -343,7 +345,7 @@ mod tests {
     )]
     fn test_hash_matches_pointer_identity() {
         let a = SharedCell::new(10);
-        let b = a.clone();
+        let b = SharedCell::clone(&a);
         let c = SharedCell::new(10);
 
         let mut set: HashSet<SharedCell<i32>> = HashSet::new();
@@ -355,7 +357,7 @@ mod tests {
     #[rstest]
     fn test_as_ptr_matches_clone() {
         let cell = SharedCell::new(0);
-        let cloned = cell.clone();
+        let cloned = SharedCell::clone(&cell);
         assert_eq!(cell.as_ptr(), cloned.as_ptr());
     }
 
