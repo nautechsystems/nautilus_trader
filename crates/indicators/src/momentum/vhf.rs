@@ -136,7 +136,13 @@ impl VerticalHorizontalFilter {
         self.ma.update_raw(f64::abs(close - self.previous_close));
 
         if self.initialized {
-            self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value();
+            let mean_change = self.ma.value();
+            // A flat window has neither range nor movement, so it reads as no trend
+            self.value = if mean_change == 0.0 {
+                0.0
+            } else {
+                f64::abs(max_price - min_price) / self.period as f64 / mean_change
+            };
         }
 
         self.previous_close = close;
@@ -242,5 +248,15 @@ mod tests {
         // Window is now [2, 3, 4]: |max - min| = 2, and the SMA(3) of the last
         // three absolute price changes (1, 1, 1) is 1, so value = 2 / 3 / 1.
         assert_eq!(vhf.value, 2.0 / 3.0);
+    }
+
+    #[rstest]
+    fn test_value_is_zero_for_flat_prices(mut vhf_10: VerticalHorizontalFilter) {
+        for _ in 0..20 {
+            vhf_10.update_raw(100.0);
+        }
+
+        assert!(vhf_10.initialized);
+        assert_eq!(vhf_10.value, 0.0);
     }
 }
