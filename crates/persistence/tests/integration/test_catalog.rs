@@ -38,9 +38,10 @@ use nautilus_model::{
 };
 use nautilus_persistence::{
     backend::{
-        catalog::{ParquetDataCatalog, timestamps_to_filename},
-        parquet::delete::DeleteOperationKind,
-        session::{DataBackendSession, QueryResult},
+        parquet::{
+            catalog::ParquetDataCatalog, delete::DeleteOperationKind, paths::timestamps_to_filename,
+        },
+        session::{DataBackendSession, QueryResult, build_query},
     },
     catalog::traits::CatalogWriter,
     test_data::{
@@ -355,6 +356,21 @@ fn test_quote_tick_query() {
 #[rstest]
 fn test_quote_tick_query_with_filter() {
     let file_path = get_test_data_file_path("nautilus/arrow/quotes-3-groups-filter-query.parquet");
+    let bound = UnixNanos::from(1_701_388_832_486_000_000);
+
+    let mut unfiltered = DataBackendSession::new(10);
+    unfiltered
+        .add_file::<QuoteTick>("quote_005", &file_path, None, None)
+        .unwrap();
+    let all: Vec<Data> = unfiltered
+        .get_query_result()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let expected = all
+        .iter()
+        .filter(|tick| tick.ts_init() >= bound)
+        .cloned()
+        .collect::<Vec<_>>();
 
     let mut catalog = DataBackendSession::new(10);
     catalog
@@ -367,6 +383,9 @@ fn test_quote_tick_query_with_filter() {
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
+
+    assert!(expected.len() < all.len());
+    assert_eq!(ticks, expected);
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
@@ -3952,7 +3971,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
 fn test_make_local_path() {
     use std::path::PathBuf;
 
-    use nautilus_persistence::backend::catalog::make_local_path;
+    use nautilus_persistence::backend::parquet::paths::make_local_path;
 
     // Test basic path construction
     let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
@@ -3975,7 +3994,7 @@ fn test_make_local_path() {
 
 #[rstest]
 fn test_safe_directory_identifier() {
-    use nautilus_persistence::backend::catalog::safe_directory_identifier;
+    use nautilus_persistence::common::paths::safe_directory_identifier;
 
     assert_eq!(safe_directory_identifier("foo//bar"), "foo/bar");
     assert_eq!(safe_directory_identifier("foo/bar"), "foo/bar");
@@ -3986,7 +4005,7 @@ fn test_safe_directory_identifier() {
 
 #[rstest]
 fn test_make_object_store_path() {
-    use nautilus_persistence::backend::catalog::make_object_store_path;
+    use nautilus_persistence::common::paths::make_object_store_path;
 
     // Test basic path construction
     let path = make_object_store_path("base", ["data", "quotes", "EURUSD"]);
@@ -4010,29 +4029,10 @@ fn test_make_object_store_path() {
 }
 
 #[rstest]
-fn test_make_object_store_path_owned() {
-    use nautilus_persistence::backend::catalog::make_object_store_path_owned;
-
-    // Test with owned strings
-    let components = vec![
-        "data".to_string(),
-        "quotes".to_string(),
-        "EURUSD".to_string(),
-    ];
-    let path = make_object_store_path_owned("base", components);
-    assert_eq!(path, "base/data/quotes/EURUSD");
-
-    // Test empty base path
-    let components = vec!["data".to_string(), "quotes".to_string()];
-    let path = make_object_store_path_owned("", components);
-    assert_eq!(path, "data/quotes");
-}
-
-#[rstest]
 fn test_local_to_object_store_path() {
     use std::path::PathBuf;
 
-    use nautilus_persistence::backend::catalog::local_to_object_store_path;
+    use nautilus_persistence::common::paths::local_to_object_store_path;
 
     // Test Unix-style path
     let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
@@ -4049,7 +4049,7 @@ fn test_local_to_object_store_path() {
 
 #[rstest]
 fn test_extract_path_components() {
-    use nautilus_persistence::backend::catalog::extract_path_components;
+    use nautilus_persistence::common::paths::extract_path_components;
 
     // Test Unix-style path
     let components = extract_path_components("data/quotes/EURUSD");
@@ -4073,34 +4073,8 @@ fn test_extract_path_components() {
 }
 
 #[rstest]
-fn test_extract_identifier_from_path() {
-    use nautilus_persistence::backend::catalog::extract_identifier_from_path;
-
-    // Test typical parquet file path
-    let identifier = extract_identifier_from_path("data/quote_tick/EURUSD/file.parquet");
-    assert_eq!(identifier, "EURUSD");
-
-    // Test bar file path
-    let identifier =
-        extract_identifier_from_path("data/bars/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
-    assert_eq!(identifier, "BTCUSD-1-MINUTE-LAST-EXTERNAL");
-
-    // Test path with fewer components
-    let identifier = extract_identifier_from_path("EURUSD/file.parquet");
-    assert_eq!(identifier, "EURUSD");
-
-    // Test path with single component
-    let identifier = extract_identifier_from_path("file.parquet");
-    assert_eq!(identifier, "unknown");
-
-    // Test empty path
-    let identifier = extract_identifier_from_path("");
-    assert_eq!(identifier, "unknown");
-}
-
-#[rstest]
 fn test_make_sql_safe_identifier() {
-    use nautilus_persistence::backend::catalog::make_sql_safe_identifier;
+    use nautilus_persistence::common::paths::make_sql_safe_identifier;
 
     // Test identifier with forward slash
     let safe_id = make_sql_safe_identifier("EUR/USD");
@@ -4133,7 +4107,7 @@ fn test_make_sql_safe_identifier() {
 
 #[rstest]
 fn test_extract_sql_safe_filename() {
-    use nautilus_persistence::backend::catalog::extract_sql_safe_filename;
+    use nautilus_persistence::backend::parquet::paths::extract_sql_safe_filename;
 
     // Test actual timestamp range filename format
     let filename = extract_sql_safe_filename(
@@ -5239,6 +5213,70 @@ fn test_duplicate_table_registration() {
     // The quotes.parquet file contains 9500 quotes
     assert_eq!(data.len(), 9500);
     assert!(is_monotonically_increasing_by_init(&data));
+}
+
+#[rstest]
+fn test_collect_query_batches_returns_rows_and_reuses_registration() {
+    let mut session = DataBackendSession::new(1000);
+    let file_path = get_test_data_file_path("nautilus/arrow/trades.parquet");
+
+    let all = session
+        .collect_query_batches("trades", &file_path, None)
+        .unwrap();
+    let limited = session
+        .collect_query_batches(
+            "trades",
+            &file_path,
+            Some("SELECT * FROM trades ORDER BY ts_init LIMIT 5"),
+        )
+        .unwrap();
+
+    assert_eq!(all.iter().map(|batch| batch.num_rows()).sum::<usize>(), 100);
+    assert_eq!(
+        limited.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        5
+    );
+}
+
+#[rstest]
+fn test_backend_session_clear_allows_reregistering_the_same_table() {
+    let mut session = DataBackendSession::new(1000);
+    let file_path = get_test_data_file_path("nautilus/arrow/trades.parquet");
+
+    session
+        .add_file::<TradeTick>("trades", &file_path, None, None)
+        .unwrap();
+    let first: Vec<Data> = session
+        .get_query_result()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    session.clear_registered_tables();
+    session
+        .add_file::<TradeTick>("trades", &file_path, None, None)
+        .unwrap();
+    let second: Vec<Data> = session
+        .get_query_result()
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert_eq!(first.len(), 100);
+    assert_eq!(second, first);
+}
+
+#[rstest]
+fn test_backend_session_build_query_keeps_time_bounds_on_a_disjunctive_where_clause() {
+    let query = build_query(
+        "quotes",
+        Some(UnixNanos::from(1)),
+        Some(UnixNanos::from(2)),
+        Some("bid_size = 1 OR ask_size = 2"),
+    );
+
+    assert_eq!(
+        query,
+        "SELECT * FROM quotes WHERE (bid_size = 1 OR ask_size = 2) \
+         AND CAST(ts_init AS BIGINT) >= 1 AND CAST(ts_init AS BIGINT) <= 2 ORDER BY ts_init"
+    );
 }
 
 #[rstest]

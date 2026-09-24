@@ -43,7 +43,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+    backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;

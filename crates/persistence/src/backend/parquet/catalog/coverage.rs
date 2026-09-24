@@ -288,14 +288,14 @@ impl ParquetDataCatalog {
         let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 
-        if identifier.is_none() {
+        let Some(identifier) = identifier else {
             // `get_directory_intervals` already recursed through every per-identifier
             // subdirectory via `object_store.list`, so intervals from different
             // identifiers can overlap. Merge overlaps into a disjoint sorted union
             // so callers like `query_last_timestamp` see the true max end and
             // `consolidate_data_by_period` sees contiguous coverage.
             return Ok(merge_overlapping(intervals));
-        }
+        };
 
         // For bars, fall back to partial matching when the exact directory
         // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
@@ -305,7 +305,7 @@ impl ParquetDataCatalog {
             return Ok(intervals);
         }
 
-        let safe_id = urisafe_instrument_id(identifier.unwrap());
+        let safe_id = urisafe_instrument_id(identifier);
 
         // Use relative path so list_directory_stems doesn't double-prefix
         // for remote catalogs (make_path already includes base_path)
@@ -317,12 +317,14 @@ impl ParquetDataCatalog {
         for subdir in &subdirs {
             let decoded = urlencoding::decode(subdir).unwrap_or(Cow::Borrowed(subdir));
 
-            if extract_bar_type_instrument_id(&decoded) == Some(safe_id.as_str()) {
-                // Use decoded name to avoid double percent-encoding
-                // (to_object_path uses Path::from which re-encodes)
-                let subdir_path = self.make_path(data_cls, Some(&decoded))?;
-                all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
+            if extract_bar_type_instrument_id(&decoded) != Some(safe_id.as_str()) {
+                continue;
             }
+
+            // Use decoded name to avoid double percent-encoding
+            // (to_object_path uses Path::from which re-encodes)
+            let subdir_path = self.make_path(data_cls, Some(&decoded))?;
+            all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
         }
 
         all_intervals.sort_by_key(|&(start, _)| start);

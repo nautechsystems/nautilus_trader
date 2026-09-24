@@ -239,7 +239,7 @@ impl DataBackendSession {
     }
 }
 
-fn session_config() -> SessionConfig {
+pub(crate) fn session_config() -> SessionConfig {
     SessionConfig::new()
         .set_str("datafusion.optimizer.repartition_file_scans", "false")
         .set_str("datafusion.optimizer.prefer_existing_sort", "true")

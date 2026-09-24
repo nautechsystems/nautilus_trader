@@ -26,9 +26,10 @@ use object_store::ObjectMeta;
 use super::{
     HashSet, ObjectPath, ObjectStore, ObjectStoreExt, ParquetDataCatalog, PathBuf, StreamExt,
     UnixNanos, append_path_to_file_uri, are_intervals_disjoint, decode_object_store_segment,
-    extract_path_components, is_remote_uri_scheme, make_object_store_path,
-    parse_filename_timestamps, query_intersects_filename, remote_full_uri, remote_store_root_url,
-    timestamps_to_filename, urisafe_instrument_id,
+    is_remote_uri_scheme, make_object_store_path, parse_filename_timestamps,
+    query::{filter_identifier_files, is_parquet_bar_prefix},
+    query_intersects_filename, remote_full_uri, remote_store_root_url, timestamps_to_filename,
+    urisafe_instrument_id,
 };
 use crate::{
     catalog::types::{
@@ -181,6 +182,41 @@ impl ParquetDataCatalog {
         self.rename_parquet_file(directory, original.0, original.1, proposed.0, proposed.1)
     }
 
+    /// Helper method to rename a parquet file by moving it via object store operations
+    fn rename_parquet_file(
+        &self,
+        directory: &str,
+        old_start: u64,
+        old_end: u64,
+        new_start: u64,
+        new_end: u64,
+    ) -> anyhow::Result<()> {
+        let new_filename =
+            timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
+        let new_path = format!("{directory}/{new_filename}");
+        let matches = self
+            .list_parquet_files(directory)?
+            .into_iter()
+            .filter(|file| parse_filename_timestamps(file) == Some((old_start, old_end)))
+            .collect::<Vec<_>>();
+
+        anyhow::ensure!(
+            matches.len() == 1,
+            "expected one parquet file for interval ({old_start}, {old_end}) in {directory}, \
+             found {}",
+            matches.len()
+        );
+
+        let old_path = &matches[0];
+        if old_path.ends_with(&new_filename) {
+            return Ok(());
+        }
+
+        let old_object_path = self.to_object_path_parsed(old_path)?;
+        let new_object_path = self.to_object_path(&new_path)?;
+        self.move_file(&old_object_path, &new_object_path)
+    }
+
     /// Lists all Parquet files in a specified directory.
     ///
     /// This method scans a directory and returns the full paths of all files with the `.parquet`
@@ -264,20 +300,15 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if directory listing fails.
     pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
-        if let Some(type_name) = custom_type_name(data_type) {
-            let mut instruments = Vec::new();
-            for prefix in custom_data_read_prefixes(type_name) {
-                instruments.extend(self.list_prefix_instruments(prefix.as_ref())?);
-            }
-
-            instruments.sort();
-            instruments.dedup();
-            return Ok(instruments);
-        }
+        let prefixes = match custom_type_name(data_type) {
+            Some(type_name) => Vec::from(custom_data_read_prefixes(type_name)),
+            None => parquet_catalog_data_type_path_prefixes(data_type),
+        };
 
         let mut instruments = Vec::new();
-        for data_type in parquet_catalog_data_type_path_prefixes(data_type) {
-            instruments.extend(self.list_prefix_instruments(data_type.as_ref())?);
+
+        for prefix in prefixes {
+            instruments.extend(self.list_prefix_instruments(prefix.as_ref())?);
         }
 
         // The same identifier can live under more than one instrument class.
@@ -376,44 +407,25 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
-        let mut all_files = Vec::new();
-
         let start_u64 = start.map(|s| s.as_u64());
         let end_u64 = end.map(|e| e.as_u64());
 
         let base_dir = self.make_path(data_cls, None)?;
 
         // Use recursive listing to match Python's glob behavior
-        let list_result = self.list_objects(&base_dir)?;
+        let mut all_files = self
+            .list_objects(&base_dir)?
+            .into_iter()
+            .map(|object| object.location.to_string())
+            .filter(|path| path.ends_with(".parquet"))
+            .collect::<Vec<_>>();
 
-        for object in list_result {
-            let path_str = object.location.to_string();
-
-            // Filter by identifiers if provided
-            if let Some(ids) = identifiers {
-                let path_components = extract_path_components(&path_str);
-                let mut matches = false;
-
-                for id in ids {
-                    if path_components.iter().any(|c| c.contains(id)) {
-                        matches = true;
-                        break;
-                    }
-                }
-
-                if !matches {
-                    continue;
-                }
-            }
-
-            // Filter by timestamp range if filename can be parsed
-            if path_str.ends_with(".parquet")
-                && query_intersects_filename(&path_str, start_u64, end_u64)
-            {
-                all_files.push(path_str);
-            }
+        if let Some(identifiers) = identifiers {
+            all_files =
+                filter_identifier_files(all_files, identifiers, is_parquet_bar_prefix(data_cls));
         }
 
+        all_files.retain(|path| query_intersects_filename(path, start_u64, end_u64));
         Ok(all_files)
     }
 
@@ -527,6 +539,16 @@ impl ParquetDataCatalog {
         }
     }
 
+    pub(crate) fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
+        if self.is_remote_uri() {
+            let base_url = remote_store_root_url(&self.original_uri)?;
+            self.session
+                .register_object_store(&base_url, self.object_store.clone());
+        }
+
+        Ok(())
+    }
+
     /// Helper method to check if the original URI uses a remote object store scheme
     #[must_use]
     pub fn is_remote_uri(&self) -> bool {
@@ -624,41 +646,6 @@ impl ParquetDataCatalog {
         Ok(path)
     }
 
-    /// Helper method to rename a parquet file by moving it via object store operations
-    fn rename_parquet_file(
-        &self,
-        directory: &str,
-        old_start: u64,
-        old_end: u64,
-        new_start: u64,
-        new_end: u64,
-    ) -> anyhow::Result<()> {
-        let new_filename =
-            timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
-        let new_path = format!("{directory}/{new_filename}");
-        let matches = self
-            .list_parquet_files(directory)?
-            .into_iter()
-            .filter(|file| parse_filename_timestamps(file) == Some((old_start, old_end)))
-            .collect::<Vec<_>>();
-
-        anyhow::ensure!(
-            matches.len() == 1,
-            "expected one parquet file for interval ({old_start}, {old_end}) in {directory}, \
-             found {}",
-            matches.len()
-        );
-
-        let old_path = &matches[0];
-        if old_path.ends_with(&new_filename) {
-            return Ok(());
-        }
-
-        let old_object_path = self.to_object_path_parsed(old_path)?;
-        let new_object_path = self.to_object_path(&new_path)?;
-        self.move_file(&old_object_path, &new_object_path)
-    }
-
     /// Converts a catalog path string to an [`ObjectPath`] for object store operations.
     ///
     /// This method handles the conversion between catalog-relative paths and object store paths,
@@ -711,16 +698,6 @@ impl ParquetDataCatalog {
     /// ```
     pub fn to_object_path(&self, path: &str) -> anyhow::Result<ObjectPath> {
         Ok(ObjectPath::from(self.object_store_path(path)?))
-    }
-
-    pub(crate) fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
-        if self.is_remote_uri() {
-            let base_url = remote_store_root_url(&self.original_uri)?;
-            self.session
-                .register_object_store(&base_url, self.object_store.clone());
-        }
-
-        Ok(())
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
@@ -781,7 +758,7 @@ impl ParquetDataCatalog {
         Ok(path_url.path().trim_start_matches('/').to_string())
     }
 
-    fn path_without_local_base(&self, path: &str) -> String {
+    pub(crate) fn path_without_local_base(&self, path: &str) -> String {
         let base_path = if self.base_path.is_empty() {
             self.native_base_path_string()
         } else {

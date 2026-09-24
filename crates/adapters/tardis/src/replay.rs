@@ -727,7 +727,7 @@ mod tests {
     use std::sync::Arc;
 
     use nautilus_core::DurationNanos;
-    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     use rstest::rstest;
 
     use super::*;

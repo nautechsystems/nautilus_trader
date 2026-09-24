@@ -49,7 +49,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 use ustr::Ustr;

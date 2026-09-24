@@ -81,22 +81,15 @@ impl ParquetDataCatalog {
             let key = canonical_metadata_key(&metadata)?;
             let metadata = arrow_metadata_to_params(&metadata);
 
-            match metadata_by_key.get_mut(&key) {
-                Some(existing) => {
-                    if first_ts_init < existing.first_ts_init {
-                        existing.first_ts_init = first_ts_init;
-                    }
-                }
-                None => {
-                    metadata_by_key.insert(
-                        key,
-                        CatalogMetadata {
-                            first_ts_init,
-                            metadata,
-                        },
-                    );
-                }
-            }
+            metadata_by_key
+                .entry(key)
+                .and_modify(|existing| {
+                    existing.first_ts_init = existing.first_ts_init.min(first_ts_init);
+                })
+                .or_insert(CatalogMetadata {
+                    first_ts_init,
+                    metadata,
+                });
         }
 
         let mut metadata = metadata_by_key.into_values().collect::<Vec<_>>();
@@ -135,9 +128,6 @@ fn first_ts_init_from_batches(batches: &[RecordBatch]) -> anyhow::Result<Option<
 }
 
 fn canonical_metadata_key(metadata: &HashMap<String, String>) -> anyhow::Result<String> {
-    let ordered = metadata
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let ordered = metadata.iter().collect::<BTreeMap<_, _>>();
     Ok(serde_json::to_string(&ordered)?)
 }

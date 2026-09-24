@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::ParquetDataCatalog;
 use crate::{
-    backend::migration::feather_replay_identity,
     common::{
         conversion::FeatherConversionSummary, datafusion::identifiers_from_record_batches,
         storage::create_storage_backend_from_path,
@@ -84,7 +83,6 @@ struct ParquetWriter {
     core: StagedFeatherWriter<ParquetPromotionBackend>,
     session: PromotionSession,
     source: FeatherSessionSource,
-    catalog_uri: String,
     storage_options: Option<ahash::AHashMap<String, String>>,
     interval_ms: Option<u64>,
     promote_on_close: bool,
@@ -99,7 +97,7 @@ impl Debug for ParquetWriter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(ParquetWriter))
             .field("staging_uri", &self.core.storage.original_uri)
-            .field("catalog_uri", &self.catalog_uri)
+            .field("catalog_uri", &self.session.catalog_uri)
             .field("interval_ms", &self.interval_ms)
             .finish_non_exhaustive()
     }
@@ -157,16 +155,11 @@ impl ParquetWriter {
             source.clone(),
             "parquet-promotion",
             move || {
-                Ok(ParquetPromotionBackend::new(
-                    ParquetDataCatalog::from_uri(
-                        &timer_catalog_uri,
-                        timer_storage_options.clone(),
-                        None,
-                        None,
-                        None,
-                    )?,
+                ParquetPromotionBackend::new(
+                    &timer_catalog_uri,
+                    timer_storage_options.clone(),
                     Arc::clone(&timer_legacy_manifest_missing),
-                ))
+                )
             },
             use_ts_event_for_ts_init,
             delete_feather_after_commit,
@@ -174,7 +167,6 @@ impl ParquetWriter {
 
         Ok(Self {
             core,
-            catalog_uri: session.catalog_uri.clone(),
             storage_options: config.storage_options.clone(),
             session,
             source,
@@ -231,15 +223,13 @@ impl ParquetWriter {
     }
 
     fn prepare_promotion(&self) -> anyhow::Result<Option<PromotionWork<ParquetPromotionBackend>>> {
-        let catalog = ParquetDataCatalog::from_uri(
-            &self.catalog_uri,
+        let backend = ParquetPromotionBackend::new(
+            &self.session.catalog_uri,
             self.storage_options.clone(),
-            None,
-            None,
-            None,
+            Arc::clone(&self.legacy_manifest_missing),
         )?;
         self.core.prepare_promotion(
-            ParquetPromotionBackend::new(catalog, Arc::clone(&self.legacy_manifest_missing)),
+            backend,
             self.source.clone(),
             self.use_ts_event_for_ts_init,
             self.delete_feather_after_commit,
@@ -385,34 +375,28 @@ impl Drop for ParquetWriter {
     }
 }
 
+const PROMOTION_MANIFEST: &str = "_nautilus_promotions.json";
+const PROMOTION_MARKERS: &str = "_nautilus_promotions";
+
 struct ParquetPromotionBackend {
     catalog: ParquetDataCatalog,
     legacy_manifest_missing: Arc<AtomicBool>,
 }
 
-const PROMOTION_MANIFEST: &str = "_nautilus_promotions.json";
-const PROMOTION_MARKERS: &str = "_nautilus_promotions";
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct ParquetPromotionManifest {
-    identities: Vec<String>,
-}
-
 impl ParquetPromotionBackend {
-    fn new(catalog: ParquetDataCatalog, legacy_manifest_missing: Arc<AtomicBool>) -> Self {
-        Self {
-            catalog,
+    fn new(
+        catalog_uri: &str,
+        storage_options: Option<ahash::AHashMap<String, String>>,
+        legacy_manifest_missing: Arc<AtomicBool>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            catalog: ParquetDataCatalog::from_uri(catalog_uri, storage_options, None, None, None)?,
             legacy_manifest_missing,
-        }
+        })
     }
 
     fn manifest_path(&self) -> ObjectPath {
-        let base = self.catalog.base_path.trim_matches('/');
-        if base.is_empty() {
-            ObjectPath::from(PROMOTION_MANIFEST)
-        } else {
-            ObjectPath::from(format!("{base}/{PROMOTION_MANIFEST}"))
-        }
+        self.catalog_path(PROMOTION_MANIFEST)
     }
 
     fn manifest(&self) -> anyhow::Result<ParquetPromotionManifest> {
@@ -436,9 +420,12 @@ impl ParquetPromotionBackend {
     }
 
     fn marker_path(&self, identity: &str) -> ObjectPath {
-        let base = self.catalog.base_path.trim_matches('/');
         let digest = blake3::hash(identity.as_bytes()).to_hex();
-        let path = format!("{PROMOTION_MARKERS}/{digest}.json");
+        self.catalog_path(&format!("{PROMOTION_MARKERS}/{digest}.json"))
+    }
+
+    fn catalog_path(&self, path: &str) -> ObjectPath {
+        let base = self.catalog.base_path.trim_matches('/');
         if base.is_empty() {
             ObjectPath::from(path)
         } else {
@@ -558,7 +545,7 @@ impl StagedPromotionBackend for ParquetPromotionBackend {
         &mut self,
         source: &FeatherSessionSource,
         _staging_uri: &str,
-        status: crate::writer::run::RunStatus,
+        status: RunStatus,
         empty: bool,
         _error: Option<&str>,
     ) -> anyhow::Result<()> {
@@ -571,6 +558,35 @@ impl StagedPromotionBackend for ParquetPromotionBackend {
             )
         })
     }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct ParquetPromotionManifest {
+    identities: Vec<String>,
+}
+
+fn feather_replay_identity(
+    source_uri: &str,
+    source_path: &str,
+    content_hash: &str,
+    identifiers: Option<&[String]>,
+) -> String {
+    let mut identifiers = identifiers.map(<[String]>::to_vec);
+    if let Some(identifiers) = identifiers.as_mut() {
+        identifiers.sort();
+        identifiers.dedup();
+    }
+
+    let identity = serde_json::json!({
+        "source_uri": source_uri,
+        "source_path": source_path,
+        "content_hash": content_hash,
+        "identifiers": identifiers,
+    });
+    format!(
+        "nautilus-feather:{}",
+        blake3::hash(identity.to_string().as_bytes()).to_hex(),
+    )
 }
 
 #[cfg(test)]
@@ -1165,5 +1181,56 @@ mod tests {
             UnixNanos::from(19),
             UnixNanos::from(23),
         )
+    }
+
+    #[rstest]
+    #[case::nested_base("/prefix/catalog/", "prefix/catalog/")]
+    #[case::root_base("", "")]
+    fn promotion_paths_live_under_the_catalog_base_path(
+        #[case] base_path: &str,
+        #[case] expected_prefix: &str,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        catalog.base_path = base_path.to_string();
+
+        let backend = ParquetPromotionBackend {
+            catalog,
+            legacy_manifest_missing: Arc::default(),
+        };
+
+        assert_eq!(
+            backend.manifest_path(),
+            ObjectPath::from(format!("{expected_prefix}_nautilus_promotions.json")),
+        );
+        assert_eq!(
+            backend.marker_path("replay-id"),
+            ObjectPath::from(format!(
+                "{expected_prefix}_nautilus_promotions/\
+                 cd3112001080bc2d11985ffe2b8b90b324d336d82c17ddb66127d3a05f08c69c.json"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn feather_replay_identity_is_stable_and_ignores_identifier_order() {
+        let identity = |identifiers: Option<&[String]>| {
+            feather_replay_identity(
+                "file:///catalog/backtest/run-1",
+                "quotes/AUDUSD.SIM/part-0.feather",
+                "content-hash",
+                identifiers,
+            )
+        };
+
+        let unordered = ["B".to_string(), "A".to_string(), "A".to_string()];
+        let ordered = ["A".to_string(), "B".to_string()];
+
+        let expected =
+            "nautilus-feather:10a9435c28f7536f26653c3fc808571be89bfe769e06c7307cb4743e273a23fd";
+
+        assert_eq!(identity(Some(&unordered)), expected);
+        assert_eq!(identity(Some(&ordered)), expected);
+        assert_ne!(identity(None), expected);
     }
 }

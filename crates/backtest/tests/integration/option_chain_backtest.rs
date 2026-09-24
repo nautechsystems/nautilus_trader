@@ -51,7 +51,7 @@ use nautilus_model::{
     instruments::{CryptoOption, Instrument, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_trading::{StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use tempfile::TempDir;

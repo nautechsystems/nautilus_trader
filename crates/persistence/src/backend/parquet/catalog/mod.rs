@@ -130,6 +130,24 @@ use crate::{
     },
 };
 
+mod coverage;
+mod query;
+mod session;
+mod store;
+mod write;
+
+// Re-export public items from sibling modules so historical
+// `crate::backend::parquet::catalog::...` imports continue to resolve.
+pub use crate::backend::parquet::{
+    intervals::{are_intervals_contiguous, are_intervals_disjoint},
+    paths::{
+        CatalogPathPrefix, extract_identifier_from_path, extract_path_components,
+        extract_sql_safe_filename, local_to_object_store_path, make_local_path,
+        make_object_store_path, make_sql_safe_identifier, parse_filename_timestamps,
+        safe_directory_identifier, timestamps_to_filename, urisafe_instrument_id,
+    },
+};
+
 /// Optional Parquet query file-loading hint parameter key.
 pub const QUERY_OPTIMIZE_FILE_LOADING: &str = "optimize_file_loading";
 
@@ -247,12 +265,6 @@ impl Debug for ParquetDataCatalog {
             .finish()
     }
 }
-
-mod coverage;
-mod query;
-mod session;
-mod store;
-mod write;
 
 impl ParquetDataCatalog {
     /// Creates a new [`ParquetDataCatalog`] instance from a local file path.
@@ -439,14 +451,14 @@ impl CatalogReader for ParquetDataCatalog {
         query: &CatalogQuery,
         chunk_size: Option<usize>,
     ) -> anyhow::Result<DataBatchQueryResult> {
-        ensure_latest_query(query)?;
+        ensure_latest_query(query.as_of)?;
         macro_rules! batch_session {
             ((Instrument, InstrumentAny, Instrument, Instrument, $instrument_prefix:literal), $(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
                 match &query.data_type {
                     $(NautilusDataType::$variant => {
                         let pages = self.query_typed_pages::<$type>(
                             query.identifiers.clone(), query.start, query.end, query.where_clause.as_deref(), None,
-                            query.params.as_ref().and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING)).unwrap_or(true),
+                            optimize_file_loading(query.params.as_ref()),
                         )?;
                         Ok(Box::new(TypedDataBatchSession::new(pages, chunk_size)) as DataBatchQueryResult)
                     },)+
@@ -487,7 +499,7 @@ impl CatalogReader for ParquetDataCatalog {
     }
 
     fn query_batch(&mut self, query: &CatalogQuery) -> anyhow::Result<DataBatch> {
-        ensure_latest_query(query)?;
+        ensure_latest_query(query.as_of)?;
         let CatalogQuery {
             data_type,
             identifiers,
@@ -499,10 +511,7 @@ impl CatalogReader for ParquetDataCatalog {
             ..
         } = query.clone();
         let where_clause = where_clause.as_deref();
-        let optimize_file_loading = params
-            .as_ref()
-            .and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING))
-            .unwrap_or(true);
+        let optimize_file_loading = optimize_file_loading(params.as_ref());
 
         match data_type {
             NautilusDataType::Instrument => {
@@ -555,7 +564,7 @@ impl CatalogReader for ParquetDataCatalog {
     }
 
     fn query_identifiers(&mut self, query: &CatalogQuery) -> anyhow::Result<Vec<String>> {
-        ensure_latest_query(query)?;
+        ensure_latest_query(query.as_of)?;
         let CatalogQuery {
             data_type,
             identifiers,
@@ -584,10 +593,6 @@ impl CatalogReader for ParquetDataCatalog {
             return Ok(identifiers);
         }
 
-        let optimize_file_loading = params
-            .as_ref()
-            .and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING))
-            .unwrap_or(true);
         Self::query_identifiers(
             self,
             &CatalogDataType::Data(data_type),
@@ -595,7 +600,7 @@ impl CatalogReader for ParquetDataCatalog {
             start,
             end,
             where_clause.as_deref(),
-            optimize_file_loading,
+            optimize_file_loading(params.as_ref()),
         )
     }
 
@@ -603,7 +608,7 @@ impl CatalogReader for ParquetDataCatalog {
         &mut self,
         query: &CatalogQuery,
     ) -> anyhow::Result<Vec<RecordBatch>> {
-        ensure_latest_query(query)?;
+        ensure_latest_query(query.as_of)?;
         let CatalogQuery {
             data_type,
             identifiers,
@@ -630,10 +635,6 @@ impl CatalogReader for ParquetDataCatalog {
             };
         }
 
-        let optimize_file_loading = params
-            .as_ref()
-            .and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING))
-            .unwrap_or(true);
         Self::query_display_record_batches(
             self,
             &data_type,
@@ -641,7 +642,7 @@ impl CatalogReader for ParquetDataCatalog {
             start,
             end,
             where_clause.as_deref(),
-            optimize_file_loading,
+            optimize_file_loading(params.as_ref()),
         )
     }
 
@@ -649,10 +650,7 @@ impl CatalogReader for ParquetDataCatalog {
         &mut self,
         query: &CatalogRecordQuery,
     ) -> anyhow::Result<Vec<RecordBatch>> {
-        anyhow::ensure!(
-            query.as_of == CatalogAsOf::Latest,
-            "Parquet catalog does not support historical queries"
-        );
+        ensure_latest_query(query.as_of)?;
         let CatalogRecordQuery {
             record_type,
             identifier,
@@ -662,10 +660,6 @@ impl CatalogReader for ParquetDataCatalog {
             params,
             ..
         } = query.clone();
-        let optimize_file_loading = params
-            .as_ref()
-            .and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING))
-            .unwrap_or(true);
         Self::query_record_batches(
             self,
             &CatalogDataType::Record(record_type),
@@ -673,7 +667,7 @@ impl CatalogReader for ParquetDataCatalog {
             start,
             end,
             where_clause.as_deref(),
-            optimize_file_loading,
+            optimize_file_loading(params.as_ref()),
         )
     }
 
@@ -681,15 +675,11 @@ impl CatalogReader for ParquetDataCatalog {
         &mut self,
         query: &CatalogRecordQuery,
     ) -> anyhow::Result<Vec<RecordBatch>> {
-        anyhow::ensure!(
-            query.as_of == CatalogAsOf::Latest,
-            "Parquet catalog does not support historical queries"
-        );
         CatalogReader::query_record_batches(self, query)
     }
 
     fn query_metadata(&mut self, query: &CatalogQuery) -> anyhow::Result<Vec<CatalogMetadata>> {
-        ensure_latest_query(query)?;
+        ensure_latest_query(query.as_of)?;
         let CatalogQuery {
             data_type,
             identifiers,
@@ -844,8 +834,7 @@ impl CatalogWriter for ParquetDataCatalog {
         params: Option<Params>,
     ) -> anyhow::Result<()> {
         let params = params.unwrap_or_default();
-        let identifier = params.get_str("identifier").map(str::to_owned);
-        self.write_record_batches(&record_type, identifier.as_deref(), batches, &params)
+        self.write_record_batches(&record_type, params.get_str("identifier"), batches, &params)
     }
 
     fn record_empty_coverage(
@@ -870,22 +859,16 @@ impl CatalogWriter for ParquetDataCatalog {
     }
 }
 
-// Re-export public items from sibling modules so historical
-// `crate::backend::parquet::catalog::...` imports continue to resolve.
-pub use crate::backend::parquet::{
-    intervals::{are_intervals_contiguous, are_intervals_disjoint},
-    paths::{
-        CatalogPathPrefix, extract_identifier_from_path, extract_path_components,
-        extract_sql_safe_filename, local_to_object_store_path, make_local_path,
-        make_object_store_path, make_sql_safe_identifier, parse_filename_timestamps,
-        safe_directory_identifier, timestamps_to_filename, urisafe_instrument_id,
-    },
-};
-
-fn ensure_latest_query(query: &CatalogQuery) -> anyhow::Result<()> {
+fn ensure_latest_query(as_of: CatalogAsOf) -> anyhow::Result<()> {
     anyhow::ensure!(
-        query.as_of == CatalogAsOf::Latest,
+        as_of == CatalogAsOf::Latest,
         "Parquet catalog does not support historical queries"
     );
     Ok(())
+}
+
+fn optimize_file_loading(params: Option<&Params>) -> bool {
+    params
+        .and_then(|params| params.get_bool(QUERY_OPTIMIZE_FILE_LOADING))
+        .unwrap_or(true)
 }

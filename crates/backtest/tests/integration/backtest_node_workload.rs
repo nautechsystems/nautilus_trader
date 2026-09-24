@@ -264,7 +264,7 @@ mod tests {
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         types::Price,
     };
-    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     use rstest::rstest;
     use tempfile::TempDir;
 

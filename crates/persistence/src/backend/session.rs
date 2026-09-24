@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! DataFusion session that streams Parquet queries into merged Nautilus data.
+
 use std::{
     sync::{
         Arc,
@@ -29,9 +31,8 @@ use datafusion::{
     physical_plan::SendableRecordBatchStream,
     prelude::*,
 };
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use nautilus_common::live::get_runtime;
-use nautilus_core::UnixNanos;
 use nautilus_model::data::{Data, HasTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError, WriteStream,
@@ -44,7 +45,8 @@ use super::{
     compare::Compare,
     kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
 };
-use crate::common::arrow::validate_catalog_schema;
+pub use crate::common::datafusion::build_query;
+use crate::common::{arrow::validate_catalog_schema, datafusion::session_config};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -199,17 +201,14 @@ impl DataBackendSession {
     /// Creates a new [`DataBackendSession`] instance.
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
-        let session_cfg = SessionConfig::new()
-            .set_str("datafusion.optimizer.repartition_file_scans", "false")
-            .set_str("datafusion.optimizer.prefer_existing_sort", "true");
-        let session_ctx = SessionContext::new_with_config(session_cfg);
+        let session_ctx = SessionContext::new_with_config(session_config());
 
         Self {
+            chunk_size,
+            runtime: get_runtime().handle().clone(),
             session_ctx,
             batch_streams: Vec::default(),
             error: Arc::default(),
-            chunk_size,
-            runtime: get_runtime().handle().clone(),
             registered_tables: AHashSet::new(),
         }
     }
@@ -288,41 +287,15 @@ impl DataBackendSession {
         T: DecodeDataFromRecordBatch,
     {
         // Check if table is already registered to avoid duplicates
-        let is_new_table = !self.registered_tables.contains(table_name);
-
-        if is_new_table {
-            // Register the table only if it doesn't exist
-            let parquet_options = ParquetReadOptions::<'_> {
-                skip_metadata: Some(false),
-                file_sort_order: vec![vec![Sort {
-                    expr: col("ts_init"),
-                    asc: true,
-                    nulls_first: false,
-                }]],
-                ..Default::default()
-            };
-
-            super::block_on(
-                &self.runtime,
-                self.session_ctx
-                    .register_parquet(table_name, file_path, parquet_options),
-            )?;
-
-            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
-            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
-                self.session_ctx.deregister_table(table_name)?;
-                return Err(DataFusionError::External(e.into()));
-            }
-
-            self.registered_tables.insert(table_name.to_string());
-
-            // Only add batch stream for newly registered tables to avoid duplicates
-            let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
-            let sql_query = sql_query.unwrap_or(&default_query);
-            let query = super::block_on(&self.runtime, self.session_ctx.sql(sql_query))?;
-            let batch_stream = super::block_on(&self.runtime, query.execute_stream())?;
-            self.add_batch_stream::<T>(batch_stream, custom_type_name.map(String::from));
+        if self.registered_tables.contains(table_name) {
+            return Ok(());
         }
+
+        self.register_parquet_table(table_name, file_path)?;
+
+        // Only add batch stream for newly registered tables to avoid duplicates
+        let batch_stream = self.execute_registered(table_name, sql_query)?;
+        self.add_batch_stream::<T>(batch_stream, custom_type_name.map(String::from));
 
         Ok(())
     }
@@ -340,60 +313,11 @@ impl DataBackendSession {
         sql_query: Option<&str>,
     ) -> Result<Vec<RecordBatch>> {
         if !self.registered_tables.contains(table_name) {
-            let parquet_options = ParquetReadOptions::<'_> {
-                skip_metadata: Some(false),
-                file_sort_order: vec![vec![Sort {
-                    expr: col("ts_init"),
-                    asc: true,
-                    nulls_first: false,
-                }]],
-                ..Default::default()
-            };
-
-            super::block_on(
-                &self.runtime,
-                self.session_ctx
-                    .register_parquet(table_name, file_path, parquet_options),
-            )?;
-
-            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
-            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
-                self.session_ctx.deregister_table(table_name)?;
-                return Err(DataFusionError::External(e.into()));
-            }
-
-            self.registered_tables.insert(table_name.to_string());
+            self.register_parquet_table(table_name, file_path)?;
         }
 
-        let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
-        let sql_query = sql_query.unwrap_or(&default_query);
-        let query = super::block_on(&self.runtime, self.session_ctx.sql(sql_query))?;
-        let mut batch_stream = super::block_on(&self.runtime, query.execute_stream())?;
-
-        super::block_on(&self.runtime, async {
-            let mut batches = Vec::new();
-            while let Some(batch) = batch_stream.next().await {
-                batches.push(batch?);
-            }
-
-            Ok::<_, datafusion::error::DataFusionError>(batches)
-        })
-    }
-
-    fn add_batch_stream<T>(
-        &mut self,
-        stream: SendableRecordBatchStream,
-        custom_type_name: Option<String>,
-    ) where
-        T: DecodeDataFromRecordBatch,
-    {
-        self.batch_streams.push(BatchStream {
-            inner: EagerStream::from_stream_with_runtime(
-                decode_batches::<T>(stream, custom_type_name),
-                self.runtime.clone(),
-            ),
-            error: Arc::clone(&self.error),
-        });
+        let batch_stream = self.execute_registered(table_name, sql_query)?;
+        super::block_on(&self.runtime, batch_stream.try_collect())
     }
 
     // Consumes the registered queries and returns a [`QueryResult].
@@ -423,10 +347,61 @@ impl DataBackendSession {
         self.error = Arc::default();
 
         // Create a new session context to completely reset the DataFusion state
-        let session_cfg = SessionConfig::new()
-            .set_str("datafusion.optimizer.repartition_file_scans", "false")
-            .set_str("datafusion.optimizer.prefer_existing_sort", "true");
-        self.session_ctx = SessionContext::new_with_config(session_cfg);
+        self.session_ctx = SessionContext::new_with_config(session_config());
+    }
+
+    fn register_parquet_table(&mut self, table_name: &str, file_path: &str) -> Result<()> {
+        let parquet_options = ParquetReadOptions::<'_> {
+            skip_metadata: Some(false),
+            file_sort_order: vec![vec![Sort {
+                expr: col("ts_init"),
+                asc: true,
+                nulls_first: false,
+            }]],
+            ..Default::default()
+        };
+
+        super::block_on(
+            &self.runtime,
+            self.session_ctx
+                .register_parquet(table_name, file_path, parquet_options),
+        )?;
+
+        let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
+        if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
+            self.session_ctx.deregister_table(table_name)?;
+            return Err(DataFusionError::External(e.into()));
+        }
+
+        self.registered_tables.insert(table_name.to_string());
+        Ok(())
+    }
+
+    fn execute_registered(
+        &self,
+        table_name: &str,
+        sql_query: Option<&str>,
+    ) -> Result<SendableRecordBatchStream> {
+        let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
+        let sql_query = sql_query.unwrap_or(&default_query);
+        let query = super::block_on(&self.runtime, self.session_ctx.sql(sql_query))?;
+        super::block_on(&self.runtime, query.execute_stream())
+    }
+
+    fn add_batch_stream<T>(
+        &mut self,
+        stream: SendableRecordBatchStream,
+        custom_type_name: Option<String>,
+    ) where
+        T: DecodeDataFromRecordBatch,
+    {
+        self.batch_streams.push(BatchStream {
+            inner: EagerStream::from_stream_with_runtime(
+                decode_batches::<T>(stream, custom_type_name),
+                self.runtime.clone(),
+            ),
+            error: Arc::clone(&self.error),
+        });
     }
 }
 
@@ -500,45 +475,6 @@ impl Iterator for BatchStream {
     }
 }
 
-#[must_use]
-pub fn build_query(
-    table: &str,
-    start: Option<UnixNanos>,
-    end: Option<UnixNanos>,
-    where_clause: Option<&str>,
-) -> String {
-    let mut conditions = Vec::new();
-
-    // Add where clause if provided
-    if let Some(clause) = where_clause {
-        conditions.push(clause.to_string());
-    }
-
-    // Add start condition if provided
-    if let Some(start_ts) = start {
-        conditions.push(format!("ts_init >= {start_ts}"));
-    }
-
-    // Add end condition if provided
-    if let Some(end_ts) = end {
-        conditions.push(format!("ts_init <= {end_ts}"));
-    }
-
-    // Build base query
-    let mut query = format!("SELECT * FROM {table}");
-
-    // Add WHERE clause if there are conditions
-    if !conditions.is_empty() {
-        query.push_str(" WHERE ");
-        query.push_str(&conditions.join(" AND "));
-    }
-
-    // Add ORDER BY clause
-    query.push_str(" ORDER BY ts_init");
-
-    query
-}
-
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.persistence", unsendable)
@@ -587,9 +523,7 @@ impl Iterator for DataQueryResult {
 
         // TODO: consider using drain here if perf is unchanged
         // Some(self.acc.drain(0..).collect())
-        let mut acc: Vec<Data> = Vec::new();
-        std::mem::swap(&mut acc, &mut self.acc);
-        Some(Ok(acc))
+        Some(Ok(std::mem::take(&mut self.acc)))
     }
 }
 
@@ -605,6 +539,7 @@ mod tests {
 
     use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
     use nautilus_common::live::get_runtime;
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::QuoteTick,
         identifiers::InstrumentId,

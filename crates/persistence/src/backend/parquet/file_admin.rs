@@ -51,12 +51,13 @@ impl ParquetDataCatalog {
     pub(crate) fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
         let object_path = self.to_object_path(path)?;
 
-        let exists = self.execute_async(|| async {
-            let result: bool = self.object_store.head(&object_path).await.is_ok();
-            Ok(result)
-        })?;
-
-        Ok(exists)
+        self.execute_async(|| async {
+            match self.object_store.head(&object_path).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(e) => Err(e.into()),
+            }
+        })
     }
 
     /// Deletes a file from the object store.
@@ -90,9 +91,7 @@ impl ParquetDataCatalog {
                 .delete(&object_path)
                 .await
                 .map_err(anyhow::Error::from)
-        })?;
-
-        Ok(())
+        })
     }
 
     /// Resets the filenames of all Parquet files in the catalog to match their actual content timestamps.
@@ -304,7 +303,7 @@ impl ParquetDataCatalog {
     pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<String>> {
         let data_dir = make_object_store_path(&self.base_path, ["data"]);
 
-        let leaf_dirs = self.execute_async(|| async {
+        self.execute_async(|| async {
             let mut directories = AHashSet::new();
 
             // List all objects under the data directory
@@ -326,9 +325,8 @@ impl ParquetDataCatalog {
             let mut leaf_dirs = Vec::new();
 
             for dir in &directories {
-                let has_subdirs = directories
-                    .iter()
-                    .any(|d| d.starts_with(&make_object_store_path(dir, [""])) && d != dir);
+                let prefix = format!("{dir}/");
+                let has_subdirs = directories.iter().any(|d| d.starts_with(&prefix));
 
                 if !has_subdirs {
                     leaf_dirs.push(dir.clone());
@@ -338,8 +336,6 @@ impl ParquetDataCatalog {
             leaf_dirs.sort();
 
             Ok::<Vec<String>, anyhow::Error>(leaf_dirs)
-        })?;
-
-        Ok(leaf_dirs)
+        })
     }
 }

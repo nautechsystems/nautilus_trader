@@ -70,98 +70,86 @@ pub struct DeleteOperation {
 }
 
 impl ParquetDataCatalog {
-    /// Deletes custom data within a specified time range.
+    /// Deletes data within a specified time range across the entire catalog.
     ///
-    /// This method provides deletion for custom data types that don't have compile-time
-    /// type information. It uses dynamic querying and writing methods.
+    /// This method identifies all leaf directories in the catalog that contain parquet files
+    /// and deletes data within the specified time range from each directory. A leaf directory
+    /// is one that contains files but no subdirectories. This is a convenience method that
+    /// effectively calls `delete_data_range` for all data types and instrument IDs in the catalog.
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The custom data type name (without "custom/" prefix).
-    /// - `identifier`: Optional instrument ID to delete data for.
-    /// - `start`: Optional start timestamp for the deletion range.
-    /// - `end`: Optional end timestamp for the deletion range.
+    /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
+    /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
     ///
     /// # Returns
     ///
     /// Returns `Ok(())` on success, or an error if deletion fails.
-    fn delete_custom_data_range(
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Directory traversal fails.
+    /// - Data class extraction from paths fails.
+    /// - Individual delete operations fail.
+    ///
+    /// # Notes
+    ///
+    /// - This operation permanently removes data and cannot be undone.
+    /// - The deletion process handles file intersections intelligently by splitting files
+    ///   when they partially overlap with the deletion range.
+    /// - Files completely within the deletion range are removed entirely.
+    /// - Files partially overlapping the deletion range are split to preserve data outside the range.
+    /// - This method is useful for bulk data cleanup operations across the entire catalog.
+    /// - Empty directories are not automatically removed after deletion.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    ///
+    /// // Delete all data before a specific date across entire catalog
+    /// catalog.delete_catalog_range(None, Some(UnixNanos::from(1609459200000000000)))?;
+    ///
+    /// // Delete all data within a specific range across entire catalog
+    /// catalog.delete_catalog_range(
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000)),
+    /// )?;
+    ///
+    /// // Delete all data after a specific date across entire catalog
+    /// catalog.delete_catalog_range(Some(UnixNanos::from(1609459200000000000)), None)?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn delete_catalog_range(
         &mut self,
-        type_name: &str,
-        identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()> {
-        let data_type = NautilusDataType::Custom {
-            type_name: type_name.to_string(),
-        };
+        let leaf_directories = self.find_leaf_data_directories()?;
 
-        let files = self.files_for_delete(&data_type, identifier)?;
+        for directory in leaf_directories {
+            let Ok((Some(data_cls), identifier)) =
+                self.extract_data_cls_and_identifier_from_path(&directory)
+            else {
+                continue;
+            };
 
-        if files.is_empty() {
-            return Ok(());
-        }
+            let Ok(data_type) = data_type_from_data_path_prefix(&data_cls) else {
+                log::warn!("Skipping directory {directory}: unknown data class {data_cls}");
+                continue;
+            };
 
-        let operations_to_execute = operations_for_files(&files, start, end);
-
-        if operations_to_execute.is_empty() {
-            return Ok(()); // No operations to execute
-        }
-
-        // Execute all operations
-        let mut files_to_remove = AHashSet::<String>::new();
-
-        for operation in operations_to_execute {
-            // Reset the session before each operation
-            self.clear_session_tables();
-
-            match operation.kind {
-                DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
-                    // Query the custom data preserved by the split and write it
-                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-                    let preserved_data = self.query_custom_data_dynamic(
-                        type_name,
-                        instrument_ids.as_deref(),
-                        Some(UnixNanos::from(operation.query_start)),
-                        Some(UnixNanos::from(operation.query_end)),
-                        None,
-                        Some(operation.files.clone()),
-                        false,
-                    )?;
-
-                    if !preserved_data.is_empty() {
-                        let custom_items: Vec<CustomData> = preserved_data
-                            .into_iter()
-                            .filter_map(|data| match data {
-                                Data::Custom(c) => Some(c),
-                                _ => None,
-                            })
-                            .collect();
-
-                        let start_ts = UnixNanos::from(operation.file_start_ns);
-                        let end_ts = UnixNanos::from(operation.file_end_ns);
-
-                        for items in group_custom_data_by_type(custom_items.iter()) {
-                            self.write_custom_data_refs_batch(
-                                &items,
-                                Some(start_ts),
-                                Some(end_ts),
-                                Some(true),
-                            )?;
-                        }
-                    }
-                }
-                DeleteOperationKind::Remove => {}
-            }
-
-            // Mark files for removal (applies to all operation types)
-            for file in operation.files {
-                files_to_remove.insert(file);
-            }
-        }
-
-        for file in files_to_remove {
-            self.delete_listed_file(&file)?;
+            self.delete_data_range(&data_type, identifier.as_deref(), start, end)?;
         }
 
         Ok(())
@@ -279,89 +267,6 @@ impl ParquetDataCatalog {
         }
     }
 
-    /// Deletes data within a specified time range across the entire catalog.
-    ///
-    /// This method identifies all leaf directories in the catalog that contain parquet files
-    /// and deletes data within the specified time range from each directory. A leaf directory
-    /// is one that contains files but no subdirectories. This is a convenience method that
-    /// effectively calls `delete_data_range` for all data types and instrument IDs in the catalog.
-    ///
-    /// # Parameters
-    ///
-    /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
-    /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on success, or an error if deletion fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Directory traversal fails.
-    /// - Data class extraction from paths fails.
-    /// - Individual delete operations fail.
-    ///
-    /// # Notes
-    ///
-    /// - This operation permanently removes data and cannot be undone.
-    /// - The deletion process handles file intersections intelligently by splitting files
-    ///   when they partially overlap with the deletion range.
-    /// - Files completely within the deletion range are removed entirely.
-    /// - Files partially overlapping the deletion range are split to preserve data outside the range.
-    /// - This method is useful for bulk data cleanup operations across the entire catalog.
-    /// - Empty directories are not automatically removed after deletion.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_core::UnixNanos;
-    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
-    ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
-    ///
-    /// // Delete all data before a specific date across entire catalog
-    /// catalog.delete_catalog_range(None, Some(UnixNanos::from(1609459200000000000)))?;
-    ///
-    /// // Delete all data within a specific range across entire catalog
-    /// catalog.delete_catalog_range(
-    ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000)),
-    /// )?;
-    ///
-    /// // Delete all data after a specific date across entire catalog
-    /// catalog.delete_catalog_range(Some(UnixNanos::from(1609459200000000000)), None)?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    pub fn delete_catalog_range(
-        &mut self,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<()> {
-        let leaf_directories = self.find_leaf_data_directories()?;
-
-        for directory in leaf_directories {
-            if let Ok((Some(data_cls), identifier)) =
-                self.extract_data_cls_and_identifier_from_path(&directory)
-            {
-                let Ok(data_type) = data_type_from_data_path_prefix(&data_cls) else {
-                    log::warn!("Skipping directory {directory}: unknown data class {data_cls}");
-                    continue;
-                };
-
-                self.delete_data_range(&data_type, identifier.as_deref(), start, end)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Generic implementation for deleting data within a specified time range.
     ///
     /// This method provides the core deletion logic that works with any data type
@@ -440,6 +345,103 @@ impl ParquetDataCatalog {
                             Some(end_ts),
                             Some(true),
                         )?;
+                    }
+                }
+                DeleteOperationKind::Remove => {}
+            }
+
+            // Mark files for removal (applies to all operation types)
+            for file in operation.files {
+                files_to_remove.insert(file);
+            }
+        }
+
+        for file in files_to_remove {
+            self.delete_listed_file(&file)?;
+        }
+
+        Ok(())
+    }
+
+    /// Deletes custom data within a specified time range.
+    ///
+    /// This method provides deletion for custom data types that don't have compile-time
+    /// type information. It uses dynamic querying and writing methods.
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The custom data type name (without "custom/" prefix).
+    /// - `identifier`: Optional instrument ID to delete data for.
+    /// - `start`: Optional start timestamp for the deletion range.
+    /// - `end`: Optional end timestamp for the deletion range.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if deletion fails.
+    fn delete_custom_data_range(
+        &mut self,
+        type_name: &str,
+        identifier: Option<&str>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<()> {
+        let data_type = NautilusDataType::Custom {
+            type_name: type_name.to_string(),
+        };
+
+        let files = self.files_for_delete(&data_type, identifier)?;
+
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        let operations_to_execute = operations_for_files(&files, start, end);
+
+        if operations_to_execute.is_empty() {
+            return Ok(()); // No operations to execute
+        }
+
+        // Execute all operations
+        let mut files_to_remove = AHashSet::<String>::new();
+
+        for operation in operations_to_execute {
+            // Reset the session before each operation
+            self.clear_session_tables();
+
+            match operation.kind {
+                DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
+                    // Query the custom data preserved by the split and write it
+                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+                    let preserved_data = self.query_custom_data_dynamic(
+                        type_name,
+                        instrument_ids.as_deref(),
+                        Some(UnixNanos::from(operation.query_start)),
+                        Some(UnixNanos::from(operation.query_end)),
+                        None,
+                        Some(operation.files.clone()),
+                        false,
+                    )?;
+
+                    if !preserved_data.is_empty() {
+                        let custom_items: Vec<CustomData> = preserved_data
+                            .into_iter()
+                            .filter_map(|data| match data {
+                                Data::Custom(c) => Some(c),
+                                _ => None,
+                            })
+                            .collect();
+
+                        let start_ts = UnixNanos::from(operation.file_start_ns);
+                        let end_ts = UnixNanos::from(operation.file_end_ns);
+
+                        for items in group_custom_data_by_type(custom_items.iter()) {
+                            self.write_custom_data_refs_batch(
+                                &items,
+                                Some(start_ts),
+                                Some(end_ts),
+                                Some(true),
+                            )?;
+                        }
                     }
                 }
                 DeleteOperationKind::Remove => {}

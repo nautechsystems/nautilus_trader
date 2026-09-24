@@ -108,7 +108,9 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+use nautilus_persistence::backend::parquet::{
+    catalog::ParquetDataCatalog, paths::timestamps_to_filename,
+};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::test_data::RustTestCustomData;
 #[cfg(feature = "streaming")]

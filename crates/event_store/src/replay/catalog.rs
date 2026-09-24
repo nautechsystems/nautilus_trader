@@ -18,7 +18,7 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use nautilus_persistence::{
-    backend::catalog::{ParquetDataCatalog, parse_filename_timestamps},
+    backend::parquet::{catalog::ParquetDataCatalog, paths::parse_filename_timestamps},
     catalog::types::{CatalogDataType, data_type_from_data_path_prefix},
 };
 
@@ -139,7 +139,9 @@ mod tests {
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
-    use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+    use nautilus_persistence::backend::parquet::{
+        catalog::ParquetDataCatalog, paths::timestamps_to_filename,
+    };
     use rstest::rstest;
     use tempfile::TempDir;
 

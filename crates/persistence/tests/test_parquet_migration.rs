@@ -243,6 +243,12 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     assert_eq!(serde_json::to_value(custom).unwrap(), expected["custom"]);
 
     assert!(target.join("data/custom/RustTestCustomData").is_dir());
+    assert!(
+        target
+            .join("data/bars/AUDUSD.SIM-1-MINUTE-BID-EXTERNAL")
+            .is_dir()
+    );
+    assert!(target.join("data/quotes/AUDUSD.SIM").is_dir());
 
     for (relative, _) in catalog_files(&target) {
         if relative

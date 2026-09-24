@@ -78,11 +78,11 @@ impl ParquetDataCatalog {
         use_ts_event_for_ts_init: bool,
         replay_identity: &str,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
+        let batches = Self::restore_staged_batches(batches)?;
         if batches.is_empty() {
             return Ok(None);
         }
 
-        let batches = Self::restore_staged_batches(batches)?;
         let type_name =
             type_name_from_session_feather_path(feather_path, &source.kind, &source.instance_id)?;
         let catalog_data_name = Self::canonical_stream_data_name(&type_name);
@@ -365,9 +365,7 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<Vec<String>> {
         let base_dir = make_object_store_path(&self.base_path, [subdirectory, instance_id]);
 
-        let mut files = Vec::new();
-
-        let list_result = self.execute_async(|| async {
+        let mut files = self.execute_async(|| async {
             let prefix = ObjectPath::from(format!("{base_dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut feather_files = Vec::new();
@@ -406,7 +404,6 @@ impl ParquetDataCatalog {
             Ok::<Vec<String>, anyhow::Error>(feather_files)
         })?;
 
-        files.extend(list_result);
         files.sort();
         Ok(files)
     }
@@ -447,10 +444,6 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + TryFrom<Data>,
     {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-
         let mut all_data = Vec::new();
 
         for batch in batches {
@@ -481,10 +474,6 @@ impl ParquetDataCatalog {
     where
         T: DecodeTypedFromRecordBatch,
     {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-
         let mut all_data = Vec::new();
 
         for batch in batches {
@@ -590,10 +579,6 @@ impl ParquetDataCatalog {
         let feather_files =
             self.list_feather_files(subdirectory, instance_id, &stream_data_name, identifiers)?;
 
-        if feather_files.is_empty() {
-            return Ok(());
-        }
-
         // Process each feather file independently so that each file's identifier
         // (instrument_id or bar_type from schema metadata) is preserved when writing
         // to parquet. Each file is planned before it is written.
@@ -630,9 +615,10 @@ impl ParquetDataCatalog {
         let mut groups: IndexMap<Arc<Schema>, Vec<RecordBatch>> = IndexMap::new();
 
         for batch in batches {
-            for restored in restore_staged_record_batches(batch.clone())? {
-                groups.entry(restored.schema()).or_default().push(restored);
-            }
+            groups
+                .entry(batch.schema())
+                .or_default()
+                .push(batch.clone());
         }
 
         let mut planned = Vec::new();
@@ -775,9 +761,9 @@ impl ParquetDataCatalog {
         }
 
         let existing = self.get_directory_intervals(directory)?;
-        let plans = remaining;
         let mut intervals = existing.clone();
-        intervals.extend(plans.iter().map(|plan| (plan.start_ts, plan.end_ts)));
+        intervals.extend(remaining.iter().map(|plan| (plan.start_ts, plan.end_ts)));
+
         if !are_intervals_disjoint(&intervals) {
             anyhow::bail!(
                 "Writing promoted groups for {directory} would create non-disjoint intervals. \
@@ -785,7 +771,7 @@ impl ParquetDataCatalog {
             );
         }
 
-        Ok(plans)
+        Ok(remaining)
     }
 
     fn with_catalog_identifier_metadata(
@@ -991,7 +977,7 @@ fn unify_plans(
     right: PlannedCatalogWrite,
 ) -> anyhow::Result<PlannedCatalogWrite> {
     let batch = unify_record_batches(left.batch, right.batch)?;
-    let (start_ts, end_ts) = min_max_ts_init(&batch)?;
+    let (start_ts, end_ts) = ParquetDataCatalog::ts_init_range(&batch)?;
 
     Ok(PlannedCatalogWrite {
         directory: left.directory,
@@ -1008,7 +994,7 @@ fn unify_record_batches(left: RecordBatch, right: RecordBatch) -> anyhow::Result
     }
 
     anyhow::ensure!(
-        fields_compatible(left.schema().as_ref(), right.schema().as_ref())
+        left.schema().fields() == right.schema().fields()
             && metadata_without_precision(left.schema().as_ref())
                 == metadata_without_precision(right.schema().as_ref()),
         "overlapping promotion groups have incompatible schemas"
@@ -1068,21 +1054,20 @@ fn sort_by_ts_init(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
         .map_err(|_| anyhow::anyhow!("ts_init column not found"))?;
     let original_row_index = Arc::new(UInt64Array::from_iter_values(0..batch.num_rows() as u64));
 
+    let options = Some(SortOptions {
+        descending: false,
+        nulls_first: false,
+    });
+
     let indices = lexsort_to_indices(
         &[
             SortColumn {
                 values: batch.column(ts_init).clone(),
-                options: Some(SortOptions {
-                    descending: false,
-                    nulls_first: false,
-                }),
+                options,
             },
             SortColumn {
                 values: original_row_index,
-                options: Some(SortOptions {
-                    descending: false,
-                    nulls_first: false,
-                }),
+                options,
             },
         ],
         None,
@@ -1091,48 +1076,6 @@ fn sort_by_ts_init(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
 
     take_record_batch(batch, &indices)
         .map_err(|e| anyhow::anyhow!("Failed to reorder promotion group: {e}"))
-}
-
-fn min_max_ts_init(batch: &RecordBatch) -> anyhow::Result<(u64, u64)> {
-    let ts_init = U64ColumnRef::try_from_array(
-        batch
-            .column_by_name("ts_init")
-            .ok_or_else(|| anyhow::anyhow!("ts_init column not found"))?
-            .as_ref(),
-    )
-    .ok_or_else(|| anyhow::anyhow!("ts_init column has an unsupported type"))?;
-
-    if ts_init.is_empty() {
-        anyhow::bail!("Cannot convert empty stream batch to parquet");
-    }
-
-    let mut min = u64::MAX;
-    let mut max = 0_u64;
-
-    for row in 0..ts_init.len() {
-        anyhow::ensure!(!ts_init.is_null(row), "ts_init column contains null values");
-        let value = ts_init
-            .value(row)
-            .ok_or_else(|| anyhow::anyhow!("ts_init value cannot be negative"))?;
-        min = min.min(value);
-        max = max.max(value);
-    }
-
-    Ok((min, max))
-}
-
-fn fields_compatible(left: &Schema, right: &Schema) -> bool {
-    left.fields().len() == right.fields().len()
-        && left
-            .fields()
-            .iter()
-            .zip(right.fields())
-            .all(|(left, right)| {
-                left.name() == right.name()
-                    && left.data_type() == right.data_type()
-                    && left.is_nullable() == right.is_nullable()
-                    && left.metadata() == right.metadata()
-            })
 }
 
 fn metadata_without_precision(schema: &Schema) -> HashMap<String, String> {
@@ -1208,7 +1151,14 @@ mod promotion_group_tests {
     use rstest::rstest;
     use tempfile::TempDir;
 
-    use crate::backend::parquet::catalog::ParquetDataCatalog;
+    use crate::{
+        backend::parquet::{catalog::ParquetDataCatalog, io::read_parquet_from_object_store},
+        common::storage::create_storage_backend_from_path,
+        writer::{
+            feather::{NAUTILUS_ARROW_METADATA_ID_COLUMN, NAUTILUS_ARROW_METADATA_JSON_COLUMN},
+            run::FeatherSessionSource,
+        },
+    };
 
     fn precision_batch(precision: &str, timestamps: Vec<u64>, price: Option<i128>) -> RecordBatch {
         let mut metadata = HashMap::new();
@@ -1294,7 +1244,151 @@ mod promotion_group_tests {
                 Some("replay"),
             )
             .unwrap_err();
-        assert!(error.to_string().contains("incompatible"));
+        assert_eq!(
+            error.to_string(),
+            "overlapping promotion groups have incompatible precision metadata"
+        );
+        assert!(
+            catalog
+                .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn overlapping_groups_keep_source_order_for_equal_ts_init() {
+        let temp = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let batches = vec![
+            precision_batch("2", vec![1, 2], Some(10)),
+            precision_batch("0", vec![2, 3], None),
+        ];
+
+        catalog
+            .convert_feather_batches_to_parquet(
+                "backtest",
+                "run-1",
+                "quotes",
+                "backtest/run-1/quotes_1.feather",
+                &batches,
+                false,
+                Some("replay"),
+            )
+            .unwrap();
+
+        let files = catalog
+            .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+            .unwrap();
+
+        let (written, _) = catalog
+            .execute_async(|| async {
+                read_parquet_from_object_store(
+                    catalog.object_store.clone(),
+                    &object_store::path::Path::from(files[0].as_str()),
+                )
+                .await
+            })
+            .unwrap();
+
+        let rows = written
+            .iter()
+            .flat_map(|batch| {
+                let ts_init = batch
+                    .column_by_name("ts_init")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec();
+                let price = batch
+                    .column_by_name("price")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Decimal128Array>()
+                    .unwrap()
+                    .iter()
+                    .collect::<Vec<_>>();
+                ts_init.into_iter().zip(price)
+            })
+            .collect::<Vec<_>>();
+
+        // Coalescing unifies the later group as the left side, so its rows lead on equal ts_init
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            rows,
+            vec![(1, Some(10)), (2, None), (2, Some(10)), (3, None)]
+        );
+    }
+
+    #[rstest]
+    fn promote_feather_file_skips_staged_batches_without_rows() {
+        let temp = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let storage =
+            create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
+        let source = FeatherSessionSource::new(storage, "backtest", "run-1");
+        let staged = RecordBatch::new_empty(Arc::new(Schema::new(vec![
+            Field::new("ts_init", DataType::UInt64, false),
+            Field::new(NAUTILUS_ARROW_METADATA_ID_COLUMN, DataType::Utf8, false),
+            Field::new(NAUTILUS_ARROW_METADATA_JSON_COLUMN, DataType::Utf8, false),
+        ])));
+
+        let summary = catalog
+            .promote_feather_file(
+                &source,
+                "backtest/run-1/quotes_1.feather",
+                vec![staged],
+                false,
+                "replay",
+            )
+            .unwrap();
+
+        assert!(summary.is_none());
+        assert!(
+            catalog
+                .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn overlapping_groups_with_different_fields_write_nothing() {
+        let temp = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let nullable = precision_batch("2", vec![2], Some(2));
+        let schema = nullable.schema();
+        let non_nullable = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                vec![
+                    schema.field(0).clone(),
+                    schema.field(1).clone().with_nullable(false),
+                ],
+                schema.metadata().clone(),
+            )),
+            nullable.columns().to_vec(),
+        )
+        .unwrap();
+        let batches = vec![precision_batch("2", vec![1, 3], Some(1)), non_nullable];
+
+        let error = catalog
+            .convert_feather_batches_to_parquet(
+                "backtest",
+                "run-1",
+                "quotes",
+                "backtest/run-1/quotes_1.feather",
+                &batches,
+                false,
+                Some("replay"),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "overlapping promotion groups have incompatible schemas"
+        );
         assert!(
             catalog
                 .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)

@@ -35,8 +35,8 @@ use crate::{
         intervals::{are_intervals_contiguous, are_intervals_disjoint},
         io::combine_parquet_files_from_object_store,
         paths::{
-            extract_path_components, make_object_store_path, parse_filename_timestamps,
-            timestamps_to_filename,
+            extract_path_components, make_object_store_path, normalize_path_separators,
+            parse_filename_timestamps, timestamps_to_filename,
         },
     },
     catalog::types::{
@@ -49,11 +49,11 @@ use crate::{
 /// Information about a consolidation query to be executed.
 #[derive(Debug, Clone)]
 pub struct ConsolidationQuery {
-    /// Start timestamp for the query range (inclusive, in nanoseconds)
+    /// Start timestamp for the query range (inclusive, in nanoseconds).
     pub query_start: u64,
-    /// End timestamp for the query range (inclusive, in nanoseconds)
+    /// End timestamp for the query range (inclusive, in nanoseconds).
     pub query_end: u64,
-    /// Whether to use period boundaries for file naming (true) or actual data timestamps (false)
+    /// Whether to use period boundaries for file naming (true) or actual data timestamps (false).
     pub use_period_boundaries: bool,
 }
 
@@ -322,65 +322,55 @@ impl ParquetDataCatalog {
         }
 
         let mut files_to_consolidate = Vec::new();
-        let mut intervals = Vec::new();
         let start = start.map(|t| t.as_u64());
         let end = end.map(|t| t.as_u64());
 
         for file in parquet_files {
-            if let Some(interval) = parse_filename_timestamps(&file) {
-                let (interval_start, interval_end) = interval;
+            let Some(interval) = parse_filename_timestamps(&file) else {
+                continue;
+            };
 
-                let include_file = match (start, end) {
-                    (Some(s), Some(e)) => interval_start >= s && interval_end <= e,
-                    (Some(s), None) => interval_start >= s,
-                    (None, Some(e)) => interval_end <= e,
-                    (None, None) => true,
-                };
-
-                if include_file {
-                    files_to_consolidate.push(file);
-                    intervals.push(interval);
-                }
+            if start.is_none_or(|s| interval.0 >= s) && end.is_none_or(|e| interval.1 <= e) {
+                files_to_consolidate.push((file, interval));
             }
         }
 
-        intervals.sort_by_key(|&(start, _)| start);
-        files_to_consolidate.sort_by_key(|file| {
-            parse_filename_timestamps(file).map_or(u64::MAX, |(start, _)| start)
-        });
+        files_to_consolidate.sort_by_key(|&(_, (interval_start, _))| interval_start);
+        let intervals: Vec<(u64, u64)> = files_to_consolidate
+            .iter()
+            .map(|&(_, interval)| interval)
+            .collect();
 
         // Validate disjointness before merging so source files are left untouched on failure
         if ensure_contiguous_files.unwrap_or(true) && !are_intervals_disjoint(&intervals) {
             anyhow::bail!("Intervals are not disjoint before consolidating a directory");
         }
 
-        if !intervals.is_empty() {
-            let file_name = timestamps_to_filename(
-                UnixNanos::from(intervals[0].0),
-                UnixNanos::from(intervals.iter().map(|i| i.1).max().unwrap()),
-            );
-            let path = make_object_store_path(directory, [&file_name]);
+        let Some(last_end) = intervals.iter().map(|interval| interval.1).max() else {
+            return Ok(());
+        };
 
-            // Convert string paths to ObjectPath for the function call
-            let object_paths: Vec<ObjectPath> = files_to_consolidate
-                .iter()
-                .map(|path| ObjectPath::from(path.as_str()))
-                .collect();
+        let file_name =
+            timestamps_to_filename(UnixNanos::from(intervals[0].0), UnixNanos::from(last_end));
+        let path = make_object_store_path(directory, [&file_name]);
 
-            self.execute_async(|| async {
-                combine_parquet_files_from_object_store(
-                    self.object_store.clone(),
-                    object_paths,
-                    &ObjectPath::from(path),
-                    Some(self.compression),
-                    Some(self.max_row_group_size),
-                    deduplicate,
-                )
-                .await
-            })?;
-        }
+        // Convert string paths to ObjectPath for the function call
+        let object_paths: Vec<ObjectPath> = files_to_consolidate
+            .iter()
+            .map(|(path, _)| ObjectPath::from(path.as_str()))
+            .collect();
 
-        Ok(())
+        self.execute_async(|| async {
+            combine_parquet_files_from_object_store(
+                self.object_store.clone(),
+                object_paths,
+                &ObjectPath::from(path),
+                Some(self.compression),
+                Some(self.max_row_group_size),
+                deduplicate,
+            )
+            .await
+        })
     }
 
     /// Consolidates all data files in the catalog by splitting them into fixed time periods.
@@ -410,6 +400,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `period_nanos` is zero and a directory holds data to consolidate.
     /// - Directory listing fails.
     /// - Data type extraction from path fails.
     /// - Period-based consolidation operations fail.
@@ -466,23 +457,22 @@ impl ParquetDataCatalog {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
-            let (data_cls, identifier) =
-                self.extract_data_cls_and_identifier_from_path(&directory)?;
+            let (Some(data_cls_name), identifier) =
+                self.extract_data_cls_and_identifier_from_path(&directory)?
+            else {
+                continue;
+            };
 
-            if let Some(data_cls_name) = data_cls {
-                let identifier_ref = identifier.as_deref();
-
-                if !self.dispatch_consolidate_data_by_period(
-                    &data_cls_name,
-                    identifier_ref,
-                    period_nanos,
-                    start,
-                    end,
-                    ensure_contiguous_files,
-                )? {
-                    // Skip unknown data types
-                    log::warn!("Unknown data type for consolidation: {data_cls_name}");
-                }
+            if !self.dispatch_consolidate_data_by_period(
+                &data_cls_name,
+                identifier.as_deref(),
+                period_nanos,
+                start,
+                end,
+                ensure_contiguous_files,
+            )? {
+                // Skip unknown data types
+                log::warn!("Unknown data type for consolidation: {data_cls_name}");
             }
         }
 
@@ -506,8 +496,9 @@ impl ParquetDataCatalog {
         &self,
         path: &str,
     ) -> anyhow::Result<(Option<String>, Option<String>)> {
-        // Use cross-platform path parsing
-        let path_components = extract_path_components(path);
+        // Parse from the catalog root so a base path containing a `data` segment is skipped
+        let path = self.path_without_local_base(&normalize_path_separators(path));
+        let path_components = extract_path_components(&path);
 
         // Find the "data" directory in the path
         if let Some(data_index) = path_components.iter().position(|part| part == "data")
@@ -526,12 +517,7 @@ impl ParquetDataCatalog {
             }
 
             let data_cls = second.clone();
-
-            let identifier = if data_index + 2 < path_components.len() {
-                Some(path_components[data_index + 2].clone())
-            } else {
-                None
-            };
+            let identifier = path_components.get(data_index + 2).cloned();
 
             return Ok((Some(data_cls), identifier));
         }
@@ -568,6 +554,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `period_nanos` is zero and the directory holds data to consolidate.
     /// - `data_type` is a record family or an instrument selector, which have no
     ///   period-typed rewrite; use [`Self::consolidate_data`] for those.
     /// - The directory path cannot be constructed.
@@ -1115,6 +1102,13 @@ impl ParquetDataCatalog {
     /// 3. Identifies and creates split operations for data preservation.
     /// 4. Generates period-based consolidation queries.
     /// 5. Checks for existing target files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `period_nanos` is zero.
+    /// - The intervals are not contiguous when `ensure_contiguous_files` is true.
+    /// - A target file existence check fails.
     #[expect(
         clippy::too_many_arguments,
         reason = "Consolidation keeps its window and policy arguments explicit"
@@ -1129,6 +1123,8 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
         ensure_contiguous_files: bool,
     ) -> anyhow::Result<Vec<ConsolidationQuery>> {
+        anyhow::ensure!(period_nanos > 0, "period_nanos must be positive");
+
         // Filter intervals by time range if specified
         let used_start = start.map(|s| s.as_u64());
         let used_end = end.map(|e| e.as_u64());
@@ -1205,21 +1201,13 @@ impl ParquetDataCatalog {
             // Generate period-based queries within this contiguous group
             let mut current_start_ns = (effective_start / period_nanos) * period_nanos;
 
-            // Add safety check to prevent infinite loops (match Python logic)
-            let max_iterations = 10000;
-            let mut iteration_count = 0;
-
-            while current_start_ns <= effective_end {
-                iteration_count += 1;
-                if iteration_count > max_iterations {
-                    // Safety break to prevent infinite loops
-                    break;
-                }
-
-                let current_end_ns = (current_start_ns + period_nanos - 1).min(effective_end);
+            loop {
+                let current_end_ns = current_start_ns
+                    .saturating_add(period_nanos - 1)
+                    .min(effective_end);
 
                 // Check if target file already exists (only when ensure_contiguous_files is true)
-                if ensure_contiguous_files {
+                let target_exists = if ensure_contiguous_files {
                     let directory = self.make_path(type_name, identifier)?;
                     let target_filename = format!(
                         "{}/{}",
@@ -1229,26 +1217,24 @@ impl ParquetDataCatalog {
                             UnixNanos::from(current_end_ns)
                         )
                     );
+                    self.file_exists(&target_filename)?
+                } else {
+                    false
+                };
 
-                    if self.file_exists(&target_filename)? {
-                        // Skip if target file already exists
-                        current_start_ns += period_nanos;
-                        continue;
-                    }
+                if !target_exists {
+                    queries_to_execute.push(ConsolidationQuery {
+                        query_start: current_start_ns,
+                        query_end: current_end_ns,
+                        use_period_boundaries: ensure_contiguous_files,
+                    });
                 }
 
-                // Add query to execution list
-                queries_to_execute.push(ConsolidationQuery {
-                    query_start: current_start_ns,
-                    query_end: current_end_ns,
-                    use_period_boundaries: ensure_contiguous_files,
-                });
-
-                // Move to next period
-                current_start_ns += period_nanos;
-
-                if current_start_ns > effective_end {
-                    break;
+                match current_start_ns.checked_add(period_nanos) {
+                    Some(next_start_ns) if next_start_ns <= effective_end => {
+                        current_start_ns = next_start_ns;
+                    }
+                    _ => break,
                 }
             }
         }

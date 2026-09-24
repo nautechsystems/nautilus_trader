@@ -39,7 +39,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_trading::examples::strategies::EmaCross;
 use rust_decimal_macros::dec;
 use tempfile::TempDir;

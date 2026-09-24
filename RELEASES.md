@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
 - Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
+- Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
 - Changed backtest venues to require an explicit `fee_model`, including an explicit zero-fee model
@@ -81,6 +82,8 @@ Released on TBD (UTC).
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
 - Hardened WebSocket transport client close-reason logging against server-injected line breaks and terminal escapes
+- Fixed Parquet catalog storage errors read as missing files, which could delete data during period consolidation
+- Fixed Parquet period consolidation stopping after 10,000 periods, duplicating rows or deleting unconsolidated data
 
 ### Fixes
 
@@ -114,6 +117,14 @@ Released on TBD (UTC).
 - Fixed unclear errors for missing local Parquet catalog paths (#4950), thanks for reporting @Artur-Sulej
 - Fixed Windows drive-path catalog file URIs (#4646), thanks for reporting @autotrader2025
 - Fixed catalog instrument listing ignoring `base_path` on remote stores such as `s3://` (#5052), thanks @xWaita
+- Fixed catalog-wide delete and consolidation skipping directories whose name prefixes a sibling directory
+- Fixed catalog-wide delete and consolidation on remote catalogs whose base path contains a `data` segment
+- Fixed custom data queries matching identifiers by substring instead of the identifier directory
+- Fixed bar queries dropping instrument ID identifiers listed alongside full bar types
+- Fixed `filter_files` matching bar types by name prefix instead of instrument ID
+- Fixed period consolidation panicking on a zero `period_nanos`
+- Fixed `DataBackendSession` `build_query` applying time bounds to only one side of an `OR` where clause
+- Fixed `write_batches_to_object_store` panicking on an empty batch list
 - Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
@@ -159,10 +170,12 @@ Released on TBD (UTC).
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
+- Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Extracted `CacheApi` and `CacheView` from the cache module
 - Normalized persistence path separators for Windows
 - Refactored `RiskEngine` validation, funding checks, and batch modification rate limiting
+- Refined persistence backend module layout and removed a duplicated Parquet I/O test module
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries

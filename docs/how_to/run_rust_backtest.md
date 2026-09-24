@@ -128,7 +128,7 @@ configurable chunk sizes. Requires the `streaming` feature on
 use nautilus_model::instruments::{
     Instrument, InstrumentAny, stubs::audusd_sim,
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use tempfile::TempDir;
 
 let instrument = InstrumentAny::CurrencyPair(audusd_sim());

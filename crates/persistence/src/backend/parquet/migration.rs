@@ -32,7 +32,7 @@ use crate::{
         ensure_planned_file_unchanged, prepare_migration_parts, read_planned_migration_file,
     },
     catalog::types::instrument_path_prefix,
-    common::metadata::record_batch_ts_init_range,
+    common::{metadata::record_batch_ts_init_range, storage::normalize_storage_location},
 };
 
 /// Settings for converting a legacy Parquet catalog into a separate native catalog.
@@ -57,8 +57,8 @@ pub struct ParquetMigrationConfig {
 pub fn migrate_parquet_catalog(
     config: ParquetMigrationConfig,
 ) -> anyhow::Result<CatalogMigrationReport> {
-    let source_uri = crate::common::storage::normalize_storage_location(&config.source_uri)?;
-    let target_uri = crate::common::storage::normalize_storage_location(&config.target_uri)?;
+    let source_uri = normalize_storage_location(&config.source_uri)?;
+    let target_uri = normalize_storage_location(&config.target_uri)?;
     ensure_distinct_migration_locations(&source_uri, &target_uri)?;
     let source = ParquetDataCatalog::from_uri(
         &source_uri,
@@ -180,12 +180,10 @@ impl ParquetDataCatalog {
                     continue;
                 }
 
-                let directory = if let Some(custom_type_name) =
-                    file.target_type_name.strip_prefix("custom/")
-                {
-                    self.make_path_custom_data(custom_type_name, part.identifier.as_deref())?
-                } else {
-                    {
+                let directory =
+                    if let Some(custom_type_name) = file.target_type_name.strip_prefix("custom/") {
+                        self.make_path_custom_data(custom_type_name, part.identifier.as_deref())?
+                    } else {
                         let prefix =
                             if let Some(class) = file.target_table.strip_prefix("instruments/") {
                                 instrument_path_prefix(&class.parse::<NautilusInstrumentType>()?)
@@ -194,8 +192,7 @@ impl ParquetDataCatalog {
                             };
 
                         self.make_path(prefix, part.identifier.as_deref())?
-                    }
-                };
+                    };
 
                 let (start_ts, end_ts) = record_batch_ts_init_range(&part.batches)?;
                 let filename =
