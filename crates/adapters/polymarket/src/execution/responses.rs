@@ -1181,6 +1181,23 @@ mod tests {
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
     }
 
+    fn set_taker_fee_rate(instrument: &mut InstrumentAny, rate: Decimal) {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option test instrument");
+        };
+        let mut info = binary.info.take().unwrap_or_default();
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({
+                "exponent": "1",
+                "rate": rate.to_string(),
+                "takerOnly": true,
+                "rebateRate": "0",
+            }),
+        );
+        binary.info = Some(info);
+    }
+
     fn bind_instrument_to_trade(
         instrument: &mut InstrumentAny,
         trade: &crate::http::models::PolymarketTradeReport,
@@ -1974,15 +1991,14 @@ mod tests {
     #[rstest]
     fn test_fill_report_batch_fails_instead_of_returning_valid_prefix() {
         let mut instrument = test_instrument();
-        let InstrumentAny::BinaryOption(binary_option) = &mut instrument else {
-            panic!("expected binary option test instrument");
-        };
-        binary_option.taker_fee =
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
 
         let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         taker.id = "trade-unrepresentable-taker".to_string();
         bind_instrument_to_trade(&mut instrument, &taker);
+        set_taker_fee_rate(
+            &mut instrument,
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
+        );
         let mut maker = taker.clone();
         maker.id = "trade-valid-maker".to_string();
         maker.trader_side = PolymarketLiquiditySide::Maker;

@@ -124,6 +124,7 @@ pub mod currencies;
 pub mod data;
 pub mod enums;
 pub mod events;
+pub mod fees;
 pub mod identifiers;
 pub mod instruments;
 pub mod macros;

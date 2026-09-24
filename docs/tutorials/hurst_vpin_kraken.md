@@ -159,17 +159,16 @@ let instrument = CryptoPerpetual::builder()
     .size_increment(Quantity::from("0.0001"))
     .margin_init(dec!(0.02))
     .margin_maint(dec!(0.01))
-    .maker_fee(dec!(0.0002))
-    .taker_fee(dec!(0.0005))
     .ts_event(0.into())
     .ts_init(0.into())
     .build()
     .unwrap();
 ```
 
-Fees and margin are explicit backtest assumptions. Check the
+Margin rates are explicit backtest assumptions. This example uses a zero fee
+model. Check the
 [Kraken Futures fee schedule](https://futures.kraken.com/features/fee-schedule)
-for current rates.
+before using non-zero rates.
 
 ## Dollar-bar sampling
 
@@ -340,6 +339,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
@@ -357,6 +357,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100_000 USD")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()?,
 )?;
 

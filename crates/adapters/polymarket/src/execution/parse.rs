@@ -439,15 +439,18 @@ pub(super) fn parse_validated_maker_fill_report(
 
 /// Returns the effective taker fee rate for a Polymarket instrument.
 ///
-/// Polymarket sets this from the Gamma market's `feeSchedule.rate`. When the
-/// feeSchedule is unavailable (e.g. CLOB-only flow) the instrument's taker fee
-/// defaults to zero and no commission is charged.
-#[must_use]
-pub fn instrument_taker_fee(instrument: &InstrumentAny) -> Decimal {
-    match instrument {
-        InstrumentAny::BinaryOption(bo) => bo.taker_fee,
-        _ => Decimal::ZERO,
-    }
+/// Reads `info.fee_schedule.rate` written from the Gamma market at parse time.
+/// This reader also accepts legacy numeric metadata. Defaults to `0` when the
+/// schedule is absent so markets without fees charge no taker commission.
+///
+/// # Errors
+///
+/// Returns an error if a present schedule has a missing, invalid, or negative rate.
+pub fn instrument_taker_fee(instrument: &InstrumentAny) -> anyhow::Result<Decimal> {
+    let Some(schedule) = instrument_fee_schedule(instrument) else {
+        return Ok(Decimal::ZERO);
+    };
+    fee_schedule_decimal(schedule, "rate")
 }
 
 /// Returns the fee-schedule exponent for a Polymarket instrument. Polymarket
@@ -460,28 +463,32 @@ pub fn instrument_taker_fee(instrument: &InstrumentAny) -> Decimal {
 ///
 /// Returns an error if a present schedule has a missing, invalid, or negative exponent.
 pub fn instrument_fee_exponent(instrument: &InstrumentAny) -> anyhow::Result<Decimal> {
-    let value = match instrument {
+    let Some(schedule) = instrument_fee_schedule(instrument) else {
+        return Ok(Decimal::ONE);
+    };
+    fee_schedule_decimal(schedule, "exponent")
+}
+
+fn instrument_fee_schedule(instrument: &InstrumentAny) -> Option<&serde_json::Value> {
+    match instrument {
         InstrumentAny::BinaryOption(bo) => {
             bo.info.as_ref().and_then(|info| info.get("fee_schedule"))
         }
         _ => None,
-    };
-    let Some(schedule) = value else {
-        return Ok(Decimal::ONE);
-    };
+    }
+}
+
+fn fee_schedule_decimal(schedule: &serde_json::Value, field: &str) -> anyhow::Result<Decimal> {
     let value = schedule
-        .get("exponent")
-        .context("fee schedule is missing exponent")?;
-    let exponent = match value {
+        .get(field)
+        .with_context(|| format!("fee schedule is missing {field}"))?;
+    let decimal = match value {
         serde_json::Value::String(value) => parse_decimal_exact(value)?,
         serde_json::Value::Number(value) => parse_decimal_exact(&value.to_string())?,
-        _ => anyhow::bail!("fee exponent must be a decimal number or numeric string"),
+        _ => anyhow::bail!("fee {field} must be a decimal number or numeric string"),
     };
-    anyhow::ensure!(
-        exponent >= Decimal::ZERO,
-        "fee exponent must be non-negative"
-    );
-    Ok(exponent)
+    anyhow::ensure!(decimal >= Decimal::ZERO, "fee {field} must be non-negative");
+    Ok(decimal)
 }
 
 /// Adjusts a market-BUY pUSD amount to fit within the user's pUSD balance once
@@ -706,8 +713,7 @@ const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 /// Converts a raw micro-pUSD balance from the Polymarket API into an [`AccountBalance`].
 ///
 /// The API returns balances as integer micro-pUSD (e.g. `20000000` = 20 pUSD).
-/// This divides by 10^6 and constructs Money via `Money::from_decimal`, matching
-/// the pattern used by dYdX, Deribit, OKX, and other adapters.
+/// This divides by 10^6 and constructs Money via `Money::from_decimal`.
 pub fn parse_balance_allowance(
     balance_raw: Decimal,
     currency: Currency,
@@ -1087,12 +1093,14 @@ mod tests {
         #[case] price: &str,
         #[case] liquidity_side: LiquiditySide,
     ) {
-        let mut binary = binary_option();
-        binary.maker_fee = Decimal::ZERO;
-        binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+        let binary = binary_option();
         let instrument = InstrumentAny::BinaryOption(binary);
         let order = binary_option_fill_order(&instrument, liquidity_side, price);
-        let fee_model = ProbabilityPriceFeeModel;
+
+        let fee_model = ProbabilityPriceFeeModel::new(
+            Decimal::ZERO,
+            Decimal::from_str_exact(taker_fee).unwrap(),
+        );
 
         let commission = fee_model
             .get_commission(
@@ -1985,7 +1993,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_instrument_taker_fee_reads_binary_option() {
+    fn test_instrument_taker_fee_reads_schedule_rate() {
         use crate::http::parse::{create_instrument_from_def, parse_gamma_market};
 
         let path = "test_data/gamma_market_sports_market_money_line.json";
@@ -1995,8 +2003,31 @@ mod tests {
         let instrument =
             create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
 
-        assert_eq!(instrument_taker_fee(&instrument), dec!(0.03));
+        assert_eq!(instrument_taker_fee(&instrument).unwrap(), dec!(0.03));
         assert_eq!(instrument_fee_exponent(&instrument).unwrap(), Decimal::ONE);
+
+        let bare = InstrumentAny::BinaryOption(binary_option());
+        assert_eq!(instrument_taker_fee(&bare).unwrap(), Decimal::ZERO);
+
+        let mut binary = binary_option();
+        let mut info = nautilus_core::Params::new();
+        info.insert("fee_schedule".into(), serde_json::json!({"exponent": "1"}));
+        binary.info = Some(info.clone());
+        let missing = instrument_taker_fee(&InstrumentAny::BinaryOption(binary.clone()))
+            .expect_err("a present schedule must include a rate");
+        assert!(missing.to_string().contains("missing rate"), "{missing}");
+
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({"rate": "-0.01", "exponent": "1"}),
+        );
+        binary.info = Some(info);
+        let negative = instrument_taker_fee(&InstrumentAny::BinaryOption(binary))
+            .expect_err("a negative rate must be rejected");
+        assert!(
+            negative.to_string().contains("must be non-negative"),
+            "{negative}"
+        );
     }
 
     #[rstest]

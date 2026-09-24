@@ -28,6 +28,36 @@ pub(crate) fn log_task_aborted(task_name: &str) {
     log::debug!("Aborted task '{task_name}'");
 }
 
+/// Escapes control characters so server-controlled strings cannot forge log lines or terminal
+/// escape sequences.
+///
+/// Uses [`str::escape_debug`], which escapes the C0 and C1 control ranges (including the
+/// single-character CSI), DEL, backslash, and bidi and format characters such as U+202E, keeping
+/// the logged output on one line and unambiguous for incident forensics.
+pub(crate) fn escape_control_characters(value: &str) -> String {
+    value.escape_debug().collect()
+}
+
+#[cfg(test)]
+mod escape_control_characters_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("injected\r\nforged line", "injected\\r\\nforged line")]
+    #[case("\u{1b}[31mred\u{1b}[0m", "\\u{1b}[31mred\\u{1b}[0m")]
+    #[case("\u{9b}31mcsi", "\\u{9b}31mcsi")]
+    #[case("nul\0", "nul\\0")]
+    #[case("delete\x7f", "delete\\u{7f}")]
+    #[case("back\\slash", "back\\\\slash")]
+    #[case("bidi\u{202e}override", "bidi\\u{202e}override")]
+    #[case("café é", "café é")]
+    fn control_characters_are_escaped(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(escape_control_characters(input), expected);
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(all(feature = "simulation", madsim)))]
 #[cfg(target_os = "linux")]

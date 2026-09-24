@@ -54,6 +54,7 @@ fn transcode_legacy_fixture(source: &Path, target: &Path) -> anyhow::Result<()> 
     let row_groups = builder.metadata().num_row_groups();
     let preserve_row_groups =
         (0..row_groups).any(|index| builder.metadata().row_group(index).num_rows() != 1);
+
     let metadata = builder
         .metadata()
         .file_metadata()
@@ -65,6 +66,7 @@ fn transcode_legacy_fixture(source: &Path, target: &Path) -> anyhow::Result<()> 
                 .cloned()
                 .collect()
         });
+
     let properties = WriterProperties::builder()
         .set_key_value_metadata(metadata)
         .set_compression(Compression::ZSTD(ZstdLevel::default()))

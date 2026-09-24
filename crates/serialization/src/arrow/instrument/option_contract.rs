@@ -66,8 +66,6 @@ impl ArrowSchemaProvider for OptionContract {
             Field::new("min_price", DataType::Utf8, true),    // nullable
             Field::new("margin_init", DataType::Utf8, false),
             Field::new("margin_maint", DataType::Utf8, false),
-            Field::new("maker_fee", DataType::Utf8, false),
-            Field::new("taker_fee", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
             json_string_field("info", true),
             Field::new("ts_event", timestamp_data_type(), false),
@@ -115,8 +113,6 @@ impl EncodeToRecordBatch for OptionContract {
         let mut min_price_builder = StringBuilder::new();
         let mut margin_init_builder = StringBuilder::new();
         let mut margin_maint_builder = StringBuilder::new();
-        let mut maker_fee_builder = StringBuilder::new();
-        let mut taker_fee_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
@@ -172,8 +168,6 @@ impl EncodeToRecordBatch for OptionContract {
 
             margin_init_builder.append_value(oc.margin_init.to_string());
             margin_maint_builder.append_value(oc.margin_maint.to_string());
-            maker_fee_builder.append_value(oc.maker_fee.to_string());
-            taker_fee_builder.append_value(oc.taker_fee.to_string());
 
             if let Some(tick_scheme) = oc.tick_scheme {
                 tick_scheme_builder.append_value(tick_scheme);
@@ -228,8 +222,6 @@ impl EncodeToRecordBatch for OptionContract {
                 Arc::new(min_price_builder.finish()),
                 Arc::new(margin_init_builder.finish()),
                 Arc::new(margin_maint_builder.finish()),
-                Arc::new(maker_fee_builder.finish()),
-                Arc::new(taker_fee_builder.finish()),
                 Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
@@ -304,21 +296,19 @@ pub fn decode_option_contract_batch(
         extract_column::<StringArray>(cols, "margin_init", 20, DataType::Utf8)?;
     let margin_maint_values =
         extract_column::<StringArray>(cols, "margin_maint", 21, DataType::Utf8)?;
-    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 22, DataType::Utf8)?;
-    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 23, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 25, DataType::Utf8)?;
+        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 23, DataType::Utf8)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
-        26,
+        24,
         DataType::UInt64,
     )?;
     let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_init",
-        27,
+        25,
         DataType::UInt64,
     )?;
 
@@ -373,10 +363,6 @@ pub fn decode_option_contract_batch(
             .map_err(|e| EncodingError::ParseError("margin_init", format!("row {i}: {e}")))?;
         let margin_maint = Decimal::from_str(margin_maint_values.value(i))
             .map_err(|e| EncodingError::ParseError("margin_maint", format!("row {i}: {e}")))?;
-        let maker_fee = Decimal::from_str(maker_fee_values.value(i))
-            .map_err(|e| EncodingError::ParseError("maker_fee", format!("row {i}: {e}")))?;
-        let taker_fee = Decimal::from_str(taker_fee_values.value(i))
-            .map_err(|e| EncodingError::ParseError("taker_fee", format!("row {i}: {e}")))?;
 
         let info = if info_values.is_null(i) {
             None
@@ -440,8 +426,6 @@ pub fn decode_option_contract_batch(
             )?)
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_tick_scheme(tick_scheme)
             .maybe_info(info)
             .ts_event(ts_event)

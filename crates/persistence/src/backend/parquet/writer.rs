@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::ParquetDataCatalog;
 use crate::{
-    backend::migration::feather_replay_identity,
     common::{
         conversion::FeatherConversionSummary, datafusion::identifiers_from_record_batches,
         storage::create_storage_backend_from_path,
@@ -84,7 +83,6 @@ struct ParquetWriter {
     core: StagedFeatherWriter<ParquetPromotionBackend>,
     session: PromotionSession,
     source: FeatherSessionSource,
-    catalog_uri: String,
     storage_options: Option<ahash::AHashMap<String, String>>,
     interval_ms: Option<u64>,
     promote_on_close: bool,
@@ -99,7 +97,7 @@ impl Debug for ParquetWriter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(ParquetWriter))
             .field("staging_uri", &self.core.storage.original_uri)
-            .field("catalog_uri", &self.catalog_uri)
+            .field("catalog_uri", &self.session.catalog_uri)
             .field("interval_ms", &self.interval_ms)
             .finish_non_exhaustive()
     }
@@ -122,11 +120,13 @@ impl ParquetWriter {
         )?;
         let source_storage =
             create_storage_backend_from_path(&session.catalog_uri, config.storage_options.clone())?;
+
         let source = FeatherSessionSource::new(
             source_storage,
             session.kind.clone(),
             session.instance_id.clone(),
         );
+
         let mut core = StagedFeatherWriter::new(
             storage.clone(),
             clock,
@@ -144,6 +144,7 @@ impl ParquetWriter {
                 true,
             )
         })?;
+
         let timer_catalog_uri = session.catalog_uri.clone();
         let timer_storage_options = config.storage_options.clone();
         core.warn_if_orphan_feather_present("Parquet");
@@ -154,23 +155,18 @@ impl ParquetWriter {
             source.clone(),
             "parquet-promotion",
             move || {
-                Ok(ParquetPromotionBackend::new(
-                    ParquetDataCatalog::from_uri(
-                        &timer_catalog_uri,
-                        timer_storage_options.clone(),
-                        None,
-                        None,
-                        None,
-                    )?,
+                ParquetPromotionBackend::new(
+                    &timer_catalog_uri,
+                    timer_storage_options.clone(),
                     Arc::clone(&timer_legacy_manifest_missing),
-                ))
+                )
             },
             use_ts_event_for_ts_init,
             delete_feather_after_commit,
         )?;
+
         Ok(Self {
             core,
-            catalog_uri: session.catalog_uri.clone(),
             storage_options: config.storage_options.clone(),
             session,
             source,
@@ -188,6 +184,7 @@ impl ParquetWriter {
         if self.run_status == status {
             return Ok(());
         }
+
         block_on_nautilus_with(|| {
             self.core.storage.write_current_run_manifest(
                 &self.session.kind,
@@ -196,6 +193,7 @@ impl ParquetWriter {
                 !self.has_data,
             )
         })?;
+
         self.run_status = status;
         Ok(())
     }
@@ -204,6 +202,7 @@ impl ParquetWriter {
         if self.has_data {
             return Ok(());
         }
+
         block_on_nautilus_with(|| {
             self.core.storage.write_current_run_manifest(
                 &self.session.kind,
@@ -212,6 +211,7 @@ impl ParquetWriter {
                 false,
             )
         })?;
+
         self.has_data = true;
         Ok(())
     }
@@ -223,15 +223,13 @@ impl ParquetWriter {
     }
 
     fn prepare_promotion(&self) -> anyhow::Result<Option<PromotionWork<ParquetPromotionBackend>>> {
-        let catalog = ParquetDataCatalog::from_uri(
-            &self.catalog_uri,
+        let backend = ParquetPromotionBackend::new(
+            &self.session.catalog_uri,
             self.storage_options.clone(),
-            None,
-            None,
-            None,
+            Arc::clone(&self.legacy_manifest_missing),
         )?;
         self.core.prepare_promotion(
-            ParquetPromotionBackend::new(catalog, Arc::clone(&self.legacy_manifest_missing)),
+            backend,
             self.source.clone(),
             self.use_ts_event_for_ts_init,
             self.delete_feather_after_commit,
@@ -251,6 +249,7 @@ impl ParquetWriter {
         } else if result.run_state_recorded {
             self.run_status = RunStatus::Promoted;
         }
+
         self.core.finalize_promotion(result)
     }
 
@@ -259,6 +258,7 @@ impl ParquetWriter {
         for result in self.core.promotion_driver.drain_completed()? {
             converted.extend(self.finalize(result)?);
         }
+
         Ok(converted)
     }
 
@@ -267,6 +267,7 @@ impl ParquetWriter {
         for result in self.core.promotion_driver.wait()? {
             converted.extend(self.finalize(result)?);
         }
+
         Ok(converted)
     }
 
@@ -275,6 +276,7 @@ impl ParquetWriter {
         if let Some(work) = self.prepare_promotion()? {
             converted.extend(self.finalize(work.execute())?);
         }
+
         Ok(converted)
     }
 }
@@ -292,6 +294,7 @@ impl StagedWriter for ParquetWriter {
 
     fn maybe_promote(&mut self) -> anyhow::Result<()> {
         self.drain_completed()?;
+
         let Some(interval_ns) = self.interval_ns() else {
             return Ok(());
         };
@@ -309,6 +312,7 @@ impl StagedWriter for ParquetWriter {
                 .promotion_driver
                 .mark_committed_at(self.core.clock.timestamp_ns());
         }
+
         Ok(())
     }
 
@@ -344,6 +348,7 @@ impl StagedWriter for ParquetWriter {
 impl Drop for ParquetWriter {
     fn drop(&mut self) {
         self.core.stop_promotion_timer();
+
         let promotion_failed = if let Err(e) = self.wait() {
             log::warn!("ParquetWriter dropped with pending promotion error: {e}");
             true
@@ -365,44 +370,40 @@ impl Drop for ParquetWriter {
                 );
             }
         }
+
         self.core.flush_on_drop("ParquetWriter");
     }
 }
+
+const PROMOTION_MANIFEST: &str = "_nautilus_promotions.json";
+const PROMOTION_MARKERS: &str = "_nautilus_promotions";
 
 struct ParquetPromotionBackend {
     catalog: ParquetDataCatalog,
     legacy_manifest_missing: Arc<AtomicBool>,
 }
 
-const PROMOTION_MANIFEST: &str = "_nautilus_promotions.json";
-const PROMOTION_MARKERS: &str = "_nautilus_promotions";
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct ParquetPromotionManifest {
-    identities: Vec<String>,
-}
-
 impl ParquetPromotionBackend {
-    fn new(catalog: ParquetDataCatalog, legacy_manifest_missing: Arc<AtomicBool>) -> Self {
-        Self {
-            catalog,
+    fn new(
+        catalog_uri: &str,
+        storage_options: Option<ahash::AHashMap<String, String>>,
+        legacy_manifest_missing: Arc<AtomicBool>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            catalog: ParquetDataCatalog::from_uri(catalog_uri, storage_options, None, None, None)?,
             legacy_manifest_missing,
-        }
+        })
     }
 
     fn manifest_path(&self) -> ObjectPath {
-        let base = self.catalog.base_path.trim_matches('/');
-        if base.is_empty() {
-            ObjectPath::from(PROMOTION_MANIFEST)
-        } else {
-            ObjectPath::from(format!("{base}/{PROMOTION_MANIFEST}"))
-        }
+        self.catalog_path(PROMOTION_MANIFEST)
     }
 
     fn manifest(&self) -> anyhow::Result<ParquetPromotionManifest> {
         if self.legacy_manifest_missing.load(Ordering::Relaxed) {
             return Ok(ParquetPromotionManifest::default());
         }
+
         let path = self.manifest_path();
         block_on_nautilus_with(|| async {
             let result = match self.catalog.object_store.get(&path).await {
@@ -413,14 +414,18 @@ impl ParquetPromotionBackend {
                 }
                 Err(e) => return Err(e.into()),
             };
+
             Ok(serde_json::from_slice(&result.bytes().await?)?)
         })
     }
 
     fn marker_path(&self, identity: &str) -> ObjectPath {
-        let base = self.catalog.base_path.trim_matches('/');
         let digest = blake3::hash(identity.as_bytes()).to_hex();
-        let path = format!("{PROMOTION_MARKERS}/{digest}.json");
+        self.catalog_path(&format!("{PROMOTION_MARKERS}/{digest}.json"))
+    }
+
+    fn catalog_path(&self, path: &str) -> ObjectPath {
+        let base = self.catalog.base_path.trim_matches('/');
         if base.is_empty() {
             ObjectPath::from(path)
         } else {
@@ -430,6 +435,7 @@ impl ParquetPromotionBackend {
 
     fn identity_recorded(&self, identity: &str) -> anyhow::Result<bool> {
         let path = self.marker_path(identity);
+
         let marker_exists = block_on_nautilus_with(|| async {
             match self.catalog.object_store.head(&path).await {
                 Ok(_) => Ok::<bool, anyhow::Error>(true),
@@ -437,6 +443,7 @@ impl ParquetPromotionBackend {
                 Err(e) => Err(anyhow::Error::from(e)),
             }
         })?;
+
         Ok(marker_exists
             || self
                 .manifest()?
@@ -482,12 +489,14 @@ impl PromotionBackend for ParquetPromotionBackend {
         record_promoted: bool,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
         let object_path = ObjectPath::from(file);
+
         let read = block_on_nautilus_with(|| {
             read_feather_record_batches_with_identity(
                 source.storage.object_store.clone(),
                 &object_path,
             )
         })?;
+
         let identifiers = identifiers_from_record_batches(&read.batches)
             .ok()
             .filter(|identifiers| !identifiers.is_empty());
@@ -501,6 +510,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         if self.identity_recorded(&identity)? {
             return Ok(None);
         }
+
         let summary = self.catalog.promote_feather_file(
             source,
             file,
@@ -512,6 +522,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         if summary.is_some() && record_promoted {
             self.record_identity(&identity)?;
         }
+
         Ok(summary)
     }
 
@@ -534,7 +545,7 @@ impl StagedPromotionBackend for ParquetPromotionBackend {
         &mut self,
         source: &FeatherSessionSource,
         _staging_uri: &str,
-        status: crate::writer::run::RunStatus,
+        status: RunStatus,
         empty: bool,
         _error: Option<&str>,
     ) -> anyhow::Result<()> {
@@ -549,13 +560,42 @@ impl StagedPromotionBackend for ParquetPromotionBackend {
     }
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct ParquetPromotionManifest {
+    identities: Vec<String>,
+}
+
+fn feather_replay_identity(
+    source_uri: &str,
+    source_path: &str,
+    content_hash: &str,
+    identifiers: Option<&[String]>,
+) -> String {
+    let mut identifiers = identifiers.map(<[String]>::to_vec);
+    if let Some(identifiers) = identifiers.as_mut() {
+        identifiers.sort();
+        identifiers.dedup();
+    }
+
+    let identity = serde_json::json!({
+        "source_uri": source_uri,
+        "source_path": source_path,
+        "content_hash": content_hash,
+        "identifiers": identifiers,
+    });
+    format!(
+        "nautilus-feather:{}",
+        blake3::hash(identity.to_string().as_bytes()).to_hex(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicU64;
 
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        data::{Data, DataBatch, NautilusDataType, QuoteTick},
+        data::{Data, DataBatch, NautilusDataType, NautilusRecordType, QuoteTick},
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
@@ -613,6 +653,7 @@ mod tests {
             .filter(|path| path.ends_with(".feather"))
             .count();
         assert!(before.is_empty());
+
         let DataBatch::Quote(rows) = after else {
             panic!("expected quotes")
         };
@@ -659,16 +700,25 @@ mod tests {
 
         if interval != Some(1) {
             catalog
-                .convert_stream_to_data("run-2", "quotes", Some("backtest"), None, false)
+                .convert_stream_to_data(
+                    "run-2",
+                    &NautilusDataType::QuoteTick.into(),
+                    Some("backtest"),
+                    None,
+                    false,
+                )
                 .unwrap();
         }
+
         let after = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap();
         assert_eq!(before_manual.len(), usize::from(interval == Some(1)));
+
         let DataBatch::Quote(rows) = after else {
             panic!("expected quotes")
         };
+
         assert_eq!(rows.as_ref(), &[quote]);
     }
 
@@ -800,7 +850,14 @@ mod tests {
         )
         .unwrap();
         let batches = catalog
-            .query_record_batches("order_fill_voided", None, None, None, None, true)
+            .query_record_batches(
+                &NautilusRecordType::OrderFillVoided.into(),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
             .unwrap();
         let mut rows = Vec::new();
         for batch in batches {
@@ -816,7 +873,7 @@ mod tests {
     #[rstest]
     #[case(true)]
     #[case(false)]
-    fn parquet_promotion_retains_conflicting_schema_groups(#[case] automatic: bool) {
+    fn parquet_promotion_unifies_empty_and_populated_depth(#[case] automatic: bool) {
         use nautilus_model::{
             data::{BookOrder, OrderBookDepth},
             enums::OrderSide,
@@ -836,14 +893,12 @@ mod tests {
         let id = InstrumentId::from("AUD/USD.SIM");
         let empty =
             OrderBookDepth::new(id, vec![], vec![], vec![], vec![], 1, 2, 3.into(), 4.into());
-
         let order = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.23"),
             Quantity::from("4.5"),
             6,
         );
-
         let populated = OrderBookDepth::new(
             id,
             vec![order],
@@ -857,35 +912,42 @@ mod tests {
         );
         sink.write_any(&empty).unwrap();
         sink.write_any(&populated).unwrap();
+        sink.close().unwrap();
 
-        let error = if automatic {
-            sink.close().unwrap_err().to_string()
-        } else {
-            sink.close().unwrap();
-            let mut catalog = ParquetDataCatalog::from_uri(
-                directory.path().to_str().unwrap(),
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        if !automatic {
             catalog
                 .convert_stream_to_data(
                     "run-depth-ties",
-                    "order_book_depths",
+                    &NautilusDataType::OrderBookDepth.into(),
                     Some("backtest"),
                     None,
                     false,
                 )
-                .unwrap_err()
-                .to_string()
+                .unwrap();
+        }
+
+        let batch = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::OrderBookDepth))
+            .unwrap();
+        let DataBatch::BookDepth(rows) = batch else {
+            panic!("expected order book depth");
         };
+        let mut rows = rows.as_ref().to_vec();
+        rows.sort_by_key(|depth| depth.sequence);
+        assert_eq!(rows, vec![empty, populated]);
 
         let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
         let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
-        assert!(error.contains("non-disjoint intervals"), "{error}");
-        assert_eq!(staged.len(), 1);
+        assert_eq!(staged.len(), usize::from(!automatic));
     }
 
     #[rstest]
@@ -932,7 +994,10 @@ mod tests {
             catalog
                 .convert_stream_to_data(
                     "run-custom",
-                    "custom/RustTestHashMapCustomData",
+                    &NautilusDataType::Custom {
+                        type_name: "RustTestHashMapCustomData".to_string(),
+                    }
+                    .into(),
                     Some("backtest"),
                     None,
                     false,
@@ -999,7 +1064,10 @@ mod tests {
         catalog
             .convert_stream_to_data(
                 "run-custom-ids",
-                "custom/RustTestHashMapCustomData",
+                &NautilusDataType::Custom {
+                    type_name: "RustTestHashMapCustomData".to_string(),
+                }
+                .into(),
                 Some("backtest"),
                 Some(&[audusd.to_string()]),
                 false,
@@ -1023,7 +1091,10 @@ mod tests {
         catalog
             .convert_stream_to_data(
                 "run-custom-ids",
-                "custom/RustTestHashMapCustomData",
+                &NautilusDataType::Custom {
+                    type_name: "RustTestHashMapCustomData".to_string(),
+                }
+                .into(),
                 Some("backtest"),
                 None,
                 false,
@@ -1110,5 +1181,56 @@ mod tests {
             UnixNanos::from(19),
             UnixNanos::from(23),
         )
+    }
+
+    #[rstest]
+    #[case::nested_base("/prefix/catalog/", "prefix/catalog/")]
+    #[case::root_base("", "")]
+    fn promotion_paths_live_under_the_catalog_base_path(
+        #[case] base_path: &str,
+        #[case] expected_prefix: &str,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        catalog.base_path = base_path.to_string();
+
+        let backend = ParquetPromotionBackend {
+            catalog,
+            legacy_manifest_missing: Arc::default(),
+        };
+
+        assert_eq!(
+            backend.manifest_path(),
+            ObjectPath::from(format!("{expected_prefix}_nautilus_promotions.json")),
+        );
+        assert_eq!(
+            backend.marker_path("replay-id"),
+            ObjectPath::from(format!(
+                "{expected_prefix}_nautilus_promotions/\
+                 cd3112001080bc2d11985ffe2b8b90b324d336d82c17ddb66127d3a05f08c69c.json"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn feather_replay_identity_is_stable_and_ignores_identifier_order() {
+        let identity = |identifiers: Option<&[String]>| {
+            feather_replay_identity(
+                "file:///catalog/backtest/run-1",
+                "quotes/AUDUSD.SIM/part-0.feather",
+                "content-hash",
+                identifiers,
+            )
+        };
+
+        let unordered = ["B".to_string(), "A".to_string(), "A".to_string()];
+        let ordered = ["A".to_string(), "B".to_string()];
+
+        let expected =
+            "nautilus-feather:10a9435c28f7536f26653c3fc808571be89bfe769e06c7307cb4743e273a23fd";
+
+        assert_eq!(identity(Some(&unordered)), expected);
+        assert_eq!(identity(Some(&ordered)), expected);
+        assert_ne!(identity(None), expected);
     }
 }

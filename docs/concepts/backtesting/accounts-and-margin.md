@@ -36,8 +36,11 @@ Every backtest venue uses one of three `account_type` values: `CASH`, `MARGIN`, 
 The low-level API accepts model types directly:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -49,13 +52,20 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.001"),
+        taker_rate=Decimal("0.001"),
+    ),
 )
 ```
 
 The high-level API accepts the same enum values but represents starting balances as strings:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -66,6 +76,10 @@ venue = BacktestVenueConfig(
     account_type=AccountType.CASH,
     book_type=BookType.L1_MBP,
     starting_balances=["10_000 USDT"],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -76,7 +90,10 @@ simulation should reserve the instrument's fixed initial and maintenance margin 
 without reducing them by account leverage.
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -89,6 +106,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L1_MBP,
     starting_balances=["1_000_000 USD"],
     margin_model=StandardMarginModel(),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 

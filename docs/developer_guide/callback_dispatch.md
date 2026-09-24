@@ -4,15 +4,82 @@ This page defines the ownership, ordering, and progress requirements for queued 
 callbacks. The [design principles](design_principles.md#queued-callback-dispatch-requirements) explain
 the policy.
 
-:::info Queued delivery is inactive
+:::info Queued delivery is not yet active
 These requirements are design constraints for queued actor and strategy callback delivery, not
 guarantees of the existing synchronous dispatch paths.
 Support for synchronous message-bus reentry does not activate queued actor or strategy callbacks.
 :::
 
-Read the [ordering contract](#ordering-and-reentrancy) first. For runtime work, use
-[drain boundary design](#drain-boundary-design) and [runtime integration](#runtime-integration).
-The [private primitives](#private-dispatch-primitives) describe the mechanisms and edge cases.
+Read this page by purpose:
+
+- **Normative contract**: [Ordering](#ordering-and-reentrancy), observable state, bounded progress,
+  and [drain boundary design](#drain-boundary-design) define requirements for activation.
+- **Current implementation**: [Implementation limits](#implementation-limits) and
+  [runtime integration](#runtime-integration) distinguish existing machinery from activation gaps.
+  [Runtime Conformance Contract](runtime_conformance.md) maps source and representative checks.
+- **Private implementation details**: [Dispatch primitives](#private-dispatch-primitives), command
+  transports, and storage accounting describe how the machinery enforces those requirements.
+
+For failure messages and corrective action, see [reentrancy and dispatch diagnostics](#reentrancy-and-dispatch-diagnostics).
+
+## Worked callback sequence
+
+This example illustrates the queued contract; production canonical callbacks remain synchronous.
+Assume event A has two eligible recipients, strategies S1 and S2, and event B has recipient S3.
+There is no unrelated pending work, and all required access is available at each drain boundary.
+
+```text
+Publication A
+  |  Reserve publication ordinal before synchronous subscribers run
+  |  Admit S1(A), creating root R; admit S2(A) under the same root
+  v
+Callback queue: [ S1(A) | S2(A) ]                         root R
+  |
+  |  Enclosing runtime borrows end
+  v
+Safe boundary: drain callbacks
+  |
+  +-- S1(A) runs                                          root R
+  |     |
+  |     +-- publish B --> queue S3(B) after S2(A)          root R
+  |     |                (no recursive S3 invocation)
+  |     |
+  |     +-- send C -----> command transport retains C     root R
+  |                      (owner thread; context preserved)
+  |
+  +-- S2(A) runs                                          root R
+  |
+  +-- S3(B) runs                                          root R
+
+Callback order: S1(A) --> S2(A) --> S3(B), even across bounded drain passes
+Budget:         three completed deliveries charged to R,
+                even across bounded drain passes
+
+When the runtime processes C (timing depends on the runtime):
+  restore R --> handle C --> any resulting callbacks retain R
+                            and queue by publication/admission order
+  C itself consumes no callback delivery budget
+```
+
+Nested publication B waits behind A's pending recipient; callbacks and the command retain root R.
+
+The callback order above does not specify when C executes relative to S2(A) and S3(B).
+[Backtest settlement and live scheduling](#runtime-integration) determine command processing between
+callback passes. R remains alive while C or other retained descendants own it; yielding does not
+reset its budget. Sending from a foreign thread or an unrelated task does not inherit R automatically.
+
+## Terminology
+
+| Term          | Meaning                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Publication   | One event publication whose ordinal is reserved before synchronous subscriber work.           |
+| Admission     | Reservation of callback count, known storage, and queue position before capture construction. |
+| Slot          | One ordered queue entry, whether reserved, ready, or cancelled.                               |
+| Capture       | Owned values retained for a callback or invocation.                                           |
+| Root          | Causal ownership and cumulative delivery accounting shared by descendant work; no rollback.   |
+| Retained work | Queued or suspended work that keeps its root alive beyond the current call or drain.          |
+| Drain         | One bounded pass over callback slots in order.                                                |
+| Safe boundary | Runtime-owned point where enclosing borrows have ended and callback invocation is permitted.  |
 
 ## Implementation limits
 
@@ -69,6 +136,10 @@ Engine [cache](../concepts/architecture.md#cache) mutations and direct facade ef
 **current cache state**; ordered delivery does not provide an event-time cache snapshot. The immutable event
 payload records the event, while the cache may already reflect later changes. Keeping indicator
 updates with event delivery preserves their ordering relative to the corresponding callbacks.
+
+For example, the engine can apply order update E1, queue its callback, and apply E2 before
+that callback drains. The E1 callback receives E1's immutable payload, but a cache lookup can return
+the order state after E2. Use the payload for facts about E1 and the cache for current runtime state.
 
 Author callbacks require eligibility at **both event arrival and delivery**. Stop, reset, or retirement
 must not carry old callbacks into a new registration or [lifecycle](../concepts/actors.md#lifecycle) generation.
@@ -462,6 +533,83 @@ before constructing each capture and acquires preparation guards inside that cal
 cannot control arbitrary locals that author code constructs or explicitly destroys while holding a
 borrow. Destructors must not panic during an existing unwind.
 
+## Reentrancy and dispatch diagnostics
+
+### Component access conflicts
+
+[ComponentAccessError](../../crates/common/src/component.rs) describes the resource and attempted
+operation when checked component-state access fails. These diagnostics already apply to synchronous
+paths; they do not imply queued delivery is active. A conflict can result from callback reentry or
+from an ordinary borrow held too long. The message does not identify the holder or its call stack.
+
+| Variant         | Message prefix                                                              | Meaning and action                                                                |
+| --------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `NotRegistered` | `Cannot access {resource} during {operation}: the actor is not registered`  | Registration has not supplied the resource; register the component before access. |
+| `ReadConflict`  | `Cannot read {resource} during {operation}: it is already mutably borrowed` | Release the existing exclusive borrow before reading.                             |
+| `WriteConflict` | `Cannot modify {resource} during {operation}: it is already borrowed`       | Release existing shared or exclusive borrows before mutation.                     |
+
+Native `try_cache_ref()` and `try_clock_mut()` return these errors. Their `cache_ref()` and
+`clock_mut()` counterparts panic with the same diagnostic. See the
+[native access methods](../concepts/rust.md#dataactornative-methods).
+
+The portable Rust facades also report access conflicts:
+
+- [CacheApi](../../crates/common/src/cache/api.rs) infallible read methods panic with `ReadConflict`
+  and operation `cache read`; `get()` returns the conflict through `anyhow::Result` with operation
+  `get`. Fallible `try_*` lookups return it through the lookup error's `Access` variant, with the
+  method name as the operation, such as `try_position`.
+- [ClockApi](../../crates/common/src/clock/api.rs), with native backing, panics with `ReadConflict`
+  on conflicting reads. Timer and alert setters return `WriteConflict` through `anyhow::Result`;
+  `cancel_timer()` and `cancel_timers()` panic on that conflict. Clock diagnostics name the attempted
+  method. Handler-backed clocks delegate to their handlers instead of these native borrow checks.
+
+Python actor signal subscription and unsubscription map a conflicting actor borrow to `RuntimeError`,
+with resource `Python actor` and operation `subscribe_signal` or `unsubscribe_signal`.
+This does not cover every Python or native access path.
+
+When diagnosing a conflict, locate the attempted operation in the traceback and trace the enclosing
+borrow through any synchronous publication, command dispatch, or lifecycle call. End that borrow
+before code can reenter the same resource. In native code, read or copy the required state in a short
+scope, release the guard, then publish or dispatch. Do not bypass borrow checks or repeatedly retry
+while the conflicting scope is still active. Moving callback drains requires the ownership and
+sequence proof in [drain boundary design](#drain-boundary-design).
+
+Component lifecycle registry operations separately reject overlapping access with
+`Component '{id}' is already mutably borrowed`. That ID-based check is distinct from both resource
+borrows and the private callback allocation guards; none establishes safety for unchecked access.
+
+### Callback dispatcher failures
+
+[CallbackDispatchError](../../crates/common/src/actor/dispatch.rs) exposes the following diagnostics.
+`InvalidDestination`, `Stalled`, and `Runaway` describe queued-delivery failures; current production
+routes do not admit those callbacks, so these variants remain private integration and test behavior.
+Other diagnostics can already occur through publication scopes, command-root accounting, runtime
+drains, or cleanup while queued actor delivery is inactive.
+
+The dispatcher retains the first fatal failure; later boundary drains report it without delivering
+more callbacks. Completed synchronous effects and callback effects are not rolled back.
+
+| Variant              | Message                                        | Meaning and action                                                                                                                   |
+| -------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Overflow`           | `Callback storage limit exceeded`              | Callback admission, retained storage, or command-root allocation exceeds capacity; inspect captures and retained work.               |
+| `InvalidDestination` | `Invalid callback destination`                 | Checked actor delivery finds a type mismatch; verify the registered actor type and handler destination.                              |
+| `SequenceExhausted`  | `Callback publication sequence exhausted`      | The ordering counter cannot advance; stop dispatch and follow teardown.                                                              |
+| `PublicationUnwound` | `Callback publication unwound`                 | A publication scope unwinds; inspect the original panic, even if a caller catches it.                                                |
+| `DeliveryUnwound`    | `Callback delivery unwound`                    | A drain scope exits during unwind; inspect the original panic.                                                                       |
+| `Runaway`            | `Callback chain delivery limit exceeded`       | One root exhausts its cumulative delivery budget; inspect feedback loops across callbacks and commands.                              |
+| `Stalled`            | `Callback delivery stalled at a safe boundary` | The queue head cannot run at a declared safe boundary; correct access ownership or boundary placement.                               |
+| `Active`             | `Callback work or access is still active`      | Drain entry, an unfinished reservation, or teardown ownership prevents the operation; release the blocking scopes or retained roots. |
+
+`Active` is an operation rejection and does not itself latch a fatal failure. The live running loops
+still exit on this drain error; the node initiates shutdown if it is running. A busy head at a safe
+boundary does latch `Stalled`; repeated draining is not a recovery strategy. An unfinished reservation
+can reject a drain after earlier callbacks have run, and error results carry no delivery count.
+
+Preserve the original failure before following [failure cleanup](#failure-cleanup). During live
+disposal, `Callback dispatch failed before disposal cleanup: ...` reports the existing latch;
+`Failed to clear callback dispatch during disposal: ...` reports cleanup rejection. Release externally
+retained work before retrying disposal. Do not force-clear ownership or treat cleanup as rollback.
+
 ## Synchronous commands
 
 Command ancestry depends on the context at send time:
@@ -564,7 +712,9 @@ The private limits are:
 - **Known storage**: At most 64 MiB.
 - **Callback chain**: At most 1,048,576 completed deliveries per root.
 
-These limits are internal and expose no user configuration.
+These limits are defensive safety fuses, not workload-sizing recommendations. They stop excessive
+retention or callback chains; they do not establish a sustainable event rate or safe process-memory
+budget. The limits are internal and expose no user configuration.
 
 ### Included storage
 

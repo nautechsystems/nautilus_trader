@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! K-way merge over iterators of sorted batches.
+
 use std::vec::IntoIter;
 
 use futures::{Stream, StreamExt};
@@ -26,6 +28,10 @@ use super::{
     compare::Compare,
 };
 
+/// Drives an async stream on a Tokio task and yields its items through a blocking iterator.
+///
+/// The channel between the task and the consumer buffers one item. Dropping the iterator aborts
+/// the task.
 pub struct EagerStream<T> {
     rx: Receiver<T>,
     task: JoinHandle<()>,
@@ -33,6 +39,7 @@ pub struct EagerStream<T> {
 }
 
 impl<T> EagerStream<T> {
+    /// Spawns `stream` on `runtime` and returns a blocking iterator over its items.
     pub fn from_stream_with_runtime<S>(stream: S, runtime: tokio::runtime::Handle) -> Self
     where
         S: Stream<Item = T> + Send + 'static,
@@ -42,6 +49,7 @@ impl<T> EagerStream<T> {
 
         let task = runtime.spawn(async move {
             futures::pin_mut!(stream);
+
             while let Some(item) = stream.next().await {
                 if tx.send(item).await.is_err() {
                     break;
@@ -70,6 +78,9 @@ impl<T> Drop for EagerStream<T> {
 
 // TODO: Investigate implementing Iterator for ElementBatchIter
 // to reduce next element duplication. May be difficult to make it peekable.
+/// Holds the current `item` of one batch iterator in a [`KMerge`].
+///
+/// Comparators order merge inputs by `item`.
 pub struct ElementBatchIter<I, T>
 where
     I: Iterator<Item = IntoIter<T>>,
@@ -96,6 +107,10 @@ where
     }
 }
 
+/// Merges iterators of batches into one iterator ordered by the comparator `C`.
+///
+/// The merge pops the greatest input from a max-heap, so `C` must reverse the natural order to
+/// yield items in ascending order.
 pub struct KMerge<I, T, C>
 where
     I: Iterator<Item = IntoIter<T>>,
@@ -115,12 +130,16 @@ where
         }
     }
 
+    /// Adds a batch iterator to the merge, pulling its first item immediately.
+    ///
+    /// An iterator that yields no items is dropped.
     pub fn push_iter(&mut self, s: I) {
         if let Some(heap_elem) = ElementBatchIter::new_from_iter(s) {
             self.heap.push(heap_elem);
         }
     }
 
+    /// Drops every pending batch iterator without draining it.
     pub fn clear(&mut self) {
         self.heap.clear();
     }
@@ -134,37 +153,25 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.heap.peek_mut() {
-            Some(mut heap_elem) => {
-                // Get next element from batch
-                match heap_elem.batch.next() {
-                    // Swap current heap element with new element
-                    // return the old element
-                    Some(mut item) => {
-                        std::mem::swap(&mut item, &mut heap_elem.item);
-                        Some(item)
-                    }
-                    // Otherwise get the next batch and the element from it
-                    // Unless the underlying iterator is exhausted
-                    None => loop {
-                        let Some(mut batch) = heap_elem.iter.next() else {
-                            let ElementBatchIter {
-                                item,
-                                batch: _,
-                                iter: _,
-                            } = PeekMut::pop(heap_elem);
-                            break Some(item);
-                        };
+        let mut heap_elem = self.heap.peek_mut()?;
 
-                        if let Some(mut item) = batch.next() {
-                            heap_elem.batch = batch;
-                            std::mem::swap(&mut item, &mut heap_elem.item);
-                            break Some(item);
-                        }
-                    },
+        // Get next element from batch
+        match heap_elem.batch.next() {
+            // Swap current heap element with new element
+            // return the old element
+            Some(item) => Some(std::mem::replace(&mut heap_elem.item, item)),
+            // Otherwise get the next batch and the element from it
+            // Unless the underlying iterator is exhausted
+            None => loop {
+                let Some(mut batch) = heap_elem.iter.next() else {
+                    break Some(PeekMut::pop(heap_elem).item);
+                };
+
+                if let Some(item) = batch.next() {
+                    heap_elem.batch = batch;
+                    break Some(std::mem::replace(&mut heap_elem.item, item));
                 }
-            }
-            None => None,
+            },
         }
     }
 }

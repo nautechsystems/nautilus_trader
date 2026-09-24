@@ -15,16 +15,11 @@
 
 //! Interval coverage and missing-interval checks for the Parquet catalog.
 
-#![expect(
-    clippy::missing_panics_doc,
-    reason = "coverage functions use checked schema assumptions from catalog-controlled batches"
-)]
-
 use super::{
     Cow, ParquetDataCatalog, extract_bar_type_instrument_id, parse_filename_timestamps,
     query::is_parquet_bar_prefix, query_interval_diff, urisafe_instrument_id, urlencoding,
 };
-use crate::catalog::types::INSTRUMENT_PATH_PREFIXES;
+use crate::catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes};
 
 impl ParquetDataCatalog {
     /// Finds the missing time intervals for a specific data type and instrument ID.
@@ -37,7 +32,7 @@ impl ParquetDataCatalog {
     ///
     /// - `start`: Start timestamp of the requested range (Unix nanoseconds).
     /// - `end`: End timestamp of the requested range (Unix nanoseconds).
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to inspect.
     /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
@@ -55,6 +50,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -69,7 +65,7 @@ impl ParquetDataCatalog {
     /// let missing = catalog.get_missing_intervals_for_request(
     ///     1609459200000000000, // start
     ///     1609545600000000000, // end
-    ///     "quotes",
+    ///     &NautilusDataType::QuoteTick.into(),
     ///     Some("BTCUSD"),
     /// )?;
     ///
@@ -82,10 +78,10 @@ impl ParquetDataCatalog {
         &self,
         start: u64,
         end: u64,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let intervals = self.get_intervals(data_cls, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(query_interval_diff(start, end, &intervals))
     }
@@ -98,7 +94,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -124,6 +120,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -135,7 +132,9 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Get the first timestamp for quote data
-    /// if let Some(first_ts) = catalog.query_first_timestamp("quotes", Some("BTCUSD"))? {
+    /// if let Some(first_ts) =
+    ///     catalog.query_first_timestamp(&NautilusDataType::QuoteTick.into(), Some("BTCUSD"))?
+    /// {
     ///     println!("First quote timestamp: {}", first_ts);
     /// } else {
     ///     println!("No quote data found");
@@ -144,10 +143,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_first_timestamp(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
-        let intervals = self.get_intervals(data_cls, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(intervals.first().map(|interval| interval.0))
     }
@@ -160,7 +159,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -186,6 +185,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -197,7 +197,9 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Get the last timestamp for quote data
-    /// if let Some(last_ts) = catalog.query_last_timestamp("quotes", Some("BTCUSD"))? {
+    /// if let Some(last_ts) =
+    ///     catalog.query_last_timestamp(&NautilusDataType::QuoteTick.into(), Some("BTCUSD"))?
+    /// {
     ///     println!("Last quote timestamp: {}", last_ts);
     /// } else {
     ///     println!("No quote data found");
@@ -206,10 +208,10 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_last_timestamp(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
-        let intervals = self.get_intervals(data_cls, identifier)?;
+        let intervals = self.get_intervals(data_type, identifier)?;
 
         Ok(intervals.last().map(|interval| interval.1))
     }
@@ -222,7 +224,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to inspect.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -240,6 +242,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -251,7 +254,7 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Get all intervals for quote data
-    /// let intervals = catalog.get_intervals("quotes", Some("BTCUSD"))?;
+    /// let intervals = catalog.get_intervals(&NautilusDataType::QuoteTick.into(), Some("BTCUSD"))?;
     /// for (start, end) in intervals {
     ///     println!("Data available from {} to {}", start, end);
     /// }
@@ -259,29 +262,40 @@ impl ParquetDataCatalog {
     /// ```
     pub fn get_intervals(
         &self,
+        data_type: &CatalogDataType,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<Vec<(u64, u64)>> {
+        let prefixes = parquet_catalog_data_type_path_prefixes(data_type);
+
+        if let [data_cls] = prefixes.as_slice() {
+            return self.get_prefix_intervals(data_cls.as_ref(), identifier);
+        }
+
+        let mut intervals = Vec::new();
+        for data_cls in &prefixes {
+            intervals.extend(self.get_prefix_intervals(data_cls.as_ref(), identifier)?);
+        }
+
+        intervals.sort_by_key(|&(start, _)| start);
+        Ok(merge_overlapping(intervals))
+    }
+
+    fn get_prefix_intervals(
+        &self,
         data_cls: &str,
         identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        if data_cls == "instruments" {
-            let mut intervals = Vec::new();
-
-            for prefix in INSTRUMENT_PATH_PREFIXES {
-                let directory = self.make_path(prefix, identifier)?;
-                intervals.extend(self.get_directory_intervals(&directory)?);
-            }
-            return Ok(merge_overlapping(intervals));
-        }
         let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 
-        if identifier.is_none() {
+        let Some(identifier) = identifier else {
             // `get_directory_intervals` already recursed through every per-identifier
             // subdirectory via `object_store.list`, so intervals from different
             // identifiers can overlap. Merge overlaps into a disjoint sorted union
             // so callers like `query_last_timestamp` see the true max end and
             // `consolidate_data_by_period` sees contiguous coverage.
             return Ok(merge_overlapping(intervals));
-        }
+        };
 
         // For bars, fall back to partial matching when the exact directory
         // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
@@ -291,7 +305,7 @@ impl ParquetDataCatalog {
             return Ok(intervals);
         }
 
-        let safe_id = urisafe_instrument_id(identifier.unwrap());
+        let safe_id = urisafe_instrument_id(identifier);
 
         // Use relative path so list_directory_stems doesn't double-prefix
         // for remote catalogs (make_path already includes base_path)
@@ -303,12 +317,14 @@ impl ParquetDataCatalog {
         for subdir in &subdirs {
             let decoded = urlencoding::decode(subdir).unwrap_or(Cow::Borrowed(subdir));
 
-            if extract_bar_type_instrument_id(&decoded) == Some(safe_id.as_str()) {
-                // Use decoded name to avoid double percent-encoding
-                // (to_object_path uses Path::from which re-encodes)
-                let subdir_path = self.make_path(data_cls, Some(&decoded))?;
-                all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
+            if extract_bar_type_instrument_id(&decoded) != Some(safe_id.as_str()) {
+                continue;
             }
+
+            // Use decoded name to avoid double percent-encoding
+            // (to_object_path uses Path::from which re-encodes)
+            let subdir_path = self.make_path(data_cls, Some(&decoded))?;
+            all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
         }
 
         all_intervals.sort_by_key(|&(start, _)| start);
@@ -406,6 +422,7 @@ fn merge_overlapping(intervals: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
             last.1 = last.1.max(interval.1);
             continue;
         }
+
         merged.push(interval);
     }
 

@@ -26,8 +26,9 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDepth, QuoteTick, TradeTick},
+    data::{Bar, Data, NautilusDataType, NautilusRecordType, OrderBookDepth, QuoteTick, TradeTick},
     events::AccountState,
+    instruments::NautilusInstrumentType,
 };
 use nautilus_persistence::{
     backend::{
@@ -37,6 +38,7 @@ use nautilus_persistence::{
         },
         session::DataBackendSession,
     },
+    catalog::types::CatalogDataType,
     test_data::RustTestCustomData,
 };
 use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
@@ -66,6 +68,7 @@ fn runtime_queries_reject_legacy_catalogs(
         } else {
             relative
         };
+
         let target = temporary.path().join(relative);
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, bytes).unwrap();
@@ -81,7 +84,14 @@ fn runtime_queries_reject_legacy_catalogs(
             .query::<QuoteTick>(None, None, None, predicate, None, true)
             .map(|_| ()),
         "records" => catalog
-            .query_record_batches("account_state", None, None, None, predicate, true)
+            .query_record_batches(
+                &NautilusRecordType::AccountState.into(),
+                None,
+                None,
+                None,
+                predicate,
+                true,
+            )
             .map(|_| ()),
         "instruments" => catalog.query_instruments(None).map(|_| ()),
         "instruments_sql" => catalog
@@ -183,6 +193,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     {
         order.order_id = 0;
     }
+
     let depths = catalog
         .query_typed_data::<OrderBookDepth>(None, None, None, None, None, true)
         .unwrap();
@@ -193,8 +204,16 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         Value::Array(vec![expected["instrument"].clone()])
     );
     let batches = catalog
-        .query_record_batches("account_state", None, None, None, None, true)
+        .query_record_batches(
+            &NautilusRecordType::AccountState.into(),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
         .unwrap();
+
     let accounts = batches
         .into_iter()
         .flat_map(|batch| {
@@ -202,6 +221,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
             AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
         })
         .collect::<Vec<_>>();
+
     assert_eq!(
         serde_json::to_value(accounts).unwrap(),
         Value::Array(vec![expected["account_state"].clone()])
@@ -210,9 +230,11 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
         .unwrap();
     assert_eq!(custom.len(), 1);
+
     let Data::Custom(custom) = &custom[0] else {
         panic!("Expected custom data");
     };
+
     let custom = custom
         .data
         .as_any()
@@ -221,6 +243,13 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     assert_eq!(serde_json::to_value(custom).unwrap(), expected["custom"]);
 
     assert!(target.join("data/custom/RustTestCustomData").is_dir());
+    assert!(
+        target
+            .join("data/bars/AUDUSD.SIM-1-MINUTE-BID-EXTERNAL")
+            .is_dir()
+    );
+    assert!(target.join("data/quotes/AUDUSD.SIM").is_dir());
+
     for (relative, _) in catalog_files(&target) {
         if relative
             .extension()
@@ -228,6 +257,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         {
             continue;
         }
+
         let reader = ParquetRecordBatchReaderBuilder::try_new(
             fs::File::open(target.join(&relative)).unwrap(),
         )
@@ -307,12 +337,28 @@ fn migration_rejects_nonempty_destination() {
 }
 
 #[rstest]
-#[case::canonical("quotes", "quotes")]
-#[case::legacy_quote("quote_tick", "quotes")]
-#[case::legacy_depth("order_book_depth10", "order_book_depths")]
-#[case::instrument("currency_pair", "currency_pair")]
-#[case::legacy_custom("custom_Feed", "custom/Feed")]
-fn migration_preserves_empty_coverage_files(#[case] source_type: &str, #[case] target_type: &str) {
+#[case::canonical("quotes", "quotes", NautilusDataType::QuoteTick.into())]
+#[case::legacy_quote("quote_tick", "quotes", NautilusDataType::QuoteTick.into())]
+#[case::legacy_depth(
+    "order_book_depth10",
+    "order_book_depths",
+    NautilusDataType::OrderBookDepth.into()
+)]
+#[case::instrument(
+    "currency_pair",
+    "currency_pair",
+    NautilusInstrumentType::CurrencyPair.into()
+)]
+#[case::legacy_custom(
+    "custom_Feed",
+    "custom/Feed",
+    NautilusDataType::Custom { type_name: "Feed".to_string() }.into()
+)]
+fn migration_preserves_empty_coverage_files(
+    #[case] source_type: &str,
+    #[case] target_type: &str,
+    #[case] data_type: CatalogDataType,
+) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
     let target = temporary.path().join("target");
@@ -336,7 +382,7 @@ fn migration_preserves_empty_coverage_files(#[case] source_type: &str, #[case] t
     let catalog = ParquetDataCatalog::new(&target, None, None, None, None);
     assert_eq!(
         catalog
-            .get_intervals(target_type, Some("AUDUSD.SIM"))
+            .get_intervals(&data_type, Some("AUDUSD.SIM"))
             .unwrap(),
         vec![(1_700_000_000_000_000_123, 1_700_000_000_000_000_126)]
     );
@@ -356,12 +402,73 @@ fn migration_rejects_overlapping_locations() {
 }
 
 #[rstest]
+fn migration_infers_legacy_custom_type_name_without_metadata() {
+    use arrow::array::Float64Array;
+
+    ensure_custom_data_registered::<RustTestCustomData>();
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+    let file = source.join("data/custom_rust_test_custom_data/RUST.TEST/value.parquet");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("value", DataType::Float64, false),
+        Field::new("ts_event", DataType::UInt64, false),
+        Field::new("ts_init", DataType::UInt64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        Arc::clone(&schema),
+        vec![
+            Arc::new(Float64Array::from(vec![1.25])),
+            Arc::new(UInt64Array::from(vec![11])),
+            Arc::new(UInt64Array::from(vec![13])),
+        ],
+    )
+    .unwrap();
+    let mut writer = ArrowWriter::try_new(fs::File::create(&file).unwrap(), schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
+    assert_eq!(report.migrated_files, 1);
+    assert_eq!(report.migrated_rows, 1);
+
+    let migrated_dir = target.join("data/custom/RustTestCustomData/RUST.TEST");
+    assert!(migrated_dir.is_dir());
+    let migrated_file = fs::read_dir(&migrated_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let reader =
+        ParquetRecordBatchReaderBuilder::try_new(fs::File::open(&migrated_file).unwrap()).unwrap();
+    let migrated_schema = reader.schema();
+    assert_eq!(
+        migrated_schema
+            .metadata()
+            .get("type_name")
+            .map(String::as_str),
+        Some("RustTestCustomData"),
+    );
+    assert_eq!(
+        migrated_schema
+            .field_with_name("ts_init")
+            .unwrap()
+            .data_type(),
+        &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+    );
+}
+
+#[rstest]
 fn migration_rejects_opaque_fixed_columns_before_writing() {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
     let target = temporary.path().join("destination");
     let file = source.join("data/custom/OpaqueValue/TEST/value.parquet");
     fs::create_dir_all(file.parent().unwrap()).unwrap();
+
     let schema = Arc::new(Schema::new_with_metadata(
         vec![
             Field::new("value", DataType::FixedSizeBinary(16), false),
@@ -389,6 +496,70 @@ fn migration_rejects_opaque_fixed_columns_before_writing() {
         error.to_string().contains("No final-format transcoder"),
         "{error}"
     );
+    assert!(!target.exists());
+    assert_eq!(fs::read(file).unwrap(), original);
+}
+
+#[rstest]
+#[case::with_type_name(true)]
+#[case::inferred_type_name(false)]
+fn migration_rejects_custom_int64_timestamps_before_writing(#[case] with_metadata: bool) {
+    use arrow::array::{Float64Array, Int64Array};
+
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+
+    let file = if with_metadata {
+        source.join("data/custom/OpaqueInt64/TEST/value.parquet")
+    } else {
+        source.join("data/custom_opaque_int64/TEST/value.parquet")
+    };
+
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let fields = vec![
+        Field::new("value", DataType::Float64, false),
+        Field::new("ts_event", DataType::Int64, false),
+        Field::new("ts_init", DataType::Int64, false),
+    ];
+
+    let schema = if with_metadata {
+        Arc::new(Schema::new_with_metadata(
+            fields,
+            HashMap::from([("type_name".to_string(), "OpaqueInt64".to_string())]),
+        ))
+    } else {
+        Arc::new(Schema::new(fields))
+    };
+
+    let batch = RecordBatch::try_new(
+        Arc::clone(&schema),
+        vec![
+            Arc::new(Float64Array::from(vec![1.25])),
+            Arc::new(Int64Array::from(vec![11])),
+            Arc::new(Int64Array::from(vec![13])),
+        ],
+    )
+    .unwrap();
+    let mut writer = ArrowWriter::try_new(fs::File::create(&file).unwrap(), schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    let original = fs::read(&file).unwrap();
+    let error = migrate_parquet_catalog(config(&source, &target, false)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("non-UInt64 timestamps with no transcoder"),
+        "{error}"
+    );
+
+    if !with_metadata {
+        assert!(
+            error.to_string().contains("missing type_name metadata"),
+            "{error}"
+        );
+    }
+
     assert!(!target.exists());
     assert_eq!(fs::read(file).unwrap(), original);
 }

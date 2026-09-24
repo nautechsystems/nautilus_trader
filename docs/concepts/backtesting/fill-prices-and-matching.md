@@ -82,7 +82,10 @@ the strategy requires more precise gap and path behavior.
 offset as a number of instrument price increments:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -94,6 +97,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L2_MBP,
     starting_balances=["100_000 USDT"],
     price_protection_points=100,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -114,7 +121,10 @@ A simulated fill never decrements the historical book. By default, each matching
 the full recorded size:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -126,6 +136,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L1_MBP,
     starting_balances=["100_000 USD"],
     liquidity_consumption=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 

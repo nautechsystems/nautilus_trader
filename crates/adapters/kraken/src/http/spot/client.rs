@@ -48,13 +48,14 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::RwLock;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -73,9 +74,8 @@ use crate::{
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
-            parse_fill_report, parse_order_status_report, parse_spot_instrument_with_fee_rates,
-            parse_tokenized_instrument_with_fee_rates, parse_trade_tick_from_array,
-            truncate_cl_ord_id,
+            parse_fill_report, parse_order_status_report, parse_spot_instrument,
+            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -219,6 +219,7 @@ impl KrakenSpotRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
                 .default_quota(Self::default_quota(max_requests_per_second)?)
@@ -326,6 +327,10 @@ impl KrakenSpotRawHttpClient {
             .await
     }
 
+    #[allow(
+        dead_code,
+        reason = "TradeVolume transport retained for account fee-rate follow-up"
+    )]
     async fn send_json_request<T: DeserializeOwned, P: Serialize>(
         &self,
         method: Method,
@@ -1067,10 +1072,16 @@ impl KrakenSpotRawHttpClient {
         let nonce = self.generate_nonce();
 
         // CancelOrderBatch uses JSON body with nonce included
-        let json_body = serde_json::json!({
-            "nonce": nonce.to_string(),
-            "orders": params.orders
-        });
+        let mut json_body = serde_json::json!({ "nonce": nonce.to_string() });
+
+        // Kraken keys transaction IDs and client order IDs separately, and rejects empty arrays.
+        if !params.orders.is_empty() {
+            json_body["orders"] = serde_json::json!(params.orders);
+        }
+
+        if !params.cl_ord_ids.is_empty() {
+            json_body["cl_ord_ids"] = serde_json::json!(params.cl_ord_ids);
+        }
         let json_str = serde_json::to_string(&json_body)
             .map_err(|e| KrakenHttpError::ParseError(format!("Failed to serialize: {e}")))?;
 
@@ -1270,6 +1281,10 @@ impl KrakenSpotRawHttpClient {
         })
     }
 
+    #[allow(
+        dead_code,
+        reason = "TradeVolume endpoint retained for account fee-rate follow-up"
+    )]
     async fn get_trade_volume(
         &self,
         params: &SpotTradeVolumeParams,
@@ -1319,11 +1334,19 @@ enum RequestBody {
     Json(serde_json::Value),
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 struct SpotTradeVolumeParams {
     pair: SpotTradeVolumePairs,
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 #[serde(untagged)]
 enum SpotTradeVolumePairs {
@@ -1331,12 +1354,20 @@ enum SpotTradeVolumePairs {
     Classified(Vec<SpotTradeVolumePair>),
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Serialize)]
 struct SpotTradeVolumePair {
     asset: String,
     aclass: SpotTradeVolumeAssetClass,
 }
 
+#[allow(
+    dead_code,
+    reason = "TradeVolume request types retained for account fee-rate follow-up"
+)]
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum SpotTradeVolumeAssetClass {
@@ -1379,6 +1410,13 @@ pub(crate) type SpotBatchOrder = (
 pub struct KrakenSpotHttpClient {
     pub(crate) inner: Arc<KrakenSpotRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    /// Maps a Kraken `altname` to the `AssetPairs` key used as the instrument `raw_symbol`.
+    ///
+    /// Kraken spells the same pair two ways: `OpenPositions` returns the key (`XXBTZUSD`) while
+    /// `OpenOrders` and `TradesHistory` return the altname (`XBTUSD`). The altname is not derivable
+    /// from a cached instrument, because `normalize_spot_symbol` rewrites Kraken's currency codes,
+    /// so it is captured from `AssetPairs` while the definitions are in hand.
+    pair_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     leverage_tiers_cache: LeverageTiersCache,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
@@ -1389,6 +1427,7 @@ impl Clone for KrakenSpotHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
+            pair_aliases: self.pair_aliases.clone(),
             leverage_tiers_cache: self.leverage_tiers_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
             clock: self.clock,
@@ -1445,6 +1484,7 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            pair_aliases: Arc::new(AtomicMap::new()),
             leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
@@ -1479,6 +1519,7 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            pair_aliases: Arc::new(AtomicMap::new()),
             leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
@@ -1568,11 +1609,46 @@ impl KrakenSpotHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    /// Records the `altname` of each pair against the `AssetPairs` key.
+    ///
+    /// Only differing spellings are stored, so a key is never shadowed by another pair's altname.
+    fn record_pair_aliases(&self, pairs: &AssetPairsResponse) {
+        let aliases: Vec<(Ustr, Ustr)> = pairs
+            .iter()
+            .filter(|(pair_name, definition)| definition.altname.as_str() != pair_name.as_str())
+            .map(|(pair_name, definition)| (definition.altname, Ustr::from(pair_name)))
+            .collect();
+
+        if aliases.is_empty() {
+            return;
+        }
+
+        self.pair_aliases.rcu(|m| {
+            for (altname, pair_name) in &aliases {
+                m.insert(*altname, *pair_name);
+            }
+        });
+    }
+
+    /// Resolves a cached instrument from whichever spelling Kraken used for the pair.
+    ///
+    /// Matches the `AssetPairs` key first so a key always wins, then falls back to the altname
+    /// recorded by [`Self::record_pair_aliases`].
     fn get_instrument_by_raw_symbol(&self, raw_symbol: &str) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .load()
+        let instruments = self.instruments_cache.load();
+
+        if let Some(instrument) = instruments
             .values()
             .find(|inst| inst.raw_symbol().as_str() == raw_symbol)
+        {
+            return Some(instrument.clone());
+        }
+
+        let pair_name = self.pair_aliases.get_cloned(&Ustr::from(raw_symbol))?;
+
+        instruments
+            .values()
+            .find(|inst| inst.raw_symbol().inner() == pair_name)
             .cloned()
     }
 
@@ -1598,28 +1674,17 @@ impl KrakenSpotHttpClient {
     ///
     /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
     /// (xStocks) and merges them with the default currency pairs.
-    /// When credentials are configured, instruments use account fee rates from `TradeVolume`;
-    /// otherwise, they use the public base-tier rates from `AssetPairs`. When the `TradeVolume`
-    /// request itself fails, instruments load with the public rates rather than failing, so a fee
-    /// problem cannot take down the execution client on connect.
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
-        let fee_rates = self.request_fee_rates(&asset_pairs, None).await?;
-
+        self.record_pair_aliases(&asset_pairs);
         let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
-                match parse_spot_instrument_with_fee_rates(
-                    pair_name,
-                    definition,
-                    fee_rates.get(pair_name).copied(),
-                    ts_init,
-                    ts_init,
-                ) {
+                match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
                     Ok(instrument) => Some((instrument, definition)),
                     Err(e) => {
                         log::warn!("Failed to parse instrument {pair_name}: {e}");
@@ -1653,21 +1718,12 @@ impl KrakenSpotHttpClient {
                     if !tokenized_pairs.is_empty() {
                         log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                     }
-                    let fee_rates = self
-                        .request_fee_rates(
-                            &tokenized_pairs,
-                            Some(SpotTradeVolumeAssetClass::EquityPair),
-                        )
-                        .await?;
-                    let tokenized_instruments: Vec<InstrumentAny> = tokenized_pairs
-                        .iter()
-                        .filter_map(|(pair_name, definition)| {
-                            match parse_tokenized_instrument_with_fee_rates(
-                                pair_name,
-                                definition,
-                                fee_rates.get(pair_name).copied(),
-                                ts_init,
-                                ts_init,
+                    self.record_pair_aliases(&tokenized_pairs);
+                    let tokenized_instruments: Vec<InstrumentAny> =
+                        tokenized_pairs
+                            .iter()
+                            .filter_map(|(pair_name, definition)| match parse_tokenized_instrument(
+                                pair_name, definition, ts_init, ts_init,
                             ) {
                                 Ok(instrument) => Some(instrument),
                                 Err(e) => {
@@ -1676,9 +1732,8 @@ impl KrakenSpotHttpClient {
                                     );
                                     None
                                 }
-                            }
-                        })
-                        .collect();
+                            })
+                            .collect();
                     instruments.extend(tokenized_instruments);
                 }
                 Err(e) => {
@@ -1688,81 +1743,6 @@ impl KrakenSpotHttpClient {
         }
 
         Ok(instruments)
-    }
-
-    async fn request_fee_rates(
-        &self,
-        pairs: &AssetPairsResponse,
-        asset_class: Option<SpotTradeVolumeAssetClass>,
-    ) -> anyhow::Result<AHashMap<String, (Decimal, Decimal)>, KrakenHttpError> {
-        if self.inner.credential().is_none() || pairs.is_empty() {
-            return Ok(AHashMap::new());
-        }
-
-        let (pair_ids, fee_keys) = match asset_class {
-            Some(aclass) => {
-                let mut assets = IndexMap::new();
-                let mut fee_keys = AHashMap::with_capacity(pairs.len());
-                for (pair_name, definition) in pairs {
-                    let base = definition.base.strip_suffix('x').ok_or_else(|| {
-                        KrakenHttpError::ParseError(format!(
-                            "Tokenized pair {pair_name} base {} is missing the x suffix",
-                            definition.base
-                        ))
-                    })?;
-                    let quote = normalize_currency_code(definition.quote.as_str());
-                    let asset = format!("{base}/{quote}");
-                    let fee_key = format!("{base}{}.EQ", definition.quote);
-                    assets.insert(asset, ());
-                    fee_keys.insert(pair_name.clone(), fee_key);
-                }
-                let pairs = assets
-                    .into_keys()
-                    .map(|asset| SpotTradeVolumePair { asset, aclass })
-                    .collect();
-                (SpotTradeVolumePairs::Classified(pairs), fee_keys)
-            }
-            None => (
-                SpotTradeVolumePairs::Names(pairs.keys().cloned().collect::<Vec<_>>().join(",")),
-                pairs
-                    .keys()
-                    .map(|pair_name| (pair_name.clone(), pair_name.clone()))
-                    .collect(),
-            ),
-        };
-        // A failure to resolve account fee rates must not abort instrument loading: this runs on
-        // the execution client connect path, where losing the listing costs the account state and
-        // reconciliation. Fall back to the public base-tier rates from `AssetPairs` instead.
-        // A malformed response is still an error, see the fee-key lookup below.
-        let response = match self
-            .inner
-            .get_trade_volume(&SpotTradeVolumeParams { pair: pair_ids })
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                log::warn!(
-                    "Failed to request Kraken account fee rates, falling back to public rates: {e}"
-                );
-                return Ok(AHashMap::new());
-            }
-        };
-
-        fee_keys
-            .into_iter()
-            .map(|(pair_name, fee_key)| {
-                let taker = response.fees.get(&fee_key).ok_or_else(|| {
-                    KrakenHttpError::ParseError(format!(
-                        "TradeVolume response missing taker fee for {pair_name}"
-                    ))
-                })?;
-                let maker = response.fees_maker.get(&fee_key).unwrap_or(taker);
-                let maker_fee = maker.fee / dec!(100);
-                let taker_fee = taker.fee / dec!(100);
-
-                Ok((pair_name.clone(), (maker_fee, taker_fee)))
-            })
-            .collect()
     }
 
     /// Requests the current market status for Kraken Spot instruments.
@@ -2204,10 +2184,28 @@ impl KrakenSpotHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_checked(account_id, instrument_id, start, end, open_only)
+            .await
+            .map(|(reports, _)| reports)
+    }
+
+    /// Requests order status reports, also reporting whether the set is complete.
+    ///
+    /// The flag is `false` when a historical record was skipped because its instrument could not
+    /// be resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
+    pub(crate) async fn request_order_status_reports_checked(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        open_only: bool,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
+        let mut complete = true;
 
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
 
@@ -2221,18 +2219,26 @@ impl KrakenSpotHttpClient {
                 }
             }
 
-            if let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str()) {
-                match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        log::warn!("Failed to parse order {order_id}: {e}");
-                    }
+            let instrument = self
+                .get_instrument_by_raw_symbol(order.descr.pair.as_str())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenOrders: instrument not in cache for pair {}",
+                        order.descr.pair
+                    )
+                })?;
+
+            match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
+                Ok(report) => all_reports.push(report),
+                Err(e) => {
+                    log::warn!("Failed to parse order {order_id}: {e}");
+                    complete = false;
                 }
             }
         }
 
         if open_only {
-            return Ok(all_reports);
+            return Ok((all_reports, complete));
         }
 
         // Kraken API expects Unix timestamps in seconds
@@ -2261,20 +2267,23 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                if let Some(instrument) =
-                    self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
-                {
-                    match parse_order_status_report(
-                        order_id,
-                        order,
-                        &instrument,
-                        account_id,
-                        ts_init,
-                    ) {
-                        Ok(report) => all_reports.push(report),
-                        Err(e) => {
-                            log::warn!("Failed to parse order {order_id}: {e}");
-                        }
+                // A historical record can reference an instrument absent from the current
+                // listing, so warn and keep the rest rather than withholding the whole read.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
+                else {
+                    log::warn!(
+                        "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
+                        order.descr.pair
+                    );
+                    complete = false;
+                    continue;
+                };
+
+                match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
+                    Ok(report) => all_reports.push(report),
+                    Err(e) => {
+                        log::warn!("Failed to parse order {order_id}: {e}");
+                        complete = false;
                     }
                 }
             }
@@ -2282,7 +2291,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok(all_reports)
+        Ok((all_reports, complete))
     }
 
     /// Requests fill/trade reports from Kraken.
@@ -2293,10 +2302,26 @@ impl KrakenSpotHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_checked(account_id, instrument_id, start, end)
+            .await
+            .map(|(reports, _)| reports)
+    }
+
+    /// Requests fill reports, also reporting whether the set is complete.
+    ///
+    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    pub(crate) async fn request_fill_reports_checked(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+    ) -> anyhow::Result<(Vec<FillReport>, bool)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
+        let mut complete = true;
 
         // Kraken API expects Unix timestamps in seconds
         let start_ts = start.map(|dt| dt.as_second());
@@ -2324,12 +2349,22 @@ impl KrakenSpotHttpClient {
                     }
                 }
 
-                if let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str()) {
-                    match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
-                        Ok(report) => all_reports.push(report),
-                        Err(e) => {
-                            log::warn!("Failed to parse trade {trade_id}: {e}");
-                        }
+                // As above: historical fills outlive the listing, so preserve the usable rows.
+                let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str())
+                else {
+                    log::warn!(
+                        "TradesHistory: instrument not in cache for pair {}, skipping trade {trade_id}",
+                        trade.pair
+                    );
+                    complete = false;
+                    continue;
+                };
+
+                match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
+                    Ok(report) => all_reports.push(report),
+                    Err(e) => {
+                        log::warn!("Failed to parse trade {trade_id}: {e}");
+                        complete = false;
                     }
                 }
             }
@@ -2337,7 +2372,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok(all_reports)
+        Ok((all_reports, complete))
     }
 
     /// Requests position status reports for SPOT instruments.
@@ -2989,7 +3024,10 @@ impl KrakenSpotHttpClient {
 
         for chunk in venue_order_ids.chunks(BATCH_CANCEL_LIMIT) {
             let orders: Vec<String> = chunk.iter().map(|id| id.to_string()).collect();
-            let params = KrakenSpotCancelOrderBatchParams { orders };
+            let params = KrakenSpotCancelOrderBatchParams {
+                orders,
+                cl_ord_ids: Vec::new(),
+            };
 
             let response = self.inner.cancel_order_batch(&params).await?;
             total_cancelled += response.count;
@@ -3278,9 +3316,37 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use nautilus_model::instruments::CurrencyPair;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = KrakenSpotRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            KrakenEnvironment::Live,
+            None,
+            3,
+            Some(0),
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_raw_client_creation() {

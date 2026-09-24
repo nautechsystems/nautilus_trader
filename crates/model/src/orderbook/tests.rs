@@ -1821,7 +1821,14 @@ fn test_book_update_stale_quote_tick_does_not_mutate_l1() {
 }
 
 #[rstest]
-fn test_apply_delta_non_snapshot_clear_resets_sequence_high_water() {
+#[case::zero(0, 2000, 2000)]
+#[case::nonzero(5, 2000, 2000)]
+#[case::earlier_timestamp(5, 500, 1000)]
+fn test_apply_delta_non_snapshot_clear_resets_sequence_high_water(
+    #[case] sequence: u64,
+    #[case] ts_event: u64,
+    #[case] expected_ts_last: u64,
+) {
     let instrument_id = InstrumentId::from("ES.GLBX");
     let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
     book.add(
@@ -1836,11 +1843,18 @@ fn test_apply_delta_non_snapshot_clear_resets_sequence_high_water() {
         BookAction::Clear,
         NULL_ORDER,
         0,
-        0,
-        UnixNanos::from(2000),
+        sequence,
+        UnixNanos::from(ts_event),
         UnixNanos::from(2000),
     ))
     .unwrap();
+
+    assert_eq!(book.sequence, sequence);
+    assert_eq!(book.ts_last, UnixNanos::from(expected_ts_last));
+    assert_eq!(book.update_count, 2);
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 0);
+
     book.add(
         BookOrder::new(
             OrderSide::Sell,
@@ -1849,11 +1863,55 @@ fn test_apply_delta_non_snapshot_clear_resets_sequence_high_water() {
             2,
         ),
         0,
-        1,
+        sequence + 1,
         UnixNanos::from(3000),
     );
 
-    assert_eq!(book.sequence, 1);
+    assert_eq!(book.sequence, sequence + 1);
+    assert_eq!(book.ts_last, UnixNanos::from(3000));
+    assert_eq!(book.update_count, 3);
+    assert_eq!(book.bids(None).count(), 0);
+    assert_eq!(book.asks(None).count(), 1);
+    assert_eq!(book.best_ask_price(), Some(Price::from("101.00")));
+    assert_eq!(book.best_ask_size(), Some(Quantity::from(50)));
+}
+
+#[rstest]
+#[case::zero(0, 50)]
+#[case::earlier(20, 50)]
+#[case::equal(50, 50)]
+#[case::later(60, 60)]
+fn test_apply_delta_incremental_preserves_metadata_high_water(
+    #[case] sequence: u64,
+    #[case] expected_sequence: u64,
+) {
+    let instrument_id = InstrumentId::from("ES.GLBX");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    book.add(
+        BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(100), 1),
+        0,
+        50,
+        UnixNanos::from(1000),
+    );
+
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        BookOrder::new(OrderSide::Buy, Price::from("98.00"), Quantity::from(75), 1),
+        0,
+        sequence,
+        UnixNanos::from(500),
+        UnixNanos::from(2000),
+    ))
+    .unwrap();
+
+    assert_eq!(book.sequence, expected_sequence);
+    assert_eq!(book.ts_last, UnixNanos::from(1000));
+    assert_eq!(book.update_count, 2);
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 0);
+    assert_eq!(book.best_bid_price(), Some(Price::from("98.00")));
+    assert_eq!(book.best_bid_size(), Some(Quantity::from(75)));
 }
 
 struct BookWarnCapture {

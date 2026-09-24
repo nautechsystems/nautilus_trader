@@ -48,6 +48,17 @@ pub struct CoverageSegment {
     pub kind: CoverageKind,
 }
 
+impl CoverageSegment {
+    /// Creates a segment if `start <= end`.
+    #[must_use]
+    pub const fn new(start: u64, end: u64, kind: CoverageKind) -> Option<Self> {
+        match ClosedInterval::new(start, end) {
+            Some(interval) => Some(Self { interval, kind }),
+            None => None,
+        }
+    }
+}
+
 /// Effective data and known-empty coverage intervals for one request key.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoverageIntervals {
@@ -95,24 +106,10 @@ where
 /// Empty coverage rows do not represent stored data and are skipped.
 #[must_use]
 pub fn last_data_timestamp(rows: &[CatalogCoverageRow]) -> Option<u64> {
-    let mut intervals = Vec::new();
-    for row in rows {
-        let Some(interval) = ClosedInterval::new(row.start_ts, row.end_ts) else {
-            continue;
-        };
-
-        match row.kind {
-            CoverageKind::Data => intervals.push(interval),
-            CoverageKind::Deleted => {
-                intervals = subtract_interval_from_intervals(&intervals, interval);
-            }
-            CoverageKind::Empty => {}
-        }
-    }
-    merge_closed_intervals(&intervals)
-        .into_iter()
+    coverage_intervals_by_kind(&rows_to_segments(rows))
+        .data
+        .last()
         .map(|interval| interval.end)
-        .max()
 }
 
 pub fn deduplicate_and_sort_coverage_rows(
@@ -393,46 +390,33 @@ fn u32_values(batch: &RecordBatch, name: &str) -> anyhow::Result<Vec<u32>> {
     let values = U32ColumnRef::try_from_array(column.as_ref())
         .ok_or_else(|| anyhow::anyhow!("{name} column is not UInt32, Int32, or Int64"))?;
 
+    anyhow::ensure!(
+        column.null_count() == 0,
+        "{name} column contains null values"
+    );
+
     match values {
-        U32ColumnRef::UInt32(values) => {
-            anyhow::ensure!(
-                values.null_count() == 0,
-                "{name} column contains null values"
-            );
-            Ok(values.values().to_vec())
-        }
-        U32ColumnRef::Int32(values) => {
-            anyhow::ensure!(
-                values.null_count() == 0,
-                "{name} column contains null values"
-            );
-            values
-                .values()
-                .iter()
-                .map(|value| {
-                    u32::try_from(*value).map_err(|_| {
-                        anyhow::anyhow!("Catalog coverage integer column contains a negative value")
-                    })
+        U32ColumnRef::UInt32(values) => Ok(values.values().to_vec()),
+        U32ColumnRef::Int32(values) => values
+            .values()
+            .iter()
+            .map(|value| {
+                u32::try_from(*value).map_err(|_| {
+                    anyhow::anyhow!("Catalog coverage integer column contains a negative value")
                 })
-                .collect()
-        }
-        U32ColumnRef::Int64(values) => {
-            anyhow::ensure!(
-                values.null_count() == 0,
-                "{name} column contains null values"
-            );
-            values
-                .values()
-                .iter()
-                .map(|value| {
-                    u32::try_from(*value).map_err(|_| {
-                        anyhow::anyhow!(
-                            "Catalog coverage integer column contains a value outside the u32 range"
-                        )
-                    })
+            })
+            .collect(),
+        U32ColumnRef::Int64(values) => values
+            .values()
+            .iter()
+            .map(|value| {
+                u32::try_from(*value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Catalog coverage integer column contains a value outside the u32 range"
+                    )
                 })
-                .collect()
-        }
+            })
+            .collect(),
     }
 }
 
@@ -445,17 +429,6 @@ fn string_values(batch: &RecordBatch, name: &str) -> anyhow::Result<Vec<Option<S
     Ok((0..batch.num_rows())
         .map(|row| values.value_opt(row).map(str::to_string))
         .collect())
-}
-
-impl CoverageSegment {
-    /// Creates a segment if `start <= end`.
-    #[must_use]
-    pub const fn new(start: u64, end: u64, kind: CoverageKind) -> Option<Self> {
-        match ClosedInterval::new(start, end) {
-            Some(interval) => Some(Self { interval, kind }),
-            None => None,
-        }
-    }
 }
 
 /// Merges closed intervals, treating adjacent intervals as contiguous coverage.
@@ -500,8 +473,7 @@ pub fn covered_intervals(segments: &[CoverageSegment]) -> Vec<ClosedInterval> {
                 intervals.push(segment.interval);
             }
             CoverageKind::Deleted => {
-                intervals = merge_closed_intervals(&intervals);
-                intervals = subtract_interval_from_merged_intervals(&intervals, segment.interval);
+                intervals = subtract_interval_from_intervals(&intervals, segment.interval);
             }
         }
     }
@@ -520,14 +492,8 @@ pub fn coverage_intervals_by_kind(segments: &[CoverageSegment]) -> CoverageInter
             CoverageKind::Data => data.push(segment.interval),
             CoverageKind::Empty => empty.push(segment.interval),
             CoverageKind::Deleted => {
-                data = subtract_interval_from_merged_intervals(
-                    &merge_closed_intervals(&data),
-                    segment.interval,
-                );
-                empty = subtract_interval_from_merged_intervals(
-                    &merge_closed_intervals(&empty),
-                    segment.interval,
-                );
+                data = subtract_interval_from_intervals(&data, segment.interval);
+                empty = subtract_interval_from_intervals(&empty, segment.interval);
             }
         }
     }
@@ -552,7 +518,7 @@ pub fn missing_segments_for_request(
     missing_intervals(request_start, request_end, &covered)
 }
 
-/// Subtracts `deleted` from already merged coverage intervals.
+/// Subtracts `deleted` from coverage intervals, merging overlapping and adjacent inputs first.
 #[must_use]
 pub fn subtract_interval_from_intervals(
     intervals: &[ClosedInterval],
@@ -641,6 +607,7 @@ pub fn missing_intervals(
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::{ArrayRef, Int32Array};
     use rstest::rstest;
 
     use super::*;
@@ -728,5 +695,318 @@ mod tests {
             ],
         );
         assert_eq!(missing_intervals(100, 1, &intervals), Vec::new());
+    }
+
+    fn closed_intervals(pairs: &[(u64, u64)]) -> Vec<ClosedInterval> {
+        pairs
+            .iter()
+            .map(|&(start, end)| ClosedInterval::new(start, end).unwrap())
+            .collect()
+    }
+
+    fn coverage_row(
+        start_ts: u64,
+        end_ts: u64,
+        kind: CoverageKind,
+        data_version: Option<i64>,
+        created_ts: u64,
+    ) -> CatalogCoverageRow {
+        CatalogCoverageRow {
+            table_path: "quotes".to_string(),
+            data_type: "QuoteTick".to_string(),
+            identifier: Some("AUD/USD.SIM".to_string()),
+            start_ts,
+            end_ts,
+            kind,
+            row_count: 5,
+            data_version,
+            source: "writer".to_string(),
+            created_ts,
+            schema_version: COVERAGE_SCHEMA_VERSION,
+        }
+    }
+
+    #[rstest]
+    #[case::single_nanosecond_request(5, 5, &[], &[(5, 5)])]
+    #[case::interval_ends_at_request_start(5, 10, &[(1, 5)], &[(6, 10)])]
+    #[case::interval_starts_at_request_end(1, 10, &[(10, 15)], &[(1, 9)])]
+    #[case::interval_after_request(1, 5, &[(10, 15)], &[(1, 5)])]
+    #[case::interval_before_request(10, 20, &[(1, 5), (8, 12)], &[(13, 20)])]
+    fn missing_intervals_handles_request_boundaries(
+        #[case] request_start: u64,
+        #[case] request_end: u64,
+        #[case] intervals: &[(u64, u64)],
+        #[case] expected: &[(u64, u64)],
+    ) {
+        let missing = missing_intervals(request_start, request_end, &closed_intervals(intervals));
+
+        assert_eq!(missing, closed_intervals(expected));
+    }
+
+    #[rstest]
+    #[case::deletes_first_nanosecond(&[(10, 20)], (5, 10), &[(11, 20)])]
+    #[case::deletes_last_nanosecond(&[(10, 20)], (20, 25), &[(10, 19)])]
+    #[case::keeps_interval_after_deletion(&[(10, 20)], (1, 5), &[(10, 20)])]
+    #[case::keeps_interval_before_deletion(&[(10, 20)], (25, 30), &[(10, 20)])]
+    #[case::deletes_shared_start(&[(10, 20)], (10, 15), &[(16, 20)])]
+    #[case::deletes_shared_end(&[(10, 20)], (15, 20), &[(10, 14)])]
+    #[case::merges_before_deleting(&[(16, 20), (10, 15)], (12, 18), &[(10, 11), (19, 20)])]
+    fn subtract_interval_from_intervals_handles_boundaries(
+        #[case] intervals: &[(u64, u64)],
+        #[case] deleted: (u64, u64),
+        #[case] expected: &[(u64, u64)],
+    ) {
+        let deleted = ClosedInterval::new(deleted.0, deleted.1).unwrap();
+
+        let remaining = subtract_interval_from_intervals(&closed_intervals(intervals), deleted);
+
+        assert_eq!(remaining, closed_intervals(expected));
+    }
+
+    #[rstest]
+    fn coverage_intervals_by_kind_applies_deletes_to_data_and_empty() {
+        let segments = [
+            CoverageSegment::new(1, 10, CoverageKind::Data).unwrap(),
+            CoverageSegment::new(11, 20, CoverageKind::Empty).unwrap(),
+            CoverageSegment::new(5, 15, CoverageKind::Deleted).unwrap(),
+        ];
+
+        assert_eq!(
+            coverage_intervals_by_kind(&segments),
+            CoverageIntervals {
+                data: closed_intervals(&[(1, 4)]),
+                empty: closed_intervals(&[(16, 20)]),
+            },
+        );
+    }
+
+    #[rstest]
+    #[case::deleted_tail(
+        &[(10, 20, CoverageKind::Data), (21, 40, CoverageKind::Empty), (15, 20, CoverageKind::Deleted)],
+        Some(14),
+    )]
+    #[case::data_after_delete(
+        &[(10, 20, CoverageKind::Data), (5, 30, CoverageKind::Deleted), (12, 13, CoverageKind::Data)],
+        Some(13),
+    )]
+    #[case::inverted_row_skipped(
+        &[(10, 20, CoverageKind::Data), (30, 25, CoverageKind::Data)],
+        Some(20),
+    )]
+    #[case::empty_only(&[(1, 5, CoverageKind::Empty)], None)]
+    fn last_data_timestamp_applies_rows_in_order(
+        #[case] rows: &[(u64, u64, CoverageKind)],
+        #[case] expected: Option<u64>,
+    ) {
+        let rows = rows
+            .iter()
+            .map(|&(start_ts, end_ts, kind)| coverage_row(start_ts, end_ts, kind, None, 1))
+            .collect::<Vec<_>>();
+
+        assert_eq!(last_data_timestamp(&rows), expected);
+    }
+
+    #[rstest]
+    fn deduplicate_and_sort_coverage_rows_keeps_causal_latest_per_kind() {
+        let older_data = coverage_row(10, 20, CoverageKind::Data, Some(1), 100);
+        let newer_data = coverage_row(10, 20, CoverageKind::Data, Some(2), 50);
+        let deleted = coverage_row(10, 20, CoverageKind::Deleted, Some(1), 200);
+        let empty = coverage_row(30, 40, CoverageKind::Empty, Some(1), 150);
+        let unversioned = coverage_row(1, 5, CoverageKind::Data, None, 300);
+
+        let rows = deduplicate_and_sort_coverage_rows(vec![
+            older_data,
+            deleted.clone(),
+            newer_data.clone(),
+            empty.clone(),
+            unversioned.clone(),
+        ]);
+
+        assert_eq!(rows, vec![unversioned, empty, deleted, newer_data]);
+    }
+
+    #[rstest]
+    fn coverage_rows_round_trip_through_record_batch() {
+        let rows = vec![
+            CatalogCoverageRow {
+                table_path: "quotes".to_string(),
+                data_type: "QuoteTick".to_string(),
+                identifier: None,
+                start_ts: 1,
+                end_ts: 5,
+                kind: CoverageKind::Data,
+                row_count: 3,
+                data_version: None,
+                source: "writer".to_string(),
+                created_ts: 100,
+                schema_version: COVERAGE_SCHEMA_VERSION,
+            },
+            CatalogCoverageRow {
+                table_path: "bars".to_string(),
+                data_type: "Bar".to_string(),
+                identifier: Some("ES.GLBX".to_string()),
+                start_ts: 6,
+                end_ts: 9,
+                kind: CoverageKind::Deleted,
+                row_count: 0,
+                data_version: Some(7),
+                source: "delete".to_string(),
+                created_ts: 200,
+                schema_version: 2,
+            },
+            CatalogCoverageRow {
+                table_path: "trades".to_string(),
+                data_type: "TradeTick".to_string(),
+                identifier: Some("ETHUSDT.BINANCE".to_string()),
+                start_ts: 10,
+                end_ts: 12,
+                kind: CoverageKind::Empty,
+                row_count: 0,
+                data_version: Some(0),
+                source: "request".to_string(),
+                created_ts: 300,
+                schema_version: 3,
+            },
+        ];
+
+        let batch = coverage_rows_to_batch(&rows).unwrap();
+
+        assert_eq!(decode_coverage_batches(vec![batch]).unwrap(), rows);
+    }
+
+    #[rstest]
+    fn decode_coverage_batches_rejects_unknown_status() {
+        let batch =
+            coverage_rows_to_batch(&[coverage_row(1, 5, CoverageKind::Data, None, 1)]).unwrap();
+        let status_index = batch.schema().index_of(STATUS_COLUMN).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[status_index] = Arc::new(StringArray::from(vec!["partial"]));
+        let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
+
+        let error = decode_coverage_batches(vec![batch]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Unknown catalog coverage status: partial"
+        );
+    }
+
+    #[rstest]
+    #[case::uint32_null(
+        Arc::new(UInt32Array::from(vec![None::<u32>])),
+        Err("_nautilus_schema_version column contains null values")
+    )]
+    #[case::int32_null(
+        Arc::new(Int32Array::from(vec![None::<i32>])),
+        Err("_nautilus_schema_version column contains null values")
+    )]
+    #[case::int64_null(
+        Arc::new(Int64Array::from(vec![None::<i64>])),
+        Err("_nautilus_schema_version column contains null values")
+    )]
+    #[case::int32_negative(
+        Arc::new(Int32Array::from(vec![-1])),
+        Err("Catalog coverage integer column contains a negative value")
+    )]
+    #[case::int64_above_u32(
+        Arc::new(Int64Array::from(vec![i64::from(u32::MAX) + 1])),
+        Err("Catalog coverage integer column contains a value outside the u32 range")
+    )]
+    #[case::int32_valid(Arc::new(Int32Array::from(vec![3])), Ok(3))]
+    #[case::int64_valid(Arc::new(Int64Array::from(vec![4])), Ok(4))]
+    fn decode_coverage_batches_reads_schema_version_integer_types(
+        #[case] schema_version: ArrayRef,
+        #[case] expected: Result<u32, &str>,
+    ) {
+        let batch =
+            coverage_rows_to_batch(&[coverage_row(1, 5, CoverageKind::Data, None, 1)]).unwrap();
+        let index = batch.schema().index_of(SCHEMA_VERSION_COLUMN).unwrap();
+        let data_type = schema_version.data_type().clone();
+        let mut fields = batch.schema().fields().to_vec();
+        fields[index] = Arc::new(Field::new(SCHEMA_VERSION_COLUMN, data_type, true));
+        let mut columns = batch.columns().to_vec();
+        columns[index] = schema_version;
+        let schema = Arc::new(Schema::new(fields));
+        let batch = RecordBatch::try_new(schema, columns).unwrap();
+
+        let decoded = decode_coverage_batches(vec![batch])
+            .map(|rows| rows[0].schema_version)
+            .map_err(|e| e.to_string());
+
+        assert_eq!(decoded, expected.map_err(str::to_string));
+    }
+
+    #[rstest]
+    fn rows_to_segments_skips_inverted_rows() {
+        let rows = [
+            coverage_row(1, 5, CoverageKind::Data, None, 1),
+            coverage_row(9, 3, CoverageKind::Deleted, None, 2),
+        ];
+
+        assert_eq!(
+            rows_to_segments(&rows),
+            vec![CoverageSegment::new(1, 5, CoverageKind::Data).unwrap()],
+        );
+    }
+
+    fn ts_init_batch() -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("ts_init", DataType::UInt64, false),
+                Field::new("value", DataType::UInt32, false),
+            ])),
+            vec![
+                Arc::new(UInt64Array::from(vec![1_u64, 5, 10, 15])),
+                Arc::new(UInt32Array::from(vec![1_u32, 2, 3, 4])),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::selects_rows_inside_bounds(&[(5, 10)], Some((vec![2, 3], vec![5, 10])))]
+    #[case::selects_every_row(&[(0, 20)], Some((vec![1, 2, 3, 4], vec![1, 5, 10, 15])))]
+    #[case::selects_across_intervals(&[(0, 1), (15, 15)], Some((vec![1, 4], vec![1, 15])))]
+    #[case::selects_no_row(&[(20, 30)], None)]
+    fn filter_record_batch_by_ts_init_intervals_selects_rows(
+        #[case] intervals: &[(u64, u64)],
+        #[case] expected: Option<(Vec<u32>, Vec<u64>)>,
+    ) {
+        let filtered = filter_record_batch_by_ts_init_intervals(
+            &ts_init_batch(),
+            &closed_intervals(intervals),
+        )
+        .unwrap()
+        .map(|(batch, timestamps)| {
+            let values = batch
+                .column_by_name("value")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .unwrap()
+                .values()
+                .to_vec();
+            (values, timestamps)
+        });
+
+        assert_eq!(filtered, expected);
+    }
+
+    #[rstest]
+    fn filter_record_batch_by_ts_init_intervals_requires_ts_init() {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::UInt32,
+                false,
+            )])),
+            vec![Arc::new(UInt32Array::from(vec![1_u32]))],
+        )
+        .unwrap();
+
+        let error = filter_record_batch_by_ts_init_intervals(&batch, &closed_intervals(&[(0, 1)]))
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "ts_init column not found");
     }
 }

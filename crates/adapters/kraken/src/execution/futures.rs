@@ -16,6 +16,7 @@
 //! Kraken Futures execution client implementation.
 
 use std::{
+    collections::HashSet,
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -35,7 +36,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -940,12 +941,18 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
 
         let ts_init = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
+        // Saturating arithmetic: an unclamped lookback must not overflow, and a cutoff before the
+        // epoch must not panic converting into `UnixNanos`.
+        let lookback_start = lookback_mins.map(|mins| {
+            let nanos = mins.saturating_mul(60).saturating_mul(1_000_000_000);
+            ts_init.saturating_sub(DurationNanos::new(nanos))
+        });
+        let start = lookback_start.map(Timestamp::from);
         let account_id = self.core.account_id;
 
-        let mut order_reports = self
+        let (mut order_reports, orders_complete) = self
             .http
-            .request_order_status_reports(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, true)
             .await?;
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
@@ -965,9 +972,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             order_reports.push(report);
         }
 
-        let fill_reports = self
+        let (fill_reports, fills_complete) = self
             .http
-            .request_fill_reports(account_id, None, start, None)
+            .request_fill_reports_checked(account_id, None, start, None)
             .await?;
         let position_reports = self
             .http
@@ -984,6 +991,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+        // As for spot: one cutoff for every historical query, recorded with its completeness.
+        mass_status.set_report_window(lookback_start, orders_complete && fills_complete);
 
         Ok(Some(mass_status))
     }
@@ -1205,55 +1214,54 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             cmd.order_side
         );
 
-        let orders_to_cancel: Vec<_> = {
+        // Side-filtered cancellation reuses the explicit-id batch path rather than sending one
+        // HTTP cancel per order.
+        let cancels: Vec<CancelOrder> = {
             let cache = self.core.cache();
-            let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
+            let ts_init = self.clock.get_time_ns();
+            let correlation_id = cmd.correlation_id.or(Some(cmd.command_id));
 
-            open_orders
+            // As for spot: the venue can have accepted an order the cache still records as
+            // `Submitted`, so in-flight orders are selected alongside open ones.
+            let mut seen = HashSet::new();
+
+            cache
+                .orders_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
+                .chain(cache.orders_inflight(None, Some(&instrument_id), None, None, None))
                 .filter(|order| Some(order.order_side()) == cmd.order_side)
-                .filter_map(|order| {
-                    Some((
-                        order.venue_order_id()?,
-                        order.client_order_id(),
-                        order.instrument_id(),
+                .filter(|order| seen.insert(order.client_order_id()))
+                .map(|order| {
+                    CancelOrder::new(
+                        cmd.trader_id,
+                        cmd.client_id,
+                        // Each cancel keeps the owning strategy of the order it targets.
                         order.strategy_id(),
-                    ))
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        order.venue_order_id(),
+                        UUID4::new(),
+                        ts_init,
+                        cmd.params.clone(),
+                        correlation_id,
+                    )
                 })
                 .collect()
         };
 
-        let account_id = self.core.account_id;
-
-        for (venue_order_id, client_order_id, order_instrument_id, strategy_id) in orders_to_cancel
-        {
-            let http = self.http.clone();
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
-
-            self.spawn_task("cancel_order_by_side", async move {
-                if let Err(failure) = cancel_order_for_futures(
-                    &http,
-                    account_id,
-                    order_instrument_id,
-                    Some(client_order_id),
-                    Some(venue_order_id),
-                )
-                .await
-                {
-                    handle_cancel_failure(
-                        &emitter,
-                        clock,
-                        strategy_id,
-                        order_instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        failure,
-                    );
-                }
-                Ok(())
-            });
+        if cancels.is_empty() {
+            log::debug!("No open orders to cancel for {instrument_id}");
+            return Ok(());
         }
+
+        let http = self.http.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        self.spawn_task("cancel_all_orders_by_side", async move {
+            batch_cancel_orders_for_futures(&http, &emitter, clock, &cancels).await;
+            Ok(())
+        });
 
         Ok(())
     }

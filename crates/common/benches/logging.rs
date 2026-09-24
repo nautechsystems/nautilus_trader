@@ -60,7 +60,7 @@ const COMPONENT_TARGETS_12: [&str; 12] = [
     "nautilus_trader::adapters::okx::execution",
     "nautilus_trader::adapters::coinbase::execution",
     "nautilus_trader::adapters::kraken::execution",
-    "nautilus_trader::adapters::bitmex::execution",
+    "nautilus_trader::adapters::bybit::execution",
     "nautilus_trader::adapters::deribit::execution",
     "nautilus_trader::adapters::dydx::execution",
     "nautilus_trader::adapters::hyperliquid::execution",

@@ -93,7 +93,6 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "is_quanto",
     "isin",
     "lot_size",
-    "maker_fee",
     "margin_init",
     "margin_maint",
     "max_notional",
@@ -105,7 +104,6 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "multiplier",
     "quote_currency",
     "symbol",
-    "taker_fee",
     "tick_scheme",
     "venue",
 )
@@ -216,8 +214,6 @@ def test_currency_pair_properties() -> None:
     assert audusd.min_quantity == Quantity.from_str("1000")
     assert audusd.margin_init == Decimal("0.03")
     assert audusd.margin_maint == Decimal("0.03")
-    assert audusd.maker_fee == Decimal("0.00002")
-    assert audusd.taker_fee == Decimal("0.00002")
 
 
 def test_currency_pair_to_dict_and_from_dict_roundtrip() -> None:
@@ -743,7 +739,6 @@ def test_index_instrument_construction_and_roundtrip() -> None:
     assert idx.is_quanto is False
     assert idx.isin is None
     assert idx.lot_size is None
-    assert idx.maker_fee == Decimal(0)
     assert idx.margin_init == Decimal(0)
     assert idx.margin_maint == Decimal(0)
     assert idx.max_notional is None
@@ -754,7 +749,6 @@ def test_index_instrument_construction_and_roundtrip() -> None:
     assert idx.min_quantity is None
     assert idx.multiplier == Quantity.from_int(1)
     assert idx.quote_currency == Currency.from_str("USD")
-    assert idx.taker_fee == Decimal(0)
     assert idx.tick_scheme is None
 
     restored = IndexInstrument.from_dict(idx.to_dict())
@@ -1135,8 +1129,6 @@ def test_currency_pair_roundtrip_all_fields() -> None:
     assert restored.lot_size == original.lot_size
     assert restored.margin_init == original.margin_init
     assert restored.margin_maint == original.margin_maint
-    assert restored.maker_fee == original.maker_fee
-    assert restored.taker_fee == original.taker_fee
 
 
 def test_crypto_perpetual_roundtrip_all_fields() -> None:

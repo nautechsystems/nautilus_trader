@@ -74,6 +74,7 @@
 # %%
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -89,12 +90,14 @@ from nautilus_trader.config import (
     LoggerConfig,
 )
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import (
     AccountType,
     BookType,
     Currency,
     CurrencyPair,
     InstrumentId,
+    NautilusDataType,
     OmsType,
     Price,
     Quantity,
@@ -213,7 +216,7 @@ book_type = BookType.L2_MBP
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_type="OrderBookDelta",
+        data_type=NautilusDataType.OrderBookDelta,
         instrument_id=instrument.id,
     ),
 ]
@@ -226,6 +229,10 @@ venues_configs = [
         base_currency=None,
         starting_balances=["20 BTC", "100000 USDT"],
         book_type=book_type,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.001"),
+            taker_rate=Decimal("0.001"),
+        ),
     ),
 ]
 

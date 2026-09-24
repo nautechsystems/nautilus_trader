@@ -2093,7 +2093,10 @@ impl Drop for DeferEventsGuard {
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
     use nautilus_core::DurationNanos;
-    use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        latency::{LatencyModelHandle, StaticLatencyModel},
+    };
     use nautilus_model::{
         accounts::MarginAccount,
         enums::{AccountType, BookType, OrderSide, OrderType},
@@ -2128,6 +2131,7 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
 
@@ -2160,6 +2164,7 @@ mod tests {
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
             .liquidation_enabled(expected)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
@@ -2180,6 +2185,7 @@ mod tests {
             .account_type(account_type)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000 USD")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let cache = Rc::new(RefCell::new(Cache::default()));

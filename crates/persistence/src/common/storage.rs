@@ -35,7 +35,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub use crate::common::paths::normalize_path_to_uri;
-use crate::common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri};
+use crate::{
+    backend::parquet::io::create_object_store_from_path,
+    common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri},
+};
 
 /// File name used to represent run sessions, including runs that wrote no data files.
 pub const RUN_MANIFEST_FILENAME: &str = "_nautilus_run_manifest.json";
@@ -199,15 +202,8 @@ impl StorageBackend {
         kind: &str,
         instance_id: &str,
     ) -> anyhow::Result<Option<RunManifest>> {
-        let path = self.run_manifest_path(kind, instance_id);
-        match self.object_store.get(&path).await {
-            Ok(result) => {
-                let bytes = result.bytes().await?;
-                Ok(Some(serde_json::from_slice(&bytes)?))
-            }
-            Err(ObjectStoreError::NotFound { .. }) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        self.read_run_manifest_at(&self.run_manifest_path(kind, instance_id))
+            .await
     }
 
     /// Lists run IDs from directories and manifests for one session kind.
@@ -243,17 +239,23 @@ impl StorageBackend {
         let mut manifests = Vec::new();
 
         for file in files {
-            match self.object_store.get(&ObjectPath::from(file)).await {
-                Ok(result) => {
-                    let bytes = result.bytes().await?;
-                    manifests.push(serde_json::from_slice(&bytes)?);
-                }
-                Err(ObjectStoreError::NotFound { .. }) => {}
-                Err(e) => return Err(e.into()),
+            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::from(file)).await? {
+                manifests.push(manifest);
             }
         }
 
         Ok(manifests)
+    }
+
+    async fn read_run_manifest_at(&self, path: &ObjectPath) -> anyhow::Result<Option<RunManifest>> {
+        match self.object_store.get(path).await {
+            Ok(result) => {
+                let bytes = result.bytes().await?;
+                Ok(Some(serde_json::from_slice(&bytes)?))
+            }
+            Err(ObjectStoreError::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn run_manifest_path(&self, kind: &str, instance_id: &str) -> ObjectPath {
@@ -313,15 +315,18 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
                 }
             }
         }
+
         return Ok(path_to_file_uri(&resolved.to_string_lossy())
             .trim_end_matches('/')
             .to_string());
     }
+
     let mut url = Url::parse(&uri)?;
     if url.scheme() == "gcs" {
         url.set_scheme("gs")
             .map_err(|()| anyhow::anyhow!("invalid storage scheme"))?;
     }
+
     url.set_fragment(None);
     url.set_query(None);
     Ok(url.as_str().trim_end_matches('/').to_string())
@@ -349,8 +354,9 @@ pub fn create_storage_backend_from_path(
     if uri.starts_with("file://") {
         fs::create_dir_all(file_uri_to_native_path(&uri))?;
     }
+
     let (object_store, base_path, original_uri) =
-        crate::backend::parquet::io::create_object_store_from_path(&uri, storage_options)?;
+        create_object_store_from_path(&uri, storage_options)?;
     Ok(storage_backend(object_store, base_path, original_uri))
 }
 
@@ -453,8 +459,6 @@ impl ObjectStore for SortedListObjectStore {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "cloud")]
-    use object_store::{ObjectStoreExt, path::Path as ObjectPath};
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -576,6 +580,17 @@ mod tests {
     }
 
     #[rstest]
+    fn read_run_manifest_returns_none_for_missing_run() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+
+        let manifest =
+            futures::executor::block_on(storage.read_run_manifest("backtest", "missing-run"))
+                .unwrap();
+
+        assert_eq!(manifest, None);
+    }
+
+    #[rstest]
     fn storage_backend_unions_directory_and_manifest_runs() {
         let storage = create_storage_backend_from_path("memory://", None).unwrap();
         futures::executor::block_on(async {
@@ -598,6 +613,107 @@ mod tests {
         assert_eq!(
             runs,
             vec!["empty-run-001".to_string(), "run-with-data".to_string()],
+        );
+    }
+
+    #[rstest]
+    #[case::gcs_alias("gcs://bucket/catalog/", "gs://bucket/catalog")]
+    #[case::query_and_fragment("s3://bucket/catalog?versionId=1#part", "s3://bucket/catalog")]
+    fn storage_location_normalizes_remote_uris(#[case] path: &str, #[case] expected: &str) {
+        assert_eq!(normalize_storage_location(path).unwrap(), expected);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn storage_location_resolves_symlinks_and_parent_segments() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested = temp_dir.path().join("source").join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let link = temp_dir.path().join("link");
+        std::os::unix::fs::symlink(&nested, &link).unwrap();
+        let expected = format!(
+            "file://{}/new-destination",
+            fs::canonicalize(&nested).unwrap().display()
+        );
+
+        let through_link =
+            normalize_storage_location(link.join("new-destination").to_str().unwrap()).unwrap();
+        let through_parent = normalize_storage_location(
+            temp_dir
+                .path()
+                .join("source/missing/../nested/new-destination")
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(through_link, expected);
+        assert_eq!(through_parent, expected);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn storage_location_propagates_errors_other_than_missing_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("file");
+        fs::write(&file, b"data").unwrap();
+
+        let error = normalize_storage_location(file.join("child").to_str().unwrap()).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<io::Error>().unwrap().kind(),
+            io::ErrorKind::NotADirectory,
+        );
+    }
+
+    #[rstest]
+    fn current_run_manifest_is_readable_from_catalog_root() {
+        let inner: Arc<dyn ObjectStore> = Arc::new(object_store::memory::InMemory::new());
+        let run = storage_backend(
+            inner.clone(),
+            "backtest/run-001".to_string(),
+            "memory://".to_string(),
+        );
+        let root = storage_backend(inner, String::new(), "memory://".to_string());
+
+        futures::executor::block_on(run.write_current_run_manifest(
+            "backtest",
+            "run-001",
+            "completed",
+            false,
+        ))
+        .unwrap();
+        let manifest = futures::executor::block_on(root.read_run_manifest("backtest", "run-001"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            manifest,
+            RunManifest {
+                schema_version: 1,
+                kind: "backtest".to_string(),
+                instance_id: "run-001".to_string(),
+                status: "completed".to_string(),
+                empty: false,
+                created_ts: manifest.created_ts,
+            },
+        );
+    }
+
+    #[rstest]
+    fn run_ids_reject_unreadable_manifest() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+        futures::executor::block_on(storage.object_store.put(
+            &ObjectPath::from(format!("backtest/run-001/{RUN_MANIFEST_FILENAME}")),
+            b"{".to_vec().into(),
+        ))
+        .unwrap();
+
+        let error = futures::executor::block_on(storage.list_run_ids("backtest")).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "EOF while parsing an object at line 1 column 1"
         );
     }
 

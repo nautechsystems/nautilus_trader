@@ -56,8 +56,21 @@ process-wide instead of creating one allowance per connection.
 
 The client accepts default and per-request headers, query parameters with repeated values, raw
 request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A client-level timeout applies to
-all requests unless a request supplies its own timeout. An optional proxy applies to both HTTP and
-HTTPS traffic.
+all requests unless a request supplies its own timeout.
+
+### Proxy routing
+
+By default the client honors ambient proxy configuration: with `use_system_proxy` left at its
+default of `true` and no explicit `proxy_url`, requests are routed through the proxy named by
+`HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (lowercase variants included), except destinations
+matched by `NO_PROXY`.
+
+This default is a deliberate trust decision on the process environment: an actor who controls it
+chooses the proxy that observes all plaintext HTTP traffic and the CONNECT tunnels that carry HTTPS.
+
+An optional explicit `proxy_url` applies to both HTTP and HTTPS traffic and always takes precedence
+over ambient lookup. Passing `use_system_proxy(false)` disables ambient lookup, so requests route
+directly only when `proxy_url` is unset.
 
 **HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's
 body and retry rules. The transport retries requests canceled before transmission on reused
@@ -75,9 +88,10 @@ new TCP and TLS handshake for each request.
 
 Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Endpoints
-whose path or query can contain credentials can use the redacted request path, which removes the URL
-from transport errors and logs.
+or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Transport
+error messages carry the request URL without its query string or fragment, so query credentials
+cannot leak through errors. Endpoints whose path can also contain credentials can use the redacted
+request path, which omits the URL from transport errors.
 
 `HttpClient::get_stream` returns status and body chunks without accumulating the complete response
 or applying the buffered size limit. One absolute deadline covers headers and the whole body,
@@ -189,6 +203,20 @@ A recognized SOCKS proxy URL logs a warning and **connects directly** because We
 tunneling is not implemented. Malformed proxy URLs and other unsupported schemes return an error.
 :::
 
+### Inbound size limits
+
+`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound
+message and frame payload sizes for one connection. Leave them unset to pass each backend's current
+default config: 64 MiB per message and 16 MiB per frame. The frame cap bounds memory for one
+inbound frame. Both backends apply the message cap after that frame payload is read, so a lower
+message cap does not shrink the buffer. A zero value is rejected on the builder
+and on both handler and stream connect paths. A message that exceeds the message cap and fits in
+the frame cap fails the read with `MessageTooLarge`. On Sockudo, a frame that exceeds the frame cap
+fails first with `FrameTooLarge`. Sockudo applies its message cap to fragmented messages, and to a
+finished single-frame message only when `max_message_size_bytes` is set. Its small-frame parser
+skips the frame cap when the whole frame of 125 bytes or less is already buffered, so that case is
+not a reliable rejection. Tungstenite reports every frame breach as `MessageTooLarge`.
+
 ### Liveness and recovery
 
 The configured heartbeat sends either an RFC 6455 Ping or a venue-specific text message at a fixed
@@ -290,6 +318,14 @@ Ping.
 If a bound write times out after it starts, **delivery is undetermined** and the caller must not
 retry blindly.
 :::
+
+### Writer capacity
+
+`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes,
+and reconnect buffer. It defaults to 1,024 messages. Ownership-bound sends, keepalives, and control
+frames share a separate allowance of the same size so authentication can proceed when replay fills
+the ordinary allowance. A full allowance rejects new sends with `SendError::BufferFull` before
+enqueueing. These limits bound message count, not payload bytes.
 
 ### Backend benchmarks
 
@@ -439,6 +475,13 @@ concurrent disconnect can still prevent delivery. Reconnect replay and buffering
 so protocols that require durable or exactly-once delivery must enforce those guarantees above the
 socket client.
 :::
+
+### Writer capacity
+
+`SocketConfig::writer_capacity` limits the combined number of queued, in-flight, and replay messages
+and defaults to 1,024. Once full, the writer rejects new sends with `SendError::BufferFull`, including
+sends through `SocketClient::writer_tx`. Accepted messages retain their replay policy. This limits
+message count, not payload bytes.
 
 ## TCP socket options
 

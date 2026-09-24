@@ -306,13 +306,19 @@ DataTesterConfig::builder()
 
 ### TC-D12: Subscribe book depth
 
-| Field              | Value                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                                |
-| **Action**         | DataTester subscribes to `OrderBookDepth` snapshots.                                 |
-| **Event sequence** | `OrderBookDepth` events received in `on_book_depth`.                                 |
-| **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
-| **Skip when**      | Adapter does not support book depth subscriptions.                                   |
+| Field              | Value                                                                            |
+| ------------------ | -------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                                            |
+| **Action**         | DataTester subscribes to `OrderBookDepth` snapshots.                             |
+| **Event sequence** | `OrderBookDepth` events received in `on_book_depth`.                             |
+| **Pass criteria**  | Depth snapshots respect the requested level limit; prices are correctly ordered. |
+| **Skip when**      | Adapter does not support book depth subscriptions.                               |
+
+Choose a depth supported by the venue; see the adapter guide for its limit. `book_depth` applies to
+all enabled book subscriptions and the book snapshot request. Omitting it uses the adapter default.
+When depth runs alongside deltas or interval books, DataTester
+subscribes to depth with `managed=False` so it cannot overwrite the delta-managed book. When only
+depth is enabled, its managed setting follows `manage_book`.
 
 **Python config:**
 
@@ -320,7 +326,6 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_depth=True,
-    book_depth=10,
 )
 ```
 
@@ -332,7 +337,6 @@ DataTesterConfig::builder()
     .instrument_ids(vec![instrument_id])
     .subscribe_book_depth(true)
     .book_type(BookType::L2_MBP)
-    .book_depth(10)
     .build()?
 ```
 

@@ -38,8 +38,9 @@ use nautilus_common::{
 use nautilus_core::{UnixNanos, datetime::get_timezone, python::to_pyruntime_err};
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
+        close::InstrumentClose,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -192,6 +193,7 @@ impl PyStreamingFeatherWriter {
                         base_path.trim_start_matches('/'),
                     ))
                 };
+
                 let mut stream = store_ref.list(prefix.as_ref());
                 let mut to_delete = Vec::new();
 
@@ -204,6 +206,7 @@ impl PyStreamingFeatherWriter {
                 for path in to_delete {
                     let _ = store_ref.delete(&path).await;
                 }
+
                 Ok::<(), anyhow::Error>(())
             })
             .map_err(|e| PyIOError::new_err(format!("Failed to replace existing files: {e}")))?;
@@ -225,6 +228,7 @@ impl PyStreamingFeatherWriter {
                         .await
                 })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write run manifest: {e}")))?;
+
                 Some((storage.clone(), kind, instance_id))
             } else {
                 None
@@ -238,16 +242,20 @@ impl PyStreamingFeatherWriter {
             },
             1 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
+
                 RotationConfig::Interval {
                     interval_ns: interval,
                 }
             }
             2 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
+
                 let tz = get_timezone(rotation_timezone).map_err(|e| {
                     PyIOError::new_err(format!("Failed to parse rotation_timezone: {e}"))
                 })?;
+
                 let time_ns = rotation_time_ns.unwrap_or(0);
+
                 RotationConfig::ScheduledDates {
                     interval_ns: interval,
                     rotation_time: UnixNanos::from(time_ns),
@@ -260,18 +268,6 @@ impl PyStreamingFeatherWriter {
         // Convert include_types to HashSet
         let type_filter = include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
         let record_filter = writer_record_filter_from_py(record_types, record_filters)?;
-
-        // Set up per-instrument types (matching Python's _per_instrument_writers)
-        let mut per_instrument_types = HashSet::new();
-        per_instrument_types.insert("bars".to_string());
-        per_instrument_types.insert("order_book_deltas".to_string());
-        per_instrument_types.insert("order_book_depths".to_string());
-        per_instrument_types.insert("option_greeks".to_string());
-        per_instrument_types.insert("quotes".to_string());
-        per_instrument_types.insert("trades".to_string());
-        per_instrument_types.insert("mark_prices".to_string());
-        per_instrument_types.insert("index_prices".to_string());
-        per_instrument_types.insert("funding_rates".to_string());
 
         // Extract Clock from Python wrapper and translate it into the core
         // writer's Send time source (live clocks read the wall clock directly;
@@ -289,7 +285,7 @@ impl PyStreamingFeatherWriter {
             writer_clock,
             rotation_config,
             type_filter,
-            Some(per_instrument_types),
+            Some(FeatherWriter::default_per_instrument_types()),
             flush_interval_ms, // Auto-flush interval in milliseconds
         )
         .with_record_filter(record_filter);
@@ -325,6 +321,7 @@ impl PyStreamingFeatherWriter {
         if let Some(handler) = self.handler.take() {
             FeatherWriter::unsubscribe_from_message_bus(&handler);
         }
+
         Ok(())
     }
 
@@ -400,6 +397,10 @@ impl PyStreamingFeatherWriter {
             try_write_data!(Data::InstrumentClose(close), "InstrumentClose");
         }
 
+        if let Ok(custom) = data.extract::<CustomData>(py) {
+            try_write_data!(Data::Custom(custom), "CustomData");
+        }
+
         try_write!(FundingRateUpdate, "FundingRateUpdate");
         try_write!(InstrumentStatus, "InstrumentStatus");
         try_write!(AccountState, "AccountState");
@@ -471,6 +472,7 @@ impl PyStreamingFeatherWriter {
             writer.close().await
         })?
         .map_err(|e| PyIOError::new_err(format!("Failed to close: {e}")))?;
+
         drop(writer);
         self.write_run_manifest(
             "completed",
@@ -527,6 +529,7 @@ impl PyStreamingFeatherWriter {
         if *self.run_manifest_has_data.borrow() {
             return Ok(());
         }
+
         self.write_run_manifest("in_progress", false, "update")?;
         *self.run_manifest_has_data.borrow_mut() = true;
         Ok(())
@@ -556,6 +559,7 @@ where
     F: std::future::Future,
 {
     let run = move || get_runtime().block_on(async move { create_future().await });
+
     if tokio::runtime::Handle::try_current().is_err() {
         return Ok(run());
     }

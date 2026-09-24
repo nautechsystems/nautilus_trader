@@ -68,6 +68,8 @@ def main() -> None:
             instrument_ids=[INSTRUMENT_ID],
             bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
+            subscribe_book_depth=True,
+            subscribe_book_at_interval=True,
             subscribe_quotes=True,
             subscribe_trades=True,
             subscribe_mark_prices=True,

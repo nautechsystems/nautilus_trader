@@ -20,11 +20,14 @@ use futures::StreamExt;
 use nautilus_core::UnixNanos;
 use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 
-use crate::backend::parquet::{
-    catalog::ParquetDataCatalog,
-    intervals::are_intervals_disjoint,
-    io::min_max_from_parquet_metadata_object_store,
-    paths::{make_object_store_path, timestamps_to_filename},
+use crate::{
+    backend::parquet::{
+        catalog::ParquetDataCatalog,
+        intervals::are_intervals_disjoint,
+        io::min_max_from_parquet_metadata_object_store,
+        paths::{make_object_store_path, timestamps_to_filename},
+    },
+    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
 };
 
 impl ParquetDataCatalog {
@@ -47,11 +50,14 @@ impl ParquetDataCatalog {
     /// authentication problems, or other I/O errors.
     pub(crate) fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
         let object_path = self.to_object_path(path)?;
-        let exists = self.execute_async(|| async {
-            let result: bool = self.object_store.head(&object_path).await.is_ok();
-            Ok(result)
-        })?;
-        Ok(exists)
+
+        self.execute_async(|| async {
+            match self.object_store.head(&object_path).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(e) => Err(e.into()),
+            }
+        })
     }
 
     /// Deletes a file from the object store.
@@ -85,8 +91,7 @@ impl ParquetDataCatalog {
                 .delete(&object_path)
                 .await
                 .map_err(anyhow::Error::from)
-        })?;
-        Ok(())
+        })
     }
 
     /// Resets the filenames of all Parquet files in the catalog to match their actual content timestamps.
@@ -142,7 +147,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
@@ -160,6 +165,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -171,19 +177,23 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Reset filenames for all quote files
-    /// catalog.reset_data_file_names("quotes", None)?;
+    /// catalog.reset_data_file_names(&NautilusDataType::QuoteTick.into(), None)?;
     ///
     /// // Reset filenames for a specific instrument's trade files
-    /// catalog.reset_data_file_names("trades", Some("BTCUSD"))?;
+    /// catalog.reset_data_file_names(&NautilusDataType::TradeTick.into(), Some("BTCUSD"))?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn reset_data_file_names(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, identifier)?;
-        self.reset_file_names(&directory)
+        for type_name in parquet_catalog_data_type_path_prefixes(data_type) {
+            let directory = self.make_path(type_name.as_ref(), identifier)?;
+            self.reset_file_names(&directory)?;
+        }
+
+        Ok(())
     }
 
     /// Resets the filenames of Parquet files in a directory to match their actual content timestamps.
@@ -227,6 +237,7 @@ impl ParquetDataCatalog {
 
         for file in parquet_files {
             let object_path = ObjectPath::from(file.as_str());
+
             let (first_ts, last_ts) = self.execute_async(|| async {
                 min_max_from_parquet_metadata_object_store(
                     self.object_store.clone(),
@@ -292,7 +303,7 @@ impl ParquetDataCatalog {
     pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<String>> {
         let data_dir = make_object_store_path(&self.base_path, ["data"]);
 
-        let leaf_dirs = self.execute_async(|| async {
+        self.execute_async(|| async {
             let mut directories = AHashSet::new();
 
             // List all objects under the data directory
@@ -314,19 +325,17 @@ impl ParquetDataCatalog {
             let mut leaf_dirs = Vec::new();
 
             for dir in &directories {
-                let has_subdirs = directories
-                    .iter()
-                    .any(|d| d.starts_with(&make_object_store_path(dir, [""])) && d != dir);
+                let prefix = format!("{dir}/");
+                let has_subdirs = directories.iter().any(|d| d.starts_with(&prefix));
 
                 if !has_subdirs {
                     leaf_dirs.push(dir.clone());
                 }
             }
+
             leaf_dirs.sort();
 
             Ok::<Vec<String>, anyhow::Error>(leaf_dirs)
-        })?;
-
-        Ok(leaf_dirs)
+        })
     }
 }

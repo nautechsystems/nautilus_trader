@@ -182,6 +182,14 @@ Run one concurrent `LiveNode` per process. The runner binds its channel senders 
 thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
 hosted node on the same event loop. Run additional nodes in separate processes.
 
+Building another `LiveNode` on the same thread raises an error while the first node exists or is
+being built. In Python, `node.build(...)` is a static constructor and attempts to create another node.
+Drop the existing node, or release all references to it in Python, before building its replacement.
+With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
+while the old node still exists. Calling `dispose()` alone does not release this construction guard.
+Exceptions and unfinished coroutines can retain the node; release those references too. If an
+unreachable reference cycle retains it, run `gc.collect()` before rebuilding.
+
 When an ASGI application lifespan constructs the node, run that application with one worker. Do not
 use hot reload for live trading because it restarts the worker and its node. Scale HTTP request
 handling with processes that do not construct a trading node.

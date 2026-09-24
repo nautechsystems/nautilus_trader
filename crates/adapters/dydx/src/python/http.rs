@@ -15,8 +15,6 @@
 
 //! Python bindings for dYdX HTTP client.
 
-use std::str::FromStr;
-
 use jiff::Timestamp;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
@@ -30,7 +28,6 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
-use rust_decimal::Decimal;
 
 use crate::{
     common::{consts::DYDX_VENUE, enums::DydxNetwork},
@@ -43,8 +40,7 @@ impl DydxHttpClient {
     /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
     ///
     /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
-    /// into the Nautilus domain model, following the two-layer pattern established
-    /// in OKX, Bybit, and BitMEX adapters.
+    /// into the Nautilus domain model, following the standardized two-layer pattern.
     ///
     /// **Architecture:**
     /// - **Raw client** (`DydxRawHttpClient`): Low-level HTTP methods matching dYdX Indexer API endpoints.
@@ -91,27 +87,12 @@ impl DydxHttpClient {
     /// Returns an error if the HTTP request or parsing fails.
     /// Individual instrument parsing errors are logged as warnings.
     #[pyo3(name = "request_instruments")]
-    fn py_request_instruments<'py>(
-        &self,
-        py: Python<'py>,
-        maker_fee: Option<&str>,
-        taker_fee: Option<&str>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let maker = maker_fee
-            .map(Decimal::from_str)
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
-        let taker = taker_fee
-            .map(Decimal::from_str)
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
+    fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client
-                .request_instruments(None, maker, taker)
+                .request_instruments(None)
                 .await
                 .map_err(to_pyvalue_err)?;
 

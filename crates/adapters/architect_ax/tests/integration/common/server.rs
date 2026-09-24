@@ -649,6 +649,10 @@ async fn handle_get_balances() -> Json<serde_json::Value> {
     Json(load_test_data("http_get_balances.json"))
 }
 
+async fn handle_get_risk_snapshot() -> Json<serde_json::Value> {
+    Json(load_test_data("http_get_risk_snapshot.json"))
+}
+
 async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::response::Response {
     state.whoami_count.fetch_add(1, Ordering::Relaxed);
     if state.whoami_fail.load(Ordering::Relaxed) {
@@ -884,6 +888,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/instruments", get(handle_get_instruments))
         .route("/instrument", get(handle_get_instrument))
         .route("/balances", get(handle_get_balances))
+        .route("/risk-snapshot", get(handle_get_risk_snapshot))
         .route("/whoami", get(handle_get_whoami))
         .route("/positions", get(handle_positions))
         .route("/cancel-all-orders", post(handle_cancel_all_orders))
@@ -943,8 +948,6 @@ pub(crate) fn create_test_instrument(symbol: &str) -> InstrumentAny {
         .size_increment(Quantity::new(0.001, 3))
         .margin_init(Decimal::new(1, 2))
         .margin_maint(Decimal::new(5, 3))
-        .maker_fee(Decimal::new(2, 4))
-        .taker_fee(Decimal::new(5, 4))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()

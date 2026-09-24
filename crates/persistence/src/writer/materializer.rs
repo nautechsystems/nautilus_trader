@@ -121,6 +121,7 @@ pub(crate) fn restore_staged_record_batches(
     batch: RecordBatch,
 ) -> anyhow::Result<Vec<RecordBatch>> {
     let schema = batch.schema();
+
     let Ok(id_index) = schema.index_of(NAUTILUS_ARROW_METADATA_ID_COLUMN) else {
         anyhow::ensure!(
             schema
@@ -130,6 +131,7 @@ pub(crate) fn restore_staged_record_batches(
         );
         return Ok(vec![batch]);
     };
+
     let json_index = schema
         .index_of(NAUTILUS_ARROW_METADATA_JSON_COLUMN)
         .map_err(|_| anyhow::anyhow!("Feather batch has a metadata ID without metadata JSON"))?;
@@ -172,6 +174,7 @@ pub(crate) fn restore_staged_record_batches(
             "Feather staged metadata hash does not match its JSON"
         );
         let slice = batch.slice(run_start, run_end - run_start);
+
         let fields = slice
             .schema()
             .fields()
@@ -185,6 +188,7 @@ pub(crate) fn restore_staged_record_batches(
                 )
             })
             .collect::<Vec<_>>();
+
         let columns = slice
             .columns()
             .iter()
@@ -198,6 +202,7 @@ pub(crate) fn restore_staged_record_batches(
         )?);
         run_start = run_end;
     }
+
     Ok(restored)
 }
 
@@ -210,6 +215,7 @@ fn staged_arrow_metadata(
     if value.get("format_version").is_none() {
         return Ok((serde_json::from_value(value)?, HashMap::new()));
     }
+
     anyhow::ensure!(
         value
             .get("format_version")
@@ -282,6 +288,7 @@ pub(crate) fn apply_stream_conversion_transform(
                     columns[identifier_index].data_type(),
                 )
             })?;
+
         let converted = identifiers
             .iter()
             .map(|identifier| identifier.map(external_bar_type))
@@ -307,6 +314,7 @@ fn external_bar_type(value: &str) -> String {
     if bar_type.standard().is_externally_aggregated() {
         return value.to_string();
     }
+
     let standard = bar_type.standard();
     BarType::new(
         standard.instrument_id(),
@@ -335,10 +343,12 @@ pub(crate) fn coalesce_stream_conversion_batches(
             .index_of(NAUTILUS_ARROW_METADATA_ID_COLUMN)
             .is_ok()
     });
+
     let mut restored = Vec::new();
     for batch in batches {
         restored.extend(restore_staged_record_batches(batch.clone())?);
     }
+
     let mut batches = apply_stream_conversion_transforms(&restored, options)?;
     if has_staged_metadata {
         batches = batches
@@ -362,6 +372,7 @@ pub(crate) fn coalesce_stream_conversion_batches(
     if !is_record_batch_monotonic_by_ts_init(&batch)? {
         let original_row_index =
             Arc::new(UInt64Array::from_iter_values(0..batch.num_rows() as u64));
+
         let indices = lexsort_to_indices(
             &[
                 SortColumn {
@@ -382,6 +393,7 @@ pub(crate) fn coalesce_stream_conversion_batches(
             None,
         )
         .map_err(|e| anyhow::anyhow!("Failed to sort stream conversion batch: {e}"))?;
+
         batch = take_record_batch(&batch, &indices)
             .map_err(|e| anyhow::anyhow!("Failed to reorder stream conversion batch: {e}"))?;
     }
@@ -396,6 +408,7 @@ fn stage_restored_metadata(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<BTreeMap<_, _>>();
+
     let field_metadata = batch
         .schema()
         .fields()
@@ -412,12 +425,14 @@ fn stage_restored_metadata(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
             )
         })
         .collect::<BTreeMap<_, _>>();
+
     let metadata_json = serde_json::to_string(&serde_json::json!({
         "format_version": 1,
         "schema_metadata": schema_metadata,
         "field_metadata": field_metadata,
     }))?;
     let metadata_id = staged_metadata_id(&canonical_metadata_json(batch.schema().metadata())?);
+
     let mut fields = batch
         .schema()
         .fields()
@@ -430,6 +445,7 @@ fn stage_restored_metadata(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
             ))
         })
         .collect::<Vec<_>>();
+
     fields.push(Arc::new(Field::new(
         NAUTILUS_ARROW_METADATA_ID_COLUMN,
         DataType::Utf8,
@@ -462,6 +478,7 @@ fn schema_with_external_bar_type(schema: &Schema) -> Schema {
         match bar_type.parse::<BarType>() {
             Ok(bar_type) if !bar_type.standard().is_externally_aggregated() => {
                 let standard = bar_type.standard();
+
                 let converted = BarType::new(
                     standard.instrument_id(),
                     standard.spec(),
@@ -551,6 +568,7 @@ mod tests {
             "field_metadata": {"payload": {"ARROW:extension:name": "arrow.json"}}
         }"#;
         let metadata_id = staged_metadata_id(metadata_json);
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("ts_init", DataType::UInt64, false),
             Field::new("payload", DataType::Utf8, false),
@@ -603,6 +621,7 @@ mod tests {
             "schema_metadata": {"instrument_id": "EUR/USD.SIM", "price_precision": "4"},
             "field_metadata": {}
         }"#;
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("ts_init", DataType::UInt64, false),
             Field::new("identifier", DataType::Utf8, false),
@@ -649,6 +668,7 @@ mod tests {
             "bar_type".to_string(),
             "AUD/USD.SIM-1-MINUTE-BID-INTERNAL".to_string(),
         );
+
         let schema = Arc::new(Schema::new_with_metadata(
             vec![
                 Field::new("ts_event", DataType::UInt64, false),
@@ -734,6 +754,7 @@ mod tests {
     #[rstest]
     fn stage_restored_metadata_hashes_canonical_schema_metadata() {
         let metadata = HashMap::from([("type_name".to_string(), "Example".to_string())]);
+
         let schema = Arc::new(Schema::new_with_metadata(
             vec![Field::new("ts_init", DataType::UInt64, false)],
             metadata,
@@ -812,6 +833,7 @@ mod tests {
         )
         .expect("conversion")
         .expect("batch");
+
         let values = sorted
             .column(1)
             .as_any()

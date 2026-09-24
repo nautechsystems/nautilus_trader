@@ -56,7 +56,6 @@ registration path (importable controller configs) is Python-only.
 | Architect AX        | ✓    | ✓      |
 | Betfair             | ✓    | ✓      |
 | Binance             | ✓    | ✓      |
-| BitMEX              | ✓    | ✓      |
 | Blockchain          | ✓    | ✓      |
 | Bybit               | ✓    | ✓      |
 | Coinbase            | ✓    | ✓      |
@@ -331,6 +330,8 @@ Use `try_cache_ref()` and `try_clock_mut()` to handle failed native borrows with
 Both return `ComponentAccessError::NotRegistered` when registration has not supplied the resource.
 Import the error type from `nautilus_common::component`. The error identifies the resource and
 attempted operation. Callback reentry can cause a conflict, but a conflict alone does not establish its cause.
+See [reentrancy diagnostics](../developer_guide/callback_dispatch.md#reentrancy-and-dispatch-diagnostics)
+for message meanings and corrective action.
 
 #### `StrategyNative` methods
 
@@ -463,7 +464,6 @@ event loop. Each adapter provides its own factory and config types.
 | Architect AX        | `crates/adapters/architect_ax/examples/`        |
 | Betfair             | `crates/adapters/betfair/examples/`             |
 | Binance             | `crates/adapters/binance/examples/`             |
-| BitMEX              | `crates/adapters/bitmex/examples/`              |
 | Blockchain          | `crates/adapters/blockchain/examples/`          |
 | Bybit               | `crates/adapters/bybit/examples/`               |
 | Coinbase            | `crates/adapters/coinbase/examples/`            |

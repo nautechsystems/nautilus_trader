@@ -86,6 +86,16 @@ The failure event depends on the command and when the failure becomes definitive
 | Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
 | Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
 
+A submit command is evaluated only against orders that are eligible for it. A cached order is
+ineligible once it has left `INITIALIZED` or `RELEASED`, and while the `ExecutionEngine` has dispatched
+it to an execution client but has not yet applied that client's first status event. A repeated
+`SubmitOrder` for an ineligible order is skipped, and a `SubmitOrderList` naming one is denied
+without reaching the client: `OrderDenied` (`ORDER_LIST_DENIED`) applies only to the list's
+eligible members, while the earlier submission keeps its lifecycle and its later client events
+apply normally. The dispatch record behind this rule is process-local: a reset clears it, and it
+is absent after a restart, where a still-`INITIALIZED` dispatched order is treated like any other
+unrouted order until it is resolved by the client's events or a venue cancel or expiry report.
+
 For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure
 without inventing an outcome.
@@ -166,11 +176,32 @@ Recovery means restoring available cached state, reconciling available venue rep
 the strategy-start barrier until startup reconciliation finishes. It does not prove that the venue
 returned complete history or that every unknown command outcome was resolved.
 
-An explicitly bounded report set changes NETTING position and portfolio economics only when the
-reports are complete and coherent, retained state is compatible, and replay matches one
-authoritative position report. Otherwise, NautilusTrader updates the reported order state without
-applying the unsupported fill to a position or portfolio. See
-[Bounded history safety](reconciliation.md#bounded-history-safety).
+:::info[Position reports are market exposure]
+**An explicit position report is authoritative. During startup reconciliation,
+the engine either aligns to that report within reconciliation tolerances or fails closed.**
+
+Authoritative position reports:
+
+- An explicit open report, including quantity and direction.
+- An explicit flat report.
+
+Not evidence of a flat position:
+
+- A missing report.
+- A null quantity.
+- A venue that does not publish positions.
+
+The fill window does not decide whether the report is authoritative. Missing reports do
+not mean flat.
+
+By default, `generate_missing_orders` is enabled. The engine generates the
+orders and fills needed to align local state to the report. Disabling generation
+does not allow an unresolved report through startup.
+
+This guarantee covers reports included by the position-report and instrument
+filters, with reconciliation enabled. Unresolved reports prevent actors and
+strategies from starting.
+:::
 
 Reports for orders absent from the cache can create external orders. Active claims assign an
 external order to a strategy; unclaimed orders use the `EXTERNAL` strategy. See

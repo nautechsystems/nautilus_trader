@@ -15,4 +15,6 @@
 
 mod manager;
 mod node;
+#[cfg(feature = "streaming")]
+mod streaming;
 mod stress;

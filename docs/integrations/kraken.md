@@ -69,24 +69,11 @@ does not span both markets.
 
 ## Spot instrument fees
 
-When both `api_key` and `api_secret` are configured, the adapter loads the
-account's current maker and taker rates for currency pairs and tokenized assets
-from Kraken's
-[`TradeVolume` endpoint](https://docs.kraken.com/api-reference/account-data/get-trade-volume).
-The API key must include the `Funds permissions - Query` permission, shown as
-**Query Funds** when creating the key.
+Spot instruments do not carry maker or taker fee rates. Loading instruments does
+not call Kraken's `TradeVolume` endpoint.
 
-If the `TradeVolume` request fails, the adapter logs a warning and uses the
-public base-tier rates from `AssetPairs` instead, so a transient or isolated
-failure does not stop the Spot data or execution client connecting. A key
-missing `Funds permissions - Query` altogether still fails later, when the
-execution client requests account state. If the request succeeds but the
-response omits the fee for a requested pair, the client cannot connect. For pairs without a
-maker/taker schedule, Kraken returns one fee, which the adapter applies to both
-maker and taker activity.
-
-Without Spot API credentials, the adapter uses the public base-tier rates from
-`AssetPairs`. These rates can differ from the account's actual fee tier.
+A Spot API key without `Funds permissions - Query` (**Query Funds**) fails when
+the execution client requests account state.
 
 ## Bar streaming
 
@@ -350,10 +337,19 @@ time rather than silently coercing them.
 :::note
 **Cancel all orders**:
 
-- With no side filter, Spot cancels all open orders across all symbols, while
-  Futures cancels all orders for the requested instrument.
-- With a side filter, both clients select matching cached orders for the
-  requested instrument and cancel them individually.
+- Spot selects the matching open and in-flight orders for the requested instrument
+  and cancels them by explicit order ID, with or without a side filter, so a
+  request never reaches another instrument. In-flight orders are included because
+  the venue can have accepted an order the cache still records as submitted.
+- Futures uses the venue's symbol-scoped bulk cancellation when no side filter is
+  given, and selects matching cached open and in-flight orders by explicit order ID
+  when one is.
+- Selected IDs go through the batch-cancel endpoint and are auto-chunked into
+  batches of 50. Kraken keys the two identifier kinds separately, so venue order
+  IDs are sent as `orders` and client order IDs as `cl_ord_ids`; the batch limit
+  counts both together. Each cancel keeps the owning strategy of the order it targets,
+  and aggregate or ambiguous responses are left to reconciliation rather than
+  producing per-order outcomes.
 
 :::
 
@@ -508,6 +504,19 @@ The Kraken adapter provides reconciliation capabilities for both
 Spot and Futures markets, allowing traders to synchronize their local state with
 the exchange state at startup or during operation.
 
+### Bounded reports
+
+When reconciliation supplies a lookback, both execution clients derive a single cutoff and apply it
+to every historical query, then record it on the mass status through `set_report_window`. Using one
+cutoff avoids a report set that never existed at the venue, which a moving cutoff can produce.
+
+Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
+described below qualifies that set rather than gating it.
+
+Order and fill records contribute to the completeness flag: the set is incomplete when a record's
+instrument could not be resolved, or when a record could not be parsed. Position records do not
+currently contribute, and the futures position read still drops an unresolved symbol silently.
+
 ### Spot reconciliation
 
 **Order status reports:**
@@ -521,6 +530,17 @@ the exchange state at startup or during operation.
 - Trade history: Fetches execution history with pagination.
 - Time-bounded queries: Supports filtering by start/end timestamps.
 - All fill types: Market, limit, and conditional order fills.
+
+**Pair spelling:**
+
+- Kraken spells a pair two ways: the `AssetPairs` key (`XXBTZEUR`), used as the instrument
+  `raw_symbol`, and the altname (`XBTEUR`). `OpenPositions` returns the key, while `OpenOrders`
+  and `TradesHistory` return the altname.
+- The adapter resolves both spellings, so an order or fill on a legacy-named pair is reported.
+- An open order whose pair cannot be resolved to a cached instrument fails the read, rather than
+  being omitted from an otherwise successful one.
+- A closed order or fill that cannot be resolved is logged as a warning and skipped, preserving the
+  records that do resolve. Historical records routinely outlive the loaded instrument set.
 
 **Account balances:**
 
@@ -761,8 +781,8 @@ The product type for each client is specified via the `product_type` option.
 | ------------------------- | --------- | -------------------------------------------------------------- |
 | `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
 | `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
-| `api_key`                 | `None`    | API key for Spot L3 data and account fee rates.                |
-| `api_secret`              | `None`    | API secret for Spot L3 data and account fee rates.             |
+| `api_key`                 | `None`    | API key for Spot L3 data.                                      |
+| `api_secret`              | `None`    | API secret for Spot L3 data.                                   |
 | `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
 | `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
 | `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
@@ -832,8 +852,8 @@ execution clients.
 
 Live-node configuration objects do not read credential environment variables
 automatically. Pass `api_key` and `api_secret` explicitly to
-`KrakenExecutionClientConfig` and, for Spot L3 data or account-specific
-instrument fees, to `KrakenDataClientConfig`. Public market data does not
+`KrakenExecutionClientConfig` and, for Spot L3 data, to
+`KrakenDataClientConfig`. Public market data does not
 require credentials.
 
 The lower-level Python HTTP and WebSocket clients load the following variables

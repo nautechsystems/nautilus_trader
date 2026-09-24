@@ -26,7 +26,7 @@ use std::{
 
 use bytes::Bytes;
 use http::{
-    Request, Response,
+    HeaderValue, Request, Response,
     header::{AUTHORIZATION, COOKIE, PROXY_AUTHORIZATION, REFERER, WWW_AUTHENTICATE},
 };
 use http_body_util::Full;
@@ -55,6 +55,7 @@ impl Client {
     pub(super) fn new(
         proxy: Option<&str>,
         use_system_proxy: bool,
+        user_agent: Option<HeaderValue>,
         settings: Settings,
     ) -> Result<Self, HttpClientError> {
         let provider = rustls::crypto::CryptoProvider::get_default()
@@ -70,7 +71,7 @@ impl Client {
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth();
-        let connector = Connector::new(tls.clone(), proxy, use_system_proxy)?;
+        let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
         let proxies = connector.proxies.clone();
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let connector = HttpsConnector::from((connector, tls));

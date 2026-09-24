@@ -50,7 +50,10 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
+        create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
 };
 use parking_lot::Mutex;
@@ -381,6 +384,7 @@ impl HyperliquidRawHttpClient {
         proxy_url: Option<String>,
     ) -> std::result::Result<HttpClient, HttpClientError> {
         HttpClient::builder()
+            .redirect_policy(HttpRedirectPolicy::Reject)
             .headers(Self::default_headers())
             .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
             .rate_limiters(Vec::new())
@@ -3935,6 +3939,7 @@ mod tests {
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::{Value, json};
@@ -3956,6 +3961,20 @@ mod tests {
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = HyperliquidRawHttpClient::build_http_client(3, None).unwrap();
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn raw_clients_share_rest_limit_for_one_route() {

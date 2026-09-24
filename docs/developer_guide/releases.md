@@ -254,7 +254,7 @@ New features and user-visible improvements.
 
 ```markdown
 - Added `subscribe_order_fills(...)` and `unsubscribe_order_fills(...)` for `Actor`
-- Added BitMEX conditional orders support
+- Added Bybit conditional orders support
 - Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
 ```
 
@@ -413,13 +413,13 @@ Note: Plain logic panics belong in Fixes unless they threaten system stability o
 **Enhancements** (user-facing):
 
 ```markdown
-- Added BitMEX conditional orders support
+- Added Bybit conditional orders support
 ```
 
 **Internal** (implementation):
 
 ```markdown
-- Implemented BitMEX ping/pong handling
+- Implemented Bybit ping/pong handling
 ```
 
 ## Release notes template

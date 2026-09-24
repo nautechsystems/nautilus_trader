@@ -38,7 +38,6 @@ use nautilus_polymarket::{
     common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
     execution::PolymarketExecutionClient,
 };
-use rust_decimal::Decimal;
 use serde_json::json;
 use ustr::Ustr;
 
@@ -135,7 +134,6 @@ pub(crate) fn instrument() -> InstrumentAny {
         .price_increment(Price::from("0.0001"))
         .size_increment(Quantity::from("0.0001"))
         .outcome(Ustr::from("Yes"))
-        .taker_fee(Decimal::ZERO)
         .info(info)
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())

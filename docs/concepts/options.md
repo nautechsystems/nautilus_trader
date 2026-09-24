@@ -161,12 +161,12 @@ the series:
 ```python
 data = [
     BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/path/to/catalog",
         instrument_ids=option_instrument_ids,
     ),
     BacktestDataConfig(
-        data_type="OptionGreeks",
+        data_type=NautilusDataType.OptionGreeks,
         catalog_path="/path/to/catalog",
         instrument_ids=option_instrument_ids,
     ),

@@ -36,6 +36,7 @@ from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
@@ -92,6 +93,10 @@ def main() -> None:
                     Money(float(STARTING_BALANCE), Currency.from_str(CURRENCY)),
                 ],
                 account_id=ACCOUNT_ID,
+                fee_model=MakerTakerFeeModel(
+                    maker_rate=Decimal("0.001"),
+                    taker_rate=Decimal("0.001"),
+                ),
             ),
         )
         .build()

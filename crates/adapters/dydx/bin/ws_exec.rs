@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = DydxHttpClient::new(Some(http_url.clone()), 30, None, network, None)?;
 
     log::info!("Fetching instruments from HTTP API...");
-    let instruments = http_client.request_instruments(None, None, None).await?;
+    let instruments = http_client.request_instruments(None).await?;
     log::info!("Fetched {} instruments", instruments.len());
 
     let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30), None);

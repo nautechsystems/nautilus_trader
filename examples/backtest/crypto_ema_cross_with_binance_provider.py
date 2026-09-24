@@ -33,6 +33,7 @@ from nautilus_trader.adapters.binance import load_binance_instruments
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
 from nautilus_trader.model import CryptoPerpetual
@@ -85,6 +86,10 @@ if __name__ == "__main__":
         account_type=AccountType.MARGIN,
         base_currency=None,
         starting_balances=[Money(1_000_000, instrument.quote_currency)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.0005"),
+        ),
     )
     engine.add_instrument(instrument)
 

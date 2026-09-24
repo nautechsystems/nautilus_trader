@@ -30,6 +30,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{Data, QuoteTick},
     enums::{AccountType, BookType, OmsType},
@@ -109,6 +110,7 @@ fn main() -> anyhow::Result<()> {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from(STARTING_BALANCE)])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()?,
     )?;
 

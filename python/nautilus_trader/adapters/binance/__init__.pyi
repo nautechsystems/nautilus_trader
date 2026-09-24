@@ -246,6 +246,25 @@ class BinanceFuturesLiquidation:
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        side: model.OrderSide,
+        price: model.Price,
+        average_price: model.Price,
+        last_filled_qty: model.Quantity,
+        accumulated_qty: model.Quantity,
+        ts_event: int,
+        ts_init: int,
+    ) -> BinanceFuturesLiquidation: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class BinanceFuturesMarkPriceUpdate:
@@ -276,6 +295,21 @@ class BinanceFuturesOpenInterest:
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        open_interest: decimal.Decimal,
+        ts_event: int,
+        ts_init: int,
+    ) -> BinanceFuturesOpenInterest: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class BinanceFuturesOpenInterestHist:
@@ -337,6 +371,35 @@ class BinanceFuturesTicker:
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        price_change: decimal.Decimal,
+        price_change_percent: decimal.Decimal,
+        weighted_avg_price: decimal.Decimal,
+        last_price: decimal.Decimal,
+        last_qty: decimal.Decimal,
+        open_price: decimal.Decimal,
+        high_price: decimal.Decimal,
+        low_price: decimal.Decimal,
+        volume: decimal.Decimal,
+        quote_volume: decimal.Decimal,
+        open_time: int,
+        close_time: int,
+        first_trade_id: int,
+        last_trade_id: int,
+        num_trades: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> BinanceFuturesTicker: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class BinanceInstrumentProviderConfig:

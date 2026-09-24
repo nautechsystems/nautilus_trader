@@ -29,7 +29,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
     models::{
-        fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel},
+        fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel},
         fill::{BestPriceFillModel, DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
     },
 };
@@ -253,7 +253,7 @@ fn get_order_matching_engine(
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         account_type.unwrap_or(AccountType::Cash),
@@ -278,7 +278,7 @@ fn get_order_matching_engine_l2(
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         account_type.unwrap_or(AccountType::Cash),
@@ -1387,8 +1387,18 @@ fn test_market_fill_caps_pending_cached_quantity_before_commission(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+    let mut engine_l2 = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::new(RefCell::new(Cache::default())),
+        OrderMatchingEngineConfig::default(),
+    );
 
     let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -1425,9 +1435,8 @@ fn test_market_fill_caps_pending_cached_quantity_before_commission(
     assert_eq!(fills[1].last_qty, Quantity::from("0.500"));
 
     let commission = fills[1].commission.expect("expected commission");
-    let expected_commission = fills[1].last_qty.as_decimal()
-        * fills[1].last_px.as_decimal()
-        * instrument_eth_usdt.taker_fee();
+    let expected_commission =
+        fills[1].last_qty.as_decimal() * fills[1].last_px.as_decimal() * dec!(0.0004);
     assert_eq!(commission.currency, instrument_eth_usdt.quote_currency());
     assert_eq!(commission.as_decimal(), expected_commission);
 }
@@ -5150,7 +5159,7 @@ fn test_hedging_reduce_only_order_without_cached_position_id_uses_open_position(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
@@ -5258,7 +5267,7 @@ fn test_hedging_reduce_only_fallback_scopes_open_position_to_order_strategy(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
@@ -5369,7 +5378,7 @@ fn test_hedging_non_reduce_only_market_order_keeps_empty_position_id(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
@@ -5428,7 +5437,7 @@ fn test_hedging_reduce_only_fallback_covers_short_position(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
@@ -5519,7 +5528,7 @@ fn test_hedging_reduce_only_uses_cached_position_id_before_open_position_scan(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
@@ -8692,7 +8701,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -8776,7 +8785,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -8868,7 +8877,7 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -9043,7 +9052,7 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -10447,7 +10456,7 @@ fn get_l1_queue_position_engine(
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -11533,7 +11542,7 @@ fn get_l3_queue_position_engine(
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L3_MBO,
         OmsType::Netting,
         AccountType::Margin,
@@ -11943,7 +11952,7 @@ fn get_l2_queue_position_engine(
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -12763,7 +12772,7 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -12886,7 +12895,7 @@ fn test_stale_trade_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -12933,7 +12942,7 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -13454,7 +13463,7 @@ fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -13501,7 +13510,7 @@ fn test_update_instrument_without_precision_change_keeps_market_state(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14036,7 +14045,7 @@ fn test_option_cash_settlement_at_intrinsic_value(
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14275,7 +14284,7 @@ fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) 
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14351,7 +14360,7 @@ fn test_option_physical_settlement_delivers_underlying(
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14475,7 +14484,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14555,7 +14564,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         option_b,
         2,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14692,7 +14701,7 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
         instrument.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -14855,7 +14864,7 @@ fn run_otm_expiry_case(
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -14971,7 +14980,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15048,7 +15057,7 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15244,7 +15253,7 @@ fn test_process_option_expiry_no_positions_is_noop(account_id: AccountId) {
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15296,7 +15305,7 @@ fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: A
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15316,6 +15325,280 @@ fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: A
     assert!(
         !engine.is_expiration_processed(),
         "Missing underlying instrument must not commit option expiration"
+    );
+}
+
+#[rstest]
+fn test_process_option_expiry_prefers_same_venue_underlying_over_cross_venue(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "OPRA";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let same_venue_underlying = InstrumentAny::IndexInstrument(underlying_index(option_venue));
+    let cross_venue_underlying = InstrumentAny::IndexInstrument(underlying_index("CBOE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(same_venue_underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(cross_venue_underlying.clone())
+        .unwrap();
+
+    // Same-venue ITM (spot 160, strike 149 -> payout 11.00); cross-venue would yield 50.00
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            same_venue_underlying.id(),
+            Price::from("160.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            cross_venue_underlying.id(),
+            Price::from("199.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let fill = events
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("expected settlement fill from same-venue underlying");
+    assert_eq!(fill.last_px, Price::from("11.00"));
+    assert_eq!(fill.position_id, Some(position.id));
+    assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+fn test_process_option_expiry_resolves_unique_cross_venue_underlying(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let cross_venue_underlying = InstrumentAny::IndexInstrument(underlying_index("BSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(cross_venue_underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            cross_venue_underlying.id(),
+            Price::from("160.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let fill = events
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("expected settlement fill from cross-venue underlying");
+    assert_eq!(fill.last_px, Price::from("11.00"));
+    assert_eq!(fill.position_id, Some(position.id));
+    assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+fn test_process_option_expiry_defers_when_cross_venue_underlying_is_ambiguous(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let first_match = InstrumentAny::IndexInstrument(underlying_index("BSE"));
+    let second_match = InstrumentAny::IndexInstrument(underlying_index("NSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_instrument(first_match).unwrap();
+    cache.borrow_mut().add_instrument(second_match).unwrap();
+
+    let _position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "Ambiguous cross-venue underlying must not settle the position"
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Ambiguous cross-venue underlying must defer option expiration"
+    );
+}
+
+#[rstest]
+fn test_process_option_expiry_defers_when_no_symbol_match_in_populated_cache(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let option_venue = "BFO";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        option_venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let unrelated = InstrumentAny::Equity(underlying_equity("BSE"));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_instrument(unrelated).unwrap();
+
+    let _position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "No fills should be emitted when no cache instrument matches the option's underlying"
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Populated cache without a matching symbol must still defer option expiration"
     );
 }
 
@@ -15364,7 +15647,7 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15541,7 +15824,7 @@ fn test_option_expiration_cancellation_latched_across_deferred_retries(account_i
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15621,7 +15904,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
         option,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -15793,7 +16076,7 @@ fn test_check_instrument_expiration_restored_position_closes_without_prior_order
         instrument.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -15873,7 +16156,7 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
         instrument.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -16031,7 +16314,7 @@ fn test_binary_option_expiration_check_uses_engine_clock_not_order_ts_init(accou
         instrument.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -16143,7 +16426,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -16200,7 +16483,7 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
         .unwrap();
 
     let fee_model = FeeModelAny::CappedOption(
-        CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
+        CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap(),
     );
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
@@ -16279,7 +16562,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
     });
 
     let fee_model = FeeModelAny::CappedOption(
-        CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
+        CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap(),
     );
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
@@ -16379,7 +16662,7 @@ fn test_option_cash_settlement_uses_instrument_close_price(account_id: AccountId
         option.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,
@@ -17338,7 +17621,7 @@ fn test_deferred_stop_limit_modify_preserves_prices_when_triggered(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Margin,
@@ -17534,15 +17817,21 @@ fn test_deferred_market_to_limit_remainder_keeps_fill_price(
     #[values(false, true)] modify_remainder: bool,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let mut engine = get_order_matching_engine_l2(
+
+    let mut engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
-        None,
-        Some(cache.clone()),
-        None,
-        Some(OrderMatchingEngineConfig {
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        OrderMatchingEngineConfig {
             liquidity_consumption: true,
             ..Default::default()
-        }),
+        },
     );
     let pending = Rc::new(RefCell::new(Vec::new()));
     let events = pending.clone();

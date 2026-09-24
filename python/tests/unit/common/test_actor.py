@@ -231,6 +231,7 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
 BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
+    "depth",
     "client_id",
     "managed",
     "params",
@@ -1548,10 +1549,13 @@ def test_signal_subscription_borrow_conflict_names_operation(operation: str) -> 
         with pytest.raises(RuntimeError) as exc:
             actor.start()
 
-        assert str(exc.value) == (
-            f"Python on_start failed: RuntimeError: Cannot modify Python actor during {operation}: "
+        message = str(exc.value)
+        assert message.startswith("Python on_start failed:\nTraceback (most recent call last):\n")
+        assert "in on_start\n" in message
+        assert message.endswith(
+            f"RuntimeError: Cannot modify Python actor during {operation}: "
             "it is already borrowed. Release existing borrows before accessing it mutably; "
-            "callback reentry can cause this conflict"
+            "callback reentry can cause this conflict\n",
         )
         assert getattr(actor, operation)("reentry") is None
     finally:

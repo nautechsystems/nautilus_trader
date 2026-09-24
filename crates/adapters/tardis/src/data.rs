@@ -66,12 +66,14 @@ use crate::{
     machine::{
         cache::DerivativeTickerCache,
         client::determine_instrument_info,
+        is_unsupported_streaming_error,
         message::WsMessage,
         parse::{
             parse_derivative_ticker_index_price, parse_derivative_ticker_mark_price,
             parse_tardis_ws_message_data, parse_tardis_ws_message_funding_rate,
         },
         types::{TardisInstrumentKey, TardisInstrumentMiniInfo},
+        validate_stream_options,
     },
 };
 
@@ -431,6 +433,12 @@ impl TardisDataClient {
                         }
                     }
                 }
+                Some(Ok(tungstenite::Message::Close(Some(frame))))
+                    if is_unsupported_streaming_error(&frame.reason) =>
+                {
+                    log::error!("Tardis Machine rejected streaming: {}", frame.reason);
+                    return false;
+                }
                 Some(Ok(tungstenite::Message::Close(frame))) => {
                     if let Some(frame) = frame {
                         log::debug!("WebSocket closed: {} {}", frame.code, frame.reason);
@@ -522,8 +530,15 @@ impl DataClient for TardisDataClient {
             return Ok(());
         }
 
-        if self.config.options.is_empty() && self.config.stream_options.is_empty() {
-            anyhow::bail!("Either replay `options` or `stream_options` must be provided");
+        match (
+            self.config.options.as_slice(),
+            self.config.stream_options.as_slice(),
+        ) {
+            ([], []) => {
+                anyhow::bail!("Either replay `options` or `stream_options` must be provided")
+            }
+            ([], stream_options) => validate_stream_options(stream_options)?,
+            _ => {}
         }
 
         if !self.tasks.is_open() {
@@ -597,6 +612,8 @@ impl DataClient for TardisDataClient {
 
         log::info!("Connected to Tardis Machine");
 
+        self.is_connected.store(true, Ordering::Release);
+
         if let Err(e) = self.spawn_ws_task(
             ws_stream,
             url,
@@ -605,6 +622,7 @@ impl DataClient for TardisDataClient {
             extract_bbo_as_quotes,
             is_stream_mode,
         ) {
+            self.is_connected.store(false, Ordering::Release);
             self.tasks.begin_shutdown();
             if let Err(teardown_error) = self
                 .tasks
@@ -615,7 +633,6 @@ impl DataClient for TardisDataClient {
             }
             return Err(e);
         }
-        self.is_connected.store(true, Ordering::Release);
 
         log::info!("Connected: {}", self.client_id);
         Ok(())
@@ -662,8 +679,155 @@ mod tests {
     use crate::{
         common::{consts::TARDIS_CLIENT_ID, enums::TardisExchange},
         config::TardisDataClientConfig,
-        machine::types::ReplayNormalizedRequestOptions,
+        machine::types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions},
     };
+
+    #[rstest]
+    #[case(vec![], "Either replay `options` or `stream_options` must be provided")]
+    #[case(
+        vec![TardisExchange::Bitmex],
+        "Unsupported Tardis streaming exchange: bitmex (historical-only; use replay options)"
+    )]
+    #[case(
+        vec![TardisExchange::Deribit, TardisExchange::Bitmex],
+        "Unsupported Tardis streaming exchange: bitmex (historical-only; use replay options)"
+    )]
+    #[tokio::test]
+    async fn test_connect_rejects_invalid_stream_options_before_network_access(
+        #[case] exchanges: Vec<TardisExchange>,
+        #[case] expected_error: &str,
+    ) {
+        setup_test_env();
+
+        let config = TardisDataClientConfig {
+            api_key: Some("test-key".into()),
+            tardis_http_url: Some("http://127.0.0.1:0".into()),
+            tardis_ws_url: Some("ws://127.0.0.1:0".into()),
+            stream_options: exchanges
+                .into_iter()
+                .map(|exchange| StreamNormalizedRequestOptions {
+                    exchange,
+                    symbols: None,
+                    data_types: vec!["trade".to_string()],
+                    with_disconnect_messages: None,
+                    timeout_interval_ms: None,
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let mut client = TardisDataClient::new(*TARDIS_CLIENT_ID, config).unwrap();
+
+        let error = client.connect().await.unwrap_err();
+
+        assert_eq!(error.to_string(), expected_error);
+        assert!(client.is_disconnected());
+    }
+
+    #[rstest]
+    #[case(
+        "Error: Real-time streaming is not supported for exchange bitmex",
+        false
+    )]
+    #[case(
+        "Error: Real-time streaming is not supported for exchange coinflex",
+        false
+    )]
+    #[case("Too many subsequent errors when connecting to deribit WS API", true)]
+    #[tokio::test]
+    async fn test_ws_session_close_reconnect_policy(
+        #[case] reason: &'static str,
+        #[case] expected_reconnect: bool,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            websocket
+                .close(Some(tungstenite::protocol::CloseFrame {
+                    code: tungstenite::protocol::frame::coding::CloseCode::Error,
+                    reason: reason.into(),
+                }))
+                .await
+                .unwrap();
+        });
+
+        let (websocket, _) = connect_async(format!("ws://{address}")).await.unwrap();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let reconnect = tokio::time::timeout(
+            Duration::from_secs(2),
+            TardisDataClient::run_ws_session(
+                websocket,
+                &CancellationToken::new(),
+                &EventSender::from(sender),
+                &AHashMap::new(),
+                &BookSnapshotOutput::Deltas,
+                false,
+            ),
+        )
+        .await
+        .unwrap();
+        server.await.unwrap();
+
+        assert_eq!(reconnect, expected_reconnect);
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_exchange_finishes_stream_task_without_reconnecting() {
+        setup_test_env();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            websocket
+                .close(Some(tungstenite::protocol::CloseFrame {
+                    code: tungstenite::protocol::frame::coding::CloseCode::Error,
+                    reason: "Error: Real-time streaming is not supported for exchange bitmex"
+                        .into(),
+                }))
+                .await
+                .unwrap();
+
+            listener
+        });
+
+        let (websocket, _) = connect_async(&url).await.unwrap();
+        let client =
+            TardisDataClient::new(*TARDIS_CLIENT_ID, TardisDataClientConfig::default()).unwrap();
+        client.is_connected.store(true, Ordering::Release);
+        client
+            .spawn_ws_task(
+                websocket,
+                url,
+                AHashMap::new(),
+                BookSnapshotOutput::Deltas,
+                false,
+                true,
+            )
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.tasks.all_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("Unsupported exchange must finish the task without reconnecting");
+
+        let listener = server.await.unwrap();
+
+        assert!(client.is_disconnected());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+    }
 
     #[rstest]
     fn test_build_ws_request_rejects_invalid_url() {

@@ -1083,7 +1083,7 @@ def elide_forward_class_defaults_in_signatures(content: str) -> str:
     Replace local class defaults with ``...`` when the class is declared later.
 
     This keeps the signature shape while avoiding invalid runtime expressions like
-    ``BitmexEnvironment.MAINNET`` inside a class body before ``BitmexEnvironment`` is
+    ``ExampleEnvironment.MAINNET`` inside a class body before ``ExampleEnvironment`` is
     defined.
 
     """

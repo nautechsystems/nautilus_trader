@@ -32,8 +32,6 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
@@ -77,8 +75,6 @@ let eurusd_perp = PerpetualContract::builder()
     .size_increment(Quantity::from("1"))
     .margin_init(dec!(0.03))
     .margin_maint(dec!(0.03))
-    .maker_fee(dec!(0.00002))
-    .taker_fee(dec!(0.00002))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -113,8 +109,6 @@ eurusd_perp = PerpetualContract(
     base_currency=Currency.from_str("EUR"),
     margin_init=Decimal("0.03"),
     margin_maint=Decimal("0.03"),
-    maker_fee=Decimal("0.00002"),
-    taker_fee=Decimal("0.00002"),
 )
 ```
 

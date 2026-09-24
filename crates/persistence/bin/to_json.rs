@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() != 2 {
         return Err("Usage: to-json <file>".into());
     }
+
     let file_path = PathBuf::from(&args[1]);
 
     // Validate file extension

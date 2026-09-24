@@ -91,7 +91,7 @@ impl SimulatedExecutionClientFactory for SandboxExecutionClientFactory {
             cache.clone(),
         );
 
-        let client = SandboxExecutionClient::new(core, sandbox_config, clock, cache);
+        let client = SandboxExecutionClient::new(core, sandbox_config, clock, cache)?;
         Ok(Box::new(client))
     }
 

@@ -15,8 +15,6 @@
 
 //! Parsing functions for Deribit API responses into Nautilus domain types.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::{
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
@@ -207,11 +205,6 @@ fn parse_spot_instrument(
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
     let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
     let currency_pair = CurrencyPair::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -222,8 +215,6 @@ fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .min_quantity(min_quantity)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -258,11 +249,6 @@ fn parse_perpetual_instrument(
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment);
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
     let perpetual = CryptoPerpetual::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -278,8 +264,6 @@ fn parse_perpetual_instrument(
         .maybe_lot_size(lot_size)
         // max_quantity - Deribit doesn't specify a hard max
         .min_quantity(min_quantity)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -321,11 +305,6 @@ fn parse_future_instrument(
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
     let future = CryptoFuture::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -343,8 +322,6 @@ fn parse_future_instrument(
         .maybe_lot_size(lot_size)
         // max_quantity - Deribit doesn't specify a hard max
         .min_quantity(min_quantity)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -397,11 +374,6 @@ fn parse_option_instrument(
     let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
     let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
     let option = CryptoOption::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -420,8 +392,6 @@ fn parse_option_instrument(
         .multiplier(multiplier)
         .lot_size(lot_size)
         .min_quantity(min_trade_amount)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -454,8 +424,6 @@ fn parse_option_combo_instrument(
         .multiplier(spread.multiplier)
         .lot_size(spread.lot_size)
         .min_quantity(spread.size_increment)
-        .maker_fee(spread.maker_fee)
-        .taker_fee(spread.taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -487,8 +455,6 @@ fn parse_future_combo_instrument(
         .multiplier(spread.multiplier)
         .lot_size(spread.lot_size)
         .min_quantity(spread.size_increment)
-        .maker_fee(spread.maker_fee)
-        .taker_fee(spread.taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -514,8 +480,6 @@ struct DeribitSpreadCommon {
     size_increment: Quantity,
     multiplier: Quantity,
     lot_size: Quantity,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
 }
 
 fn build_spread_common(
@@ -549,11 +513,6 @@ fn build_spread_common(
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
     let multiplier = deribit_amount_quantity_multiplier();
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
     Ok(DeribitSpreadCommon {
         id,
         raw_symbol,
@@ -570,8 +529,6 @@ fn build_spread_common(
         size_increment,
         multiplier,
         lot_size: size_increment,
-        maker_fee,
-        taker_fee,
     })
 }
 
@@ -1067,8 +1024,6 @@ mod tests {
             Money::from("10 USD")
         );
         assert_eq!(perpetual.lot_size(), Some(Quantity::from("10")));
-        assert_eq!(perpetual.maker_fee(), dec!(0));
-        assert_eq!(perpetual.taker_fee(), dec!(0.0005));
         assert_eq!(perpetual.max_quantity(), None);
         assert_eq!(perpetual.min_quantity(), Some(Quantity::from("10")));
     }
@@ -1114,8 +1069,6 @@ mod tests {
         assert_eq!(future.size_increment(), Quantity::from("10"));
         assert_eq!(future.multiplier(), Quantity::from("1"));
         assert_eq!(future.lot_size(), Some(Quantity::from("10")));
-        assert_eq!(future.maker_fee, dec!(0));
-        assert_eq!(future.taker_fee, dec!(0.0005));
     }
 
     #[rstest]
@@ -1164,8 +1117,6 @@ mod tests {
         assert_eq!(option.size_increment, Quantity::from("0.1"));
         assert_eq!(option.multiplier, Quantity::from("1"));
         assert_eq!(option.lot_size, Quantity::from("0.1"));
-        assert_eq!(option.maker_fee, dec!(0.0003));
-        assert_eq!(option.taker_fee, dec!(0.0003));
     }
 
     #[rstest]
@@ -1745,8 +1696,6 @@ mod tests {
             spread.activation_ns,
             UnixNanos::from(1779100724000_u64 * 1_000_000)
         );
-        assert_eq!(spread.maker_fee, dec!(0));
-        assert_eq!(spread.taker_fee, dec!(0));
     }
 
     #[rstest]

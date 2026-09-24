@@ -121,7 +121,7 @@ fn load_margin_instruments() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            parse_instrument_any(raw, None, None, None, None, ts_init)
+            parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -137,7 +137,7 @@ fn load_swap_instruments() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            parse_instrument_any(raw, None, None, None, None, ts_init)
+            parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -153,7 +153,7 @@ fn load_usdc_spot_instruments() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            parse_instrument_any(raw, None, None, None, None, ts_init)
+            parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -169,7 +169,7 @@ fn load_instruments() -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            parse_instrument_any(raw, None, None, None, None, ts_init)
+            parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -207,7 +207,7 @@ fn event_instrument() -> InstrumentAny {
     }))
     .expect("valid event instrument");
 
-    parse_instrument_any(&raw, None, None, None, None, UnixNanos::default())
+    parse_instrument_any(&raw, None, None, UnixNanos::default())
         .expect("event instrument parses")
         .expect("event instrument supported")
 }

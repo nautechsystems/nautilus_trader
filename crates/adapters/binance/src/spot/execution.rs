@@ -106,12 +106,11 @@ use crate::{
             client::BinanceSpotHttpClient,
             error::BinanceSpotHttpError,
             models::{
-                BatchCancelResult, BinanceCancelOpenOrdersResponse, BinanceCancelOrderListResponse,
+                BinanceCancelOpenOrdersResponse, BinanceCancelOrderListResponse,
                 BinanceCancelOrderResponse,
             },
             query::{
-                BatchCancelItem, CancelOrderParams, CancelReplaceOrderParams,
-                NewOcoOrderListParams, NewOrderParams,
+                CancelOrderParams, CancelReplaceOrderParams, NewOcoOrderListParams, NewOrderParams,
             },
         },
         sbe::spot::{
@@ -505,11 +504,42 @@ impl BinanceSpotExecutionClient {
                 },
             );
 
+            let http_client = self.http_client.clone();
             self.spawn_task("cancel_order_ws", async move {
-                if let Err(e) = ws_client
-                    .cancel_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_cancel_order(&mut params)
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        let ts_now = clock.get_time_ns();
+
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!(
+                                "cancel identity lookup failed before submission: {}",
+                                sanitize_reason(&e.to_string())
+                            )
+                            .into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        event_emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    })?;
+
+                let result = ws_client
+                    .cancel_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     log::warn!(
                         "WS cancel request failed for {}, awaiting reconciliation: {e}",
@@ -1928,13 +1958,36 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             );
             dispatch_state
                 .cancel_replace_request_ids
-                .insert(request_id.clone(), cancel_id);
+                .insert(request_id.clone(), cancel_id.clone());
 
+            let http_client = self.http_client.clone();
             self.spawn_task("modify_order_ws", async move {
-                if let Err(e) = ws_client
-                    .cancel_replace_order_with_id(request_id.clone(), params)
+                let mut params = params;
+                http_client
+                    .inner()
+                    .resolve_cancel_replace(&mut params)
                     .await
-                {
+                    .inspect_err(|e| {
+                        dispatch_state.pending_requests.remove(&request_id);
+                        dispatch_state
+                            .cancel_replace_request_ids
+                            .remove(&request_id);
+                        handle_http_modify_failure(
+                            &anyhow::anyhow!(BinanceSpotHttpError::ValidationError(e.to_string())),
+                            &command,
+                            &cancel_id,
+                            &event_emitter,
+                            &dispatch_state,
+                            account_id,
+                            clock.get_time_ns(),
+                        );
+                    })?;
+
+                let result = ws_client
+                    .cancel_replace_order_with_id(request_id.clone(), params)
+                    .await;
+
+                if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
                     dispatch_state
                         .cancel_replace_request_ids
@@ -2044,6 +2097,48 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        if cmd.order_side.is_some() {
+            // Cancel-all has no side parameter
+            let cancels: Vec<CancelOrder> = {
+                let cache = self.core.cache();
+                cache
+                    .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
+                    .into_iter()
+                    .map(|order| CancelOrder {
+                        trader_id: order.trader_id(),
+                        client_id: cmd.client_id,
+                        strategy_id: order.strategy_id(),
+                        instrument_id: order.instrument_id(),
+                        client_order_id: order.client_order_id(),
+                        venue_order_id: order.venue_order_id(),
+                        command_id: cmd.command_id,
+                        ts_init: cmd.ts_init,
+                        params: cmd.params.clone(),
+                        correlation_id: cmd.correlation_id,
+                        causation_id: cmd.causation_id,
+                    })
+                    .collect()
+            };
+
+            if cancels.is_empty() {
+                log::debug!("No open orders to cancel for {}", cmd.instrument_id);
+                return Ok(());
+            }
+
+            return self.batch_cancel_orders(BatchCancelOrders {
+                trader_id: cmd.trader_id,
+                client_id: cmd.client_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                cancels,
+                command_id: cmd.command_id,
+                ts_init: cmd.ts_init,
+                params: cmd.params,
+                correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
+            });
+        }
+
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
@@ -2134,128 +2229,14 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        const BATCH_SIZE: usize = 5;
-
         if cmd.cancels.is_empty() {
             return Ok(());
         }
 
-        let http_client = self.http_client.clone();
-        let command = cmd;
-
-        let event_emitter = self.emitter.clone();
-        let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
-        let clock = self.clock;
-
-        self.spawn_task("batch_cancel_orders", async move {
-            for chunk in command.cancels.chunks(BATCH_SIZE) {
-                let batch_items: Vec<BatchCancelItem> = chunk
-                    .iter()
-                    .map(|cancel| {
-                        if let Some(venue_order_id) = cancel.venue_order_id {
-                            let order_id = venue_order_id.inner().parse::<i64>().unwrap_or(0);
-                            if order_id != 0 {
-                                BatchCancelItem::by_order_id(
-                                    command.instrument_id.symbol.to_string(),
-                                    order_id,
-                                )
-                            } else {
-                                BatchCancelItem::by_client_order_id(
-                                    command.instrument_id.symbol.to_string(),
-                                    encode_broker_id(
-                                        &cancel.client_order_id,
-                                        BINANCE_NAUTILUS_SPOT_BROKER_ID,
-                                    ),
-                                )
-                            }
-                        } else {
-                            BatchCancelItem::by_client_order_id(
-                                command.instrument_id.symbol.to_string(),
-                                encode_broker_id(
-                                    &cancel.client_order_id,
-                                    BINANCE_NAUTILUS_SPOT_BROKER_ID,
-                                ),
-                            )
-                        }
-                    })
-                    .collect();
-
-                match http_client.batch_cancel_orders(&batch_items).await {
-                    Ok(results) => {
-                        for (i, result) in results.iter().enumerate() {
-                            let cancel = &chunk[i];
-
-                            match result {
-                                BatchCancelResult::Success(success) => {
-                                    let venue_order_id =
-                                        VenueOrderId::new(success.order_id.to_string());
-                                    let canceled_event = OrderCanceled::new(
-                                        trader_id,
-                                        cancel.strategy_id,
-                                        cancel.instrument_id,
-                                        cancel.client_order_id,
-                                        UUID4::new(),
-                                        cancel.ts_init,
-                                        clock.get_time_ns(),
-                                        false,
-                                        Some(venue_order_id),
-                                        Some(account_id),
-                                        None,
-                                    );
-
-                                    event_emitter
-                                        .send_order_event(OrderEventAny::Canceled(canceled_event));
-                                }
-                                BatchCancelResult::Error(error) => {
-                                    let rejected_event = OrderCancelRejected::new(
-                                        trader_id,
-                                        cancel.strategy_id,
-                                        cancel.instrument_id,
-                                        cancel.client_order_id,
-                                        format!(
-                                            "batch-cancel-error: code={}, msg={}",
-                                            error.code, error.msg
-                                        )
-                                        .into(),
-                                        UUID4::new(),
-                                        clock.get_time_ns(),
-                                        cancel.ts_init,
-                                        false,
-                                        cancel.venue_order_id,
-                                        Some(account_id),
-                                    );
-
-                                    event_emitter.send_order_event(OrderEventAny::CancelRejected(
-                                        rejected_event,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let failure = classify_spot_http_failure(&e);
-                        match failure {
-                            CommandFailure::NotSent(reason) => {
-                                log::warn!(
-                                    "Batch cancel command failed before sending for {} orders: {reason}",
-                                    chunk.len()
-                                );
-                            }
-                            CommandFailure::VenueRejected(reason)
-                            | CommandFailure::Ambiguous(reason) => {
-                                log::warn!(
-                                    "Batch cancel failure for {} orders, awaiting reconciliation: {reason}",
-                                    chunk.len()
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        });
+        // No batch cancel endpoint; fan-out preserves owning-strategy attribution
+        for cancel in &cmd.cancels {
+            self.cancel_order_internal(cancel);
+        }
 
         Ok(())
     }
@@ -3954,22 +3935,44 @@ fn is_spot_post_only_rejection(error: &BinanceSpotHttpError) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use nautilus_common::{
+        cache::Cache,
+        clients::ExecutionClient,
+        messages::{
+            ExecutionEvent,
+            execution::{CancelAllOrders, ExecutionReport},
+        },
+    };
+    use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide, OrderSide, TimeInForce},
-        identifiers::{StrategyId, TraderId},
-        orders::OrderTestBuilder,
-        types::Price,
+        enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType, TimeInForce},
+        events::OrderEventAny,
+        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
     use crate::{
         common::{
-            consts::{BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE},
+            consts::{
+                BINANCE_CLIENT_ID, BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE,
+                BINANCE_VENUE,
+            },
             enums::BinanceEnvironment,
         },
+        config::BinanceExecutionClientConfig,
         spot::{
             http::models::BinanceCancelOrderListOrder,
             sbe::spot::{
@@ -5695,5 +5698,251 @@ mod tests {
             }
             other => panic!("Expected OrderRejected event, was {other:?}"),
         }
+    }
+
+    fn test_execution_client(
+        base_url_http: String,
+    ) -> (BinanceSpotExecutionClient, Rc<RefCell<Cache>>) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *BINANCE_CLIENT_ID,
+            *BINANCE_VENUE,
+            OmsType::Hedging,
+            AccountId::from("BINANCE-001"),
+            AccountType::Cash,
+            None,
+            cache.clone(),
+        );
+        let config = BinanceExecutionClientConfig {
+            base_url_http: Some(base_url_http),
+            use_ws_trading: false,
+            api_key: Some("test_api_key".into()),
+            api_secret: Some("test_api_secret".into()),
+            ..Default::default()
+        };
+
+        (
+            BinanceSpotExecutionClient::new(core, config).unwrap(),
+            cache,
+        )
+    }
+
+    async fn wait_for_spawned_tasks(client: &BinanceSpotExecutionClient) {
+        for _ in 0..40 {
+            if client.pending_tasks.all_finished() {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        panic!("timed out waiting for spawned Binance Spot execution tasks");
+    }
+
+    struct MockVenueHits {
+        single_cancel: Arc<AtomicUsize>,
+        batch: Arc<AtomicUsize>,
+        cancel_all: Arc<AtomicUsize>,
+    }
+
+    async fn start_cancel_reject_server() -> (String, MockVenueHits) {
+        let single_hits = Arc::new(AtomicUsize::new(0));
+        let single_hits_clone = single_hits.clone();
+        let batch_hits = Arc::new(AtomicUsize::new(0));
+        let batch_hits_clone = batch_hits.clone();
+        let cancel_all_hits = Arc::new(AtomicUsize::new(0));
+        let cancel_all_hits_clone = cancel_all_hits.clone();
+        let app = axum::Router::new()
+            .route(
+                "/api/v3/order",
+                axum::routing::delete(move || {
+                    let hits = single_hits_clone.clone();
+                    async move {
+                        hits.fetch_add(1, Ordering::Relaxed);
+
+                        (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            axum::Json(
+                                serde_json::json!({"code": -2011, "msg": "Unknown order sent"}),
+                            ),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/api/v3/batchOrders",
+                axum::routing::delete(move || {
+                    let hits = batch_hits_clone.clone();
+                    async move {
+                        hits.fetch_add(1, Ordering::Relaxed);
+
+                        axum::Json(serde_json::json!([]))
+                    }
+                }),
+            )
+            .route(
+                "/api/v3/openOrders",
+                axum::routing::delete(move || {
+                    let hits = cancel_all_hits_clone.clone();
+                    async move {
+                        hits.fetch_add(1, Ordering::Relaxed);
+
+                        axum::Json(serde_json::json!([]))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .unwrap();
+        });
+
+        (
+            format!("http://{addr}"),
+            MockVenueHits {
+                single_cancel: single_hits,
+                batch: batch_hits,
+                cancel_all: cancel_all_hits,
+            },
+        )
+    }
+
+    #[rstest]
+    #[case::buy(Some(OrderSide::Buy), vec![0, 2])]
+    #[case::sell(Some(OrderSide::Sell), vec![1, 3])]
+    #[tokio::test]
+    async fn test_cancel_all_orders_filters_by_side_and_preserves_owners(
+        #[case] order_side: Option<OrderSide>,
+        #[case] expected_indices: Vec<usize>,
+    ) {
+        let (base_url, hits) = start_cancel_reject_server().await;
+        let (mut client, cache) = test_execution_client(base_url);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let other_instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let account_id = client.core.account_id;
+        let mut orders = Vec::new();
+
+        for (index, (instrument, owner, side, open)) in [
+            (instrument_id, "S-001", OrderSide::Buy, true),
+            (instrument_id, "S-001", OrderSide::Sell, true),
+            (instrument_id, "S-002", OrderSide::Buy, true),
+            (instrument_id, "S-002", OrderSide::Sell, true),
+            (other_instrument_id, "S-001", OrderSide::Buy, true),
+            (other_instrument_id, "S-002", OrderSide::Sell, true),
+            (instrument_id, "S-001", OrderSide::Buy, false),
+            (instrument_id, "S-002", OrderSide::Sell, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let client_order_id = ClientOrderId::from(format!("O-CANCEL-ALL-{index}"));
+            let mut builder = OrderTestBuilder::new(OrderType::Limit);
+            let order = builder
+                .instrument_id(instrument)
+                .client_order_id(client_order_id)
+                .strategy_id(StrategyId::from(owner))
+                .side(side)
+                .quantity(Quantity::from("1"))
+                .price(Price::from("10000.00"))
+                .build();
+            let venue_order_id = VenueOrderId::from(format!("{}", 1000 + index));
+            let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+            cache
+                .borrow_mut()
+                .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+                .unwrap();
+            let order = cache.borrow_mut().update_order(&accepted).unwrap();
+
+            if !open {
+                let canceled =
+                    TestOrderEventStubs::canceled(&order, account_id, Some(venue_order_id));
+                cache.borrow_mut().update_order(&canceled).unwrap();
+            }
+
+            orders.push(order);
+        }
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BINANCE_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                order_side,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        // Rejections expose per-order ownership in the outcomes
+        assert_eq!(hits.single_cancel.load(Ordering::Relaxed), 2);
+        assert_eq!(hits.batch.load(Ordering::Relaxed), 0);
+        assert_eq!(hits.cancel_all.load(Ordering::Relaxed), 0);
+
+        let mut actual = Vec::new();
+
+        for _ in &expected_indices {
+            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            match event {
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                }
+                event => panic!("expected OrderCancelRejected, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = expected_indices
+            .iter()
+            .map(|&index| {
+                let order = &orders[index];
+                (order.client_order_id(), order.strategy_id())
+            })
+            .collect();
+
+        actual.sort();
+        expected.sort();
+
+        assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_cancel_all_orders_with_side_and_empty_cache_sends_nothing() {
+        let (base_url, hits) = start_cancel_reject_server().await;
+        let (mut client, _cache) = test_execution_client(base_url);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BINANCE_CLIENT_ID),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTCUSDT.BINANCE"),
+                Some(OrderSide::Buy),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(hits.single_cancel.load(Ordering::Relaxed), 0);
+        assert_eq!(hits.batch.load(Ordering::Relaxed), 0);
+        assert_eq!(hits.cancel_all.load(Ordering::Relaxed), 0);
+        assert!(rx.try_recv().is_err());
+        assert!(client.dispatch_state.pending_requests.is_empty());
     }
 }

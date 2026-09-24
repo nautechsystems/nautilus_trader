@@ -951,8 +951,11 @@ def test_create_tearsheet_from_stats_exports_static_image(tmp_path: Path) -> Non
 
 
 def _run_backtest_with_fills() -> object:
+    from decimal import Decimal
+
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestEngineConfig
+    from nautilus_trader.execution import MakerTakerFeeModel
     from nautilus_trader.model import AccountType
     from nautilus_trader.model import Currency
     from nautilus_trader.model import Money
@@ -973,6 +976,10 @@ def _run_backtest_with_fills() -> object:
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(audusd)
 
@@ -1009,8 +1016,11 @@ def _run_backtest_with_fills() -> object:
 
 
 def _run_issue_3899_backtest() -> object:
+    from decimal import Decimal
+
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestEngineConfig
+    from nautilus_trader.execution import MakerTakerFeeModel
     from nautilus_trader.model import AccountType
     from nautilus_trader.model import Bar
     from nautilus_trader.model import BarAggregation
@@ -1114,6 +1124,10 @@ def _run_issue_3899_backtest() -> object:
         account_type=AccountType.CASH,
         starting_balances=[Money(10_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_data(bars)

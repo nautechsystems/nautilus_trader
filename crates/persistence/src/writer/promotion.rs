@@ -70,6 +70,7 @@ impl PromotionSession {
         {
             return Some(session);
         }
+
         Self::from_local_path(uri)
     }
 
@@ -88,11 +89,13 @@ impl PromotionSession {
         }
 
         let catalog_segments = &components[..components.len().saturating_sub(2)];
+
         let catalog_path = if catalog_segments.is_empty() {
             "/".to_string()
         } else {
             format!("/{}", catalog_segments.join("/"))
         };
+
         url.set_path(&catalog_path);
         url.set_query(None);
         url.set_fragment(None);
@@ -112,6 +115,7 @@ impl PromotionSession {
         if !is_run_kind(&kind) {
             return None;
         }
+
         let catalog_uri = path.parent()?.parent()?.to_string_lossy().to_string();
         Some(Self {
             catalog_uri,
@@ -169,6 +173,7 @@ where
         if data.is_empty() {
             return Ok(());
         }
+
         self.stage_batch(data)?;
         self.mark_run_non_empty()?;
         self.maybe_promote_by_period()
@@ -181,6 +186,7 @@ where
             self.mark_run_non_empty()?;
             self.maybe_promote_by_period()?;
         }
+
         Ok(handled)
     }
 
@@ -374,6 +380,7 @@ where
                 Vec::new()
             }
         };
+
         deleted_paths.extend(leftovers.iter().cloned());
         let convert_files = self
             .files
@@ -413,8 +420,10 @@ where
                             }
                         }
                     }
+
                     converted.push(summary);
                     committed_paths.push(file.clone());
+
                     if record_error.is_some() {
                         // Keep the staged file so the retried promotion can re-run the
                         // record write; the replay dedup makes the re-run a no-op.
@@ -458,6 +467,7 @@ where
 
         if !errors.is_empty() {
             let error = errors.join("; ");
+
             let run_state_recorded = match self.backend.record_run_state(
                 &self.source,
                 &self.staging_uri,
@@ -474,6 +484,7 @@ where
                     false
                 }
             };
+
             return PromotionResult {
                 files: self.files,
                 committed_paths,
@@ -505,11 +516,13 @@ where
                 ),
             };
         }
+
         let run_state_recorded = if B::RECORDS_PROMOTED_ATOMICALLY {
             promoted_recorded
         } else {
             !converted.is_empty()
         };
+
         PromotionResult {
             files: self.files,
             committed_paths,
@@ -542,6 +555,7 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<String>() {
         return message.clone();
     }
+
     "unknown panic payload".to_string()
 }
 
@@ -568,6 +582,7 @@ impl PromotionTimer {
         anyhow::ensure!(interval_ms > 0, "Promotion timer interval must be positive");
         let (stop_tx, stop_rx) = mpsc::sync_channel(1);
         let interval = Duration::from_millis(interval_ms);
+
         let handle = std::thread::Builder::new() // dst-ok: timer performs blocking catalog I/O
             .name(thread_name.to_string())
             .spawn(move || {
@@ -578,6 +593,7 @@ impl PromotionTimer {
                     }
                 }
             })?;
+
         Ok(Self {
             stop_tx,
             handle: Some(handle),
@@ -632,10 +648,12 @@ where
 {
     pub(crate) fn submit(&self, work: T) -> anyhow::Result<()> {
         self.pending.fetch_add(1, Ordering::AcqRel);
+
         if let Err(e) = self.tx.send(PromotionMessage::Work(Box::new(work))) {
             self.pending.fetch_sub(1, Ordering::AcqRel);
             anyhow::bail!("Promotion worker disconnected: {e}");
         }
+
         Ok(())
     }
 }
@@ -657,6 +675,7 @@ where
     pub(crate) fn spawn(thread_name: &str) -> anyhow::Result<Self> {
         let (tx, work_rx) = mpsc::sync_channel::<PromotionMessage<T>>(1);
         let (result_tx, rx) = mpsc::channel::<T::Output>();
+
         let handle = std::thread::Builder::new() // dst-ok: catalog promotion performs blocking I/O
             .name(thread_name.to_string())
             .spawn(move || {
@@ -785,6 +804,7 @@ where
             self.unschedule(&files);
             return Err(e);
         }
+
         Ok(())
     }
 
@@ -795,6 +815,7 @@ where
         if self.worker.is_none() {
             self.worker = Some(PromotionWorker::spawn(worker_name)?);
         }
+
         Ok(self.worker.as_ref().unwrap().submitter())
     }
 
@@ -992,10 +1013,12 @@ mod tests {
             create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
         let source = FeatherSessionSource::new(storage, "backtest", "run-leftovers");
         let state = Arc::new(Mutex::new(RecordingState::default()));
+
         let backend = RecordingBackend {
             leftovers: vec!["backtest/run-leftovers/b.feather".to_string()],
             state: Arc::clone(&state),
         };
+
         let files = vec![
             "backtest/run-leftovers/a.feather".to_string(),
             "backtest/run-leftovers/b.feather".to_string(),

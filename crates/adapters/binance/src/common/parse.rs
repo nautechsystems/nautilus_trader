@@ -253,6 +253,33 @@ pub(crate) fn price_at_precision(price: Price, precision: u8) -> Option<Price> {
     Price::from_decimal_dp(price.as_decimal(), precision).ok()
 }
 
+/// Returns whether an instrument parse error reports a non-trading venue status.
+///
+/// Non-trading symbols are routine in full-catalog loads, so callers demote
+/// these skips to debug unless the symbol was explicitly selected.
+#[must_use]
+pub(crate) fn is_not_trading_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("is not trading"))
+}
+
+/// Returns whether an instrument parse failure should be logged as a warning.
+///
+/// Non-trading skips stay at debug during bulk loads; explicitly selected
+/// symbols and unexpected parse failures honor `log_warnings`.
+#[must_use]
+pub(crate) fn should_warn_on_instrument_parse_error(
+    log_warnings: bool,
+    explicit: bool,
+    error: &anyhow::Error,
+) -> bool {
+    if !explicit && is_not_trading_error(error) {
+        return false;
+    }
+    log_warnings
+}
+
 /// Parses a USD-M Futures symbol definition into a Nautilus futures instrument.
 ///
 /// # Errors
@@ -267,13 +294,11 @@ pub fn parse_usdm_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    parse_usdm_instrument_with_fees(symbol, None, None, ts_event, ts_init)
+    parse_usdm_instrument_with_fees(symbol, ts_event, ts_init)
 }
 
 pub(crate) fn parse_usdm_instrument_with_fees(
     symbol: &BinanceFuturesUsdSymbol,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -360,8 +385,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(default_margin)
                 .margin_maint(default_margin)
-                .maybe_maker_fee(maker_fee)
-                .maybe_taker_fee(taker_fee)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()?;
@@ -387,8 +410,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(default_margin)
                 .margin_maint(default_margin)
-                .maybe_maker_fee(maker_fee)
-                .maybe_taker_fee(taker_fee)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -419,8 +440,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(default_margin)
                 .margin_maint(default_margin)
-                .maybe_maker_fee(maker_fee)
-                .maybe_taker_fee(taker_fee)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -446,13 +465,11 @@ pub fn parse_coinm_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    parse_coinm_instrument_with_fees(symbol, None, None, ts_event, ts_init)
+    parse_coinm_instrument_with_fees(symbol, ts_event, ts_init)
 }
 
 pub(crate) fn parse_coinm_instrument_with_fees(
     symbol: &BinanceFuturesCoinSymbol,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -536,8 +553,6 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(default_margin)
             .margin_maint(default_margin)
-            .maybe_maker_fee(maker_fee)
-            .maybe_taker_fee(taker_fee)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -568,8 +583,6 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(default_margin)
             .margin_maint(default_margin)
-            .maybe_maker_fee(maker_fee)
-            .maybe_taker_fee(taker_fee)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -687,13 +700,11 @@ pub fn parse_spot_instrument_sbe(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    parse_spot_instrument_sbe_with_fees(symbol, None, None, ts_event, ts_init)
+    parse_spot_instrument_sbe_with_fees(symbol, ts_event, ts_init)
 }
 
 pub(crate) fn parse_spot_instrument_sbe_with_fees(
     symbol: &BinanceSymbolSbe,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -754,8 +765,6 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
         .maybe_min_price(min_price)
         .margin_init(default_margin)
         .margin_maint(default_margin)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -766,8 +775,6 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
 
 pub(crate) fn parse_spot_instrument_json_with_fees(
     symbol: &BinanceSymbolJson,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -887,8 +894,6 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
         )?)
         .margin_init(Decimal::ONE)
         .margin_maint(Decimal::ONE)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -1932,26 +1937,13 @@ mod tests {
         let symbol: BinanceSymbolJson = serde_json::from_str(json).unwrap();
         let ts_event = UnixNanos::from(123u64);
         let ts_init = UnixNanos::from(456u64);
-        let maker = Some(dec!(0.00013));
-        let taker = Some(dec!(0.00027));
-        let sbe = parse_spot_instrument_sbe_with_fees(
-            &decoded.symbols[0],
-            maker,
-            taker,
-            ts_event,
-            ts_init,
-        )
-        .unwrap();
-        let json =
-            parse_spot_instrument_json_with_fees(&symbol, maker, taker, ts_event, ts_init).unwrap();
-        let InstrumentAny::CurrencyPair(mut expected) = parse_spot_instrument_sbe_with_fees(
-            &sample_spot_symbol_sbe(),
-            maker,
-            taker,
-            ts_event,
-            ts_init,
-        )
-        .unwrap() else {
+        let sbe =
+            parse_spot_instrument_sbe_with_fees(&decoded.symbols[0], ts_event, ts_init).unwrap();
+        let json = parse_spot_instrument_json_with_fees(&symbol, ts_event, ts_init).unwrap();
+        let InstrumentAny::CurrencyPair(mut expected) =
+            parse_spot_instrument_sbe_with_fees(&sample_spot_symbol_sbe(), ts_event, ts_init)
+                .unwrap()
+        else {
             panic!("Expected CurrencyPair")
         };
         let rules = decoded.symbols[0].filters.notional_filters.clone();
@@ -2014,8 +2006,6 @@ mod tests {
         let symbol = serde_json::from_value(value).unwrap();
         let result = parse_spot_instrument_json_with_fees(
             &symbol,
-            None,
-            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2081,25 +2071,6 @@ mod tests {
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
-    }
-
-    #[rstest]
-    fn test_parse_usdm_perpetual_populates_fees() {
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
-        let instrument = parse_usdm_instrument_with_fees(
-            &sample_usdm_symbol(),
-            Some(dec!(0.00016)),
-            Some(dec!(0.0004)),
-            ts,
-            ts,
-        )
-        .unwrap();
-        let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
-            panic!("expected CryptoPerpetual, was {instrument:?}");
-        };
-
-        assert_eq!(perpetual.maker_fee, dec!(0.00016));
-        assert_eq!(perpetual.taker_fee, dec!(0.0004));
     }
 
     #[rstest]
@@ -2276,28 +2247,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_coinm_delivery_populates_fees() {
-        let mut symbol = sample_coinm_symbol();
-        symbol.symbol = Ustr::from("BTCUSD_260925");
-        symbol.contract_type = CONTRACT_TYPE_CURRENT_QUARTER.to_string();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
-        let instrument = parse_coinm_instrument_with_fees(
-            &symbol,
-            Some(dec!(0.00014)),
-            Some(dec!(0.00035)),
-            ts,
-            ts,
-        )
-        .unwrap();
-        let InstrumentAny::CryptoFuture(future) = instrument else {
-            panic!("expected CryptoFuture, was {instrument:?}");
-        };
-
-        assert_eq!(future.maker_fee, dec!(0.00014));
-        assert_eq!(future.taker_fee, dec!(0.00035));
-    }
-
-    #[rstest]
     #[case::current_quarter(CONTRACT_TYPE_CURRENT_QUARTER)]
     #[case::next_quarter(CONTRACT_TYPE_NEXT_QUARTER)]
     fn test_parse_coinm_delivery(#[case] contract_type: &str) {
@@ -2375,22 +2324,56 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_spot_instrument_populates_fees() {
+    fn test_not_trading_parse_errors_stay_debug_for_bulk_loads() {
+        let mut symbol = sample_spot_symbol_sbe();
+        symbol.status = 3;
         let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
-        let instrument = parse_spot_instrument_sbe_with_fees(
-            &sample_spot_symbol_sbe(),
-            Some(dec!(0.0008)),
-            Some(dec!(0.0011)),
-            ts,
-            ts,
-        )
-        .unwrap();
-        let InstrumentAny::CurrencyPair(pair) = instrument else {
-            panic!("expected CurrencyPair, was {instrument:?}");
-        };
+        let error = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap_err();
 
-        assert_eq!(pair.maker_fee, dec!(0.0008));
-        assert_eq!(pair.taker_fee, dec!(0.0011));
+        assert!(is_not_trading_error(&error));
+        assert!(!should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
+    fn test_all_producers_emit_detectable_not_trading_errors() {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let mut sbe = sample_spot_symbol_sbe();
+        sbe.status = 3;
+        let sbe_err = parse_spot_instrument_sbe(&sbe, ts, ts).unwrap_err();
+
+        let json = BinanceSymbolJson {
+            symbol: "ETHUSDT".to_string(),
+            status: "BREAK".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            filters: Vec::new(),
+        };
+        let json_err = parse_spot_instrument_json_with_fees(&json, ts, ts).unwrap_err();
+
+        let mut usdm = sample_usdm_symbol();
+        usdm.status = BinanceTradingStatus::Halt;
+        let usdm_err = parse_usdm_instrument(&usdm, ts, ts).unwrap_err();
+
+        let mut coinm = sample_coinm_symbol();
+        coinm.contract_status = Some(BinanceContractStatus::TradingHalt);
+        let coinm_err = parse_coinm_instrument(&coinm, ts, ts).unwrap_err();
+
+        for error in [&sbe_err, &json_err, &usdm_err, &coinm_err] {
+            assert!(is_not_trading_error(error), "undetected: {error}");
+        }
+    }
+
+    #[rstest]
+    fn test_unexpected_parse_errors_honor_log_warnings() {
+        let error = anyhow::anyhow!("Missing PRICE_FILTER in symbol filters");
+
+        assert!(!is_not_trading_error(&error));
+        assert!(should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(!should_warn_on_instrument_parse_error(false, true, &error));
     }
 
     #[rstest]

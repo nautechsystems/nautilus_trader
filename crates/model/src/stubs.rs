@@ -19,7 +19,7 @@ use std::cell::Cell;
 
 use nautilus_core::UUID4;
 use rstest::fixture;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
     data::order::BookOrder,
@@ -96,13 +96,14 @@ pub trait TestDefault {
 ///
 /// This function panics if:
 /// - The liquidity side is `NoLiquiditySide`.
-/// - `instrument.maker_fee()` or `instrument.taker_fee()` cannot be converted to `f64`.
+/// - `fee_rate` cannot be converted to `f64`.
 #[must_use]
 pub fn calculate_commission(
     instrument: &InstrumentAny,
     last_qty: Quantity,
     last_px: Price,
     use_quote_for_inverse: Option<bool>,
+    fee_rate: Decimal,
 ) -> Money {
     let liquidity_side = LiquiditySide::Taker;
     assert_ne!(
@@ -113,13 +114,7 @@ pub fn calculate_commission(
     let notional = instrument
         .calculate_notional_value(last_qty, last_px, use_quote_for_inverse)
         .as_f64();
-    let commission = if liquidity_side == LiquiditySide::Maker {
-        notional * instrument.maker_fee().to_f64().unwrap()
-    } else if liquidity_side == LiquiditySide::Taker {
-        notional * instrument.taker_fee().to_f64().unwrap()
-    } else {
-        panic!("Invalid liquidity side {liquidity_side}")
-    };
+    let commission = notional * fee_rate.to_f64().unwrap();
 
     if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
         Money::new(commission, instrument.base_currency().unwrap())
@@ -240,7 +235,7 @@ mod tests {
     use crate::{
         instruments::{
             CryptoPerpetual,
-            stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
+            stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
         orderbook::BookLevel,
         types::Currency,
@@ -296,8 +291,8 @@ mod tests {
     fn test_calculate_commission_applies_taker_fee_in_quote_currency(
         crypto_perpetual_ethusdt: CryptoPerpetual,
     ) {
-        // ETHUSDT-PERP has distinct fees (maker 0.0002, taker 0.0004), so a maker/taker swap
-        // changes the result: 10 @ 2000.00 = 20,000 notional -> 8.00 USDT taker, 4.00 maker.
+        // ETHUSDT-PERP carries a 0.0004 taker rate in these tests: 10 @ 2000.00 = 20,000
+        // notional -> 8.00 USDT taker, 4.00 maker.
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         let commission = calculate_commission(
@@ -305,6 +300,7 @@ mod tests {
             Quantity::from("10.000"),
             Price::from("2000.00"),
             None,
+            dec!(0.0004),
         );
 
         assert_eq!(commission, Money::new(8.0, Currency::from("USDT")));
@@ -315,18 +311,19 @@ mod tests {
     #[case(None)]
     #[case(Some(false))]
     fn test_calculate_commission_charges_inverse_instruments_in_base_currency(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
         #[case] use_quote_for_inverse: Option<bool>,
     ) {
         // Inverse: 100,000 USD @ 50,000.00 = 2 BTC notional, taker 0.00075 -> 0.0015 BTC.
         // `Some(false)` must behave like `None`, not like `Some(true)`.
-        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
 
         let commission = calculate_commission(
             &instrument,
             Quantity::from(100_000),
             Price::from("50000.0"),
             use_quote_for_inverse,
+            dec!(0.00075),
         );
 
         assert_eq!(commission, Money::new(0.0015, Currency::BTC()));
@@ -335,15 +332,16 @@ mod tests {
 
     #[rstest]
     fn test_calculate_commission_uses_quote_currency_when_requested_for_inverse(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
-        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
 
         let commission = calculate_commission(
             &instrument,
             Quantity::from(100_000),
             Price::from("50000.0"),
             Some(true),
+            dec!(0.00075),
         );
 
         assert_eq!(commission, Money::new(75.0, Currency::USD()));

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::{MakerTakerFeeRates, calculate_maker_taker_commission},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
@@ -376,7 +377,10 @@ impl BaseAccount {
         Ok(pnls.into_values().collect())
     }
 
-    /// Calculates commission fees for a filled order.
+    /// Calculates commission fees for a filled order from explicitly resolved fee rates.
+    ///
+    /// Fee policy belongs to the account-owned schedule, not the instrument. Callers must
+    /// resolve `fee_rates` for the instrument (including any exact override) before calling.
     ///
     /// # Errors
     ///
@@ -388,27 +392,11 @@ impl BaseAccount {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        fee_rates: MakerTakerFeeRates,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        anyhow::ensure!(
-            liquidity_side != LiquiditySide::NoLiquiditySide,
-            "Invalid `LiquiditySide`: {liquidity_side}"
-        );
-        let notional =
-            instrument.try_calculate_notional_value(last_qty, last_px, use_quote_for_inverse)?;
-        let rate = match liquidity_side {
-            LiquiditySide::Maker => instrument.maker_fee(),
-            LiquiditySide::Taker => instrument.taker_fee(),
-            LiquiditySide::NoLiquiditySide => {
-                anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}")
-            }
-        };
-        let commission = notional
-            .as_decimal()
-            .checked_mul(rate)
-            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
-
-        Ok(Money::from_decimal(commission, notional.currency)?)
+        let rate = fee_rates.rate_for(liquidity_side)?;
+        calculate_maker_taker_commission(instrument, last_qty, last_px, rate, use_quote_for_inverse)
     }
 }
 

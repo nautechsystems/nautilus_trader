@@ -17,6 +17,8 @@
 
 use std::sync::Arc;
 
+use parquet::basic::{BrotliLevel, Compression, GzipLevel, ZstdLevel};
+
 use crate::catalog::{factory as catalog_factory, traits as catalog_traits};
 
 pub mod catalog;
@@ -53,14 +55,14 @@ pub(crate) fn register_catalog_factory(registry: &mut catalog_factory::CatalogFa
     );
 }
 
-fn compression_from_code(code: u64) -> ::parquet::basic::Compression {
+fn compression_from_code(code: u64) -> Compression {
     match code {
-        0 => ::parquet::basic::Compression::UNCOMPRESSED,
-        2 => ::parquet::basic::Compression::GZIP(::parquet::basic::GzipLevel::default()),
-        3 => ::parquet::basic::Compression::LZO,
-        4 => ::parquet::basic::Compression::BROTLI(::parquet::basic::BrotliLevel::default()),
-        5 => ::parquet::basic::Compression::LZ4,
-        6 => ::parquet::basic::Compression::ZSTD(::parquet::basic::ZstdLevel::default()),
-        _ => ::parquet::basic::Compression::SNAPPY,
+        0 => Compression::UNCOMPRESSED,
+        2 => Compression::GZIP(GzipLevel::default()),
+        3 => Compression::LZO,
+        4 => Compression::BROTLI(BrotliLevel::default()),
+        5 => Compression::LZ4,
+        6 => Compression::ZSTD(ZstdLevel::default()),
+        _ => Compression::SNAPPY,
     }
 }

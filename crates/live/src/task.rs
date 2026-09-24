@@ -2505,6 +2505,7 @@ mod tests {
         let slot = Arc::new(SharedTaskSlot::new());
         slot.insert(task::spawn(std::future::pending::<u32>()));
         let finishing_slot = Arc::clone(&slot);
+
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 
@@ -2624,6 +2625,7 @@ mod tests {
         let slot = Arc::new(SharedTaskSlot::new());
         slot.insert(task::spawn(std::future::pending::<()>()));
         let finishing_slot = Arc::clone(&slot);
+
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 

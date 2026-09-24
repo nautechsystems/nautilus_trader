@@ -17,7 +17,10 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
-use nautilus_persistence::backend::catalog::{ParquetDataCatalog, parse_filename_timestamps};
+use nautilus_persistence::{
+    backend::parquet::{catalog::ParquetDataCatalog, paths::parse_filename_timestamps},
+    catalog::types::{CatalogDataType, data_type_from_data_path_prefix},
+};
 
 use super::{
     CatalogReplayData, CatalogReplayRecord, CatalogSliceCoverage, CatalogSlicePlan,
@@ -44,8 +47,9 @@ impl ReplayCatalog for ParquetReplayCatalog<'_> {
         &mut self,
         query: &CatalogSliceQuery,
     ) -> Result<CatalogSliceCoverage, Self::Error> {
+        let data_type = CatalogDataType::Data(data_type_from_data_path_prefix(&query.data_cls)?);
         let mut files = self.catalog.query_files(
-            &query.data_cls,
+            &data_type,
             query.identifiers_option(),
             Some(query.start),
             Some(query.end),
@@ -135,7 +139,9 @@ mod tests {
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
-    use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+    use nautilus_persistence::backend::parquet::{
+        catalog::ParquetDataCatalog, paths::timestamps_to_filename,
+    };
     use rstest::rstest;
     use tempfile::TempDir;
 

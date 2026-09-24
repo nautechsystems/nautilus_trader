@@ -15,7 +15,14 @@
 
 //! HTTP wire behavior and connection lifecycle regressions.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
@@ -23,7 +30,74 @@ use http::Method;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::{HttpClient, HttpClientError, HttpResponse};
+use super::{HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse};
+
+#[rstest]
+#[case(301)]
+#[case(302)]
+#[case(303)]
+#[case(307)]
+#[case(308)]
+#[tokio::test]
+async fn rejected_redirect_preserves_response_without_contacting_destination(#[case] status: u16) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = destination.local_addr().unwrap();
+    let destination_requests = Arc::new(AtomicUsize::new(0));
+    let requests = destination_requests.clone();
+
+    let destination_task = tokio::spawn(async move {
+        let (mut stream, _) = destination.accept().await.unwrap();
+        requests.fetch_add(1, Ordering::SeqCst);
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    });
+
+    let origin_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        let mut body = [0; 7];
+        stream.read_exact(&mut body).await.unwrap();
+        stream
+            .write_all(format!("HTTP/1.1 {status} Redirect\r\nContent-Length: 4\r\nLocation: http://{target}/next\r\n\r\nstop").as_bytes())
+            .await
+            .unwrap();
+        (headers, body)
+    });
+    let client = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
+        .headers(HashMap::from([("x-api-key".into(), "test-key".into())]))
+        .header_keys(vec!["location".into()])
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(
+        &client,
+        Method::POST,
+        format!("http://{addr}/start"),
+        Some(b"payload".to_vec()),
+    )
+    .await
+    .unwrap();
+    let (headers, body) = origin_task.await.unwrap();
+    destination_task.abort();
+
+    assert_eq!(response.status.as_u16(), status);
+    assert_eq!(response.body.as_ref(), b"stop");
+    assert_eq!(
+        response.headers,
+        HashMap::from([("location".into(), format!("http://{target}/next"))])
+    );
+    assert!(headers.starts_with("POST /start HTTP/1.1\r\n"));
+    assert!(headers.contains("\r\nx-api-key: test-key\r\n"));
+    assert_eq!(&body, b"payload");
+    assert_eq!(destination_requests.load(Ordering::SeqCst), 0);
+}
 
 #[tokio::test]
 async fn pooled_requests_consume_complete_bodies() {
@@ -283,6 +357,52 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
         "{message}"
     );
     assert!(message.ends_with(&format!(" for url ({url})")), "{message}");
+}
+
+#[tokio::test]
+async fn streamed_truncated_body_error_omits_query_string_by_default() {
+    const QUERY_SECRET: &str = "stream-query-secret";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort")
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let mut response = client
+        .get_stream(format!("http://{addr}/stream?api_key={QUERY_SECRET}"))
+        .await
+        .unwrap();
+
+    let error = loop {
+        match response.chunk().await {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("truncated body must not end successfully"),
+            Err(e) => break e,
+        }
+    };
+
+    peer.await.unwrap();
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains(&format!("for url (http://{addr}/stream)")),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("api_key="), "{rendered}");
+    assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
 }
 
 #[tokio::test]

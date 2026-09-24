@@ -78,7 +78,6 @@ pub const HYPERLIQUID_BUILDER_FEE_NOT_APPROVED: &str = "Builder fee has not been
 /// # Notes
 ///
 /// - All order types support trigger prices except Market and Limit.
-/// - Conditional orders follow patterns from OKX, Bybit, and BitMEX adapters.
 /// - Stop orders (StopMarket/StopLimit) are protective stops (sl).
 /// - If Touched orders (MarketIfTouched/LimitIfTouched) are profit-taking or entry orders (tp).
 /// - Post-only orders are implemented via ALO (Add Liquidity Only) time-in-force.

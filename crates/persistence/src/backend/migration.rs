@@ -21,22 +21,23 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashSet;
 use arrow::{
     array::UInt32Array,
-    compute::take,
-    datatypes::{DataType as ArrowDataType, Schema},
+    compute::take_record_batch,
+    datatypes::{DataType as ArrowDataType, Schema, TimeUnit},
     record_batch::RecordBatch,
 };
 use futures::{StreamExt, TryStreamExt};
 use nautilus_model::data::NautilusRecordType;
 use nautilus_serialization::arrow::{
-    KEY_IDENTIFIER, KEY_INSTRUMENT_ID, StringColumnRef,
+    KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, StringColumnRef,
     legacy::{
         LegacyArrowError, LegacySchemaResolution, LegacyTranscodeKind, LegacyTranscodeState,
         SchemaFingerprint, resolve_legacy_schema, schema_fingerprint,
         transcode_legacy_record_batch_with_state,
     },
-    record_batch_with_identifier_column,
+    record_batch_with_identifier_column, schema_without_identifier_column,
 };
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use parquet::{
@@ -60,6 +61,9 @@ use crate::{
 
 const SCHEMA_READ_CONCURRENCY: usize = 16;
 
+/// Default maximum number of source rows written in one open-catalog migration commit.
+pub const DEFAULT_MIGRATION_COMMIT_ROWS: usize = 500_000;
+
 /// Object-store source used to plan and read a legacy Parquet migration.
 pub trait ParquetCatalogSource: Sync {
     /// Returns the object store containing the source catalog.
@@ -77,17 +81,16 @@ pub trait ParquetCatalogSource: Sync {
     fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
         let normalized = normalize_path_separators(path);
         let base = self.base_path().trim_matches('/');
+
         let full = if base.is_empty() {
             normalized
         } else {
             format!("{base}/{}", normalized.trim_start_matches('/'))
         };
+
         ObjectPath::parse(full.trim_start_matches('/')).map_err(anyhow::Error::from)
     }
 }
-
-/// Default maximum number of source rows written in one open-catalog migration commit.
-pub const DEFAULT_MIGRATION_COMMIT_ROWS: usize = 500_000;
 
 /// Migration counters for one current target type.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -125,6 +128,7 @@ impl CatalogMigrationReport {
                 .or_insert_with(CatalogMigrationTypeReport::default)
                 .planned_files += 1;
         }
+
         Self {
             dry_run,
             total_leaf_files: plan.total_leaf_files,
@@ -145,6 +149,7 @@ impl CatalogMigrationReport {
         } else {
             rows
         };
+
         self.migrated_files += 1;
         self.migrated_rows += rows;
         self.transcoded_rows += transcoded_rows;
@@ -214,42 +219,9 @@ impl Display for CatalogMigrationReport {
         for file in &self.unmigrated {
             writeln!(f, "Unmigrated {}: {}", file.path, file.reason)?;
         }
+
         Ok(())
     }
-}
-
-/// Parses a storage option expressed as `key=value`.
-///
-/// # Errors
-///
-/// Returns an error when the separator or either side is absent.
-pub fn parse_storage_option(option: &str) -> Result<(String, String), String> {
-    let (key, value) = option
-        .split_once('=')
-        .ok_or_else(|| format!("Storage option must use key=value: {option}"))?;
-    if key.is_empty() || value.is_empty() {
-        return Err(format!(
-            "Storage option must use non-empty key=value: {option}"
-        ));
-    }
-    Ok((key.to_string(), value.to_string()))
-}
-
-pub(crate) fn ensure_distinct_migration_locations(
-    source_uri: &str,
-    target_uri: &str,
-) -> anyhow::Result<()> {
-    let source_uri = normalize_storage_location(source_uri)?;
-    let target_uri = normalize_storage_location(target_uri)?;
-    let source_uri = source_uri.trim_end_matches('/');
-    let target_uri = target_uri.trim_end_matches('/');
-    anyhow::ensure!(
-        source_uri != target_uri
-            && !target_uri.starts_with(&format!("{source_uri}/"))
-            && !source_uri.starts_with(&format!("{target_uri}/")),
-        "Migration source and target must be distinct, non-overlapping locations",
-    );
-    Ok(())
 }
 
 /// One source file accepted by migration preflight.
@@ -340,6 +312,7 @@ impl CatalogMigrationPlan {
                 )
             })
             .collect::<Vec<_>>();
+
         messages.extend(
             self.unresolved_schemas
                 .iter()
@@ -368,31 +341,6 @@ pub struct PreparedMigrationPart {
     pub identifier_source: IdentifierSource,
     pub batches: Vec<RecordBatch>,
     pub row_count: usize,
-}
-
-#[derive(Clone, Debug)]
-enum SourceClassification {
-    Migratable {
-        source_type_name: String,
-        target_type_name: String,
-    },
-    Unmigrated(String),
-}
-
-#[derive(Clone, Debug)]
-struct SchemaCandidate {
-    object: ObjectMeta,
-    relative_path: String,
-    source_type_name: String,
-    target_type_name: String,
-    object_path: ObjectPath,
-}
-
-#[derive(Debug)]
-struct ResolvedCandidate {
-    candidate: SchemaCandidate,
-    target_table: String,
-    resolution: LegacySchemaResolution,
 }
 
 /// Enumerates and resolves every source leaf file without writing a target.
@@ -462,14 +410,17 @@ pub fn read_planned_migration_file(
     file: &PlannedMigrationFile,
 ) -> anyhow::Result<Vec<RecordBatch>> {
     let object_path = source.to_object_path_parsed(&file.path)?;
+
     let (batches, schema) = execute_async(|| async {
         read_parquet_from_object_store(source.object_store(), &object_path).await
     })?;
+
     ensure_planned_file_unchanged(source, file, &object_path)?;
     let mut state = LegacyTranscodeState::default();
     let mut transcoded = Vec::new();
 
     for batch in record_batches_with_schema(batches, &schema)? {
+        let batch = with_inferred_custom_type_name(file, batch)?;
         let batch = normalize_legacy_parquet_columns(&batch)?;
         let result = transcode_legacy_record_batch_with_state(
             &file.target_type_name,
@@ -479,8 +430,8 @@ pub fn read_planned_migration_file(
         )?;
         transcoded.extend(result.batches);
     }
-    let batches = transcoded;
-    Ok(batches)
+
+    Ok(transcoded)
 }
 
 /// Resolves identifiers and groups batches from one source file.
@@ -517,32 +468,46 @@ pub fn prepare_migration_parts(
         .collect())
 }
 
-pub(crate) fn feather_replay_identity(
-    source_uri: &str,
-    source_path: &str,
-    content_hash: &str,
-    identifiers: Option<&[String]>,
-) -> String {
-    let mut identifiers = identifiers.map(<[String]>::to_vec);
-    if let Some(identifiers) = identifiers.as_mut() {
-        identifiers.sort();
-        identifiers.dedup();
+/// Parses a storage option expressed as `key=value`.
+///
+/// # Errors
+///
+/// Returns an error when the separator or either side is absent.
+pub fn parse_storage_option(option: &str) -> Result<(String, String), String> {
+    let (key, value) = option
+        .split_once('=')
+        .ok_or_else(|| format!("Storage option must use key=value: {option}"))?;
+
+    if key.is_empty() || value.is_empty() {
+        return Err(format!(
+            "Storage option must use non-empty key=value: {option}"
+        ));
     }
-    let identity = serde_json::json!({
-        "source_uri": source_uri,
-        "source_path": source_path,
-        "content_hash": content_hash,
-        "identifiers": identifiers,
-    });
-    format!(
-        "nautilus-feather:{}",
-        blake3::hash(identity.to_string().as_bytes()).to_hex(),
-    )
+
+    Ok((key.to_string(), value.to_string()))
+}
+
+pub(crate) fn ensure_distinct_migration_locations(
+    source_uri: &str,
+    target_uri: &str,
+) -> anyhow::Result<()> {
+    let source_uri = normalize_storage_location(source_uri)?;
+    let target_uri = normalize_storage_location(target_uri)?;
+    let source_uri = source_uri.trim_end_matches('/');
+    let target_uri = target_uri.trim_end_matches('/');
+    anyhow::ensure!(
+        source_uri != target_uri
+            && !target_uri.starts_with(&format!("{source_uri}/"))
+            && !source_uri.starts_with(&format!("{target_uri}/")),
+        "Migration source and target must be distinct, non-overlapping locations",
+    );
+    Ok(())
 }
 
 fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<ObjectMeta>> {
     let prefix =
         (!source.base_path().is_empty()).then(|| ObjectPath::from(source.base_path().to_string()));
+
     let mut objects = execute_async(|| async {
         Ok(source
             .object_store()
@@ -550,9 +515,11 @@ fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<
             .try_collect::<Vec<_>>()
             .await?)
     })?;
+
     // The OpenDAL filesystem adapter lists directory entries alongside leaves; an entry
     // that is the parent of another listed entry is a directory, not a migratable leaf.
     objects.sort_by(|left, right| left.location.as_ref().cmp(right.location.as_ref()));
+
     let parents = objects
         .windows(2)
         .filter(|pair| {
@@ -562,11 +529,13 @@ fn list_source_objects(source: &dyn ParquetCatalogSource) -> anyhow::Result<Vec<
                 .starts_with(&format!("{}/", pair[0].location.as_ref()))
         })
         .map(|pair| pair[0].location.clone())
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<AHashSet<_>>();
+
     objects.retain(|object| {
         !parents.contains(&object.location)
             && !relative_object_path(source, &object.location).is_empty()
     });
+
     Ok(objects)
 }
 
@@ -585,13 +554,24 @@ fn relative_object_path(source: &dyn ParquetCatalogSource, path: &ObjectPath) ->
     if base.is_empty() {
         return path.to_string();
     }
+
     path.strip_prefix(&format!("{base}/"))
         .unwrap_or(path)
         .to_string()
 }
 
+#[derive(Clone, Debug)]
+enum SourceClassification {
+    Migratable {
+        source_type_name: String,
+        target_type_name: String,
+    },
+    Unmigrated(String),
+}
+
 fn classify_source_path(path: &str) -> SourceClassification {
     let parts = path.split('/').collect::<Vec<_>>();
+
     let Some(root) = parts.first().copied() else {
         return SourceClassification::Unmigrated("empty source path".to_string());
     };
@@ -644,7 +624,17 @@ fn classify_source_path(path: &str) -> SourceClassification {
     } else {
         "unrecognized catalog data directory"
     };
+
     SourceClassification::Unmigrated(reason.to_string())
+}
+
+#[derive(Clone, Debug)]
+struct SchemaCandidate {
+    object: ObjectMeta,
+    relative_path: String,
+    source_type_name: String,
+    target_type_name: String,
+    object_path: ObjectPath,
 }
 
 #[expect(
@@ -656,6 +646,7 @@ fn resolve_candidate_schemas(
     candidates: Vec<SchemaCandidate>,
 ) -> anyhow::Result<(Vec<PlannedMigrationFile>, Vec<UnresolvedSchema>)> {
     let object_store = source.object_store();
+
     let resolved = execute_async(|| async move {
         futures::stream::iter(candidates)
             .map(|candidate| {
@@ -671,11 +662,19 @@ fn resolve_candidate_schemas(
             .try_collect::<Vec<_>>()
             .await
     })?;
+
     let mut files = Vec::new();
     let mut unresolved = Vec::new();
 
     for (mut candidate, schema) in resolved {
         if candidate.object.size == 0 {
+            // Mirror the data-file inference so markers land beside their data files
+            if candidate.target_type_name == "custom"
+                && let Some(inferred) = legacy_custom_type_name(&candidate.source_type_name)
+            {
+                candidate.target_type_name = format!("custom/{inferred}");
+            }
+
             let fingerprint = schema_fingerprint(&Schema::empty());
             files.push(ResolvedCandidate {
                 target_table: candidate.target_type_name.clone(),
@@ -686,11 +685,18 @@ fn resolve_candidate_schemas(
                     target_fingerprint: fingerprint,
                 },
             });
+
             continue;
         }
-        let schema = normalize_legacy_parquet_schema(&schema);
+
+        // Resolve the custom target before normalization, so the preflight fingerprint
+        // reflects the same type_name the execution path injects.
         if candidate.target_type_name == "custom" {
-            let Some(type_name) = schema.metadata().get("type_name") else {
+            if let Some(type_name) = schema.metadata().get("type_name") {
+                candidate.target_type_name = format!("custom/{type_name}");
+            } else if let Some(inferred) = legacy_custom_type_name(&candidate.source_type_name) {
+                candidate.target_type_name = format!("custom/{inferred}");
+            } else {
                 unresolved.push(UnresolvedSchema {
                     path: candidate.relative_path.clone(),
                     message: format!(
@@ -698,10 +704,36 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
-            };
-            candidate.target_type_name = format!("custom/{type_name}");
+            }
         }
+
+        // Custom targets skip fingerprint validation, so reject unconvertible
+        // timestamps here instead of migrating to an unreadable destination.
+        if candidate.target_type_name.starts_with("custom/")
+            && !custom_timestamps_convertible(&schema)
+        {
+            let detail = if schema.metadata().contains_key("type_name") {
+                "has non-UInt64 timestamps with no transcoder"
+            } else {
+                "is missing type_name metadata and has non-UInt64 timestamps with no transcoder"
+            };
+
+            unresolved.push(UnresolvedSchema {
+                path: candidate.relative_path.clone(),
+                message: format!(
+                    "Parquet custom data file {} {detail}",
+                    candidate.relative_path
+                ),
+            });
+
+            continue;
+        }
+
+        let schema = with_target_custom_type_name(&candidate, &schema);
+        let schema = normalize_legacy_parquet_schema(&schema);
+
         let target_table = if candidate.target_type_name == "instruments" {
             let Some(class) = schema.metadata().get("class") else {
                 unresolved.push(UnresolvedSchema {
@@ -711,19 +743,20 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
             };
+
             format!("instruments/{class}")
         } else {
             candidate.target_type_name.clone()
         };
 
         if let Ok(record_type) = candidate.target_type_name.parse::<NautilusRecordType>()
-            && let Ok(current) = catalog_record_schema(&record_type)
+            && let Ok(current) = catalog_record_schema(record_type)
         {
-            let expected =
-                nautilus_serialization::arrow::schema_without_identifier_column(&current);
-            let actual = nautilus_serialization::arrow::schema_without_identifier_column(&schema);
+            let expected = schema_without_identifier_column(&current);
+            let actual = schema_without_identifier_column(&schema);
 
             if schema_fingerprint(&actual) != schema_fingerprint(&expected) {
                 unresolved.push(UnresolvedSchema {
@@ -733,6 +766,7 @@ fn resolve_candidate_schemas(
                         candidate.relative_path
                     ),
                 });
+
                 continue;
             }
         }
@@ -749,6 +783,7 @@ fn resolve_candidate_schemas(
                     candidate.relative_path
                 ),
             });
+
             continue;
         }
 
@@ -789,7 +824,70 @@ fn resolve_candidate_schemas(
             transcode_kind: resolved.resolution.kind,
         })
         .collect();
+
     Ok((files, unresolved))
+}
+
+#[derive(Debug)]
+struct ResolvedCandidate {
+    candidate: SchemaCandidate,
+    target_table: String,
+    resolution: LegacySchemaResolution,
+}
+
+/// Infers a custom type name from a legacy `custom_<snake_case>` directory.
+///
+/// Old Python-written catalogs stored custom data under `data/custom_<snake_case>` without
+/// `type_name` schema metadata. Best-effort reversal to PascalCase; acronyms do not survive
+/// the round trip, but the known legacy layouts (e.g. `custom_binance_bar` -> `BinanceBar`)
+/// map exactly. Returns `None` for the canonical `custom` directory, which carries no name.
+fn legacy_custom_type_name(source_type_name: &str) -> Option<String> {
+    let legacy = source_type_name.strip_prefix("custom_")?;
+    let mut pascal = String::with_capacity(legacy.len());
+    for part in legacy.split('_') {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            pascal.extend(first.to_uppercase());
+            pascal.extend(chars);
+        }
+    }
+
+    (!pascal.is_empty()).then_some(pascal)
+}
+
+/// Returns true when a custom schema can migrate: timestamp normalization converts
+/// `UInt64` `ts_event`/`ts_init` and passes timestamps through, so any other
+/// physical type (notably legacy `Int64`) has no transcoder.
+fn custom_timestamps_convertible(schema: &Schema) -> bool {
+    ["ts_event", "ts_init"].iter().all(|name| {
+        schema.field_with_name(name).is_ok_and(|field| {
+            matches!(
+                field.data_type(),
+                ArrowDataType::UInt64 | ArrowDataType::Timestamp(TimeUnit::Nanosecond, _)
+            )
+        })
+    })
+}
+
+/// Attaches the planned custom `type_name` to a preflight schema that lacks it,
+/// mirroring the execution-time injection so fingerprints match written output.
+fn with_target_custom_type_name(candidate: &SchemaCandidate, schema: &Schema) -> Schema {
+    let Some(type_name) = candidate.target_type_name.strip_prefix("custom/") else {
+        return schema.clone();
+    };
+
+    inject_type_name_metadata(schema, type_name)
+}
+
+/// Attaches a custom `type_name` to a schema that lacks it, leaving other
+/// schemas untouched.
+fn inject_type_name_metadata(schema: &Schema, type_name: &str) -> Schema {
+    let mut schema = schema.clone();
+    schema
+        .metadata
+        .entry("type_name".to_string())
+        .or_insert_with(|| type_name.to_string());
+    schema
 }
 
 fn contains_legacy_fixed_binary(data_type: &ArrowDataType) -> bool {
@@ -861,7 +959,7 @@ fn split_batch_by_identifier(
         return groups
             .into_iter()
             .map(|(identifier, indices)| {
-                let batch = take_record_batch(&batch, &indices)?;
+                let batch = take_record_batch(&batch, &UInt32Array::from(indices))?;
                 Ok((identifier, IdentifierSource::Row, batch))
             })
             .collect();
@@ -872,16 +970,24 @@ fn split_batch_by_identifier(
     {
         return Ok(vec![(Some(identifier), IdentifierSource::Path, batch)]);
     }
+
     Ok(vec![(None, IdentifierSource::Absent, batch)])
 }
 
 fn metadata_identifier(type_name: &str, batch: &RecordBatch) -> Option<String> {
-    let key = if type_name == "bars" {
-        "bar_type"
+    batch
+        .schema()
+        .metadata()
+        .get(identifier_metadata_key(type_name))
+        .cloned()
+}
+
+fn identifier_metadata_key(type_name: &str) -> &'static str {
+    if type_name == "bars" {
+        KEY_BAR_TYPE
     } else {
         KEY_INSTRUMENT_ID
-    };
-    batch.schema().metadata().get(key).cloned()
+    }
 }
 
 fn identifier_column<'a>(
@@ -889,9 +995,9 @@ fn identifier_column<'a>(
     batch: &'a RecordBatch,
 ) -> anyhow::Result<Option<StringColumnRef<'a>>> {
     let candidates = if type_name == "bars" {
-        [KEY_IDENTIFIER, "bar_type", KEY_INSTRUMENT_ID, "id"]
+        [KEY_IDENTIFIER, KEY_BAR_TYPE, KEY_INSTRUMENT_ID, "id"]
     } else {
-        [KEY_IDENTIFIER, KEY_INSTRUMENT_ID, "bar_type", "id"]
+        [KEY_IDENTIFIER, KEY_INSTRUMENT_ID, KEY_BAR_TYPE, "id"]
     };
 
     for name in candidates {
@@ -901,6 +1007,7 @@ fn identifier_column<'a>(
                 .ok_or_else(|| anyhow::anyhow!("Identifier column {name} is not string-like"));
         }
     }
+
     Ok(None)
 }
 
@@ -915,17 +1022,8 @@ fn row_identifier_groups(
             .or_default()
             .push(u32::try_from(row)?);
     }
-    Ok(groups)
-}
 
-fn take_record_batch(batch: &RecordBatch, indices: &[u32]) -> anyhow::Result<RecordBatch> {
-    let indices = UInt32Array::from(indices.to_vec());
-    let columns = batch
-        .columns()
-        .iter()
-        .map(|column| take(column.as_ref(), &indices, None))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(RecordBatch::try_new(batch.schema(), columns)?)
+    Ok(groups)
 }
 
 fn batch_with_identifier(
@@ -934,23 +1032,24 @@ fn batch_with_identifier(
     batch: RecordBatch,
 ) -> anyhow::Result<RecordBatch> {
     let batch = record_batch_with_identifier_column(batch, identifier)?;
+
     let Some(identifier) = identifier else {
         return Ok(batch);
     };
-    let metadata_key = if type_name == "bars" {
-        "bar_type"
-    } else if type_name.starts_with("custom/") {
+
+    if type_name.starts_with("custom/") {
         return Ok(batch);
-    } else {
-        KEY_INSTRUMENT_ID
-    };
-    let mut metadata = batch.schema().metadata().clone();
-    metadata.insert(metadata_key.to_string(), identifier.to_string());
-    let schema = Arc::new(Schema::new_with_metadata(
-        batch.schema().fields().iter().cloned().collect::<Vec<_>>(),
-        metadata,
-    ));
-    Ok(RecordBatch::try_new(schema, batch.columns().to_vec())?)
+    }
+
+    let mut schema = batch.schema().as_ref().clone();
+    schema.metadata.insert(
+        identifier_metadata_key(type_name).to_string(),
+        identifier.to_string(),
+    );
+    Ok(RecordBatch::try_new(
+        Arc::new(schema),
+        batch.columns().to_vec(),
+    )?)
 }
 
 fn record_identifier_from_path(file_path: &str, type_name: &str) -> Option<String> {
@@ -961,17 +1060,21 @@ fn record_identifier_from_path(file_path: &str, type_name: &str) -> Option<Strin
         if path_parts.get(start) != Some(&"data") {
             continue;
         }
+
         let type_start = start + 1;
         let type_end = type_start + type_parts.len();
         if path_parts.get(type_start..type_end) != Some(type_parts.as_slice()) {
             continue;
         }
+
         let remaining = &path_parts[type_end..];
         if remaining.len() <= 1 {
             return None;
         }
+
         return Some(remaining[0].to_string());
     }
+
     None
 }
 
@@ -987,9 +1090,26 @@ fn record_batches_with_schema(
         .collect()
 }
 
+/// Attaches the planned custom `type_name` to batches that lack it.
+///
+/// Legacy Python-written custom files predate `type_name` schema metadata. Timestamp
+/// normalization keys off that metadata, so without it `uint64` timestamps would pass
+/// through unconverted. Files that already carry `type_name` are returned unchanged.
+fn with_inferred_custom_type_name(
+    file: &PlannedMigrationFile,
+    batch: RecordBatch,
+) -> anyhow::Result<RecordBatch> {
+    let Some(type_name) = file.target_type_name.strip_prefix("custom/") else {
+        return Ok(batch);
+    };
+
+    let schema = Arc::new(inject_type_name_metadata(&batch.schema(), type_name));
+    Ok(RecordBatch::try_new(schema, batch.columns().to_vec())?)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::Arc};
+    use std::{collections::HashMap, fs, sync::Arc};
 
     use ::parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use arrow::{
@@ -1080,6 +1200,7 @@ mod tests {
         } else {
             "64-bit"
         };
+
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -1099,11 +1220,13 @@ mod tests {
         let source_path = temp.path().join("source");
         let bar_dir = source_path.join("data").join("bars").join("AUDUSD.SIM");
         fs::create_dir_all(&bar_dir).unwrap();
+
         let precision_dir = if cfg!(feature = "high-precision") {
             "128-bit"
         } else {
             "64-bit"
         };
+
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
@@ -1139,6 +1262,7 @@ mod tests {
         let source_path = temp.path().join("source");
         let quote_dir = source_path.join("data").join("quotes").join("AUDUSD.SIM");
         fs::create_dir_all(&quote_dir).unwrap();
+
         let schema = Arc::new(Schema::new(vec![Field::new(
             "unknown",
             DataType::Int64,
@@ -1179,5 +1303,73 @@ mod tests {
                 plan.unresolved_schemas[0].message,
             ),
         );
+    }
+
+    #[rstest]
+    #[case::bars(
+        "bars",
+        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"),
+        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"),
+        None
+    )]
+    #[case::quotes("quotes", Some("AUD/USD.SIM"), None, Some("AUD/USD.SIM"))]
+    #[case::custom("custom/RustTestCustomData", Some("AUD/USD.SIM"), None, None)]
+    #[case::no_identifier("quotes", None, None, None)]
+    fn batch_with_identifier_writes_the_type_specific_metadata_key(
+        #[case] type_name: &str,
+        #[case] identifier: Option<&str>,
+        #[case] expected_bar_type: Option<&str>,
+        #[case] expected_instrument_id: Option<&str>,
+    ) {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts_init",
+                DataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![1]))],
+        )
+        .unwrap();
+
+        let batch = batch_with_identifier(type_name, identifier, batch).unwrap();
+
+        let schema = batch.schema();
+        let metadata = schema.metadata();
+        assert_eq!(
+            metadata.get(KEY_BAR_TYPE).map(String::as_str),
+            expected_bar_type
+        );
+        assert_eq!(
+            metadata.get(KEY_INSTRUMENT_ID).map(String::as_str),
+            expected_instrument_id
+        );
+        assert_eq!(
+            metadata_identifier(type_name, &batch).as_deref(),
+            expected_bar_type.or(expected_instrument_id)
+        );
+    }
+
+    #[rstest]
+    #[case::absent(None, "Planned")]
+    #[case::present(Some("Existing"), "Existing")]
+    fn inject_type_name_metadata_keeps_an_existing_type_name(
+        #[case] existing: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let metadata = existing
+            .map(|name| HashMap::from([("type_name".to_string(), name.to_string())]))
+            .unwrap_or_default();
+        let schema = Schema::new_with_metadata(
+            vec![Field::new("ts_init", DataType::Int64, false)],
+            metadata,
+        );
+
+        let injected = inject_type_name_metadata(&schema, "Planned");
+
+        assert_eq!(
+            injected.metadata().get("type_name").map(String::as_str),
+            Some(expected)
+        );
+        assert_eq!(injected.fields(), schema.fields());
     }
 }

@@ -748,8 +748,8 @@ def test_position_purge_events_removes_matching_adjustment() -> None:
 
 def _inverse_perpetual() -> object:
     return CryptoPerpetual(
-        instrument_id=InstrumentId.from_str("XBTUSD-PERP.BITMEX"),
-        raw_symbol=Symbol("XBTUSD"),
+        instrument_id=InstrumentId.from_str("BTCUSD-PERP.BYBIT"),
+        raw_symbol=Symbol("BTCUSD"),
         base_currency=Currency.from_str("BTC"),
         quote_currency=Currency.from_str("USD"),
         settlement_currency=Currency.from_str("BTC"),

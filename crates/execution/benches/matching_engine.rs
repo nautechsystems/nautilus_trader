@@ -37,7 +37,10 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
-    models::{fee::FeeModelAny, fill::FillModelHandle},
+    models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        fill::FillModelHandle,
+    },
 };
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, QuoteTick, TradeTick, stubs::OrderBookDeltaTestBuilder},
@@ -745,7 +748,7 @@ fn build_engine_with_config(book_type: BookType, config: OrderMatchingEngineConf
         instrument,
         1,
         FillModelHandle::default(),
-        FeeModelAny::default().into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         book_type,
         OmsType::Netting,
         AccountType::Margin,

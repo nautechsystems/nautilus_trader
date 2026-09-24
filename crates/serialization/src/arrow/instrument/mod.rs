@@ -909,8 +909,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .tick_scheme(Ustr::from("TOPIX100"))
             .info(info)
             .ts_event(1.into())
@@ -1004,8 +1002,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()
@@ -1045,8 +1041,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()
@@ -1091,8 +1085,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()
@@ -1507,8 +1499,8 @@ mod tests {
 
     #[rstest]
     fn test_roundtrip_crypto_perpetual_inverse() {
-        use nautilus_model::instruments::stubs::xbtusd_bitmex;
-        roundtrip_case(&InstrumentAny::CryptoPerpetual(xbtusd_bitmex()));
+        use nautilus_model::instruments::stubs::btcusd_bybit;
+        roundtrip_case(&InstrumentAny::CryptoPerpetual(btcusd_bybit()));
     }
 
     #[rstest]

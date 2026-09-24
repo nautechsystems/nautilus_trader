@@ -31,7 +31,10 @@ use nautilus_core::{
     string::secret::SecretString,
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{MapAccess, Visitor, value::MapAccessDeserializer},
+};
 use ustr::Ustr;
 use zeroize::Zeroize;
 
@@ -223,7 +226,7 @@ where
 {
     struct LenientOptionalDecimalVisitor;
 
-    impl Visitor<'_> for LenientOptionalDecimalVisitor {
+    impl<'de> Visitor<'de> for LenientOptionalDecimalVisitor {
         type Value = Option<Decimal>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -256,6 +259,11 @@ where
 
         fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
             Ok(Decimal::try_from(value).ok())
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            let number = serde_json::Number::deserialize(MapAccessDeserializer::new(map))?;
+            self.visit_str(&number.to_string())
         }
 
         fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
@@ -810,15 +818,23 @@ pub struct RaceRunnerChange {
     /// Selection identifier.
     pub id: Option<i64>,
     /// Latitude (GPS coordinate).
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub lat: Option<f64>,
     /// Longitude (GPS coordinate).
-    #[serde(rename = "long")]
+    #[serde(
+        rename = "long",
+        default,
+        deserialize_with = "deserialize_optional_f64"
+    )]
     pub lng: Option<f64>,
     /// Speed in m/s (Doppler-derived).
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub spd: Option<f64>,
     /// Distance to finish in meters.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub prg: Option<f64>,
     /// Stride frequency in Hz.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub sfq: Option<f64>,
 }
 
@@ -830,12 +846,16 @@ pub struct RaceProgressChange {
     /// Gate/sectional name (e.g. "1f", "2f", "Finish").
     pub g: Option<String>,
     /// Sectional time in seconds.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub st: Option<f64>,
     /// Running time since race start in seconds.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub rt: Option<f64>,
     /// Speed of lead horse in m/s.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub spd: Option<f64>,
     /// Distance to finish for leading horse in meters.
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     pub prg: Option<f64>,
     /// Runner order by selection ID (current race position).
     pub ord: Option<Vec<i64>>,
@@ -885,8 +905,26 @@ pub struct Jump {
     #[serde(rename = "J")]
     pub number: i32,
     /// Distance from finish line in meters.
-    #[serde(rename = "L")]
+    #[serde(rename = "L", deserialize_with = "deserialize_f64")]
     pub distance: f64,
+}
+
+fn deserialize_f64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    serde_json::Number::deserialize(deserializer)?
+        .as_f64()
+        .ok_or_else(|| serde::de::Error::custom("number out of range for f64"))
+}
+
+fn deserialize_optional_f64<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    Option::<serde_json::Number>::deserialize(deserializer)?
+        .map(|number| {
+            number
+                .as_f64()
+                .ok_or_else(|| serde::de::Error::custom("number out of range for f64"))
+        })
+        .transpose()
 }
 
 /// Decode a single JSON stream line into a [`StreamMessage`].
@@ -904,6 +942,79 @@ mod tests {
 
     use super::*;
     use crate::common::testing::load_test_json;
+
+    #[rstest]
+    #[case("1e400")]
+    #[case("-1e400")]
+    fn test_deserialize_numeric_out_of_range(#[case] input: &str) {
+        let required = deserialize_f64(&mut serde_json::Deserializer::from_str(input));
+        let optional = deserialize_optional_f64(&mut serde_json::Deserializer::from_str(input));
+
+        assert!(required.is_err());
+        assert!(optional.is_err());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_stream_decode_race_optional_floats(#[case] explicit_null: bool) {
+        let runner = if explicit_null {
+            serde_json::json!({"lat": null, "long": null, "spd": null, "prg": null, "sfq": null})
+        } else {
+            serde_json::json!({})
+        };
+        let progress = if explicit_null {
+            serde_json::json!({"st": null, "rt": null, "spd": null, "prg": null})
+        } else {
+            serde_json::json!({})
+        };
+        let json = serde_json::json!({
+            "op": "rcm", "pt": 123, "rc": [{"rrc": [runner], "rpc": progress}]
+        });
+        let StreamMessage::RaceChange(message) =
+            stream_decode(json.to_string().as_bytes()).unwrap()
+        else {
+            panic!("Expected race change");
+        };
+        let races = message.rc.unwrap();
+        let runner = &races[0].rrc.as_ref().unwrap()[0];
+        let progress = races[0].rpc.as_ref().unwrap();
+
+        assert_eq!(
+            (runner.lat, runner.lng, runner.spd, runner.prg, runner.sfq),
+            (None, None, None, None, None)
+        );
+        assert_eq!(
+            (progress.st, progress.rt, progress.spd, progress.prg),
+            (None, None, None, None)
+        );
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({"J": 2}))]
+    #[case(serde_json::json!({"J": 2, "L": null}))]
+    #[case(serde_json::json!({"J": 2, "L": "370.1"}))]
+    #[case(serde_json::json!({"J": 2, "L": {"number": "370.1"}}))]
+    fn test_stream_decode_jump_requires_number(#[case] jump: serde_json::Value) {
+        let json = serde_json::json!({
+            "op": "rcm", "pt": 123, "rc": [{"rpc": {"J": [jump]}}]
+        });
+
+        assert!(stream_decode(json.to_string().as_bytes()).is_err());
+    }
+
+    #[rstest]
+    fn test_jump_serialization() {
+        let jump = Jump {
+            number: 2,
+            distance: 370.1,
+        };
+
+        assert_eq!(
+            serde_json::to_value(jump).unwrap(),
+            serde_json::json!({"J": 2, "L": 370.1})
+        );
+    }
 
     #[rstest]
     #[case("stream/ocm_NEW_FULL_IMAGE.json")]
@@ -1072,6 +1183,10 @@ mod tests {
                     "spf":"NaN",
                     "ltp":5.0,
                     "tv":10.63
+                }, {
+                    "id":96146808,
+                    "spn":6.75,
+                    "spf":7.5e-1
                 }]
             }]
         }"#;
@@ -1085,6 +1200,9 @@ mod tests {
                 assert_eq!(rc.spf, None);
                 assert_eq!(rc.ltp, Some(Decimal::new(50, 1)));
                 assert_eq!(rc.tv, Some(Decimal::new(1063, 2)));
+                let rc = &mcm.mc.as_ref().unwrap()[0].rc.as_ref().unwrap()[1];
+                assert_eq!(rc.spn, Some(Decimal::new(675, 2)));
+                assert_eq!(rc.spf, Some(Decimal::new(75, 2)));
             }
             other => panic!("Expected MarketChange, was {other:?}"),
         }

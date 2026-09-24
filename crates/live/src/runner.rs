@@ -1835,6 +1835,7 @@ mod tests {
 
         // Verify all received
         let mut received = 0;
+
         while rx.try_recv().is_ok() {
             received += 1;
         }

@@ -23,6 +23,7 @@ crate-type = ["rlib"]
 default = ["high-precision"]
 examples = [
   "dep:nautilus-backtest",
+  "dep:nautilus-execution",
   "dep:nautilus-tardis",
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
@@ -93,6 +94,7 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 nautilus-backtest = { workspace = true, optional = true }
+nautilus-execution = { workspace = true, optional = true }
 nautilus-tardis = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, optional = true }

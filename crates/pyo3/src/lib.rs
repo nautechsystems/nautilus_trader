@@ -209,11 +209,6 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
 
-    let n = "bitmex";
-    let submodule = pyo3::wrap_pymodule!(nautilus_bitmex::python::bitmex);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-
     let n = "bybit";
     let submodule = pyo3::wrap_pymodule!(nautilus_bybit::python::bybit);
     m.add_wrapped(submodule)?;

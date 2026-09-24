@@ -26,7 +26,7 @@ Supported products:
 The adapter exposes these public components:
 
 - `BinanceDataClientConfig` and `BinanceExecutionClientConfig`: Live client configuration.
-- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, warning, and fee policy.
+- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, and warning policy.
 - `BinanceDataClientFactory` and `BinanceExecutionClientFactory`: Trading node client factories.
 - `load_binance_instruments`: Standalone configured instrument discovery.
 - `load_binance_order_book_deltas`: Rust-backed Binance depth CSV loading for order book wrangling.
@@ -116,6 +116,13 @@ The integration includes several custom data types:
 - `BinanceFuturesOpenInterestHist`: Futures open interest history for a period (request only).
 
 See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) for full definitions.
+
+`BinanceBar`, `BinanceFuturesTicker`, `BinanceFuturesOpenInterest`, and
+`BinanceFuturesLiquidation` support Arrow/Parquet catalog persistence under
+`data/custom/{TypeName}/{identifier}`. Reads also discover the legacy Python-written
+`data/custom_<snake_case>` layout (for example `data/custom_binance_bar`); migrate the catalog
+with [nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md) to move legacy
+files to the canonical layout.
 
 ## Symbology
 
@@ -281,6 +288,13 @@ the adapter compares orders associated with the requesting strategy against all 
 for that instrument. If all orders are associated with the strategy, a single cancel-all API
 call is used. Otherwise, per-strategy cancels are sent (batch for regular
 orders, individual for algo orders) to avoid affecting other strategies.
+
+**Side filter**: A `CancelAllOrders` command with `order_side` set cancels only open
+orders on that side for the instrument. Spot sends one cancel per matching order,
+while Futures batches regular orders and cancels algo orders individually. A
+side-filtered request selects from open orders only, so an inflight (`SUBMITTED`)
+order not yet acknowledged by Binance survives one; use an unfiltered cancel-all
+to include it.
 
 **Futures algo orders**: Conditional order types (`STOP_MARKET`, `STOP_LIMIT`,
 `TAKE_PROFIT`, `TAKE_PROFIT_MARKET`, `TRAILING_STOP_MARKET`) require a
@@ -622,25 +636,34 @@ error. Use `activation_price` instead.
 
 ## Link & Trade
 
-The NautilusTrader integration ID is automatically prefixed to all
-system-generated client order IDs for every order placed through the Binance
-adapter. This provides transparent order attribution through Binance's
-[Link and Trade](https://developers.binance.com/docs/binance_link/link-and-trade)
-program without requiring any user configuration.
+The adapter prefixes supported client order IDs with the NautilusTrader integration ID for
+Binance's [Link and Trade](https://www.binance.com/en/support/faq/detail/a78a065d0c4846aaa1af474d8e712ab9)
+program. No user configuration is required.
 
-The adapter uses a deterministic two-way encoding to compress outgoing
-`ClientOrderId` values into a compact format that fits within Binance's
-36-character `newClientOrderId` limit, and decodes incoming order events back
-to the original ID before they reach strategies. This transformation is fully
-transparent: strategies see only their original `ClientOrderId` values at all
-times.
+The adapter compresses outgoing `ClientOrderId` values to fit Binance's 36-character limit and
+decodes incoming events before they reach strategies. Supported formats include numeric factory
+IDs, UUIDs, and hyphenated factory IDs with a short alphanumeric trader or strategy tag, such as
+`O-20260922-160119-V2-000-8`.
 
-:::note
-The integration ID prefix applies to all order operations including
-submissions, modifications, cancellations, and status queries. Orders placed
-before this support was added are handled gracefully through passthrough
-decoding.
-:::
+The short-tag format supports one or two ASCII letters or digits in one tag. The other tag must
+be a numeric value in `[0, 1023]`, padded to at least three digits. Its count supports `[0, 4194303]`
+without leading zeros, and timestamps span `[2020-01-01 00:00:00, 2156-02-07 06:28:15]` UTC.
+Enabling `use_uuid_client_order_ids` is optional.
+
+Custom IDs of at most 24 bytes need no compression. For longer unsupported IDs, the adapter logs
+a warning and sends the original ID without a prefix.
+Binance's length and character restrictions still apply.
+
+### Existing orders after an upgrade
+
+Existing numeric, UUID, and raw-prefixed encodings remain unchanged. The decoder also accepts
+historical unprefixed IDs. When an existing-order operation has a short-tag ID but no venue order
+ID, the adapter queries both its encoded form and the historical unprefixed form. If these identify
+separate orders, it rejects the operation as ambiguous.
+
+Modifications and cancellations use the recovered venue order ID. Spot cancel-replace retains the
+existing wire client order ID when replacing the same logical order, including orders submitted
+with a historical unprefixed ID. These lookups also apply when the mutation uses WebSocket transport.
 
 ### Decoding client order IDs
 
@@ -1483,9 +1506,9 @@ Testnet credentials are completely separate from your live account. Market
 data and liquidity differ from production.
 :::
 
-### Commission rate queries
+### Instrument loading
 
-The instrument provider controls both selection and fee policy:
+The instrument provider controls selection and filters:
 
 ```python
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
@@ -1504,29 +1527,17 @@ filters are `symbols`, `bases`, and `quotes`, plus `contract_types` for Futures.
 or non-empty list of strings, and matching is case-insensitive. The adapter rejects
 `filter_callable`; use the supported declarative filters.
 
-Every parsed instrument receives maker and taker fees:
-
-- Spot uses the account-wide rate when credentials are present, otherwise 0.1% maker and taker.
-- Futures uses the account VIP tier when credentials are present, otherwise VIP 0.
-- `query_commission_rates=True` opts Global Spot and Futures into rate-limited exact per-symbol
-  queries. A failed or invalid query falls back to the account or tier rate for that symbol.
-- Binance US uses its account-wide commission rates because it does not expose the Global
-  `account/commission` endpoint.
-
-The exact-query behavior follows the Global Spot
-[commission FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md)
-and the USD-M
-[user commission rate](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/User-Commission-Rate)
-endpoint.
-
-Exact queries require credentials. Because they issue one private request per selected symbol,
-combine `load_ids` or filters with this option on large catalogs.
+Parsed instruments do not carry maker or taker fee rates.
+`query_commission_rates` does not copy account commission onto instruments.
 
 ### Parser warnings
 
 Some Binance instruments cannot be parsed into Nautilus objects if they contain
 field values beyond what the platform handles. These instruments are skipped
 with a warning.
+
+Non-trading symbols are skipped with a debug log during bulk loads. They still
+warn when explicitly selected through `load_ids` or the `symbols` filter.
 
 To suppress these warnings:
 

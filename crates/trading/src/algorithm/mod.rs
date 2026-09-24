@@ -1089,7 +1089,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if order modification fails.
+    /// Returns an error if all supplied values are absent or unchanged, or if
+    /// order modification fails.
     fn modify_order(
         &mut self,
         order: &mut OrderAny,
@@ -1106,12 +1107,11 @@ pub trait ExecutionAlgorithm: DataActor {
         let trigger_changing = trigger_price.is_some() && trigger_price != order.trigger_price();
 
         if !qty_changing && !price_changing && !trigger_changing {
-            log::error!(
+            anyhow::bail!(
                 "Cannot create command ModifyOrder: \
                 quantity, price, and trigger were either None \
                 or the same as existing values"
             );
-            return Ok(());
         }
 
         if order.is_closed() || order.is_pending_cancel() {

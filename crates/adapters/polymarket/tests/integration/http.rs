@@ -43,7 +43,7 @@ use nautilus_model::{
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
-        credential::Credential,
+        credential::{Credential, EvmPrivateKey},
         enums::{PolymarketOrderType, PolymarketSignatureType},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
@@ -52,6 +52,7 @@ use nautilus_polymarket::{
         PredicateFilter, SearchFilter, TagFilter,
     },
     http::{
+        auth::{create_api_key, derive_api_key},
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
         data_api::PolymarketDataApiHttpClient,
         error::Error,
@@ -67,6 +68,7 @@ use nautilus_polymarket::{
         PolymarketInstrumentProvider, build_gamma_event_params_from_hashmap,
         build_gamma_params_from_hashmap,
     },
+    signing::eip712::sign_clob_auth,
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -858,6 +860,159 @@ async fn test_get_trades_returns_trades() {
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].id, "trade-0x001");
+}
+
+#[rstest]
+#[case(301)]
+#[case(302)]
+#[case(303)]
+#[case(307)]
+#[case(308)]
+#[tokio::test]
+async fn test_authenticated_requests_reject_redirects(
+    #[case] status: u16,
+    #[values("trades", "heartbeat", "create", "derive")] operation: &str,
+) {
+    let origin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = origin.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = destination.local_addr().unwrap();
+    let destination_requests = Arc::new(AtomicUsize::new(0));
+    let requests = destination_requests.clone();
+    let destination_router = Router::new().fallback(move || {
+        let requests = requests.clone();
+        async move {
+            requests.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+    });
+
+    let destination_task = tokio::spawn(async move {
+        axum::serve(destination, destination_router).await.unwrap();
+    });
+    let redirect_status = Arc::new(AtomicUsize::new(200));
+    let response_status = redirect_status.clone();
+    let origin_requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let requests = origin_requests.clone();
+    let origin_router = Router::new().fallback(move |method: Method, uri: Uri, headers: HeaderMap, body: Bytes| {
+        let requests = requests.clone();
+        let response_status = response_status.clone();
+        async move {
+            let response_body = match uri.path() {
+                "/data/trades" => json!({"data": [], "next_cursor": "LTE="}),
+                "/v1/heartbeats" => json!({"heartbeat_id": "next-heartbeat"}),
+                "/auth/api-key" | "/auth/derive-api-key" => json!({
+                    "apiKey": "new-api-key", "secret": TEST_API_SECRET_B64, "passphrase": "new-passphrase",
+                }),
+                path => panic!("Unexpected request path: {path}"),
+            };
+            requests.lock().await.push((method, uri, headers, body));
+            let status = StatusCode::from_u16(response_status.load(Ordering::SeqCst) as u16).unwrap();
+            if status.is_redirection() {
+                (status, [("location", format!("http://{target}/redirected"))], "redirect refused").into_response()
+            } else {
+                Json(response_body).into_response()
+            }
+        }
+    });
+
+    let origin_task = tokio::spawn(async move {
+        axum::serve(origin, origin_router).await.unwrap();
+    });
+    let client = create_clob_client(&addr);
+    let private_key =
+        EvmPrivateKey::new("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap();
+    let base_url = format!("http://{addr}");
+
+    for expected_status in [200, status] {
+        redirect_status.store(usize::from(expected_status), Ordering::SeqCst);
+        let result = match operation {
+            "trades" => client
+                .get_trades(GetTradesParams::default())
+                .await
+                .map(|trades| {
+                    assert_eq!(trades.len(), 0);
+                }),
+            "heartbeat" => client
+                .post_heartbeat("previous-heartbeat")
+                .await
+                .map(|heartbeat| {
+                    assert_eq!(
+                        heartbeat,
+                        HeartbeatResponse::Acknowledged("next-heartbeat".into())
+                    );
+                }),
+            "create" | "derive" => {
+                let result = if operation == "create" {
+                    create_api_key(&private_key, 7, Some(&base_url)).await
+                } else {
+                    derive_api_key(&private_key, 7, Some(&base_url)).await
+                };
+                result.map(|credentials| {
+                    assert_eq!(credentials.api_key.expose_secret(), "new-api-key");
+                    assert_eq!(credentials.secret.expose_secret(), TEST_API_SECRET_B64);
+                    assert_eq!(credentials.passphrase.expose_secret(), "new-passphrase");
+                })
+            }
+            _ => unreachable!(),
+        };
+
+        assert_eq!(destination_requests.load(Ordering::SeqCst), 0);
+
+        if expected_status == 200 {
+            result.unwrap();
+        } else {
+            assert!(
+                matches!(result, Err(Error::Http { status: actual, message }) if actual == status && message == "redirect refused")
+            );
+        }
+    }
+    origin_task.abort();
+    destination_task.abort();
+
+    let requests = origin_requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    let (expected_method, expected_path) = match operation {
+        "trades" => (Method::GET, "/data/trades"),
+        "heartbeat" => (Method::POST, "/v1/heartbeats"),
+        "create" => (Method::POST, "/auth/api-key"),
+        "derive" => (Method::GET, "/auth/derive-api-key"),
+        _ => unreachable!(),
+    };
+
+    for (method, uri, headers, body) in requests.iter() {
+        assert_eq!(*method, expected_method);
+        assert_eq!(uri.path(), expected_path);
+        if operation == "heartbeat" {
+            assert_eq!(
+                serde_json::from_slice::<Value>(body).unwrap(),
+                json!({"heartbeat_id": "previous-heartbeat"})
+            );
+        } else {
+            assert_eq!(body.len(), 0);
+        }
+        let timestamp = headers["poly_timestamp"].to_str().unwrap();
+        if matches!(operation, "trades" | "heartbeat") {
+            assert_eq!(headers["poly_api_key"], "test_api_key");
+            assert_eq!(headers["poly_passphrase"], "test_pass");
+            assert_eq!(headers["poly_address"], TEST_ADDRESS);
+            assert_eq!(
+                headers["poly_signature"],
+                test_credential().sign(
+                    timestamp,
+                    method.as_str(),
+                    uri.path(),
+                    std::str::from_utf8(body).unwrap(),
+                )
+            );
+        } else {
+            let (address, signature) = sign_clob_auth(&private_key, timestamp, 7).unwrap();
+            assert_eq!(headers["poly_address"], address);
+            assert_eq!(headers["poly_signature"], signature);
+            assert_eq!(headers["poly_nonce"], "7");
+        }
+    }
 }
 
 #[rstest]

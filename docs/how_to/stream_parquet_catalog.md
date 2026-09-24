@@ -82,17 +82,22 @@ requires all files from a promotion to become visible together.
 
 ### Overlapping schema-group intervals
 
-Promotion groups restored Feather batches by full schema, including precision metadata, and writes
-one catalog file per group. Filenames carry a hash of the promotion identity, so two groups for one
-identifier can still share a timestamp interval. One run produces two such groups when its records
-differ in schema, for example an empty order book depth staged alongside a populated one for the same
-instrument.
+Promotion groups restored Feather batches by schema, including precision metadata. Groups are split
+by schema rather than by time, so two groups for one identifier can share a `ts_init` interval. One
+Feather file produces two such groups when its records differ in schema, for example an empty order
+book depth staged alongside a populated one for the same instrument. The catalog filename also
+carries a hash of the promotion identity.
 
-The catalog requires disjoint closed `ts_init` intervals per identifier directory, so the second
-overlapping write fails with a non-disjoint-intervals error. Files written by earlier groups in that
-attempt remain in the catalog, the staged Feather source is retained, and no promotion identity is
-recorded, so retrying reproduces the error. The same rejection and retention applies to automatic
-promotion and to manual conversion through `ParquetDataCatalog.convert_stream_to_data()`.
+The catalog requires disjoint closed `ts_init` intervals per identifier directory. Before writing one
+Feather file, promotion unifies groups whose precision metadata differs only by a zero precision and
+whose zero-precision group has no decimal values, and writes one file for the combined interval.
+Groups that still overlap, or that cannot be unified without changing decimal values, fail before
+any catalog file from that Feather source is written. The staged Feather source is retained, and no
+promotion identity is recorded for that source. Automatic promotion and
+`ParquetDataCatalog.convert_stream_to_data()` plan each Feather file the same way. A storage error
+after that check, or a later Feather file in the same run, can still leave files already written;
+promotion is not a snapshot transaction. A repeated promotion of a file that was already written is
+skipped.
 
 See the [catalog guide](../concepts/data/catalog.md) for query and storage behavior and
 [Parquet migration](migrate_parquet_catalog.md) for importing older catalogs.

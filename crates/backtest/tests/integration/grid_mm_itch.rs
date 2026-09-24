@@ -26,6 +26,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::throttler::RateLimit;
 use nautilus_core::DurationNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{Data, OrderBookDelta},
     enums::{AccountType, BookType, OmsType},
@@ -34,7 +35,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Currency, Money, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_testkit::common::{itch_aapl_equity, load_itch_aapl_deltas};
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
@@ -66,6 +67,7 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
                 .base_currency(Currency::from("USD"))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )

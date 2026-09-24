@@ -110,7 +110,7 @@ impl BookSession {
                 }
 
                 let rejected = matches!(message, OKXWsMessage::SubscriptionFailed { .. });
-                OKXDataClient::handle_ws_message(message, &sender, &instruments, &http, &config, &update_lock, &stream_channels, &stream_tracker, Some(&stream_ws), None, &mut quotes, &mut funding, &indices, &greeks, BookChannelScope::Public, snapshot_timeout, &spawner, get_atomic_clock_realtime());
+                OKXDataClient::handle_ws_message(message, &sender, &instruments, &http, &config, &update_lock, &stream_channels, &stream_tracker, &AtomicMap::new(), &AtomicSet::new(), Some(&stream_ws), None, &mut quotes, &mut funding, &indices, &greeks, BookChannelScope::Public, snapshot_timeout, &spawner, get_atomic_clock_realtime());
 
                 if rejected { stream_faults.rejections.fetch_add(1, Ordering::SeqCst); }
             }

@@ -14,8 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Integration tests for the Derive WebSocket client against an axum mock
-//! server. Mirrors the established pattern in `hyperliquid/tests/integration/websocket.rs`
-//! and reuses the SESSION_KEY_HEX / TEST_WALLET constants from
+//! server. Reuses the SESSION_KEY_HEX / TEST_WALLET constants from
 //! `derive/tests/integration/http.rs`.
 
 use std::{

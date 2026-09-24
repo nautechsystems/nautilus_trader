@@ -726,6 +726,7 @@ class Strategy:
         self,
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
+        depth: int | None = None,
         client_id: model.ClientId | None = None,
         managed: bool = False,
         params: dict | None = None,

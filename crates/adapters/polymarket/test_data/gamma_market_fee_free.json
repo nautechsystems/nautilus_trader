@@ -1,0 +1,14 @@
+{
+  "id": "fee-free-1",
+  "conditionId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "question": "Fee-free market",
+  "clobTokenIds": "[\"77777777777777777777777777777777777777777777777777777777777777777777777777777\", \"88888888888888888888888888888888888888888888888888888888888888888888888888888\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": false,
+  "feeType": null
+}

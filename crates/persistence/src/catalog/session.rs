@@ -118,6 +118,7 @@ where
             let Some(item) = self.next_row()? else {
                 return Ok(Some(T::into_batch(chunk)));
             };
+
             chunk.push(item);
         }
 
@@ -135,5 +136,99 @@ where
         }
 
         Ok(Some(T::into_batch(chunk)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        data::QuoteTick,
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn typed_quote(ts_init: u64) -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.0"),
+            Price::from("1.1"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        )
+    }
+
+    fn batch_ts(batch: &DataBatch) -> Vec<u64> {
+        match batch {
+            DataBatch::Quote(quotes) => quotes
+                .as_ref()
+                .iter()
+                .map(|quote| quote.ts_init.as_u64())
+                .collect(),
+            other => panic!("expected quote batch, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn typed_session_chunks_pages_with_carry_across_pulls() {
+        let pages: Vec<anyhow::Result<Vec<QuoteTick>>> = vec![
+            Ok(vec![typed_quote(1), typed_quote(2), typed_quote(3)]),
+            Ok(Vec::new()),
+            Ok(vec![typed_quote(4), typed_quote(5)]),
+        ];
+        let mut session = TypedDataBatchSession::new(Box::new(pages.into_iter()), Some(2));
+
+        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [1, 2]);
+        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [3, 4]);
+        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [5]);
+        assert!(session.next_batch().unwrap().is_none());
+    }
+
+    #[rstest]
+    fn typed_session_extends_chunk_across_equal_boundary_ts() {
+        let data = vec![
+            typed_quote(1),
+            typed_quote(2),
+            typed_quote(2),
+            typed_quote(2),
+            typed_quote(3),
+        ];
+        let mut session = TypedDataBatchSession::from_vec(data, Some(2));
+
+        assert_eq!(
+            batch_ts(&session.next_batch().unwrap().unwrap()),
+            [1, 2, 2, 2]
+        );
+        assert_eq!(batch_ts(&session.next_batch().unwrap().unwrap()), [3]);
+        assert!(session.next_batch().unwrap().is_none());
+    }
+
+    #[rstest]
+    fn typed_session_empty_source_yields_none() {
+        let mut session = TypedDataBatchSession::<QuoteTick>::from_vec(Vec::new(), None);
+
+        assert!(session.next_batch().unwrap().is_none());
+    }
+
+    #[rstest]
+    fn typed_session_propagates_page_error() {
+        let pages: Vec<anyhow::Result<Vec<QuoteTick>>> = vec![
+            Ok(vec![typed_quote(1)]),
+            Err(anyhow::anyhow!("page failed")),
+        ];
+        let mut session = TypedDataBatchSession::new(Box::new(pages.into_iter()), Some(4));
+
+        assert_eq!(session.next_batch().unwrap_err().to_string(), "page failed");
+    }
+
+    #[rstest]
+    fn typed_session_reports_reset_as_unsupported() {
+        let mut session = TypedDataBatchSession::from_vec(vec![typed_quote(1)], None);
+
+        assert!(!session.reset().unwrap());
     }
 }

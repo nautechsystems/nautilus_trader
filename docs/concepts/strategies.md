@@ -574,7 +574,8 @@ Routing depends on the command and on the state of each order:
   relevant `ExecutionAlgorithm` when the order has an `exec_algorithm_id` and is still active within
   the local system, and to the `ExecutionEngine` otherwise.
 - `cancel_all_orders(...)` cancels each matching order associated with the strategy by default. Each
-  order follows the same routing as `cancel_order(...)`.
+  order follows the same routing as `cancel_order(...)`. If individual cancellations fail, the method
+  attempts the remaining orders, then raises `RuntimeError` containing all cancellation errors.
 - `cancel_orders(...)` always goes to the `ExecutionEngine` as a single `BatchCancelOrders` command.
 
 :::info
@@ -623,11 +624,13 @@ rules.
 
 Orders can be modified individually when emulated, or *open* on a venue (if supported).
 
-If the order is already *closed* or already pending cancel, then a warning will be logged.
+For a valid modification, an order that is already *closed* or pending cancel logs a warning.
 If the order is currently *open* then the status will become `PENDING_UPDATE`.
 
 :::warning
-At least one value must differ from the original order for the command to be valid.
+`modify_order(...)` raises `RuntimeError` when all supplied values are absent or unchanged.
+A strategy can resend the same quantity while the order is `PENDING_UPDATE`.
+These checks run before the closed-order and pending-cancel checks.
 :::
 
 The component a `ModifyOrder` command will flow to for execution depends on the following:

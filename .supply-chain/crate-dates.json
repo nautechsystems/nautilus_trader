@@ -382,7 +382,7 @@
     },
     "async-compression@0.4.44": {
       "published": "2026-09-02T16:05:28.674815Z",
-      "verified_at": "2026-09-19T22:42:35Z"
+      "verified_at": "2026-09-24T00:28:30Z"
     },
     "async-lock@3.4.2": {
       "published": "2025-12-21T16:24:46.954239Z",
@@ -530,7 +530,7 @@
     },
     "bon-macros@3.9.3": {
       "published": "2026-06-15T10:06:24.901523Z",
-      "verified_at": "2026-09-19T22:42:35Z"
+      "verified_at": "2026-09-24T00:28:30Z"
     },
     "bon@3.10.1": {
       "published": "2026-09-07T21:19:59.961533Z",
@@ -538,7 +538,7 @@
     },
     "bon@3.9.3": {
       "published": "2026-06-15T10:06:29.221470Z",
-      "verified_at": "2026-09-19T22:42:35Z"
+      "verified_at": "2026-09-24T00:28:30Z"
     },
     "borsh-derive@1.8.1": {
       "published": "2026-08-26T20:58:07.118903Z",
@@ -604,9 +604,9 @@
       "published": "2021-09-04T11:07:33.449935Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "cc@1.4.5": {
-      "published": "2026-09-04T09:28:57.146598Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "cc@1.4.7": {
+      "published": "2026-09-18T13:26:31.179475Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "cfg-if@1.0.5": {
       "published": "2026-09-16T17:36:11.278420Z",
@@ -652,9 +652,9 @@
       "published": "2026-09-14T18:40:23.971462Z",
       "verified_at": "2026-09-19T22:32:35Z"
     },
-    "clap_lex@1.1.0": {
-      "published": "2026-03-12T19:10:37.648756Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "clap_lex@1.1.1": {
+      "published": "2026-09-14T18:40:24.781280Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "cmake@0.1.58": {
       "published": "2026-03-26T17:58:29.356302Z",
@@ -664,17 +664,17 @@
       "published": "2026-05-28T19:07:33.005301Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "codspeed-criterion-compat-walltime@5.0.1": {
-      "published": "2026-06-26T14:41:32.147292Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "codspeed-criterion-compat-walltime@5.0.2": {
+      "published": "2026-09-17T12:20:17.092845Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
-    "codspeed-criterion-compat@5.0.1": {
-      "published": "2026-06-26T14:41:38.196063Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "codspeed-criterion-compat@5.0.2": {
+      "published": "2026-09-17T12:20:21.046472Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
-    "codspeed@5.0.1": {
-      "published": "2026-06-26T14:40:58.387994Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "codspeed@5.0.2": {
+      "published": "2026-09-17T12:19:54.750567Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "colorchoice@1.0.5": {
       "published": "2026-03-13T18:59:29.020348Z",
@@ -694,7 +694,7 @@
     },
     "compression-codecs@0.4.39": {
       "published": "2026-09-02T16:05:24.693770Z",
-      "verified_at": "2026-09-19T22:42:35Z"
+      "verified_at": "2026-09-24T00:28:30Z"
     },
     "compression-core@0.4.33": {
       "published": "2026-09-02T16:05:19.162370Z",
@@ -1240,9 +1240,9 @@
       "published": "2025-06-04T02:42:06.808859Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "find-msvc-tools@0.1.12": {
-      "published": "2026-09-04T09:28:52.840002Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "find-msvc-tools@0.1.13": {
+      "published": "2026-09-18T13:26:25.874635Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "fixed-cache@0.1.10": {
       "published": "2026-05-30T05:18:18.754514Z",
@@ -1472,9 +1472,9 @@
       "published": "2026-07-20T17:16:46.064696Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "hyper-rustls@0.27.9": {
-      "published": "2026-04-14T15:13:14.819824Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "hyper-rustls@0.27.10": {
+      "published": "2026-09-20T18:30:18.653717Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "hyper-timeout@0.5.2": {
       "published": "2024-11-03T19:44:30.127358Z",
@@ -2208,9 +2208,9 @@
       "published": "2021-11-10T20:29:10.529846Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "rand@0.10.2": {
-      "published": "2026-07-02T09:01:38.792937Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "rand@0.10.3": {
+      "published": "2026-09-20T06:37:47.850624Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "rand@0.8.8": {
       "published": "2026-08-25T07:45:50.786344Z",
@@ -2392,9 +2392,9 @@
       "published": "2022-02-07T10:59:17.467859Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "rustix@1.1.4": {
-      "published": "2026-02-22T16:22:51.655697Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "rustix@1.1.5": {
+      "published": "2026-09-16T23:05:02.319690Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "rustls-native-certs@0.8.4": {
       "published": "2026-06-01T12:16:09.573832Z",
@@ -2668,9 +2668,9 @@
       "published": "2026-07-13T19:45:58.436336Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "sockudo-ws@2.0.1": {
-      "published": "2026-07-25T20:21:52.651723Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "sockudo-ws@2.1.0": {
+      "published": "2026-09-18T17:15:55.115880Z",
+      "verified_at": "2026-09-22T00:51:37Z"
     },
     "spin@0.9.9": {
       "published": "2026-07-13T19:44:05.786736Z",
@@ -2780,9 +2780,9 @@
       "published": "2026-07-15T00:23:48.828241Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "syn@3.0.5": {
-      "published": "2026-09-04T19:32:02.940768Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "syn@3.0.6": {
+      "published": "2026-09-16T22:31:12.314477Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "sync_wrapper@1.0.2": {
       "published": "2024-11-20T16:29:59.416129Z",
@@ -3056,9 +3056,9 @@
       "published": "2024-12-16T23:09:47.459625Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "unicode-ident@1.0.24": {
-      "published": "2026-02-16T02:46:44.304053Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "unicode-ident@1.0.26": {
+      "published": "2026-09-17T06:18:03.751388Z",
+      "verified_at": "2026-09-24T00:16:49Z"
     },
     "unicode-normalization@0.1.25": {
       "published": "2025-10-30T16:06:38.929447Z",

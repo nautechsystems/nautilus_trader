@@ -423,9 +423,8 @@ On `LiveNodeConfig`, timeout names now state their unit and the post-stop wait i
 `timeout_post_stop` becomes `delay_post_stop`.
 
 Execution factories now consume the corresponding execution client config directly. Remove
-`BitmexExecFactoryConfig`, `DeriveExecFactoryConfig`, and `HyperliquidExecFactoryConfig` wrappers,
-and pass `BitmexExecutionClientConfig`, `DeriveExecutionClientConfig`, or
-`HyperliquidExecutionClientConfig` to `add_exec_client`.
+`DeriveExecFactoryConfig` and `HyperliquidExecFactoryConfig` wrappers, and pass
+`DeriveExecutionClientConfig` or `HyperliquidExecutionClientConfig` to `add_exec_client`.
 
 The live node owns the trader identity. Remove `trader_id` from adapter execution client config
 construction; `LiveNodeConfig` or `LiveNode.builder(...)` supplies it to every execution factory.

@@ -26,7 +26,10 @@ use crate::{
         catalog::ParquetDataCatalog, io::read_parquet_schema_from_object_store,
         paths::make_sql_safe_identifier,
     },
-    catalog::traits::CatalogMetadata,
+    catalog::{
+        traits::CatalogMetadata,
+        types::{CatalogDataType, parquet_catalog_data_type_table_stem},
+    },
     common::{datafusion::build_query, metadata::arrow_metadata_to_params},
 };
 
@@ -38,7 +41,7 @@ impl ParquetDataCatalog {
     /// Returns an error if file discovery, Parquet metadata reading, or query execution fails.
     pub fn query_metadata(
         &mut self,
-        data_type: &str,
+        data_type: &CatalogDataType,
         identifiers: Option<Vec<String>>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -48,11 +51,13 @@ impl ParquetDataCatalog {
         self.register_remote_object_store()?;
 
         let files_list = self.query_files(data_type, identifiers, start, end)?;
-        let table_prefix = make_sql_safe_identifier(data_type);
+        let table_prefix =
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
         let mut metadata_by_key: BTreeMap<String, CatalogMetadata> = BTreeMap::new();
 
         for (index, file_uri) in files_list.iter().enumerate() {
             let object_path = self.to_object_path_parsed(file_uri)?;
+
             let metadata = self.execute_async(|| async {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
@@ -76,22 +81,15 @@ impl ParquetDataCatalog {
             let key = canonical_metadata_key(&metadata)?;
             let metadata = arrow_metadata_to_params(&metadata);
 
-            match metadata_by_key.get_mut(&key) {
-                Some(existing) => {
-                    if first_ts_init < existing.first_ts_init {
-                        existing.first_ts_init = first_ts_init;
-                    }
-                }
-                None => {
-                    metadata_by_key.insert(
-                        key,
-                        CatalogMetadata {
-                            first_ts_init,
-                            metadata,
-                        },
-                    );
-                }
-            }
+            metadata_by_key
+                .entry(key)
+                .and_modify(|existing| {
+                    existing.first_ts_init = existing.first_ts_init.min(first_ts_init);
+                })
+                .or_insert(CatalogMetadata {
+                    first_ts_init,
+                    metadata,
+                });
         }
 
         let mut metadata = metadata_by_key.into_values().collect::<Vec<_>>();
@@ -130,9 +128,6 @@ fn first_ts_init_from_batches(batches: &[RecordBatch]) -> anyhow::Result<Option<
 }
 
 fn canonical_metadata_key(metadata: &HashMap<String, String>) -> anyhow::Result<String> {
-    let ordered = metadata
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let ordered = metadata.iter().collect::<BTreeMap<_, _>>();
     Ok(serde_json::to_string(&ordered)?)
 }

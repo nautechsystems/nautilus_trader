@@ -1480,7 +1480,7 @@ fn build_ws_taker_fill_report(
     let last_qty = Quantity::from_decimal_dp(size_dec, size_precision)?;
     let last_px = Price::from_decimal_dp(price_dec, price_precision)?;
 
-    let fee_rate = instrument_taker_fee(instrument);
+    let fee_rate = instrument_taker_fee(instrument)?;
     let commission_value = compute_commission(
         fee_rate,
         instrument_fee_exponent(instrument)?,
@@ -1877,6 +1877,23 @@ mod tests {
         let market: GammaMarket = load("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
+    }
+
+    fn set_taker_fee_rate(instrument: &mut InstrumentAny, rate: Decimal) {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option test instrument");
+        };
+        let mut info = binary.info.take().unwrap_or_default();
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({
+                "exponent": "1",
+                "rate": rate.to_string(),
+                "takerOnly": true,
+                "rebateRate": "0",
+            }),
+        );
+        binary.info = Some(info);
     }
 
     fn test_emitter() -> ExecutionEventEmitter {
@@ -2575,11 +2592,10 @@ mod tests {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let valid_instrument = test_instrument();
         let mut invalid_instrument = valid_instrument.clone();
-        let InstrumentAny::BinaryOption(binary_option) = &mut invalid_instrument else {
-            panic!("expected binary option test instrument");
-        };
-        binary_option.taker_fee =
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+        set_taker_fee_rate(
+            &mut invalid_instrument,
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
+        );
 
         let token_instruments = AtomicMap::new();
         token_instruments.insert(trade.asset_id, invalid_instrument);

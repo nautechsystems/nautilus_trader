@@ -25,11 +25,13 @@ Example of databento test order book deltas.
 # imbalance actor with an L3 matching engine.
 
 # %%
+from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.adapters.databento import DatabentoDataLoader
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
@@ -68,6 +70,10 @@ if __name__ == "__main__":
         base_currency=USD,
         starting_balances=[Money(1_000_000, USD)],
         book_type=BookType.L3_MBO,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     for instrument in instruments:

@@ -15,8 +15,7 @@
 
 //! Integration tests for the Lighter WebSocket client using a mock Axum server.
 //!
-//! The harness mirrors the OKX / Bybit shape: a `TestServerState` records every
-//! inbound message from the client, a `handle_socket` task replies with venue
+//! A `TestServerState` records every inbound message from the client, a `handle_socket` task replies with venue
 //! acks and pre-arranged update frames, and each test drives the public
 //! [`LighterWebSocketClient`] surface and asserts on the resulting
 //! [`NautilusWsMessage`] stream and the recorded server-side state.

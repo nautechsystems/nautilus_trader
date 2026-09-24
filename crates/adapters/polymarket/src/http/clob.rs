@@ -28,7 +28,9 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+    },
     websocket::proxy::ProxyUrl,
 };
 use rust_decimal::Decimal;
@@ -158,6 +160,7 @@ impl PolymarketClobHttpClient {
         let rate_limiter = PolymarketRateLimiter::for_signer(&address);
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .header_keys(RateLimitHeaders::names())
                 .timeout_secs(timeout_secs)
@@ -722,6 +725,19 @@ impl PolymarketClobPublicClient {
         let response = self
             .client
             .request_with_params(Method::GET, url, None::<&()>, None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
+    }
+
+    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
+        let params = [("token_id", token_id)];
+        let url = format!("{}/fee-rate", self.base_url);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
             .await
             .map_err(Error::from_http_client)?;
 

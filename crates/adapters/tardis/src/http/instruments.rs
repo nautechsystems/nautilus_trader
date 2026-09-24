@@ -65,8 +65,6 @@ pub fn create_currency_pair(
     multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
@@ -85,8 +83,6 @@ pub fn create_currency_pair(
             .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_info(build_info_params(info))
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -111,8 +107,6 @@ pub fn create_crypto_perpetual(
     multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
@@ -137,8 +131,6 @@ pub fn create_crypto_perpetual(
             .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_info(build_info_params(info))
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -165,8 +157,6 @@ pub fn create_crypto_future(
     multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
@@ -193,8 +183,6 @@ pub fn create_crypto_future(
             .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_info(build_info_params(info))
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -224,8 +212,6 @@ pub fn create_crypto_option(
     multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -268,8 +254,6 @@ pub fn create_crypto_option(
             .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_info(build_info_params(info))
             .ts_event(ts_event)
             .ts_init(ts_init)

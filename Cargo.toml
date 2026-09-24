@@ -5,7 +5,6 @@ members = [
   "crates/adapters/architect_ax",
   "crates/adapters/betfair",
   "crates/adapters/binance",
-  "crates/adapters/bitmex",
   "crates/adapters/blockchain",
   "crates/adapters/bybit",
   "crates/adapters/coinbase",
@@ -96,7 +95,6 @@ nautilus-trading = { path = "crates/trading", version = "0.65.0" }
 nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.65.0" }
 nautilus-betfair = { path = "crates/adapters/betfair", version = "0.65.0", default-features = false }
 nautilus-binance = { path = "crates/adapters/binance", version = "0.65.0", default-features = false }
-nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.65.0", default-features = false }
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.65.0" }
 nautilus-bybit = { path = "crates/adapters/bybit", version = "0.65.0", default-features = false }
 nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.65.0", default-features = false }
@@ -172,7 +170,7 @@ hyper = { version = "1.11.1", default-features = false, features = [
   "client",
   "http1",
 ] }
-hyper-rustls = { version = "0.27.9", default-features = false, features = [
+hyper-rustls = { version = "0.27.10", default-features = false, features = [
   "http1",
   "http2",
   "tls12",
@@ -229,7 +227,7 @@ pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
 quote = "1.0.47"
-rand = { version = "0.10.2", default-features = false, features = [
+rand = { version = "0.10.3", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
@@ -271,7 +269,7 @@ serde_json = { version = "1.0.151", default-features = false, features = [
 serde_urlencoded = "0.7.1"
 smallvec = { version = "1.16.1", features = ["serde"] }
 socket2 = { version = "0.6.5", features = ["all"] }
-sockudo-ws = { version = "2.0.1", default-features = false, features = [
+sockudo-ws = { version = "2.1.0", default-features = false, features = [
   "simd",
   "fastrand",
   "rustls-webpki-roots",
@@ -284,7 +282,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "3.0.4", features = ["full"] }
+syn = { version = "3.0.6", features = ["full"] }
 sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
@@ -368,7 +366,7 @@ axum = { version = "0.8.9", default-features = false, features = [
   "query",
   "ws",
 ] }
-criterion = { package = "codspeed-criterion-compat", version = "5.0.1", default-features = false, features = [
+criterion = { package = "codspeed-criterion-compat", version = "5.0.2", default-features = false, features = [
   "cargo_bench_support",
 ] }
 iai = "0.1.1"

@@ -117,6 +117,7 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
         for path in storage.list_files("", None).await? {
             storage.object_store.delete(&ObjectPath::from(path)).await?;
         }
+
         Ok::<(), anyhow::Error>(())
     })
 }
@@ -124,7 +125,7 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        data::{Data, QuoteTick},
+        data::{Data, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
         instruments::{InstrumentAny, NautilusInstrumentType},
         types::{Price, Quantity},
@@ -133,7 +134,11 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{backend::default_writer_factories, common::paths::CatalogPathPrefix};
+    use crate::{
+        backend::{default_writer_factories, parquet::catalog::ParquetDataCatalog},
+        catalog::types::CatalogDataType,
+        common::paths::CatalogPathPrefix,
+    };
 
     fn quote(ts_init: u64) -> QuoteTick {
         QuoteTick::new(
@@ -277,17 +282,7 @@ mod tests {
         writer.flush().unwrap();
         writer.close().unwrap();
 
-        let feather_files = std::fs::read_dir(temp_dir.path())
-            .unwrap()
-            .filter_map(std::result::Result::ok)
-            .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|extension| extension == "feather")
-            })
-            .count();
-        assert_eq!(feather_files, 1);
+        assert_eq!(count_feather_files(temp_dir.path()), 1);
     }
 
     #[rstest]
@@ -309,17 +304,42 @@ mod tests {
         writer.write_data(Data::Quote(quote(100))).unwrap();
         writer.close().unwrap();
 
-        let feather_files = std::fs::read_dir(&session)
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|extension| extension == "feather")
-            })
-            .count();
-        assert_eq!(feather_files, 1);
+        assert_eq!(count_feather_files(&session), 1);
+    }
+
+    #[rstest]
+    fn create_writer_feather_round_trips_quotes_through_catalog() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = temp_dir.path().join("backtest").join("run-001");
+        let expected = quote(100);
+        let config = WriterConnectConfig::new(session.to_str().unwrap(), None);
+        let registry = default_writer_factories();
+
+        let mut writer = create_writer(
+            &WriterBackendType::Feather,
+            &config,
+            WriterClock::Live,
+            &registry,
+        )
+        .unwrap();
+        writer.write_data(Data::Quote(expected)).unwrap();
+        writer.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        catalog
+            .convert_stream_to_data(
+                "run-001",
+                &CatalogDataType::from(NautilusDataType::QuoteTick),
+                Some("backtest"),
+                None,
+                false,
+            )
+            .unwrap();
+
+        let loaded = catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap();
+        assert_eq!(loaded, vec![expected]);
     }
 
     #[rstest]
@@ -341,5 +361,29 @@ mod tests {
                 .to_string()
                 .contains("No writer factory registered for 'Missing'"),
         );
+    }
+
+    fn count_feather_files(dir: &std::path::Path) -> usize {
+        let mut count = 0;
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(path) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&path) else {
+                continue;
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path
+                    .extension()
+                    .is_some_and(|extension| extension == "feather")
+                {
+                    count += 1;
+                }
+            }
+        }
+
+        count
     }
 }

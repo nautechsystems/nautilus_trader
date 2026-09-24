@@ -25,8 +25,23 @@
 //! Requests can await default and per-key quotas from one or more shared
 //! [`RateLimiter`](crate::ratelimiter::RateLimiter) instances. Sharing a limiter across clients
 //! enforces one process-wide budget for scopes such as an IP address or account. The client accepts
-//! default and per-request headers, repeated query values, raw bodies, client-level and per-request
-//! timeouts, and an optional proxy.
+//! default and per-request headers, repeated query values, raw bodies, and client-level and
+//! per-request timeouts.
+//!
+//! # Proxy routing
+//!
+//! By default the client honors ambient proxy configuration: with `use_system_proxy` left at its
+//! default of `true` and no explicit `proxy_url`, requests are routed through the proxy named by
+//! `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (lowercase variants included), except destinations
+//! matched by `NO_PROXY`.
+//!
+//! This default is a deliberate trust decision on the process environment: an actor who controls
+//! it chooses the proxy that observes all plaintext HTTP traffic and the CONNECT tunnels that
+//! carry HTTPS.
+//!
+//! An optional explicit `proxy_url` applies to both HTTP and HTTPS traffic and always takes
+//! precedence over ambient lookup. Passing `use_system_proxy(false)` disables ambient lookup, so
+//! requests route directly only when `proxy_url` is unset.
 //!
 //! HTTP status errors remain [`HttpResponse`] values for adapter-specific handling. The transport
 //! retries requests canceled before transmission on reused connections, and allows two retries for
@@ -40,8 +55,9 @@
 //! connections, HTTP/2 keepalive while idle, and adaptive HTTP/2 flow control. Buffered responses
 //! retain only configured header fields and reject bodies larger than 100 MiB, including chunked
 //! bodies without a declared length. [`HttpClient::get_stream`] consumes bodies incrementally
-//! without a total size limit. The redacted request path removes credential-bearing URLs from
-//! transport errors and logs.
+//! without a total size limit. Transport error messages carry the request URL without its query
+//! string or fragment, and the `_url_redacted` request methods omit the URL entirely; the client
+//! itself logs request metadata only, never URLs.
 //!
 //! Hyper owns the lifecycle of individual pooled connections, so this client exposes no socket
 //! state sink or explicit reconnect operation. Callers observe connection failure through each

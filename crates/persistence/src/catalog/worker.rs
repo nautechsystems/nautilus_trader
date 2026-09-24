@@ -48,7 +48,7 @@ const COMMAND_QUEUE_CAPACITY: usize = 10;
 ///
 /// Each open session holds its backend query state until it is drained or closed, so the count is
 /// bounded to turn a caller that never closes sessions into an error instead of an unbounded leak.
-pub(crate) const MAX_OPEN_SESSIONS: usize = 64;
+const MAX_OPEN_SESSIONS: usize = 64;
 
 #[derive(Debug)]
 pub struct CatalogWriteJob {
@@ -311,6 +311,7 @@ impl CatalogWorker {
 impl Drop for CatalogWorker {
     fn drop(&mut self) {
         let _ = self.sender.send(CatalogCommand::Shutdown);
+
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -405,6 +406,7 @@ fn run_catalog_worker(catalog: &mut DataCatalog, receiver: Receiver<CatalogComma
                         session_id
                     })
                 };
+
                 let _ = reply.send(result);
             }
             CatalogCommand::PullSession { session_id, reply } => {
@@ -481,6 +483,7 @@ fn drain_async_errors(errors: &mut Vec<anyhow::Error>) -> anyhow::Result<()> {
         .map(|e| format!("{e:#}"))
         .collect::<Vec<_>>()
         .join("; ");
+
     let Some(first) = errors.drain(..).next() else {
         return Ok(());
     };
@@ -506,23 +509,22 @@ fn pull_session(
     if !matches!(result, Ok(Some(_))) {
         sessions.remove(&session_id);
     }
+
     result
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
     use std::{
         sync::{Arc, Mutex},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
+    use nautilus_core::ClosedInterval;
     use nautilus_model::{
         data::{Data, NautilusRecordType, QuoteTick},
         identifiers::InstrumentId,
+        instruments::stubs::audusd_sim,
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -530,7 +532,7 @@ mod tests {
     use super::*;
     use crate::catalog::{
         session::{DataBatchQuery, TypedDataBatchSession},
-        traits::{CatalogMetadata, CatalogReader, CatalogRecordQuery, CatalogWriter, RecordBatch},
+        traits::{CatalogReader, CatalogWriter, RecordBatch},
     };
 
     struct FailingSession;
@@ -575,6 +577,7 @@ mod tests {
             if self.fail {
                 anyhow::bail!("stub query failure");
             }
+
             Ok(DataBatch::Quote(vec![stub_quote()].into()))
         }
 
@@ -588,61 +591,20 @@ mod tests {
             if self.fail {
                 anyhow::bail!("stub query failure");
             }
+
             Ok(Box::new(TypedDataBatchSession::from_vec(
                 vec![stub_quote()],
                 chunk_size,
             )))
         }
-
-        fn query_metadata(
-            &mut self,
-            _query: &CatalogQuery,
-        ) -> anyhow::Result<Vec<CatalogMetadata>> {
-            Ok(Vec::new())
-        }
-
-        fn get_missing_intervals_for_request(
-            &mut self,
-            _start: UnixNanos,
-            _end: UnixNanos,
-            _data_type: NautilusDataType,
-            _identifier: Option<&str>,
-        ) -> anyhow::Result<Vec<(u64, u64)>> {
-            Ok(Vec::new())
-        }
-
-        fn query_last_timestamp(
-            &mut self,
-            _data_type: NautilusDataType,
-            _identifier: Option<&str>,
-        ) -> anyhow::Result<Option<u64>> {
-            Ok(None)
-        }
-
-        fn query_display_record_batches(
-            &mut self,
-            _query: &CatalogQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
-        }
-
-        fn query_record_batches(
-            &mut self,
-            _query: &CatalogRecordQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
-        }
-
-        fn query_record_display_batches(
-            &mut self,
-            _query: &CatalogRecordQuery,
-        ) -> anyhow::Result<Vec<RecordBatch>> {
-            Ok(Vec::new())
-        }
     }
 
     impl CatalogWriter for StubCatalog {
         fn write_instruments(&mut self, _instruments: &[InstrumentAny]) -> anyhow::Result<()> {
+            if self.fail {
+                anyhow::bail!("stub instrument write failure");
+            }
+
             Ok(())
         }
 
@@ -660,6 +622,7 @@ mod tests {
                     .unwrap_or("stub write failure");
                 anyhow::bail!(message.to_string());
             }
+
             Ok(())
         }
 
@@ -690,6 +653,7 @@ mod tests {
     #[rstest]
     fn test_query_batch_async_invokes_callback_on_worker_thread() {
         let query_thread = Arc::new(Mutex::new(None));
+
         let worker = CatalogWorker::start(Box::new(StubCatalog {
             fail: false,
             query_thread: query_thread.clone(),
@@ -739,6 +703,7 @@ mod tests {
     #[rstest]
     fn test_worker_owns_and_pulls_catalog_session() {
         let query_thread = Arc::new(Mutex::new(None));
+
         let worker = CatalogWorker::start(Box::new(StubCatalog {
             fail: false,
             query_thread: query_thread.clone(),
@@ -764,6 +729,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_id = worker.open_session(stub_query(), Some(1)).unwrap();
 
         let first_close = worker.close_session(session_id).unwrap();
@@ -831,6 +797,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_ids = (0..MAX_OPEN_SESSIONS)
             .map(|_| worker.open_session(stub_query(), Some(1)).unwrap())
             .collect::<Vec<_>>();
@@ -856,6 +823,7 @@ mod tests {
             fail: false,
             query_thread: Arc::new(Mutex::new(None)),
         }));
+
         let session_id = worker.open_session(stub_query(), Some(1)).unwrap();
         let (tx, rx) = mpsc::channel();
 
@@ -870,9 +838,337 @@ mod tests {
                 }),
             )
             .unwrap();
+
         let (callback_thread, result) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
 
         assert_eq!(result.unwrap(), 1);
         assert_ne!(callback_thread, thread::current().id());
+    }
+
+    #[rstest]
+    fn test_flush_returns_single_async_failure_without_context() {
+        let worker = CatalogWorker::start(Box::new(StubCatalog {
+            fail: true,
+            query_thread: Arc::new(Mutex::new(None)),
+        }));
+
+        worker
+            .write_instruments_async(vec![InstrumentAny::CurrencyPair(audusd_sim())])
+            .unwrap();
+        let error = worker.flush().unwrap_err();
+
+        assert_eq!(error.to_string(), "stub instrument write failure");
+        assert_eq!(error.chain().count(), 1);
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingCatalog {
+        label: &'static str,
+        calls: Arc<Mutex<Vec<String>>>,
+        write_gate: Option<Receiver<()>>,
+        fork: bool,
+        panic_on_query: bool,
+    }
+
+    impl RecordingCatalog {
+        fn record(&self, call: &str) {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("{}{call}", self.label));
+        }
+    }
+
+    impl CatalogReader for RecordingCatalog {
+        fn fork_query_catalog(&self) -> anyhow::Result<Option<DataCatalog>> {
+            if !self.fork {
+                return Ok(None);
+            }
+
+            Ok(Some(Box::new(Self {
+                label: "fork ",
+                calls: self.calls.clone(),
+                ..Self::default()
+            })))
+        }
+
+        fn reset_session(&mut self) {
+            self.record("reset_session");
+        }
+
+        fn instruments(
+            &mut self,
+            query: &CatalogInstrumentQuery,
+        ) -> anyhow::Result<Vec<InstrumentAny>> {
+            self.record(&format!("instruments {:?}", query.instrument_ids));
+            Ok(vec![InstrumentAny::CurrencyPair(audusd_sim())])
+        }
+
+        #[expect(
+            clippy::panic_in_result_fn,
+            reason = "the stub simulates a catalog backend that panics mid-query"
+        )]
+        fn query_batch(&mut self, _query: &CatalogQuery) -> anyhow::Result<DataBatch> {
+            assert!(!self.panic_on_query, "stub query panic");
+
+            Ok(DataBatch::Quote(vec![stub_quote()].into()))
+        }
+
+        fn query_batch_session(
+            &mut self,
+            _query: &CatalogQuery,
+            chunk_size: Option<usize>,
+        ) -> anyhow::Result<DataBatchQueryResult> {
+            self.record(&format!("query_batch_session {chunk_size:?}"));
+            Ok(Box::new(TypedDataBatchSession::from_vec(
+                vec![stub_quote()],
+                chunk_size,
+            )))
+        }
+
+        fn get_missing_intervals_for_request(
+            &mut self,
+            start: UnixNanos,
+            end: UnixNanos,
+            _data_type: NautilusDataType,
+            identifier: Option<&str>,
+        ) -> anyhow::Result<Vec<(u64, u64)>> {
+            if identifier == Some("covered") {
+                return Ok(Vec::new());
+            }
+
+            Ok(vec![(start.as_u64(), end.as_u64())])
+        }
+
+        fn query_last_timestamp(
+            &mut self,
+            data_type: NautilusDataType,
+            identifier: Option<&str>,
+        ) -> anyhow::Result<Option<u64>> {
+            self.record(&format!("query_last_timestamp {data_type} {identifier:?}"));
+            Ok(Some(42))
+        }
+    }
+
+    impl CatalogWriter for RecordingCatalog {
+        fn write_instruments(&mut self, instruments: &[InstrumentAny]) -> anyhow::Result<()> {
+            self.record(&format!("write_instruments {}", instruments.len()));
+            Ok(())
+        }
+
+        fn write_data(
+            &mut self,
+            data: &[Data],
+            start: Option<UnixNanos>,
+            end: Option<UnixNanos>,
+            _params: Option<Params>,
+        ) -> anyhow::Result<()> {
+            if let Some(gate) = &self.write_gate {
+                gate.recv()?;
+            }
+
+            self.record(&format!(
+                "write_data {} {:?} {:?}",
+                data.len(),
+                start.map(|ts| ts.as_u64()),
+                end.map(|ts| ts.as_u64()),
+            ));
+            Ok(())
+        }
+
+        fn write_records(
+            &mut self,
+            _record_type: NautilusRecordType,
+            _batches: &[RecordBatch],
+            _params: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn record_empty_coverage(
+            &mut self,
+            _data_type: NautilusDataType,
+            _identifier: Option<&str>,
+            _start: UnixNanos,
+            _end: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn quote_write_job() -> CatalogWriteJob {
+        CatalogWriteJob {
+            data: DataBatch::Quote(vec![stub_quote()].into()),
+            start: Some(UnixNanos::from(1)),
+            end: Some(UnixNanos::from(2)),
+            params: None,
+        }
+    }
+
+    #[rstest]
+    fn test_worker_forwards_queries_and_writes_to_catalog() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+
+        let worker = CatalogWorker::start(Box::new(RecordingCatalog {
+            calls: calls.clone(),
+            ..RecordingCatalog::default()
+        }));
+
+        let identifiers = vec!["missing".to_string(), "covered".to_string()];
+
+        let last_timestamp = worker
+            .query_last_timestamp(NautilusDataType::QuoteTick, Some("missing".to_string()))
+            .unwrap();
+        let missing = worker
+            .get_missing_intervals(
+                UnixNanos::from(3),
+                UnixNanos::from(9),
+                NautilusDataType::QuoteTick,
+                Some("missing".to_string()),
+            )
+            .unwrap();
+        let missing_by_identifier = worker
+            .get_missing_intervals_for_identifiers(
+                UnixNanos::from(1),
+                UnixNanos::from(10),
+                NautilusDataType::QuoteTick,
+                identifiers.clone(),
+            )
+            .unwrap();
+        let coverage_by_identifier = worker
+            .get_coverage_intervals_for_identifiers(
+                UnixNanos::from(1),
+                UnixNanos::from(10),
+                NautilusDataType::QuoteTick,
+                identifiers,
+            )
+            .unwrap();
+        let batch = worker.query_batch(stub_query()).unwrap();
+        let instruments = worker
+            .query_instruments(
+                CatalogInstrumentQuery::new()
+                    .with_instrument_ids(Some(vec!["AUD/USD.SIM".to_string()])),
+            )
+            .unwrap();
+        worker.write(quote_write_job()).unwrap();
+        worker
+            .write_instruments(vec![InstrumentAny::CurrencyPair(audusd_sim())])
+            .unwrap();
+        worker
+            .write_instruments_async(vec![
+                InstrumentAny::CurrencyPair(audusd_sim()),
+                InstrumentAny::CurrencyPair(audusd_sim()),
+            ])
+            .unwrap();
+        worker.flush().unwrap();
+
+        assert_eq!(last_timestamp, Some(42));
+        assert_eq!(missing, vec![(3, 9)]);
+        assert_eq!(
+            missing_by_identifier,
+            AHashMap::from_iter([
+                ("missing".to_string(), vec![(1, 10)]),
+                ("covered".to_string(), Vec::new()),
+            ]),
+        );
+        assert_eq!(
+            coverage_by_identifier,
+            AHashMap::from_iter([
+                ("missing".to_string(), CoverageIntervals::default()),
+                (
+                    "covered".to_string(),
+                    CoverageIntervals {
+                        data: vec![ClosedInterval::new(1, 10).unwrap()],
+                        empty: Vec::new(),
+                    },
+                ),
+            ]),
+        );
+        assert_eq!(batch.len(), 1);
+        assert_eq!(instruments, vec![InstrumentAny::CurrencyPair(audusd_sim())]);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                "query_last_timestamp QuoteTick Some(\"missing\")",
+                "instruments Some([\"AUD/USD.SIM\"])",
+                "write_data 1 Some(1) Some(2)",
+                "write_instruments 1",
+                "write_instruments 2",
+            ],
+        );
+    }
+
+    #[rstest]
+    fn test_drop_waits_for_queued_async_writes() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let (release, gate) = mpsc::channel();
+
+        let worker = CatalogWorker::start(Box::new(RecordingCatalog {
+            calls: calls.clone(),
+            write_gate: Some(gate),
+            ..RecordingCatalog::default()
+        }));
+
+        worker.write_async(quote_write_job()).unwrap();
+
+        let releaser = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            release.send(()).unwrap();
+        });
+
+        drop(worker);
+
+        assert_eq!(*calls.lock().unwrap(), vec!["write_data 1 Some(1) Some(2)"]);
+        releaser.join().unwrap();
+    }
+
+    #[rstest]
+    #[case::shared_catalog(false, &["reset_session", "query_batch_session Some(1)"])]
+    #[case::forked_catalog(true, &["fork reset_session", "fork query_batch_session Some(1)"])]
+    fn test_open_session_queries_forked_catalog_when_available(
+        #[case] fork: bool,
+        #[case] expected_calls: &[&str],
+    ) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+
+        let worker = CatalogWorker::start(Box::new(RecordingCatalog {
+            calls: calls.clone(),
+            fork,
+            ..RecordingCatalog::default()
+        }));
+
+        let session_id = worker.open_session(stub_query(), Some(1)).unwrap();
+        let batch = worker.pull_session(session_id).unwrap().unwrap();
+
+        assert_eq!(batch.len(), 1);
+        assert_eq!(*calls.lock().unwrap(), expected_calls);
+    }
+
+    #[rstest]
+    fn test_worker_reports_stopped_thread_after_catalog_panic() {
+        let worker = CatalogWorker::start(Box::new(RecordingCatalog {
+            panic_on_query: true,
+            ..RecordingCatalog::default()
+        }));
+
+        let reply_error = worker.query_batch(stub_query()).unwrap_err();
+        let handle = worker.handle.as_ref().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+
+        while !handle.is_finished() {
+            assert!(Instant::now() < deadline, "worker thread did not stop");
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        let send_error = worker.flush().unwrap_err();
+
+        assert_eq!(
+            reply_error.to_string(),
+            "Catalog worker thread stopped before replying to the command",
+        );
+        assert_eq!(
+            send_error.to_string(),
+            "Catalog worker thread has stopped, so the command cannot be sent",
+        );
     }
 }

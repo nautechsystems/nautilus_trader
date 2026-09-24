@@ -30,6 +30,7 @@
 
 use std::fmt::Debug;
 
+use nautilus_core::string::secret::REDACTED;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use super::types::TcpMessageHandler;
@@ -110,7 +111,20 @@ pub struct SocketConfig {
     /// detection otherwise. `Some(0)` is rejected. Set an explicit value above the heartbeat
     /// interval so a healthy connection cannot trip it.
     pub heartbeat_timeout_secs: Option<u64>,
+    /// The maximum number of outstanding messages, including queued, in-flight, and replay messages.
+    ///
+    /// Defaults to 1,024. Sends fail immediately when full. Must be positive and no greater
+    /// than [`tokio::sync::Semaphore::MAX_PERMITS`]. This bounds message count, not payload bytes.
+    pub writer_capacity: Option<usize>,
     /// The path to the certificates directory.
+    ///
+    /// Every certificate that parses from any file directly inside the directory, regardless of
+    /// file name, becomes a trust anchor for the connection alongside the bundled `webpki-roots`
+    /// set. No CA or self-signature checks are performed. A certificate chain matched to a
+    /// private key in the directory is used as the client certificate instead. Write access to
+    /// the directory is therefore equivalent to control over which servers the connection
+    /// trusts. Restrict its contents to intended trust anchors. Each anchor loaded from it is
+    /// logged at INFO with its SHA-256 fingerprint.
     pub certs_dir: Option<String>,
 }
 
@@ -135,9 +149,14 @@ impl SocketConfig {
     ///
     /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
     /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
-    /// `[1.0, 100.0]`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
+    /// `[1.0, 100.0]`, `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`, or
+    /// `writer_capacity` is outside `[1, Semaphore::MAX_PERMITS]`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
+
+        if let Err(e) = crate::writer::validate_capacity(self.writer_capacity) {
+            errors.push(e);
+        }
 
         if self.url.trim().is_empty() {
             errors.push(NetworkConfigError::invalid("url", "must not be empty"));
@@ -223,7 +242,7 @@ impl SocketConfig {
 impl Debug for SocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(SocketConfig))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field("mode", &self.mode)
             .field("suffix", &self.suffix)
             .field(
@@ -231,6 +250,7 @@ impl Debug for SocketConfig {
                 &self.message_handler.as_ref().map(|_| "<function>"),
             )
             .field("heartbeat", &self.heartbeat)
+            .field("writer_capacity", &self.writer_capacity)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field(
                 "reconnect_delay_initial_ms",
@@ -312,6 +332,8 @@ mod tests {
     }
 
     #[rstest]
+    #[case::writer_capacity_zero(|c: &mut SocketConfig| c.writer_capacity = Some(0), "writer_capacity")]
+    #[case::writer_capacity_excess(|c: &mut SocketConfig| c.writer_capacity = Some(usize::MAX), "writer_capacity")]
     #[case::empty_url(|c: &mut SocketConfig| c.url = String::new(), "url")]
     #[case::heartbeat_interval(|c: &mut SocketConfig| { c.heartbeat = Some(SocketHeartbeat { interval_secs: 0, payload: vec![] }); }, "heartbeat")]
     #[case::heartbeat_timeout_below_interval(|c: &mut SocketConfig| { c.heartbeat = Some(SocketHeartbeat { interval_secs: 5, payload: vec![b'p'] }); c.heartbeat_timeout_secs = Some(5); }, "heartbeat_timeout_secs")]
@@ -382,5 +404,20 @@ mod tests {
                 panic!("expected Multiple, was {other:?}")
             }
         }
+    }
+
+    #[rstest]
+    fn test_debug_redacts_endpoint_credentials() {
+        const ENDPOINT_PATH_SECRET: &str = "unique-endpoint-path-secret";
+        const ENDPOINT_QUERY_SECRET: &str = "unique-endpoint-query-secret";
+        let mut config = valid_config();
+        config.url =
+            format!("wss://rpc.example.com/{ENDPOINT_PATH_SECRET}?api_key={ENDPOINT_QUERY_SECRET}");
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("url: \"<redacted>\""));
+        assert!(!debug.contains(ENDPOINT_PATH_SECRET));
+        assert!(!debug.contains(ENDPOINT_QUERY_SECRET));
     }
 }

@@ -974,7 +974,7 @@ mod tests {
             .markets
             .remove("BTC-USD")
             .expect("BTC-USD market missing from fixture");
-        let instrument = parse_instrument_any(&market, None, None, UnixNanos::default())
+        let instrument = parse_instrument_any(&market, UnixNanos::default())
             .expect("failed to parse BTC-USD instrument");
         let instrument_id = instrument.id();
         let http_client = DydxHttpClient::default();

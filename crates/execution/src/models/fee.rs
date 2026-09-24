@@ -17,7 +17,8 @@ use std::{fmt::Debug, rc::Rc};
 
 use nautilus_model::{
     enums::LiquiditySide,
-    identifiers::GENERIC_SPREAD_ID_SEPARATOR,
+    fees::{MakerTakerFeeRates, MakerTakerFeeSchedule, calculate_maker_taker_commission},
+    identifiers::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity},
@@ -113,12 +114,6 @@ impl FeeModel for FeeModelHandle {
     }
 }
 
-impl Default for FeeModelHandle {
-    fn default() -> Self {
-        FeeModelAny::default().into()
-    }
-}
-
 impl From<FeeModelAny> for FeeModelHandle {
     fn from(model: FeeModelAny) -> Self {
         Self::new(model)
@@ -177,12 +172,6 @@ impl FeeModel for FeeModelAny {
             #[cfg(feature = "python")]
             Self::Python(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
         }
-    }
-}
-
-impl Default for FeeModelAny {
-    fn default() -> Self {
-        Self::MakerTaker(MakerTakerFeeModel)
     }
 }
 
@@ -343,7 +332,41 @@ fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
         skip_from_py_object
     )
 )]
-pub struct MakerTakerFeeModel;
+pub struct MakerTakerFeeModel {
+    schedule: MakerTakerFeeSchedule,
+}
+
+impl MakerTakerFeeModel {
+    /// Creates a new [`MakerTakerFeeModel`] with explicit default rates.
+    ///
+    /// Negative maker rates represent rebates where the venue supports them.
+    /// Use [`Self::set_override`] for exact per-instrument rates.
+    #[must_use]
+    pub fn new(maker_rate: Decimal, taker_rate: Decimal) -> Self {
+        Self {
+            schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
+        }
+    }
+
+    /// Creates a new explicit zero-fee [`MakerTakerFeeModel`].
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            schedule: MakerTakerFeeSchedule::zero(),
+        }
+    }
+
+    /// Adds or replaces an exact instrument override.
+    pub fn set_override(&mut self, instrument_id: InstrumentId, rates: MakerTakerFeeRates) {
+        self.schedule.set_override(instrument_id, rates);
+    }
+
+    /// Returns the owned fee schedule.
+    #[must_use]
+    pub fn schedule(&self) -> &MakerTakerFeeSchedule {
+        &self.schedule
+    }
+}
 
 impl FeeModel for MakerTakerFeeModel {
     fn get_commission(
@@ -353,22 +376,21 @@ impl FeeModel for MakerTakerFeeModel {
         fill_px: Price,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        let notional =
-            instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
-        let rate = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => instrument.maker_fee(),
-            Some(LiquiditySide::Taker) => instrument.taker_fee(),
-            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
-        };
-        let commission = mul_checked(notional.as_decimal(), rate)?;
+        let liquidity_side = order
+            .liquidity_side()
+            .ok_or_else(|| anyhow::anyhow!("Liquidity side not set"))?;
+        if liquidity_side == LiquiditySide::NoLiquiditySide {
+            anyhow::bail!("Liquidity side not set");
+        }
 
-        Money::from_decimal(commission, notional.currency).map_err(Into::into)
+        let rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
+        calculate_maker_taker_commission(instrument, fill_quantity, fill_px, rate, Some(false))
     }
 }
 
 /// Fee model for probability-priced outcome shares.
 ///
-/// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+/// Applies `qty * fee_rate * p * (1 - p)` using the account-owned maker or
 /// taker fee rate. This matches venues that represent outcome shares as
 /// [`InstrumentAny::BinaryOption`] instruments quoted on a `[0, 1]`
 /// probability scale.
@@ -389,7 +411,30 @@ impl FeeModel for MakerTakerFeeModel {
         skip_from_py_object
     )
 )]
-pub struct ProbabilityPriceFeeModel;
+pub struct ProbabilityPriceFeeModel {
+    schedule: MakerTakerFeeSchedule,
+}
+
+impl ProbabilityPriceFeeModel {
+    /// Creates a new [`ProbabilityPriceFeeModel`] with explicit default rates.
+    #[must_use]
+    pub fn new(maker_rate: Decimal, taker_rate: Decimal) -> Self {
+        Self {
+            schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
+        }
+    }
+
+    /// Adds or replaces an exact instrument override.
+    pub fn set_override(&mut self, instrument_id: InstrumentId, rates: MakerTakerFeeRates) {
+        self.schedule.set_override(instrument_id, rates);
+    }
+
+    /// Returns the owned fee schedule.
+    #[must_use]
+    pub fn schedule(&self) -> &MakerTakerFeeSchedule {
+        &self.schedule
+    }
+}
 
 impl FeeModel for ProbabilityPriceFeeModel {
     fn get_commission(
@@ -408,11 +453,14 @@ impl FeeModel for ProbabilityPriceFeeModel {
             anyhow::bail!("ProbabilityPriceFeeModel requires a fill price in [0, 1]");
         }
 
-        let fee_rate = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => instrument.maker_fee(),
-            Some(LiquiditySide::Taker) => instrument.taker_fee(),
-            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
-        };
+        let liquidity_side = order
+            .liquidity_side()
+            .ok_or_else(|| anyhow::anyhow!("Liquidity side not set"))?;
+        if liquidity_side == LiquiditySide::NoLiquiditySide {
+            anyhow::bail!("Liquidity side not set");
+        }
+
+        let fee_rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
 
         let one_minus_p = Decimal::ONE - fill_price;
         let commission = mul_checked(fill_quantity.as_decimal(), fee_rate)
@@ -424,7 +472,7 @@ impl FeeModel for ProbabilityPriceFeeModel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
@@ -438,49 +486,53 @@ impl FeeModel for ProbabilityPriceFeeModel {
     )
 )]
 pub struct CappedOptionFeeModel {
-    maker_rate: Option<Decimal>,
-    taker_rate: Option<Decimal>,
+    schedule: MakerTakerFeeSchedule,
     cap: Decimal,
 }
 
-impl Debug for CappedOptionFeeModel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(CappedOptionFeeModel))
-            .field("maker_rate", &self.maker_rate)
-            .field("taker_rate", &self.taker_rate)
-            .field("cap_rate", &self.cap)
-            .finish()
-    }
-}
-
 impl CappedOptionFeeModel {
-    /// Creates a new [`CappedOptionFeeModel`] instance.
+    /// Creates a new [`CappedOptionFeeModel`] instance with explicit rates.
     ///
     /// # Errors
     ///
     /// Returns an error if any supplied rate is negative.
     pub fn new(
-        maker_rate: Option<Decimal>,
-        taker_rate: Option<Decimal>,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
         cap_rate: Option<Decimal>,
     ) -> anyhow::Result<Self> {
-        check_fee_rate(maker_rate, "maker_rate")?;
-        check_fee_rate(taker_rate, "taker_rate")?;
+        check_fee_rate(Some(maker_rate), "maker_rate")?;
+        check_fee_rate(Some(taker_rate), "taker_rate")?;
 
         let cap_rate = cap_rate.unwrap_or(dec!(0.125));
         check_fee_rate(Some(cap_rate), "cap_rate")?;
 
         Ok(Self {
-            maker_rate,
-            taker_rate,
+            schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
             cap: cap_rate,
         })
     }
-}
 
-impl Default for CappedOptionFeeModel {
-    fn default() -> Self {
-        Self::new(None, None, None).unwrap()
+    /// Adds or replaces an exact instrument override.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any override rate is negative.
+    pub fn set_override(
+        &mut self,
+        instrument_id: InstrumentId,
+        rates: MakerTakerFeeRates,
+    ) -> anyhow::Result<()> {
+        check_fee_rate(Some(rates.maker), "maker_rate")?;
+        check_fee_rate(Some(rates.taker), "taker_rate")?;
+        self.schedule.set_override(instrument_id, rates);
+        Ok(())
+    }
+
+    /// Returns the owned fee schedule.
+    #[must_use]
+    pub fn schedule(&self) -> &MakerTakerFeeSchedule {
+        &self.schedule
     }
 }
 
@@ -504,7 +556,15 @@ impl FeeModel for CappedOptionFeeModel {
         underlying_px: Option<Price>,
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "CappedOptionFeeModel")?;
-        let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
+        let liquidity_side = order
+            .liquidity_side()
+            .ok_or_else(|| anyhow::anyhow!("Liquidity side not set"))?;
+        if liquidity_side == LiquiditySide::NoLiquiditySide {
+            anyhow::bail!("Liquidity side not set");
+        }
+
+        let rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
+        check_fee_rate(Some(rate), "fee_rate")?;
         let multiplier = instrument.multiplier().as_decimal();
         let rate_fee = if instrument.is_inverse() {
             rate
@@ -534,30 +594,44 @@ impl FeeModel for CappedOptionFeeModel {
     )
 )]
 pub struct TieredNotionalOptionFeeModel {
-    maker_rate: Option<Decimal>,
-    taker_rate: Option<Decimal>,
+    schedule: MakerTakerFeeSchedule,
 }
 
 impl TieredNotionalOptionFeeModel {
-    /// Creates a new [`TieredNotionalOptionFeeModel`] instance.
+    /// Creates a new [`TieredNotionalOptionFeeModel`] instance with explicit rates.
     ///
     /// # Errors
     ///
     /// Returns an error if any supplied rate is negative.
-    pub fn new(maker_rate: Option<Decimal>, taker_rate: Option<Decimal>) -> anyhow::Result<Self> {
-        check_fee_rate(maker_rate, "maker_rate")?;
-        check_fee_rate(taker_rate, "taker_rate")?;
+    pub fn new(maker_rate: Decimal, taker_rate: Decimal) -> anyhow::Result<Self> {
+        check_fee_rate(Some(maker_rate), "maker_rate")?;
+        check_fee_rate(Some(taker_rate), "taker_rate")?;
 
         Ok(Self {
-            maker_rate,
-            taker_rate,
+            schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
         })
     }
-}
 
-impl Default for TieredNotionalOptionFeeModel {
-    fn default() -> Self {
-        Self::new(None, None).unwrap()
+    /// Adds or replaces an exact instrument override.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any override rate is negative.
+    pub fn set_override(
+        &mut self,
+        instrument_id: InstrumentId,
+        rates: MakerTakerFeeRates,
+    ) -> anyhow::Result<()> {
+        check_fee_rate(Some(rates.maker), "maker_rate")?;
+        check_fee_rate(Some(rates.taker), "taker_rate")?;
+        self.schedule.set_override(instrument_id, rates);
+        Ok(())
+    }
+
+    /// Returns the owned fee schedule.
+    #[must_use]
+    pub fn schedule(&self) -> &MakerTakerFeeSchedule {
+        &self.schedule
     }
 }
 
@@ -570,27 +644,20 @@ impl FeeModel for TieredNotionalOptionFeeModel {
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "TieredNotionalOptionFeeModel")?;
-        let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
+        let liquidity_side = order
+            .liquidity_side()
+            .ok_or_else(|| anyhow::anyhow!("Liquidity side not set"))?;
+        if liquidity_side == LiquiditySide::NoLiquiditySide {
+            anyhow::bail!("Liquidity side not set");
+        }
+
+        let rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
+        check_fee_rate(Some(rate), "fee_rate")?;
         let notional =
             instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
         let total = mul_checked(notional.as_decimal(), rate)?;
         Money::from_decimal(total, notional.currency).map_err(Into::into)
     }
-}
-
-fn option_fee_rate(
-    order: &OrderAny,
-    instrument: &InstrumentAny,
-    maker_rate: Option<Decimal>,
-    taker_rate: Option<Decimal>,
-) -> anyhow::Result<Decimal> {
-    let rate = match order.liquidity_side() {
-        Some(LiquiditySide::Maker) => maker_rate.unwrap_or_else(|| instrument.maker_fee()),
-        Some(LiquiditySide::Taker) => taker_rate.unwrap_or_else(|| instrument.taker_fee()),
-        Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
-    };
-    check_fee_rate(Some(rate), "fee_rate")?;
-    Ok(rate)
 }
 
 fn check_fee_rate(rate: Option<Decimal>, name: &str) -> anyhow::Result<()> {
@@ -726,9 +793,9 @@ mod tests {
 
     #[rstest]
     fn test_maker_taker_fee_model_maker_commission() {
-        let fee_model = MakerTakerFeeModel;
+        let fee_model = MakerTakerFeeModel::new(dec!(0.00002), dec!(0.00002));
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
-        let maker_fee = aud_usd.maker_fee();
+        let maker_fee = dec!(0.00002);
         let price = Price::from("1.0");
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(aud_usd.id())
@@ -745,8 +812,65 @@ mod tests {
     }
 
     #[rstest]
+    fn test_maker_taker_fee_model_same_instrument_two_schedules() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let schedule_a = MakerTakerFeeModel::new(dec!(0.0001), dec!(0.0002));
+        let schedule_b = MakerTakerFeeModel::new(dec!(0.0003), dec!(0.0004));
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let fill = TestOrderStubs::make_filled_order(&order, &instrument, LiquiditySide::Taker);
+
+        let commission_a = schedule_a
+            .get_commission(
+                &fill,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+        let commission_b = schedule_b
+            .get_commission(
+                &fill,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission_a, Money::from("20 USD"));
+        assert_eq!(commission_b, Money::from("40 USD"));
+    }
+
+    #[rstest]
+    fn test_maker_taker_fee_model_negative_maker_rate_is_rebate() {
+        let fee_model = MakerTakerFeeModel::new(dec!(-0.00025), dec!(0.00075));
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("1.0"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        let fill = TestOrderStubs::make_filled_order(&order, &instrument, LiquiditySide::Maker);
+
+        let commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("-25 USD"));
+    }
+
+    #[rstest]
     fn test_maker_taker_fee_model_uses_decimal_rounding() {
-        let fee_model = MakerTakerFeeModel;
+        let fee_model = MakerTakerFeeModel::new(dec!(0.00002), dec!(0.00002));
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let price = Price::from("1.0");
         let quantity = Quantity::from("117250");
@@ -792,10 +916,8 @@ mod tests {
 
     #[rstest]
     fn test_maker_taker_fee_model_decimal_overflow_returns_error() {
-        let fee_model = MakerTakerFeeModel;
-        let mut instrument = audusd_sim();
-        instrument.maker_fee = Decimal::MAX;
-        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let fee_model = MakerTakerFeeModel::new(Decimal::MAX, dec!(0.00002));
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument.id())
             .side(OrderSide::Sell)
@@ -815,9 +937,9 @@ mod tests {
 
     #[rstest]
     fn test_maker_taker_fee_model_taker_commission() {
-        let fee_model = MakerTakerFeeModel;
+        let fee_model = MakerTakerFeeModel::new(dec!(0.00002), dec!(0.00002));
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
-        let taker_fee = aud_usd.taker_fee();
+        let taker_fee = dec!(0.00002);
         let price = Price::from("1.0");
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(aud_usd.id())
@@ -1048,15 +1170,18 @@ mod tests {
     #[case::sports_p50("0.03", "0.500", "0.00750")]
     #[case::sports_p30("0.03", "0.300", "0.00630")]
     fn test_probability_price_fee_model_taker_commission(
-        mut binary_option: BinaryOption,
+        binary_option: BinaryOption,
         #[case] taker_fee: &str,
         #[case] price: &str,
         #[case] expected: &str,
     ) {
-        binary_option.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
         let instrument = InstrumentAny::BinaryOption(binary_option);
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, price);
-        let fee_model = ProbabilityPriceFeeModel;
+
+        let fee_model = ProbabilityPriceFeeModel::new(
+            Decimal::ZERO,
+            Decimal::from_str_exact(taker_fee).unwrap(),
+        );
 
         let commission = fee_model
             .get_commission(
@@ -1075,13 +1200,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_probability_price_fee_model_maker_commission_uses_instrument_rate(
-        mut binary_option: BinaryOption,
+    fn test_probability_price_fee_model_maker_commission_uses_explicit_rate(
+        binary_option: BinaryOption,
     ) {
-        binary_option.maker_fee = dec!(0.01);
         let instrument = InstrumentAny::BinaryOption(binary_option);
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Maker, "0.500");
-        let fee_model = FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel);
+        let fee_model =
+            FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02)));
 
         let commission = fee_model
             .get_commission(
@@ -1097,12 +1222,11 @@ mod tests {
 
     #[rstest]
     fn test_probability_price_fee_model_decimal_overflow_returns_error(
-        mut binary_option: BinaryOption,
+        binary_option: BinaryOption,
     ) {
-        binary_option.maker_fee = Decimal::MAX;
         let instrument = InstrumentAny::BinaryOption(binary_option);
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Maker, "0.500");
-        let fee_model = ProbabilityPriceFeeModel;
+        let fee_model = ProbabilityPriceFeeModel::new(Decimal::MAX, dec!(0.02));
 
         let result = fee_model.get_commission(
             &fill,
@@ -1200,7 +1324,7 @@ mod tests {
     fn test_probability_price_fee_model_rejects_non_binary_instrument() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
-        let fee_model = ProbabilityPriceFeeModel;
+        let fee_model = ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02));
 
         let result = fee_model.get_commission(
             &fill,
@@ -1218,7 +1342,7 @@ mod tests {
     ) {
         let instrument = InstrumentAny::BinaryOption(binary_option);
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
-        let fee_model = ProbabilityPriceFeeModel;
+        let fee_model = ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02));
 
         let result = fee_model.get_commission(
             &fill,
@@ -1234,12 +1358,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case::maker(Some(dec!(-0.0001)), Some(dec!(0.0003)), None, "maker_rate")]
-    #[case::taker(Some(dec!(0.0001)), Some(dec!(-0.0003)), None, "taker_rate")]
-    #[case::cap(Some(dec!(0.0001)), Some(dec!(0.0003)), Some(dec!(-0.125)), "cap_rate")]
+    #[case::maker(dec!(-0.0001), dec!(0.0003), None, "maker_rate")]
+    #[case::taker(dec!(0.0001), dec!(-0.0003), None, "taker_rate")]
+    #[case::cap(dec!(0.0001), dec!(0.0003), Some(dec!(-0.125)), "cap_rate")]
     fn test_capped_option_fee_model_negative_rate_fails(
-        #[case] maker_rate: Option<Decimal>,
-        #[case] taker_rate: Option<Decimal>,
+        #[case] maker_rate: Decimal,
+        #[case] taker_rate: Decimal,
         #[case] cap_rate: Option<Decimal>,
         #[case] expected_field: &str,
     ) {
@@ -1258,7 +1382,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Maker);
         let fee_model = FeeModelAny::CappedOption(
-            CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
+            CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap(),
         );
 
         let commission = fee_model
@@ -1281,7 +1405,7 @@ mod tests {
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Maker);
-        let fee_model = CappedOptionFeeModel::new(Some(Decimal::MAX), None, None).unwrap();
+        let fee_model = CappedOptionFeeModel::new(Decimal::MAX, dec!(0.0003), None).unwrap();
 
         let result = fee_model.get_commission_with_context(
             &fill,
@@ -1303,8 +1427,7 @@ mod tests {
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model =
-            CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap();
+        let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
         let commission = fee_model
             .get_commission_with_context(
@@ -1327,8 +1450,7 @@ mod tests {
         option_contract_appl.multiplier = Quantity::from(100);
         let instrument = InstrumentAny::OptionContract(option_contract_appl);
         let fill = option_fill_order(&instrument, LiquiditySide::Maker);
-        let fee_model =
-            CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap();
+        let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
         let commission = fee_model
             .get_commission_with_context(
@@ -1351,8 +1473,7 @@ mod tests {
         crypto_option_btc_deribit.is_inverse = true;
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model =
-            CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap();
+        let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
         let commission = fee_model
             .get_commission(
@@ -1373,7 +1494,7 @@ mod tests {
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model = CappedOptionFeeModel::default();
+        let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
         let result = fee_model.get_commission(
             &fill,
@@ -1389,7 +1510,7 @@ mod tests {
     fn test_capped_option_fee_model_rejects_non_option_instrument() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model = CappedOptionFeeModel::default();
+        let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
         let result = fee_model.get_commission_with_context(
             &fill,
@@ -1413,7 +1534,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, liquidity_side);
         let fee_model = FeeModelAny::TieredNotionalOption(
-            TieredNotionalOptionFeeModel::new(Some(dec!(0.0002)), Some(dec!(0.0005))).unwrap(),
+            TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap(),
         );
 
         let commission = fee_model
@@ -1435,7 +1556,7 @@ mod tests {
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Maker);
-        let fee_model = TieredNotionalOptionFeeModel::new(Some(Decimal::MAX), None).unwrap();
+        let fee_model = TieredNotionalOptionFeeModel::new(Decimal::MAX, dec!(0.0005)).unwrap();
 
         let result = fee_model.get_commission(
             &fill,
@@ -1457,8 +1578,7 @@ mod tests {
         crypto_option_btc_deribit.is_inverse = true;
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model =
-            TieredNotionalOptionFeeModel::new(Some(dec!(0.0002)), Some(dec!(0.0005))).unwrap();
+        let fee_model = TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap();
 
         let commission = fee_model
             .get_commission(
@@ -1477,7 +1597,7 @@ mod tests {
     fn test_tiered_notional_option_fee_model_rejects_non_option_instrument() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
-        let fee_model = TieredNotionalOptionFeeModel::default();
+        let fee_model = TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap();
 
         let result = fee_model.get_commission(
             &fill,
@@ -1490,11 +1610,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::maker(Some(dec!(-0.0002)), Some(dec!(0.0005)), "maker_rate")]
-    #[case::taker(Some(dec!(0.0002)), Some(dec!(-0.0005)), "taker_rate")]
+    #[case::maker(dec!(-0.0002), dec!(0.0005), "maker_rate")]
+    #[case::taker(dec!(0.0002), dec!(-0.0005), "taker_rate")]
     fn test_tiered_notional_option_fee_model_negative_rate_fails(
-        #[case] maker_rate: Option<Decimal>,
-        #[case] taker_rate: Option<Decimal>,
+        #[case] maker_rate: Decimal,
+        #[case] taker_rate: Decimal,
         #[case] expected_field: &str,
     ) {
         let result = TieredNotionalOptionFeeModel::new(maker_rate, taker_rate);
@@ -1516,7 +1636,7 @@ mod tests {
             .price(Price::from("100.00"))
             .quantity(Quantity::from("2.0"))
             .build();
-        let fee_model = TieredNotionalOptionFeeModel::default();
+        let fee_model = TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap();
 
         let result = fee_model.get_commission(
             &order,

@@ -36,17 +36,20 @@ use nautilus_common::{
     live::runner::replace_data_event_sender,
     messages::{
         DataEvent,
-        data::{SubscribeBookDeltas, UnsubscribeBookDeltas},
+        data::{
+            SubscribeBookDeltas, SubscribeBookDepth, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+        },
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::SocketReconnectRegistry;
 use nautilus_model::{
     data::Data,
     enums::{BookType, RecordFlag},
     identifiers::InstrumentId,
     orderbook::OrderBook,
+    types::Price,
 };
 use nautilus_network::mode::ReconnectRequestOutcome;
 use nautilus_okx::{
@@ -71,6 +74,8 @@ struct BookWire {
     gaps: AtomicUsize,
     reject: AtomicBool,
     push: tokio::sync::Notify,
+    depth_active: AtomicBool,
+    deltas_active: AtomicBool,
 }
 
 async fn upgrade(ws: WebSocketUpgrade, State(state): State<Arc<BookWire>>) -> impl IntoResponse {
@@ -84,7 +89,7 @@ fn filter_frame(text: &str, state: &BookWire) -> Option<String> {
 
     if !matches!(
         frame["arg"]["channel"].as_str(),
-        Some("books" | "sprd-books5")
+        Some("books" | "books5" | "sprd-books5")
     ) {
         return Some(text.to_string());
     }
@@ -134,6 +139,14 @@ fn book_frame(snapshot: bool, generation: usize, channel: &str) -> Value {
         }
     }
 
+    if channel == "books5" {
+        frame["arg"]["channel"] = json!(channel);
+        frame.as_object_mut().unwrap().remove("action");
+        for side in ["bids", "asks"] {
+            frame["data"][0][side].as_array_mut().unwrap().truncate(5);
+        }
+    }
+
     if channel == "sprd-books5" {
         frame["arg"] = json!({"channel": channel, "sprdId": "BTC-USDT_BTC-USDT-SWAP"});
         frame.as_object_mut().unwrap().remove("action");
@@ -155,15 +168,18 @@ fn book_frame(snapshot: bool, generation: usize, channel: &str) -> Value {
 
 async fn mock(mut socket: WebSocket, state: Arc<BookWire>) {
     state.connections.fetch_add(1, Ordering::SeqCst);
+    let mut deltas_channel = "books";
 
     loop {
         tokio::select! {
             () = state.push.notified() => {
-                let frame = book_frame(false, 0, "books").to_string();
-                if let Some(frame) = filter_frame(&frame, &state)
-                    && socket.send(Message::Text(frame.into())).await.is_err()
-                {
-                    break;
+                for (channel, active) in [(deltas_channel, &state.deltas_active), ("books5", &state.depth_active)] {
+                    if active.load(Ordering::SeqCst) {
+                        let frame = book_frame(channel != "books", 0, channel).to_string();
+                        if let Some(frame) = filter_frame(&frame, &state)
+                            && socket.send(Message::Text(frame.into())).await.is_err()
+                        { return; }
+                    }
                 }
             }
             message = socket.recv() => {
@@ -186,13 +202,20 @@ async fn mock(mut socket: WebSocket, state: Arc<BookWire>) {
                     }
 
                     let channel = arg["channel"].as_str().unwrap();
-                    if !matches!(channel, "books" | "sprd-books5") {
+                    if !matches!(channel, "books" | "books5" | "sprd-books5") {
                         continue;
                     }
 
                     if channel == "sprd-books5" {
+                        deltas_channel = "sprd-books5";
                         assert_eq!(arg["sprdId"], "BTC-USDT_BTC-USDT-SWAP");
                         assert!(arg.get("instId").is_none());
+                    }
+
+                    if channel == "books5" {
+                        state.depth_active.store(op == "subscribe", Ordering::SeqCst);
+                    } else {
+                        state.deltas_active.store(op == "subscribe", Ordering::SeqCst);
                     }
 
                     if op == "unsubscribe" {
@@ -683,5 +706,353 @@ async fn initial_snapshot_arrival_cancels_deadline(#[case] spread: bool) {
     assert_eq!(wire.subscriptions.load(Ordering::SeqCst), 1);
     assert_eq!(wire.unsubscriptions.load(Ordering::SeqCst), 0);
     assert_eq!(session.snapshots[&id], 1);
+    session.stop().await;
+}
+
+#[rstest]
+#[case::depth_first(true, true)]
+#[case::deltas_first(false, true)]
+#[case::remove_depth_first(true, false)]
+#[case::remove_depth_after_deltas_first(false, false)]
+#[tokio::test]
+async fn depth_and_deltas_use_independent_feeds(
+    #[case] depth_first: bool,
+    #[case] remove_deltas: bool,
+) {
+    let mut session = BookClient::connect(0).await;
+    let id = InstrumentId::from("BTC-USD.OKX");
+
+    let subscribe_depth = || {
+        SubscribeBookDepth::new(
+            id,
+            BookType::L2_MBP,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            std::num::NonZeroUsize::new(2),
+            true,
+            None,
+            None,
+        )
+    };
+
+    if depth_first {
+        session
+            .client
+            .subscribe_book_depth(subscribe_depth())
+            .unwrap();
+    }
+
+    session.subscribe(id);
+    if !depth_first {
+        session
+            .client
+            .subscribe_book_depth(subscribe_depth())
+            .unwrap();
+    }
+
+    let mut depth = None;
+    let mut deltas = None;
+    while depth.is_none() || deltas.is_none() {
+        match tokio::time::timeout(Duration::from_secs(3), session.events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+        {
+            DataEvent::Data(Data::BookDepth(value)) => depth = Some(value),
+            DataEvent::Data(Data::BookDeltas(value)) => deltas = Some(value),
+            DataEvent::Instrument(_) => {}
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    let depth = depth.unwrap();
+    assert_eq!(deltas.unwrap().sequence, 123_456);
+    assert_eq!(depth.bids.len(), 2);
+    assert_eq!(depth.asks.len(), 2);
+    assert_eq!(depth.sequence, 123_456);
+    assert_eq!(depth.bid_counts.as_slice(), &[12, 1]);
+    assert_eq!(depth.ask_counts.as_slice(), &[13, 2]);
+    assert_eq!(session.wire.subscriptions.load(Ordering::SeqCst), 2);
+    assert_eq!(session.wire.unsubscriptions.load(Ordering::SeqCst), 0);
+
+    let mut oversized = subscribe_depth();
+    oversized.depth = std::num::NonZeroUsize::new(6);
+    assert!(session.client.subscribe_book_depth(oversized).is_err());
+    let mut different = subscribe_depth();
+    different.depth = std::num::NonZeroUsize::new(3);
+    assert!(session.client.subscribe_book_depth(different).is_err());
+    let mut conflict = subscribe_depth();
+    let mut params = Params::new();
+    params.insert("rpi".to_string(), json!(true));
+    conflict.params = Some(params);
+    assert!(session.client.subscribe_book_depth(conflict).is_err());
+
+    let unsubscribe_depth = || {
+        UnsubscribeBookDepth::new(
+            id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    if remove_deltas {
+        session.unsubscribe(id);
+    } else {
+        session
+            .client
+            .unsubscribe_book_depth(&unsubscribe_depth())
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { session.wire.unsubscriptions.load(Ordering::SeqCst) == 1 },
+        Duration::from_secs(3),
+    )
+    .await;
+    session.wire.push.notify_one();
+    let event = tokio::time::timeout(Duration::from_secs(3), session.events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    if remove_deltas {
+        let DataEvent::Data(Data::BookDepth(updated)) = event else {
+            panic!("expected native depth");
+        };
+
+        assert_eq!(
+            updated
+                .bids
+                .iter()
+                .map(|order| order.price)
+                .collect::<Vec<_>>(),
+            vec![Price::from("8400"), Price::from("8399")]
+        );
+        assert_eq!(
+            updated
+                .asks
+                .iter()
+                .map(|order| order.price)
+                .collect::<Vec<_>>(),
+            vec![Price::from("8500"), Price::from("8501")]
+        );
+        assert_eq!(updated.bid_counts.as_slice(), &[12, 1]);
+        assert_eq!(updated.ask_counts.as_slice(), &[13, 2]);
+        session
+            .client
+            .unsubscribe_book_depth(&unsubscribe_depth())
+            .unwrap();
+    } else {
+        let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
+            panic!("expected retained deltas");
+        };
+
+        assert_eq!(deltas.sequence, 123_457);
+        session.unsubscribe(id);
+    }
+
+    wait_until_async(
+        || async { session.wire.unsubscriptions.load(Ordering::SeqCst) == 2 },
+        Duration::from_secs(3),
+    )
+    .await;
+    assert_eq!(session.wire.subscriptions.load(Ordering::SeqCst), 2);
+    session.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn native_depth_resubscribes_after_reconnect() {
+    let mut session = BookClient::connect(0).await;
+    let id = InstrumentId::from("BTC-USD.OKX");
+    session
+        .client
+        .subscribe_book_depth(SubscribeBookDepth::new(
+            id,
+            BookType::L2_MBP,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    for generation in 1..=2 {
+        let depth = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(DataEvent::Data(Data::BookDepth(depth))) = session.events.recv().await {
+                    break depth;
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(depth.instrument_id, id);
+        assert_eq!(depth.sequence, 123_456);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth.bids.len(), 5);
+        assert_eq!(depth.asks.len(), 5);
+        assert_eq!(
+            depth
+                .bids
+                .iter()
+                .map(|order| order.price)
+                .collect::<Vec<_>>(),
+            (0..5)
+                .map(|level| Price::from((8_400 + generation * 100 - level).to_string().as_str()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            depth
+                .asks
+                .iter()
+                .map(|order| order.price)
+                .collect::<Vec<_>>(),
+            (0..5)
+                .map(|level| Price::from((8_500 + generation * 100 + level).to_string().as_str()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(depth.bid_counts.as_slice(), &[12, 1, 1, 1, 1]);
+        assert_eq!(depth.ask_counts.as_slice(), &[13, 2, 1, 1, 1]);
+
+        if generation == 1 {
+            session.reconnect();
+        }
+    }
+
+    assert_eq!(session.wire.connections.load(Ordering::SeqCst), 2);
+    assert_eq!(session.wire.subscriptions.load(Ordering::SeqCst), 2);
+    session.stop().await;
+}
+
+#[rstest]
+#[case::depth_first_remove_depth(true, true)]
+#[case::depth_first_remove_deltas(true, false)]
+#[case::deltas_first_remove_depth(false, true)]
+#[case::deltas_first_remove_deltas(false, false)]
+#[tokio::test]
+async fn spread_depth_and_deltas_keep_shared_feed_until_last_unsubscribe(
+    #[case] depth_first: bool,
+    #[case] remove_depth: bool,
+) {
+    let mut session = BookClient::connect(0).await;
+    let id = InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX");
+
+    let depth_command = SubscribeBookDepth::new(
+        id,
+        BookType::L2_MBP,
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        std::num::NonZeroUsize::new(5),
+        false,
+        None,
+        None,
+    );
+
+    if depth_first {
+        session.client.subscribe_book_depth(depth_command).unwrap();
+        session.subscribe(id);
+    } else {
+        session.subscribe(id);
+        session.client.subscribe_book_depth(depth_command).unwrap();
+    }
+
+    let mut initial_depth = None;
+    let mut initial_deltas = None;
+    while initial_depth.is_none() || initial_deltas.is_none() {
+        match tokio::time::timeout(Duration::from_secs(3), session.events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+        {
+            DataEvent::Data(Data::BookDepth(depth)) => initial_depth = Some(depth),
+            DataEvent::Data(Data::BookDeltas(deltas)) => initial_deltas = Some(deltas),
+            DataEvent::Instrument(_) => {}
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    let initial_depth = initial_depth.unwrap();
+    let mut book = OrderBook::new(id, BookType::L2_MBP);
+    book.apply_deltas(&initial_deltas.unwrap()).unwrap();
+    let mut expected = OrderBook::new(id, BookType::L2_MBP);
+    expected.apply_depth(&initial_depth).unwrap();
+    assert_eq!(book.bids_as_map(None), expected.bids_as_map(None));
+    assert_eq!(book.asks_as_map(None), expected.asks_as_map(None));
+    assert_eq!(initial_depth.bid_counts.as_slice(), &[0; 5]);
+    assert_eq!(initial_depth.ask_counts.as_slice(), &[0; 5]);
+    assert_eq!(session.business.subscriptions.load(Ordering::SeqCst), 1);
+
+    let unsubscribe_depth = UnsubscribeBookDepth::new(
+        id,
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    if remove_depth {
+        session
+            .client
+            .unsubscribe_book_depth(&unsubscribe_depth)
+            .unwrap();
+    } else {
+        session.unsubscribe(id);
+    }
+
+    session.business.push.notify_one();
+    let retained = tokio::time::timeout(Duration::from_secs(3), session.events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    match retained {
+        DataEvent::Data(Data::BookDeltas(deltas)) if remove_depth => {
+            book.apply_deltas(&deltas).unwrap();
+        }
+        DataEvent::Data(Data::BookDepth(depth)) if !remove_depth => {
+            book.apply_depth(&depth).unwrap();
+        }
+        other => panic!("expected retained book source: {other:?}"),
+    }
+
+    assert!(
+        session.events.try_recv().is_err(),
+        "unexpected extra book event"
+    );
+    assert_eq!(book.best_bid_price(), Some(Price::from("8400")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("8500")));
+    assert_eq!(session.business.subscriptions.load(Ordering::SeqCst), 1);
+    assert_eq!(session.business.unsubscriptions.load(Ordering::SeqCst), 0);
+
+    if remove_depth {
+        session.unsubscribe(id);
+    } else {
+        session
+            .client
+            .unsubscribe_book_depth(&unsubscribe_depth)
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { session.business.unsubscriptions.load(Ordering::SeqCst) == 1 },
+        Duration::from_secs(3),
+    )
+    .await;
     session.stop().await;
 }

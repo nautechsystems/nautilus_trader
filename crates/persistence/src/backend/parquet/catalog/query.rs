@@ -17,8 +17,7 @@
 
 #![expect(
     clippy::missing_errors_doc,
-    clippy::used_underscore_binding,
-    reason = "query methods forward DataFusion errors and underscore fields mirror SQL aliases"
+    reason = "query methods forward DataFusion errors"
 )]
 
 use nautilus_model::instruments::NautilusInstrumentType;
@@ -28,20 +27,26 @@ use nautilus_serialization::arrow::{
 };
 
 use super::{
-    ArrowSchemaProvider, Bar, CatalogDataType, CustomDataDecoder, Data, DecodeDataFromRecordBatch,
-    DecodeTypedFromRecordBatch, FundingRateUpdate, HasTsInit, HashMap, INSTRUMENT_PATH_PREFIXES,
-    InstrumentAny, InstrumentClose, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth,
-    ParquetDataCatalog, Path, QuoteTick, RecordBatch, TradeTick, UnixNanos, build_query,
-    catalog_record_batch_to_display, datafusion, decode_object_store_segment,
-    extract_bar_type_instrument_id, extract_identifier_from_path, extract_sql_safe_filename,
-    filter_instruments_for_request_range, instrument_path_prefix,
+    ArrowSchemaProvider, Bar, CustomDataDecoder, Data, DecodeDataFromRecordBatch,
+    DecodeTypedFromRecordBatch, FundingRateUpdate, HasCatalogDataType, HasTsInit, HashMap,
+    INSTRUMENT_PATH_PREFIXES, InstrumentAny, InstrumentClose, NautilusDataType, OptionGreeks,
+    OrderBookDelta, OrderBookDepth, ParquetDataCatalog, Path, QuoteTick, RecordBatch, TradeTick,
+    UnixNanos, build_query, catalog_record_batch_to_display, datafusion,
+    decode_object_store_segment, extract_bar_type_instrument_id, extract_identifier_from_path,
+    extract_sql_safe_filename, filter_instruments_for_request_range, instrument_path_prefix,
     is_monotonically_increasing_by_init, make_object_store_path, make_sql_safe_identifier,
     parquet_data_path_prefix, parse_filename_timestamps, query_intersects_filename,
     read_parquet_from_object_store, read_parquet_schema_from_object_store,
     session::{MergedPages, TypedPages, decode_typed_pages},
     urisafe_instrument_id,
 };
-use crate::common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema};
+use crate::{
+    catalog::types::{
+        CatalogDataType, custom_data_read_prefixes, custom_type_name,
+        parquet_catalog_data_type_path_prefixes, parquet_catalog_data_type_table_stem,
+    },
+    common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
+};
 
 impl ParquetDataCatalog {
     /// Queries one data family through the existing row iterator API.
@@ -55,7 +60,12 @@ impl ParquetDataCatalog {
         optimize_file_loading: bool,
     ) -> anyhow::Result<crate::backend::session::QueryResult>
     where
-        T: DecodeTypedFromRecordBatch + CatalogDataType + HasTsInit + Into<Data> + Send + 'static,
+        T: DecodeTypedFromRecordBatch
+            + HasCatalogDataType
+            + HasTsInit
+            + Into<Data>
+            + Send
+            + 'static,
     {
         self.query_typed_pages::<T>(
             identifiers,
@@ -125,11 +135,11 @@ impl ParquetDataCatalog {
     pub fn query_instruments_filtered(
         &self,
         instrument_ids: Option<&[String]>,
-        _start: Option<UnixNanos>,
+        start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let instrument_files = self.discover_instrument_files(instrument_ids, end, None)?;
-        self.decode_instrument_files(instrument_files, _start, end)
+        self.decode_instrument_files(instrument_files, start, end)
     }
 
     /// Queries instruments from the catalog with optional timestamp and SQL filtering.
@@ -152,6 +162,10 @@ impl ParquetDataCatalog {
         )
     }
 
+    /// Queries instruments from the catalog with optional timestamp, SQL, and instrument type
+    /// filtering.
+    ///
+    /// When `instrument_type` is provided, only that instrument class directory is read.
     pub fn query_instruments_filtered_with_where_and_type(
         &mut self,
         instrument_ids: Option<&[String]>,
@@ -166,7 +180,7 @@ impl ParquetDataCatalog {
             return self.decode_instrument_files(instrument_files, start, end);
         };
 
-        self.session.clear_registered_tables();
+        self.clear_session_tables();
         self.register_remote_object_store()?;
 
         let mut all_instruments = Vec::new();
@@ -175,12 +189,13 @@ impl ParquetDataCatalog {
 
         for (index, file_path) in instrument_files.into_iter().enumerate() {
             let object_path = self.to_object_path_parsed(&file_path)?;
+
             let (_, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+
             validate_catalog_schema(&builder_schema)?;
-            let metadata: std::collections::HashMap<String, String> =
-                builder_schema.metadata().clone();
+            let metadata = builder_schema.metadata().clone();
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
             let table_name = format!(
@@ -188,7 +203,9 @@ impl ParquetDataCatalog {
                 index,
                 extract_sql_safe_filename(&file_path)
             );
-            let query = build_query(&table_name, start, end, Some(where_clause));
+
+            // The range filter below applies `start` to keep the latest pre-start definition
+            let query = build_query(&table_name, None, end, Some(where_clause));
             let resolved_path = self.resolve_path_for_datafusion(&file_path);
             let batches = self.session.collect_parquet_files_batches(
                 &table_name,
@@ -230,9 +247,11 @@ impl ParquetDataCatalog {
             }
 
             let path_parts: Vec<&str> = path_str.split('/').collect();
+
             let Some(data_index) = path_parts.iter().position(|part| *part == "data") else {
                 continue;
             };
+
             let Some(type_dir) = path_parts.get(data_index + 1) else {
                 continue;
             };
@@ -291,9 +310,11 @@ impl ParquetDataCatalog {
 
         for file_path in instrument_files {
             let object_path = self.to_object_path_parsed(&file_path)?;
+
             let (batches, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+
             validate_catalog_schema(&builder_schema)?;
             let metadata = builder_schema.metadata().clone();
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
@@ -428,7 +449,7 @@ impl ParquetDataCatalog {
         optimize_file_loading: bool,
     ) -> anyhow::Result<Vec<T>>
     where
-        T: DecodeTypedFromRecordBatch + CatalogDataType + HasTsInit,
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
     {
         self.query_typed::<T>(
             identifiers,
@@ -450,27 +471,18 @@ impl ParquetDataCatalog {
         optimize_file_loading: bool,
     ) -> anyhow::Result<TypedPages<T>>
     where
-        T: DecodeTypedFromRecordBatch + CatalogDataType + HasTsInit + Send + 'static,
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit + Send + 'static,
     {
         self.clear_session_tables();
         self.register_remote_object_store()?;
         let data_type = T::catalog_data_type();
-        let prefix = parquet_data_path_prefix(&data_type);
+
         let files = match files {
             Some(files) => files,
-            None => self.query_files(prefix.as_ref(), identifiers, start, end)?,
+            None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
         };
-        let paths = if optimize_file_loading {
-            parent_directories(&files)
-                .into_iter()
-                .map(|directory| self.resolve_directory_for_datafusion(&directory))
-                .collect::<Vec<_>>()
-        } else {
-            files
-                .iter()
-                .map(|file| self.resolve_path_for_datafusion(file))
-                .collect()
-        };
+
+        let paths = self.resolve_paths_for_datafusion(&files, optimize_file_loading);
         let mut sources = Vec::with_capacity(paths.len());
         for (index, path) in paths.into_iter().enumerate() {
             let table = format!("parquet_{index}");
@@ -486,6 +498,7 @@ impl ParquetDataCatalog {
                 )) as TypedPages<T>,
             );
         }
+
         Ok(Box::new(MergedPages::new(sources, self.batch_size)))
     }
 
@@ -500,7 +513,7 @@ impl ParquetDataCatalog {
         optimize_file_loading: bool,
     ) -> anyhow::Result<Vec<T>>
     where
-        T: DecodeTypedFromRecordBatch + CatalogDataType + HasTsInit,
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
     {
         self.clear_session_tables();
 
@@ -512,7 +525,12 @@ impl ParquetDataCatalog {
         let files_list = if let Some(files) = files {
             files
         } else {
-            self.query_files(path_prefix.as_ref(), identifiers, start, end)?
+            self.query_files(
+                &CatalogDataType::Data(data_type.clone()),
+                identifiers,
+                start,
+                end,
+            )?
         };
 
         let mut all_records = Vec::new();
@@ -537,6 +555,7 @@ impl ParquetDataCatalog {
                 let identifier = extract_identifier_from_path(file_uri).ok_or_else(|| {
                     anyhow::anyhow!("Cannot extract identifier from path '{file_uri}'")
                 })?;
+
                 let safe_sql_identifier = make_sql_safe_identifier(identifier);
                 let safe_filename = extract_sql_safe_filename(file_uri);
                 let table_name = format!(
@@ -571,7 +590,7 @@ impl ParquetDataCatalog {
     /// Returns an error if file discovery or DataFusion query execution fails.
     pub fn query_record_batches(
         &mut self,
-        record_type: &str,
+        data_type: &CatalogDataType,
         identifier: Option<String>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -582,36 +601,43 @@ impl ParquetDataCatalog {
         self.register_remote_object_store()?;
 
         let identifiers = identifier.map(|value| vec![value]);
-        let files_list = self.query_files(record_type, identifiers, start, end)?;
+        let files_list = self.query_files(data_type, identifiers, start, end)?;
         let mut record_batches = Vec::new();
-        let table_prefix = make_sql_safe_identifier(record_type);
+        let table_prefix =
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
 
-        if optimize_file_loading {
-            // Deterministic registration order so equal-ts_init tie order is reproducible.
-            for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
-                let table_name = format!("{table_prefix}_{index}");
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_directory_for_datafusion(&directory);
-                record_batches.extend(self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?);
-            }
-        } else {
-            for (index, file_uri) in files_list.iter().enumerate() {
-                let table_name = format!("{table_prefix}_{index}");
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_path_for_datafusion(file_uri);
-                record_batches.extend(self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?);
-            }
+        let paths = self.resolve_paths_for_datafusion(&files_list, optimize_file_loading);
+
+        for (index, resolved_path) in paths.into_iter().enumerate() {
+            let table_name = format!("{table_prefix}_{index}");
+            let query = build_query(&table_name, start, end, where_clause);
+            record_batches.extend(self.session.collect_parquet_files_batches(
+                &table_name,
+                vec![resolved_path],
+                Some(&query),
+            )?);
         }
 
         Ok(record_batches)
+    }
+
+    fn resolve_paths_for_datafusion(
+        &self,
+        files: &[String],
+        optimize_file_loading: bool,
+    ) -> Vec<String> {
+        if optimize_file_loading {
+            // Deterministic registration order so equal-ts_init tie order is reproducible.
+            parent_directories(files)
+                .into_iter()
+                .map(|directory| self.resolve_directory_for_datafusion(&directory))
+                .collect()
+        } else {
+            files
+                .iter()
+                .map(|file| self.resolve_path_for_datafusion(file))
+                .collect()
+        }
     }
 
     /// Queries raw catalog batches and converts them to display-friendly Arrow batches.
@@ -633,71 +659,72 @@ impl ParquetDataCatalog {
         self.register_remote_object_store()?;
 
         let data_path_prefix = parquet_data_path_prefix(data_type);
-        let files_list = self.query_files(data_path_prefix.as_ref(), identifiers, start, end)?;
+        let files_list = self.query_files(
+            &CatalogDataType::Data(data_type.clone()),
+            identifiers,
+            start,
+            end,
+        )?;
         let mut display_batches = Vec::new();
         let table_prefix = make_sql_safe_identifier(data_path_prefix.as_ref());
 
-        if optimize_file_loading {
+        let sources = if optimize_file_loading {
             // Deterministic registration order so equal-ts_init tie order is reproducible.
-            for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
-                let path_identifier = display_identifier(data_type, &directory);
-                let table_name = format!("{table_prefix}_{index}");
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_directory_for_datafusion(&directory);
-                let batches = self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?;
-
-                for batch in batches {
-                    let identifier =
-                        display_batch_identifier(data_type, &batch, path_identifier.as_deref());
-                    let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
-                    let metadata = batch.schema().metadata().clone();
-                    display_batches.push(catalog_record_batch_to_display(
-                        data_type, &metadata, &batch,
-                    )?);
-                }
-            }
+            parent_directories(&files_list)
+                .into_iter()
+                .map(|directory| {
+                    let resolved_path = self.resolve_directory_for_datafusion(&directory);
+                    (display_identifier(data_type, &directory), resolved_path)
+                })
+                .collect::<Vec<_>>()
         } else {
-            for (index, file_uri) in files_list.iter().enumerate() {
-                let directory = Path::new(file_uri)
-                    .parent()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot extract directory from '{file_uri}'"))?
-                    .to_string_lossy();
-                let path_identifier = display_identifier(data_type, &directory);
-                let table_name = format!("{table_prefix}_{index}");
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_path_for_datafusion(file_uri);
-                let batches = self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?;
+            files_list
+                .iter()
+                .map(|file_uri| {
+                    let directory = Path::new(file_uri)
+                        .parent()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Cannot extract directory from '{file_uri}'")
+                        })?
+                        .to_string_lossy();
 
-                for batch in batches {
-                    let identifier =
-                        display_batch_identifier(data_type, &batch, path_identifier.as_deref());
-                    let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
-                    let metadata = batch.schema().metadata().clone();
-                    display_batches.push(catalog_record_batch_to_display(
-                        data_type, &metadata, &batch,
-                    )?);
-                }
+                    let resolved_path = self.resolve_path_for_datafusion(file_uri);
+                    Ok((display_identifier(data_type, &directory), resolved_path))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+        };
+
+        for (index, (path_identifier, resolved_path)) in sources.into_iter().enumerate() {
+            let table_name = format!("{table_prefix}_{index}");
+            let query = build_query(&table_name, start, end, where_clause);
+            let batches = self.session.collect_parquet_files_batches(
+                &table_name,
+                vec![resolved_path],
+                Some(&query),
+            )?;
+
+            for batch in batches {
+                let identifier =
+                    display_batch_identifier(data_type, &batch, path_identifier.as_deref());
+                let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
+                let metadata = batch.schema().metadata().clone();
+                display_batches.push(catalog_record_batch_to_display(
+                    data_type, &metadata, &batch,
+                )?);
             }
         }
 
         if display_batches.is_empty() {
             display_batches.push(empty_display_batch_with_identifier(data_type)?);
         }
+
         Ok(display_batches)
     }
 
     /// Queries concrete catalog identifiers for matching data rows.
     pub fn query_identifiers(
         &mut self,
-        data_type: &str,
+        data_type: &CatalogDataType,
         identifiers: Option<Vec<String>>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -708,7 +735,8 @@ impl ParquetDataCatalog {
         self.register_remote_object_store()?;
 
         let files_list = self.query_files(data_type, identifiers, start, end)?;
-        let table_prefix = make_sql_safe_identifier(data_type);
+        let table_prefix =
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
         let mut identifiers = Vec::new();
 
         for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
@@ -775,16 +803,19 @@ impl ParquetDataCatalog {
 
         self.register_remote_object_store()?;
 
-        let path_prefix = parquet_data_path_prefix(&NautilusDataType::Custom {
-            type_name: type_name.to_string(),
-        });
-
         let files = if let Some(f) = files {
             f.into_iter()
                 .map(|p| self.to_object_path(&p).map(|op| op.to_string()))
                 .collect::<anyhow::Result<Vec<_>>>()?
         } else {
-            self.list_parquet_files_with_criteria(path_prefix.as_ref(), identifiers, start, end)?
+            self.list_parquet_files_with_criteria(
+                &CatalogDataType::Data(NautilusDataType::Custom {
+                    type_name: type_name.to_string(),
+                }),
+                identifiers,
+                start,
+                end,
+            )?
         };
 
         if files.is_empty() {
@@ -808,6 +839,7 @@ impl ParquetDataCatalog {
 
         for file in files {
             let object_path = self.to_object_path_parsed(&file)?;
+
             let mut decode_metadata = self.execute_async(|| async {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
@@ -815,14 +847,20 @@ impl ParquetDataCatalog {
                 validate_catalog_schema(&schema)?;
                 Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
             })?;
+
             decode_metadata.extend(lookup_metadata.clone());
             let identifier = extract_identifier_from_path(&file)
                 .ok_or_else(|| anyhow::anyhow!("Cannot extract identifier from path '{file}'"))?;
+            // Distinguish canonical and legacy files sharing an identifier and
+            // filename, since DataFusion skips re-registering a table name.
+            let (data_cls, _) = self.extract_data_cls_and_identifier_from_path(&file)?;
+            let layout_tag = make_sql_safe_identifier(data_cls.as_deref().unwrap_or("custom"));
             let safe_type_name = make_sql_safe_identifier(type_name);
             let safe_sql_identifier = make_sql_safe_identifier(identifier);
             let safe_filename = extract_sql_safe_filename(&file);
-            let table_name =
-                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}");
+            let table_name = format!(
+                "custom_{safe_type_name}_{layout_tag}_{safe_sql_identifier}_{safe_filename}"
+            );
             let resolved_path = self.resolve_path_for_datafusion(&file);
             let sql_query = build_query(&table_name, start, end, where_clause);
 
@@ -842,6 +880,7 @@ impl ParquetDataCatalog {
                 )?);
             }
         }
+
         all_data.sort_by_key(HasTsInit::ts_init);
         Ok(all_data)
     }
@@ -854,7 +893,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to read.
     /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
     ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///   For bars, partial matching is supported.
@@ -877,6 +916,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -888,11 +928,11 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Query all quote files
-    /// let files = catalog.query_files("quotes", None, None, None)?;
+    /// let files = catalog.query_files(&NautilusDataType::QuoteTick.into(), None, None, None)?;
     ///
     /// // Query trade files for specific instruments within a time range
     /// let files = catalog.query_files(
-    ///     "trades",
+    ///     &NautilusDataType::TradeTick.into(),
     ///     Some(vec!["BTC/USD.SIM".to_string(), "ETH/USD.SIM".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
@@ -901,8 +941,40 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_files(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        // Take the identifiers once so every prefix shares them without cloning per directory.
+        let identifiers = identifiers.map(Vec::into_boxed_slice);
+
+        let prefixes = match custom_type_name(data_type) {
+            Some(type_name) => Vec::from(custom_data_read_prefixes(type_name)),
+            None => parquet_catalog_data_type_path_prefixes(data_type),
+        };
+
+        let mut files = Vec::new();
+
+        for prefix in prefixes {
+            files.extend(self.query_prefix_files(
+                prefix.as_ref(),
+                identifiers.as_deref(),
+                start,
+                end,
+            )?);
+        }
+
+        files.sort();
+        files.dedup();
+
+        Ok(files)
+    }
+
+    fn query_prefix_files(
+        &self,
+        data_cls: &str,
+        identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
@@ -928,49 +1000,9 @@ impl ParquetDataCatalog {
             })
             .collect();
 
-        // Apply identifier filtering if provided
         if let Some(identifiers) = identifiers {
-            let safe_identifiers: Vec<String> = identifiers
-                .iter()
-                .map(|id| urisafe_instrument_id(id))
-                .collect();
-
-            // Exact match by default for instrument_ids or bar_types
-            let exact_match_file_paths: Vec<String> = file_paths
-                .iter()
-                .filter(|file_path| {
-                    // Extract the directory name (second to last path component)
-                    let path_parts: Vec<&str> = file_path.split('/').collect();
-                    if path_parts.len() >= 2 {
-                        let dir_name =
-                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
-                        safe_identifiers.iter().any(|safe_id| safe_id == &dir_name)
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
-
-            if exact_match_file_paths.is_empty() && is_parquet_bar_prefix(data_cls) {
-                file_paths.retain(|file_path| {
-                    let path_parts: Vec<&str> = file_path.split('/').collect();
-                    if path_parts.len() >= 2 {
-                        let dir_name =
-                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
-
-                        if let Some(bar_instrument_id) = extract_bar_type_instrument_id(&dir_name) {
-                            safe_identifiers.iter().any(|id| id == bar_instrument_id)
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                });
-            } else {
-                file_paths = exact_match_file_paths;
-            }
+            file_paths =
+                filter_identifier_files(file_paths, identifiers, is_parquet_bar_prefix(data_cls));
         }
 
         // Apply timestamp filtering
@@ -979,11 +1011,11 @@ impl ParquetDataCatalog {
         for file_path in file_paths {
             files.push(self.path_for_query_list(&file_path));
         }
-        files.sort();
 
         Ok(files)
     }
 
+    /// Queries quote tick data for the specified instrument(s) and time range.
     pub fn quote_ticks(
         &mut self,
         instrument_ids: Option<Vec<String>>,
@@ -1080,7 +1112,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to read.
     ///
     /// # Returns
     ///
@@ -1095,6 +1127,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -1104,29 +1137,36 @@ impl ParquetDataCatalog {
     ///     None,
     ///     None,
     /// );
-    /// let files = catalog.get_file_list_from_data_cls("quotes")?;
+    /// let files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
     ///
     /// for file in files {
     ///     println!("Found file: {}", file);
     /// }
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn get_file_list_from_data_cls(&self, data_cls: &str) -> anyhow::Result<Vec<String>> {
-        let base_dir = self.make_path(data_cls, None)?;
+    pub fn get_file_list_from_data_cls(
+        &self,
+        data_type: &CatalogDataType,
+    ) -> anyhow::Result<Vec<String>> {
+        if let Some(type_name) = custom_type_name(data_type) {
+            let mut file_paths = Vec::new();
 
-        let list_result = self.list_objects(&base_dir)?;
+            for prefix in custom_data_read_prefixes(type_name) {
+                let directory = self.make_path(prefix.as_ref(), None)?;
+                file_paths.extend(self.list_parquet_files(&directory)?);
+            }
 
-        let file_paths: Vec<String> = list_result
-            .into_iter()
-            .filter_map(|object| {
-                let path_str = object.location.to_string();
-                if path_str.ends_with(".parquet") {
-                    Some(path_str)
-                } else {
-                    None
-                }
-            })
-            .collect();
+            file_paths.sort();
+            file_paths.dedup();
+            return Ok(file_paths);
+        }
+
+        let mut file_paths = Vec::new();
+
+        for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
+            let directory = self.make_path(data_cls.as_ref(), None)?;
+            file_paths.extend(self.list_parquet_files(&directory)?);
+        }
 
         Ok(file_paths)
     }
@@ -1139,7 +1179,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to read.
     /// - `file_paths`: List of file paths to filter.
     /// - `identifiers`: Optional list of identifiers to match against file paths.
     /// - `start`: Optional start timestamp for filtering.
@@ -1159,6 +1199,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -1168,10 +1209,10 @@ impl ParquetDataCatalog {
     ///     None,
     ///     None,
     /// );
-    /// let all_files = catalog.get_file_list_from_data_cls("quotes")?;
+    /// let all_files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
     ///
     /// let filtered = catalog.filter_files(
-    ///     "quotes",
+    ///     &NautilusDataType::QuoteTick.into(),
     ///     all_files,
     ///     Some(vec!["EUR/USD.SIM".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
@@ -1181,65 +1222,19 @@ impl ParquetDataCatalog {
     /// ```
     pub fn filter_files(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         file_paths: Vec<String>,
         identifiers: Option<Vec<String>>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
+        let has_bar_prefix = parquet_catalog_data_type_path_prefixes(data_type)
+            .iter()
+            .any(|data_cls| is_parquet_bar_prefix(data_cls.as_ref()));
         let mut filtered_paths = file_paths;
 
-        // Apply identifier filtering if provided
         if let Some(identifiers) = identifiers {
-            let safe_identifiers: Vec<String> = identifiers
-                .iter()
-                .map(|id| urisafe_instrument_id(id))
-                .collect();
-
-            // Extract directory names from file paths
-            let file_safe_identifiers: Vec<String> = filtered_paths
-                .iter()
-                .map(|file_path| {
-                    let path_parts: Vec<&str> = file_path.split('/').collect();
-                    if path_parts.len() >= 2 {
-                        decode_object_store_segment(path_parts[path_parts.len() - 2])
-                    } else {
-                        String::new()
-                    }
-                })
-                .collect();
-
-            // Exact match by default for instrument_ids or bar_types
-            let exact_match_file_paths: Vec<String> = filtered_paths
-                .iter()
-                .enumerate()
-                .filter_map(|(i, file_path)| {
-                    let dir_name = &file_safe_identifiers[i];
-                    if safe_identifiers.iter().any(|safe_id| safe_id == dir_name) {
-                        Some(file_path.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if exact_match_file_paths.is_empty() && is_parquet_bar_prefix(data_cls) {
-                // Partial match of instrument_ids in bar_types for bars
-                filtered_paths.retain(|file_path| {
-                    let path_parts: Vec<&str> = file_path.split('/').collect();
-                    if path_parts.len() >= 2 {
-                        let dir_name =
-                            decode_object_store_segment(path_parts[path_parts.len() - 2]);
-                        safe_identifiers
-                            .iter()
-                            .any(|safe_id| dir_name.starts_with(&format!("{safe_id}-")))
-                    } else {
-                        false
-                    }
-                });
-            } else {
-                filtered_paths = exact_match_file_paths;
-            }
+            filtered_paths = filter_identifier_files(filtered_paths, &identifiers, has_bar_prefix);
         }
 
         // Apply timestamp filtering
@@ -1259,6 +1254,53 @@ pub(super) fn is_parquet_bar_prefix(data_cls: &str) -> bool {
     data_cls == parquet_data_path_prefix(&NautilusDataType::Bar).as_ref()
 }
 
+// Each identifier matches its URI-safe directory exactly. For bars, an identifier with no exact
+// match falls back to the bar-type directories of that instrument ID, decided per identifier so
+// one exact match does not disable the fallback for the others.
+pub(super) fn filter_identifier_files(
+    file_paths: Vec<String>,
+    identifiers: &[String],
+    bars: bool,
+) -> Vec<String> {
+    let directories = file_paths
+        .iter()
+        .map(|file_path| identifier_directory(file_path))
+        .collect::<Vec<_>>();
+    let mut keep = vec![false; file_paths.len()];
+
+    for safe_id in identifiers.iter().map(|id| urisafe_instrument_id(id)) {
+        let has_exact = directories
+            .iter()
+            .flatten()
+            .any(|directory| *directory == safe_id);
+        let partial = bars && !has_exact;
+
+        for (keep, directory) in keep.iter_mut().zip(&directories) {
+            let Some(directory) = directory else {
+                continue;
+            };
+
+            *keep |= if partial {
+                extract_bar_type_instrument_id(directory) == Some(safe_id.as_str())
+            } else {
+                *directory == safe_id
+            };
+        }
+    }
+
+    file_paths
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(file_path, keep)| keep.then_some(file_path))
+        .collect()
+}
+
+fn identifier_directory(file_path: &str) -> Option<String> {
+    let mut segments = file_path.rsplit('/');
+    segments.next()?;
+    segments.next().map(decode_object_store_segment)
+}
+
 /// Returns the sorted, deduplicated parent directories (everything except the filename)
 /// of the given file URIs.
 fn parent_directories(files: &[String]) -> Vec<String> {
@@ -1270,6 +1312,7 @@ fn parent_directories(files: &[String]) -> Vec<String> {
                 .map(|path| path.to_string_lossy().to_string())
         })
         .collect();
+
     directories.sort();
     directories.dedup();
     directories
@@ -1278,9 +1321,8 @@ fn parent_directories(files: &[String]) -> Vec<String> {
 /// Extracts the identifier from a directory path (last component).
 fn dir_identifier(directory: &str) -> String {
     directory
-        .rsplit('/')
-        .next()
-        .unwrap_or("unknown")
+        .rsplit_once('/')
+        .map_or(directory, |(_, name)| name)
         .to_string()
 }
 

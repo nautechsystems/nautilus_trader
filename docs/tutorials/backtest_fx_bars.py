@@ -86,6 +86,7 @@ from nautilus_trader.backtest import FXRolloverInterestModule
 from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import ProbabilisticFillModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
@@ -167,6 +168,10 @@ engine.add_venue(
     base_currency=None,
     starting_balances=[Money(1_000_000, USD), Money(10_000_000, JPY)],
     fill_model=fill_model,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.00002"),
+        taker_rate=Decimal("0.00002"),
+    ),
     modules=[fx_rollover_interest],
 )
 

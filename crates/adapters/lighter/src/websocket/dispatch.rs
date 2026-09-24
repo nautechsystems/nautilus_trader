@@ -269,6 +269,7 @@ impl OrderIdentity {
 /// order event on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
+    pub(crate) batch_id: Option<String>,
     pub(crate) connection_epoch: u64,
     pub(crate) kind: PendingSendTxKind,
     pub(crate) submitted_at: UnixNanos,
@@ -453,6 +454,12 @@ pub(crate) enum PendingOrderAction {
 }
 
 #[derive(Debug)]
+struct PendingOrderActionState {
+    action: PendingOrderAction,
+    submission: Option<(u64, i64)>,
+}
+
+#[derive(Debug)]
 pub(crate) struct TradeDedupCache {
     inner: Mutex<TradeDedupCacheInner>,
     capacity: usize,
@@ -579,7 +586,7 @@ pub(crate) struct WsDispatchState {
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     /// Local lifecycle action that a venue frame or reconciliation report
     /// must not bypass before its confirming event or rejection arrives.
-    pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderAction>>,
+    pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderActionState>>,
     /// FIFO queue of submits awaiting a venue response. The consumption loop
     /// pops on every `SendTxAck` / `SendTxRejected` so it can attribute a
     /// rejection back to the originating order (sendTx error frames carry no
@@ -844,8 +851,8 @@ impl WsDispatchState {
             .iter()
             .enumerate()
             .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
-        let (position, _) = matches.next()?;
-        if matches.next().is_some() {
+        let (position, pending) = matches.next()?;
+        if pending.batch_id.is_some() || matches.next().is_some() {
             return None;
         }
         queue.remove(position)
@@ -867,7 +874,7 @@ impl WsDispatchState {
             .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
         let (position, pending) = matches.next()?;
         let fresh = pending.submitted_at.as_u64() >= cutoff_ns;
-        if matches.next().is_some() || !fresh {
+        if pending.batch_id.is_some() || matches.next().is_some() || !fresh {
             return None;
         }
         queue.remove(position)
@@ -952,13 +959,19 @@ impl WsDispatchState {
         cloid: ClientOrderId,
         action: PendingOrderAction,
     ) {
-        self.pending_order_actions.insert(cloid, action);
+        self.pending_order_actions.insert(
+            cloid,
+            PendingOrderActionState {
+                action,
+                submission: None,
+            },
+        );
     }
 
     pub(crate) fn pending_order_action(&self, cloid: &ClientOrderId) -> Option<PendingOrderAction> {
         self.pending_order_actions
             .get(cloid)
-            .map(|entry| *entry.value())
+            .map(|entry| entry.action)
     }
 
     pub(crate) fn clear_pending_order_action_if(
@@ -967,7 +980,41 @@ impl WsDispatchState {
         action: PendingOrderAction,
     ) -> bool {
         self.pending_order_actions
-            .remove_if(cloid, |_, current| *current == action)
+            .remove_if(cloid, |_, current| current.action == action)
+            .is_some()
+    }
+
+    pub(crate) fn set_pending_cancel_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && state.action == PendingOrderAction::Cancel
+        {
+            state.submission = Some((connection_epoch, nonce));
+        }
+    }
+
+    pub(crate) fn pending_cancel_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
+        self.pending_order_actions
+            .get(cloid)
+            .filter(|state| state.action == PendingOrderAction::Cancel)
+            .and_then(|state| state.submission)
+    }
+
+    pub(crate) fn clear_pending_cancel_if_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> bool {
+        self.pending_order_actions
+            .remove_if(cloid, |_, state| {
+                state.action == PendingOrderAction::Cancel
+                    && state.submission == Some((connection_epoch, nonce))
+            })
             .is_some()
     }
 
@@ -3652,6 +3699,7 @@ mod tests {
             .quantity(Quantity::from("0.01"))
             .build();
         PendingSendTx {
+            batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order),
@@ -3666,6 +3714,7 @@ mod tests {
 
     fn stub_pending_other(nonce: i64, submitted_at_ns: u64) -> PendingSendTx {
         PendingSendTx {
+            batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Other,
             submitted_at: UnixNanos::from(submitted_at_ns),
@@ -3708,6 +3757,32 @@ mod tests {
         let third = state.pop_pending_sendtx_head().expect("third present");
         assert_eq!(pending_cloid(&third), Some(cloid("B")));
         assert!(state.pop_pending_sendtx_head().is_none());
+    }
+
+    #[rstest]
+    #[case::ack(false)]
+    #[case::rejection(true)]
+    fn hashless_response_preserves_single_batch_member(#[case] within_window: bool) {
+        let state = WsDispatchState::new();
+        let mut pending = stub_pending_other(17, 1_000_000_000);
+        pending.batch_id = Some("cancel-batch:member".to_string());
+        state.enqueue_pending_sendtx(pending);
+
+        let popped = if within_window {
+            state.pop_pending_sendtx_if_only_within(0, UnixNanos::from(1_500_000_000), 1_000)
+        } else {
+            state.pop_pending_sendtx_if_only(0)
+        };
+
+        assert!(popped.is_none());
+        let remaining = state.drain_pending_sendtx(0);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].nonce, 17);
+        assert_eq!(
+            remaining[0].batch_id.as_deref(),
+            Some("cancel-batch:member")
+        );
+        assert_eq!(remaining[0].tx_hash, "hash11");
     }
 
     #[rstest]
@@ -4076,6 +4151,30 @@ mod tests {
         assert_eq!(
             ready.pending(),
             vec!["orders", "trades", "positions", "assets", "user_stats"]
+        );
+    }
+    #[rstest]
+    fn pending_cancel_nonce_does_not_clear_a_newer_action() {
+        let state = WsDispatchState::new();
+        let id = ClientOrderId::from("CANCEL-GENERATION");
+        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        state.set_pending_cancel_nonce(&id, 3, 41);
+        assert_eq!(state.pending_cancel_nonce(&id), Some((3, 41)));
+        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        assert_eq!(state.pending_cancel_nonce(&id), None);
+        state.set_pending_cancel_nonce(&id, 3, 42);
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 41));
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 2, 42));
+        assert_eq!(state.pending_cancel_nonce(&id), Some((3, 42)));
+        assert!(state.clear_pending_cancel_if_nonce(&id, 3, 42));
+        assert_eq!(state.pending_order_action(&id), None);
+        state.set_pending_order_action(id, PendingOrderAction::Modify);
+        state.set_pending_cancel_nonce(&id, 3, 43);
+        assert_eq!(state.pending_cancel_nonce(&id), None);
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 43));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Modify)
         );
     }
 }

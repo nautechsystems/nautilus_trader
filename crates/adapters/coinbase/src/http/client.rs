@@ -41,7 +41,10 @@ use nautilus_model::{
     types::{MarginBalance, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, Method, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
+        create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
@@ -195,6 +198,7 @@ impl CoinbaseRawHttpClient {
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .default_quota(*COINBASE_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -1719,9 +1723,32 @@ pub fn build_order_configuration(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = CoinbaseRawHttpClient::with_credentials(
+            CoinbaseCredential::new("key".into(), "secret".into()),
+            CoinbaseEnvironment::Sandbox,
+            3,
+            None,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_raw_client_construction_live() {

@@ -80,6 +80,7 @@ pub mod common;
 #[cfg(feature = "testers")]
 pub mod components;
 pub mod events;
+pub mod http;
 
 #[cfg(feature = "datasets")]
 pub mod files;

@@ -154,10 +154,7 @@ pub trait Component {
     fn start(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
-        if let Err(e) = self.on_start() {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        self.on_start()?;
 
         self.transition_state(ComponentTrigger::StartCompleted)?;
 
@@ -172,10 +169,7 @@ pub trait Component {
     fn stop(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
-        if let Err(e) = self.on_stop() {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        self.on_stop()?;
 
         self.transition_state(ComponentTrigger::StopCompleted)?;
 
@@ -190,10 +184,7 @@ pub trait Component {
     fn resume(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
-        if let Err(e) = self.on_resume() {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        self.on_resume()?;
 
         self.transition_state(ComponentTrigger::ResumeCompleted)?;
 
@@ -208,10 +199,7 @@ pub trait Component {
     fn degrade(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
-        if let Err(e) = self.on_degrade() {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        self.on_degrade()?;
 
         self.transition_state(ComponentTrigger::DegradeCompleted)?;
 
@@ -235,10 +223,7 @@ pub trait Component {
         let result = self.on_fault();
         self.release_subscriptions();
 
-        if let Err(e) = result {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        result?;
 
         self.transition_state(ComponentTrigger::FaultCompleted)?;
 
@@ -259,10 +244,7 @@ pub trait Component {
     fn reset(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
-        if let Err(e) = self.on_reset() {
-            log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
-        }
+        self.on_reset()?;
 
         self.release_subscriptions();
         self.transition_state(ComponentTrigger::ResetCompleted)?;
@@ -289,8 +271,6 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
         if let Err(e) = self.on_dispose() {
-            log_error(self.component_id(), &e);
-
             self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
             self.transition_state(ComponentTrigger::FaultCompleted)?; // -> Faulted
 
@@ -392,10 +372,6 @@ pub trait Component {
     fn on_fault(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
-}
-
-fn log_error(component: ComponentId, e: &anyhow::Error) {
-    log::error!(component = component.as_str(); "{e}");
 }
 
 #[rustfmt::skip]
@@ -798,9 +774,14 @@ mod tests {
         sync::atomic::{AtomicBool, Ordering},
     };
 
+    use nautilus_core::UUID4;
     use rstest::rstest;
 
     use super::*;
+    use crate::logging::{
+        arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+        take_shutdown_on_error_trigger,
+    };
 
     #[derive(Debug)]
     struct TestComponent {
@@ -1487,5 +1468,54 @@ mod tests {
 
         assert!(with_component_registry(|registry| registry.remove(&id)).is_some());
         assert!(with_component_registry(|registry| registry.remove(&id)).is_none());
+    }
+
+    #[rstest]
+    #[case("start", ComponentState::Ready, ComponentState::Starting, 0)]
+    #[case("stop", ComponentState::Running, ComponentState::Stopping, 0)]
+    #[case("resume", ComponentState::Stopped, ComponentState::Resuming, 0)]
+    #[case("degrade", ComponentState::Running, ComponentState::Degrading, 0)]
+    #[case("fault", ComponentState::Running, ComponentState::Faulting, 1)]
+    #[case("reset", ComponentState::Ready, ComponentState::Resetting, 0)]
+    #[case("dispose", ComponentState::Ready, ComponentState::Faulted, 0)]
+    fn test_lifecycle_error_returns_without_logging(
+        #[case] method: &str,
+        #[case] initial: ComponentState,
+        #[case] expected: ComponentState,
+        #[case] releases: usize,
+    ) {
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let mut component = TestComponent::new("failing-hook", &NO_PANIC);
+        component.state = initial;
+        component.hooks_fail = true;
+        arm_shutdown_on_error(true);
+
+        let result = match method {
+            "start" => component.start(),
+            "stop" => component.stop(),
+            "resume" => component.resume(),
+            "degrade" => component.degrade(),
+            "fault" => component.fault(),
+            "reset" => component.reset(),
+            "dispose" => component.dispose(),
+            _ => unreachable!(),
+        };
+
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("on_{method} failed")
+        );
+        assert_eq!(component.state(), expected);
+        assert_eq!(component.releases, releases);
+        assert_eq!(trigger, None);
     }
 }

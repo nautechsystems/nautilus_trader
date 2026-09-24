@@ -108,14 +108,14 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+use nautilus_persistence::backend::parquet::{
+    catalog::ParquetDataCatalog, paths::timestamps_to_filename,
+};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::test_data::RustTestCustomData;
 #[cfg(feature = "streaming")]
 use nautilus_serialization::ensure_custom_data_registered;
 use rstest::*;
-#[cfg(feature = "defi")]
-use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -1096,7 +1096,11 @@ fn test_subscribe_book_deltas_unmanaged_skips_book_updater(
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(
-        data_engine.get_cache().order_book(&audusd_sim.id).is_none(),
+        data_engine
+            .cache()
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .is_none(),
         "unmanaged subscriptions must not auto-create an order book",
     );
 }
@@ -1149,15 +1153,15 @@ fn test_unsubscribe_depth_keeps_deltas_book_updater(
         UUID4::new(),
         UnixNanos::default(),
         None,
-        true,
+        false,
         None,
         None,
     )));
     data_engine.execute(sub_depth);
 
-    // BookUpdater subscribed to both topics
+    // Only managed deltas own a book updater
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
 
     // Unsubscribe from depth only
     let unsub_depth =
@@ -4793,7 +4797,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth_alive(
             UUID4::new(),
             UnixNanos::default(),
             None,
-            true,
+            false,
             None,
             Some(parent_params()),
         ),
@@ -4827,21 +4831,28 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
+    let mut expected = OrderBook::new(esz1_id, BookType::L2_MBP);
+    expected.apply_depth(&depth).unwrap();
     data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
         .order_book(&esz1_id)
         .expect("ESZ1 book must exist while composite depth sub is active");
-    assert!(
-        esz1_book.update_count >= 1,
-        "depth publish must reach the per-underlying book; \
-         composite depth sub kept alive after deltas unsubscribed",
+    assert_eq!(esz1_book.bids_as_map(None), expected.bids_as_map(None));
+    assert_eq!(esz1_book.asks_as_map(None), expected.asks_as_map(None));
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(esz1_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(esz1_id)),
+        1
     );
 }
 
 #[rstest]
-fn test_unsubscribe_composite_deltas_keeps_exact_depth_deltas_handler_alive(
+fn test_unsubscribe_composite_deltas_keeps_exact_depth_handler_alive(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -4900,7 +4911,7 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth_deltas_handler_alive(
             UUID4::new(),
             UnixNanos::default(),
             None,
-            true,
+            false,
             None,
             Some(parent_params()),
         ),
@@ -4922,16 +4933,29 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth_deltas_handler_alive(
         OrderBookDeltaTestBuilder::new(esz1_id).build(),
     ));
 
+    assert_eq!(cache.borrow().order_book(&esz1_id).unwrap().update_count, 0);
+    let mut depth = stub_depth10();
+    depth.instrument_id = esz1_id;
+    let mut expected = OrderBook::new(esz1_id, BookType::L2_MBP);
+    expected.apply_depth(&depth).unwrap();
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
+
     let cache_view = cache.borrow();
+    let book = cache_view.order_book(&esz1_id).unwrap();
+    assert_eq!(book.bids_as_map(None), expected.bids_as_map(None));
+    assert_eq!(book.asks_as_map(None), expected.asks_as_map(None));
     assert_eq!(
-        cache_view.order_book(&esz1_id).unwrap().update_count,
-        1,
-        "exact depth sub keeps the per-underlying deltas handler alive after composite deltas unsubscribed",
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(esz1_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(esz1_id)),
+        1
     );
 }
 
 #[rstest]
-fn test_snapshot_after_deltas_keeps_depth_handler_alive(
+fn test_snapshot_after_deltas_keeps_delta_handler_alive(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -5005,14 +5029,21 @@ fn test_snapshot_after_deltas_keeps_depth_handler_alive(
     depth.instrument_id = esz1_id;
     data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
+    assert_eq!(cache.borrow().order_book(&esz1_id).unwrap().update_count, 0);
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
+
     let cache_view = cache.borrow();
-    let book = cache_view
-        .order_book(&esz1_id)
-        .expect("ESZ1 book must exist while snapshot sub is active");
-    assert!(
-        book.update_count >= 1,
-        "depth publish must reach the per-underlying book; \
-         deltas-then-snapshots path now registers the depth handler",
+    let book = cache_view.order_book(&esz1_id).unwrap();
+    assert_eq!(book.update_count, 1);
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(esz1_id)),
+        1
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(esz1_id)),
+        0
     );
 }
 
@@ -6106,14 +6137,14 @@ fn test_reset_clears_book_state_and_timers(
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
     assert_eq!(recorder.borrow().len(), 1);
     assert!(!data_engine.subscribed_book_snapshots().is_empty());
-    assert!(!data_engine.get_clock().timer_names().is_empty());
+    assert!(!data_engine.clock().borrow().timer_names().is_empty());
 
     data_engine.reset();
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(data_engine.subscribed_book_snapshots().is_empty());
-    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert!(data_engine.clock().borrow().timer_names().is_empty());
     assert_eq!(data_engine.command_count(), 0);
     assert_eq!(data_engine.data_count(), 0);
 
@@ -6226,9 +6257,16 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     subscribe_all(&data_engine);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
-    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(
+        !data_engine
+            .borrow()
+            .clock()
+            .borrow()
+            .timer_names()
+            .is_empty()
+    );
     assert!(data_engine.borrow().has_option_chain_manager(&series_id));
     assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
 
@@ -6237,7 +6275,14 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(data_engine.borrow().subscribed_book_snapshots().is_empty());
-    assert!(data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(
+        data_engine
+            .borrow()
+            .clock()
+            .borrow()
+            .timer_names()
+            .is_empty()
+    );
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
     assert_eq!(
@@ -6248,9 +6293,16 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     subscribe_all(&data_engine);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
-    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(
+        !data_engine
+            .borrow()
+            .clock()
+            .borrow()
+            .timer_names()
+            .is_empty()
+    );
     assert!(data_engine.borrow().has_option_chain_manager(&series_id));
     assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
 }
@@ -6938,7 +6990,8 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     let timer_name = format!("SPREAD_QUOTE_{spread_id}");
     assert!(
         data_engine
-            .get_clock()
+            .clock()
+            .borrow()
             .timer_names()
             .iter()
             .any(|name| *name == timer_name)
@@ -7203,7 +7256,8 @@ fn test_unsubscribe_spread_quotes_stops_default_interval_timer(
     let timer_name = format!("SPREAD_QUOTE_{spread_id}");
     assert!(
         data_engine
-            .get_clock()
+            .clock()
+            .borrow()
             .timer_names()
             .iter()
             .any(|name| *name == timer_name)
@@ -7221,7 +7275,7 @@ fn test_unsubscribe_spread_quotes_stops_default_interval_timer(
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub)));
 
     let (leg_a, leg_b) = generic_futures_spread_legs();
-    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert!(data_engine.clock().borrow().timer_names().is_empty());
     assert_eq!(
         msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
         0
@@ -7649,7 +7703,8 @@ fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
     let timer_name = format!("SPREAD_QUOTE_{spread_id}");
     assert!(
         data_engine
-            .get_clock()
+            .clock()
+            .borrow()
             .timer_names()
             .iter()
             .any(|name| *name == timer_name)
@@ -7657,7 +7712,7 @@ fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
 
     data_engine.reset();
 
-    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert!(data_engine.clock().borrow().timer_names().is_empty());
     assert_eq!(
         msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
         0
@@ -10124,7 +10179,7 @@ fn test_process_instrument(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(cache.instrument(&audusd_sim.id()).unwrap(), &audusd_sim);
@@ -10168,7 +10223,7 @@ fn test_process_book_delta(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::BookDelta(delta), borrowed);
-    let _cache = &data_engine.get_cache();
+    let _cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(messages.len(), 1);
@@ -10323,7 +10378,7 @@ fn test_process_book_deltas(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::BookDeltas(deltas.clone()), borrowed);
-    let _cache = &data_engine.get_cache();
+    let _cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(messages.len(), 1);
@@ -10366,7 +10421,7 @@ fn test_process_book_depth(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::from(depth.clone()), borrowed);
-    let _cache = &data_engine.get_cache();
+    let _cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(messages.len(), 1);
@@ -10406,7 +10461,7 @@ fn test_process_quote_tick(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::Quote(quote), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(cache.quote(&quote.instrument_id), Some(quote).as_ref());
@@ -10447,7 +10502,7 @@ fn test_process_trade_tick(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::Trade(trade), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(cache.trade(&trade.instrument_id), Some(trade).as_ref());
@@ -11086,7 +11141,7 @@ fn test_process_mark_price(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::MarkPrice(mark_price), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(
@@ -11144,7 +11199,7 @@ fn test_process_index_price(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::IndexPrice(index_price), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(
@@ -11198,7 +11253,7 @@ fn test_process_funding_rate_through_any(
     let mut data_engine = data_engine.borrow_mut();
     // Test through the process() method with &dyn Any
     data_engine.process(&funding_rate as &dyn Any);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(
@@ -11247,7 +11302,7 @@ fn test_process_funding_rate(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.handle_funding_rate(funding_rate);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(
@@ -11299,7 +11354,7 @@ fn test_process_funding_rate_data_variant(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::FundingRate(funding_rate), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 
     assert_eq!(
@@ -11354,7 +11409,7 @@ fn test_process_funding_rate_updates_existing(
     let mut data_engine = data_engine.borrow_mut();
     data_engine.handle_funding_rate(funding_rate1);
     data_engine.handle_funding_rate(funding_rate2);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
 
     // Should only have the latest funding rate
     assert_eq!(
@@ -11396,7 +11451,7 @@ fn test_process_bar(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::Bar(bar), borrowed);
-    let cache = &data_engine.get_cache();
+    let cache = &data_engine.cache().borrow();
     let messages = saver.get_messages();
 
     assert_eq!(cache.bar(&bar.bar_type), Some(bar).as_ref());
@@ -11447,7 +11502,7 @@ fn test_process_instrument_status(
 
     let mut data_engine = data_engine.borrow_mut();
     dispatch_data(&mut data_engine, Data::InstrumentStatus(status), borrowed);
-    let cache = data_engine.get_cache();
+    let cache = data_engine.cache().borrow();
     let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
 
     assert_eq!(messages.len(), 1);
@@ -11527,7 +11582,7 @@ fn test_process_instrument_status_through_any(
     let mut data_engine = data_engine.borrow_mut();
     // Drive through the process() entrypoint with `&dyn Any`
     data_engine.process(&status as &dyn Any);
-    let cache = data_engine.get_cache();
+    let cache = data_engine.cache().borrow();
     let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
 
     assert_eq!(messages.len(), 1);
@@ -11583,7 +11638,7 @@ fn test_process_instrument_status_updates_existing(
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::InstrumentStatus(status1));
     data_engine.process_data(Data::InstrumentStatus(status2));
-    let cache = data_engine.get_cache();
+    let cache = data_engine.cache().borrow();
 
     assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status2));
     assert_eq!(
@@ -11812,7 +11867,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     // Add pool to cache so setup_pool_updater doesn't request snapshot
     data_engine
         .borrow()
-        .cache_rc()
+        .cache()
         .borrow_mut()
         .add_pool(pool.clone())
         .unwrap();
@@ -12170,7 +12225,7 @@ fn test_process_pool_liquidity_update(
     // Add pool to cache so setup_pool_updater doesn't request snapshot
     data_engine
         .borrow()
-        .cache_rc()
+        .cache()
         .borrow_mut()
         .add_pool(pool.clone())
         .unwrap();
@@ -12277,7 +12332,7 @@ fn test_process_pool_fee_collect(
     // Add pool to cache so setup_pool_updater doesn't request snapshot
     data_engine
         .borrow()
-        .cache_rc()
+        .cache()
         .borrow_mut()
         .add_pool(pool.clone())
         .unwrap();
@@ -12377,7 +12432,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     // Add pool to cache so setup_pool_updater doesn't request snapshot
     data_engine
         .borrow()
-        .cache_rc()
+        .cache()
         .borrow_mut()
         .add_pool(pool.clone())
         .unwrap();
@@ -12433,7 +12488,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -12606,7 +12661,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -12726,7 +12781,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -12871,7 +12926,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -12980,7 +13035,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -13186,7 +13241,6 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
                 .size_precision(8)
                 .price_increment(Price::from("0.000001"))
                 .size_increment(Quantity::from("0.00000001"))
-                .maybe_taker_fee(pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)))
                 .ts_event(pool.ts_event)
                 .ts_init(pool.ts_init)
                 .build()
@@ -13206,7 +13260,7 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
         engine.process_defi_data(DefiData::Pool(pool_invalid));
     }
 
-    let cache = data_engine.borrow().cache_rc();
+    let cache = data_engine.borrow().cache().clone();
     let cache = cache.borrow();
     let messages = saving_handler.get_messages();
     let selected = cache.instrument(&id_b);
@@ -13391,7 +13445,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
 
     // Add pool to the data_engine's cache (not the fixture cache!)
     // This ensures setup_pool_updater finds the pool when it checks the cache
-    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
+    data_engine.cache().borrow_mut().add_pool(pool).unwrap();
 
     let subscribe_pool = SubscribePool::new(
         instrument_id,
@@ -13492,10 +13546,10 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
     pool.initial_tick = Some(real_tick + 100);
     let instrument_id = pool.instrument_id;
 
-    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
+    data_engine.cache().borrow_mut().add_pool(pool).unwrap();
     assert!(
         data_engine
-            .cache_rc()
+            .cache()
             .borrow()
             .pool_profiler(&instrument_id)
             .is_none()
@@ -13513,7 +13567,7 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
 
     assert!(
         data_engine
-            .cache_rc()
+            .cache()
             .borrow()
             .pool_profiler(&instrument_id)
             .is_none(),
@@ -13614,16 +13668,12 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
     data_engine.process_defi_data(DefiData::Pool(pool.clone()));
 
     assert!(
-        data_engine
-            .cache_rc()
-            .borrow()
-            .pool(&instrument_id)
-            .is_some(),
+        data_engine.cache().borrow().pool(&instrument_id).is_some(),
         "pool must be added to cache when Pool data arrives"
     );
     assert!(
         data_engine
-            .cache_rc()
+            .cache()
             .borrow()
             .pool_profiler(&instrument_id)
             .is_none(),
@@ -13729,18 +13779,14 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
 
     assert!(
         data_engine
-            .cache_rc()
+            .cache()
             .borrow()
             .pool_profiler(&instrument_id)
             .is_none(),
         "stub snapshot must not result in an installed profiler"
     );
     assert!(
-        data_engine
-            .cache_rc()
-            .borrow()
-            .pool(&instrument_id)
-            .is_some(),
+        data_engine.cache().borrow().pool(&instrument_id).is_some(),
         "pool entry must be preserved even when its stub snapshot is refused"
     );
 }
@@ -15701,7 +15747,11 @@ fn test_process_instrument_status_expires_option_chain_instrument(
 
     // Cache write happens regardless of action
     assert_eq!(
-        data_engine.borrow().get_cache().instrument_status(&call_id),
+        data_engine
+            .borrow()
+            .cache()
+            .borrow()
+            .instrument_status(&call_id),
         Some(&status),
     );
     assert_eq!(quote_unsubs, expected_quote_unsubs);
@@ -25059,4 +25109,504 @@ fn test_subscribed_bars_includes_internal_aggregations(
     // Internally aggregated subscriptions never reach a client, but must still
     // be reported (v1 parity)
     assert!(data_engine.subscribed_bars().contains(&bar_type));
+}
+
+#[fixture]
+fn managed_book_engine(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) -> Rc<RefCell<DataEngine>> {
+    let engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine.borrow_mut(),
+    );
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    engine
+}
+
+fn book_source_command(
+    id: InstrumentId,
+    client: ClientId,
+    depth_source: bool,
+    managed: bool,
+) -> SubscribeCommand {
+    if depth_source {
+        SubscribeCommand::BookDepth(SubscribeBookDepth::new(
+            id,
+            BookType::L2_MBP,
+            Some(client),
+            Some(id.venue),
+            UUID4::new(),
+            UnixNanos::from(101),
+            NonZeroUsize::new(25),
+            managed,
+            None,
+            None,
+        ))
+    } else {
+        SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            id,
+            BookType::L2_MBP,
+            Some(client),
+            Some(id.venue),
+            UUID4::new(),
+            UnixNanos::from(101),
+            NonZeroUsize::new(25),
+            managed,
+            None,
+            None,
+        ))
+    }
+}
+
+#[rstest]
+#[case::deltas_manage(false)]
+#[case::depth_manages(true)]
+fn test_managed_book_rejects_other_source_and_ignores_unmanaged_updates(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] depth_source: bool,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let owner = book_source_command(audusd_sim.id, client_id, depth_source, true);
+    engine.execute_subscribe(owner).unwrap();
+    let conflicting = book_source_command(audusd_sim.id, client_id, !depth_source, true);
+    let error = engine.execute_subscribe(conflicting.clone()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Conflicting managed book source")
+    );
+    engine
+        .execute_unsubscribe(&conflicting.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(103),
+            Some(conflicting.command_id()),
+        ))
+        .unwrap();
+
+    let unmanaged = book_source_command(audusd_sim.id, client_id, !depth_source, false);
+    engine.execute_subscribe(unmanaged).unwrap();
+    let (depth_handler, depths) = get_typed_message_saving_handler::<OrderBookDepth>(None);
+    let (delta_handler, deltas) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
+    msgbus::subscribe_book_depth(
+        switchboard::get_book_depth_topic(audusd_sim.id).into(),
+        depth_handler,
+        None,
+    );
+    msgbus::subscribe_book_deltas(
+        switchboard::get_book_deltas_topic(audusd_sim.id).into(),
+        delta_handler,
+        None,
+    );
+    let mut full = stub_depth10();
+    full.instrument_id = audusd_sim.id;
+    full.sequence = 109;
+    full.ts_event = UnixNanos::from(113);
+    full.ts_init = UnixNanos::from(127);
+    let mut expected = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+    expected.apply_depth(&full).unwrap();
+    let delta = expected.to_deltas(full.ts_event, full.ts_init);
+    let mut truncated = full.clone();
+    truncated.bids.truncate(2);
+    truncated.asks.truncate(2);
+    truncated.bid_counts.truncate(2);
+    truncated.ask_counts.truncate(2);
+    if depth_source {
+        expected.apply_depth(&truncated).unwrap();
+        engine.process_data(Data::BookDepth(Box::new(truncated.clone())));
+        engine.process_data(Data::BookDeltas(Box::new(delta.clone())));
+    } else {
+        engine.process_data(Data::BookDeltas(Box::new(delta.clone())));
+        engine.process_data(Data::BookDepth(Box::new(truncated.clone())));
+    }
+
+    let cache = engine.cache();
+    let cache = cache.borrow();
+    let book = cache.order_book(&audusd_sim.id).unwrap();
+    assert_eq!(book.instrument_id, expected.instrument_id);
+    assert_eq!(book.book_type, expected.book_type);
+    assert_eq!(book.sequence, expected.sequence);
+    assert_eq!(book.ts_last, expected.ts_last);
+    assert_eq!(book.bids_as_map(None), expected.bids_as_map(None));
+    assert_eq!(book.asks_as_map(None), expected.asks_as_map(None));
+    assert_eq!(
+        serde_json::to_value(depths.get_messages()).unwrap(),
+        serde_json::to_value(vec![truncated]).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(deltas.get_messages()).unwrap(),
+        serde_json::to_value(vec![delta]).unwrap()
+    );
+}
+
+#[rstest]
+#[case::deltas_unmanaged_first(false, true)]
+#[case::deltas_unmanaged_last(false, false)]
+#[case::depth_unmanaged_first(true, true)]
+#[case::depth_unmanaged_last(true, false)]
+fn test_managed_book_owners_release_independently(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] depth_source: bool,
+    #[case] unmanaged_first: bool,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let first = book_source_command(audusd_sim.id, client_id, depth_source, true);
+    let second = book_source_command(audusd_sim.id, client_id, depth_source, true);
+    let unmanaged = book_source_command(audusd_sim.id, client_id, depth_source, false);
+    for command in [&unmanaged, &first, &second] {
+        engine.execute_subscribe(command.clone()).unwrap();
+    }
+
+    let release = |engine: &mut DataEngine, command: &SubscribeCommand| {
+        engine
+            .execute_unsubscribe(&command.clone().into_unsubscribe(
+                UUID4::new(),
+                UnixNanos::from(103),
+                Some(command.command_id()),
+            ))
+            .unwrap();
+    };
+
+    let subscribers = || {
+        if depth_source {
+            msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id))
+        } else {
+            msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id))
+        }
+    };
+
+    if unmanaged_first {
+        release(&mut engine, &unmanaged);
+        assert_eq!(subscribers(), 1);
+    }
+
+    release(&mut engine, &first);
+    assert_eq!(subscribers(), 1);
+    // Releasing the same owner twice must not remove the remaining owner.
+    release(&mut engine, &first);
+    assert_eq!(subscribers(), 1);
+    release(&mut engine, &second);
+    assert_eq!(subscribers(), 0);
+    let replacement = book_source_command(audusd_sim.id, client_id, !depth_source, true);
+    engine.execute_subscribe(replacement).unwrap();
+    if !unmanaged_first {
+        release(&mut engine, &unmanaged);
+    }
+
+    assert_eq!(subscribers(), 0);
+    assert_eq!(
+        if depth_source {
+            msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id))
+        } else {
+            msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id))
+        },
+        1
+    );
+}
+
+#[rstest]
+#[case::book_type(0)]
+#[case::depth(1)]
+#[case::parameters(2)]
+#[case::client(3)]
+fn test_managed_book_rejects_incompatible_configuration(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] conflict: u8,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let owner = book_source_command(audusd_sim.id, client_id, false, true);
+    engine.execute_subscribe(owner).unwrap();
+    let mut incoming = book_source_command(audusd_sim.id, client_id, false, true);
+
+    let SubscribeCommand::BookDeltas(cmd) = &mut incoming else {
+        unreachable!()
+    };
+
+    match conflict {
+        0 => cmd.book_type = BookType::L3_MBO,
+        1 => cmd.depth = NonZeroUsize::new(50),
+        2 => {
+            let mut params = Params::new();
+            params.insert("rpi".into(), serde_json::json!(true));
+            cmd.params = Some(params);
+        }
+        3 => cmd.client_id = Some(ClientId::new("OTHER")),
+        _ => unreachable!(),
+    }
+
+    let error = engine.execute_subscribe(incoming).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("same client, book type, depth, and parameters")
+    );
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
+        1
+    );
+}
+
+#[rstest]
+#[case::depth_first(true)]
+#[case::interval_first(false)]
+fn test_interval_and_managed_depth_conflict(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] depth_first: bool,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let depth = book_source_command(audusd_sim.id, client_id, true, true);
+    let interval = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(audusd_sim.id.venue),
+        UUID4::new(),
+        UnixNanos::from(101),
+        NonZeroUsize::new(25),
+        NonZeroUsize::new(100).unwrap(),
+        None,
+        None,
+    ));
+
+    let (first, second) = if depth_first {
+        (depth, interval)
+    } else {
+        (interval, depth)
+    };
+
+    engine.execute_subscribe(first.clone()).unwrap();
+    assert!(
+        engine
+            .execute_subscribe(second.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("Conflicting managed book source")
+    );
+    engine
+        .execute_unsubscribe(&second.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(103),
+            Some(second.command_id()),
+        ))
+        .unwrap();
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
+        usize::from(!depth_first)
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id)),
+        usize::from(depth_first)
+    );
+    engine
+        .execute_unsubscribe(&first.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(107),
+            Some(first.command_id()),
+        ))
+        .unwrap();
+    engine.execute_subscribe(second).unwrap();
+}
+
+#[rstest]
+fn test_parent_book_owner_keeps_original_targets(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let cache = engine.cache().clone();
+    let first = make_es_future("ESZ1.XCME", "ESZ1");
+    let second = make_es_future("ESH2.XCME", "ESH2");
+    let first_id = first.id();
+    let second_id = second.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(first))
+        .unwrap();
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let mut original = book_source_command(parent_id, client_id, false, true);
+
+    let SubscribeCommand::BookDeltas(command) = &mut original else {
+        unreachable!();
+    };
+
+    command.params = Some(parent_params());
+    engine.execute_subscribe(original.clone()).unwrap();
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(second))
+        .unwrap();
+    let mut expanded = original.clone();
+
+    let SubscribeCommand::BookDeltas(command) = &mut expanded else {
+        unreachable!();
+    };
+
+    command.command_id = UUID4::new();
+    engine.execute_subscribe(expanded.clone()).unwrap();
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
+        1
+    );
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(second_id)),
+        1
+    );
+
+    let expanded_id = expanded.command_id();
+    engine
+        .execute_unsubscribe(&expanded.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(103),
+            Some(expanded_id),
+        ))
+        .unwrap();
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
+        1
+    );
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(second_id)),
+        0
+    );
+
+    engine
+        .execute_subscribe(book_source_command(second_id, client_id, true, true))
+        .unwrap();
+    let original_id = original.command_id();
+    engine
+        .execute_unsubscribe(&original.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(107),
+            Some(original_id),
+        ))
+        .unwrap();
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(second_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(second_id)),
+        1
+    );
+}
+
+#[rstest]
+fn test_book_unsubscribe_without_correlation_releases_first_owner(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let unmanaged = book_source_command(audusd_sim.id, client_id, false, false);
+    let managed = book_source_command(audusd_sim.id, client_id, false, true);
+    engine.execute_subscribe(unmanaged.clone()).unwrap();
+    engine.execute_subscribe(managed.clone()).unwrap();
+
+    engine
+        .execute_unsubscribe(&unmanaged.into_unsubscribe(UUID4::new(), UnixNanos::from(103), None))
+        .unwrap();
+    let topic = switchboard::get_book_deltas_topic(audusd_sim.id);
+    assert_eq!(msgbus::subscriber_count_deltas(topic), 1);
+    let managed_id = managed.command_id();
+    engine
+        .execute_unsubscribe(&managed.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(107),
+            Some(managed_id),
+        ))
+        .unwrap();
+    assert_eq!(msgbus::subscriber_count_deltas(topic), 0);
+}
+
+#[rstest]
+#[case::book_type(0)]
+#[case::smaller_depth(1)]
+#[case::oversized_depth(2)]
+#[case::rpi(3)]
+fn test_unmanaged_depth_rejects_conflicting_feed_configuration(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] conflict: u8,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let mut owner = book_source_command(audusd_sim.id, client_id, true, false);
+
+    let SubscribeCommand::BookDepth(command) = &mut owner else {
+        unreachable!()
+    };
+
+    command.depth = NonZeroUsize::new(5);
+    engine.execute_subscribe(owner.clone()).unwrap();
+
+    let mut incoming = owner.clone();
+
+    let SubscribeCommand::BookDepth(command) = &mut incoming else {
+        unreachable!()
+    };
+
+    command.command_id = UUID4::new();
+
+    match conflict {
+        0 => command.book_type = BookType::L3_MBO,
+        1 => command.depth = NonZeroUsize::new(1),
+        2 => command.depth = NonZeroUsize::new(6),
+        3 => {
+            let mut params = Params::new();
+            params.insert("rpi".into(), serde_json::json!(true));
+            command.params = Some(params);
+        }
+        _ => unreachable!(),
+    }
+
+    let error = engine.execute_subscribe(incoming.clone()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("same client, book type, depth, and parameters")
+    );
+    let incoming_id = incoming.command_id();
+    engine
+        .execute_unsubscribe(&incoming.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(103),
+            Some(incoming_id),
+        ))
+        .unwrap();
+    assert_eq!(engine.subscribed_book_depth(), vec![audusd_sim.id]);
+    let owner_id = owner.command_id();
+    engine
+        .execute_unsubscribe(&owner.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(107),
+            Some(owner_id),
+        ))
+        .unwrap();
+    assert!(engine.subscribed_book_depth().is_empty());
 }

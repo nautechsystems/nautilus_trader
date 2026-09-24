@@ -99,8 +99,11 @@ fn websocket_config() -> WebSocketConfig {
         reconnect_max_attempts: None,
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
+        writer_capacity: None,
         backend: TransportBackend::Sockudo,
         proxy_url: None,
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     }
 }
 

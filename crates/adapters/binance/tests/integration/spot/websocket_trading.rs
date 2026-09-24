@@ -44,6 +44,13 @@ use nautilus_binance::{
             models::BinanceCancelOpenOrdersResponse,
             query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
         },
+        sbe::{
+            MessageHeaderDecoder, ReadBuf, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,
+            generated::{
+                expiry_reason::ExpiryReason, new_order_full_response_codec,
+                web_socket_response_codec::WebSocketResponseDecoder,
+            },
+        },
         websocket::trading::{
             client::BinanceSpotWsTradingClient,
             handler::BinanceSpotWsTradingHandler,
@@ -57,8 +64,6 @@ use rstest::rstest;
 use serde_json::json;
 
 // SBE schema constants
-const SBE_SCHEMA_ID: u16 = 3;
-const SBE_SCHEMA_VERSION: u16 = 2;
 const WEBSOCKET_RESPONSE_TEMPLATE_ID: u16 = 50;
 const WEBSOCKET_RESPONSE_BLOCK_LENGTH: u16 = 3;
 const CANCEL_OPEN_ORDERS_TEMPLATE_ID: u16 = 306;
@@ -153,15 +158,15 @@ fn build_new_order_full_response(order_id: u64, client_order_id: &str, symbol: &
     let mut buf = Vec::new();
 
     // Message header (8 bytes)
-    let block_length: u16 = 153;
-    let template_id: u16 = 302; // NEW_ORDER_FULL
+    let block_length = new_order_full_response_codec::SBE_BLOCK_LENGTH;
+    let template_id = new_order_full_response_codec::SBE_TEMPLATE_ID;
     buf.extend_from_slice(&block_length.to_le_bytes());
     buf.extend_from_slice(&template_id.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
 
-    // Fixed fields block (153 bytes) - fill with zeros and set key fields
-    let mut block = vec![0u8; 153];
+    // Fixed fields block - fill with zeros and set key fields
+    let mut block = vec![0u8; usize::from(block_length)];
 
     // priceExponent at offset 0 (i8)
     block[0] = 0xFE; // -2
@@ -221,7 +226,8 @@ fn build_new_order_full_response(order_id: u64, client_order_id: &str, symbol: &
     // workingTime at offset 130 (i64)
     // quoteQty mantissa at offset 138 (u64)
     // effectiveTime at offset 146 (i64)
-    // unused at offset 154 (u8 - padding)
+    // expiryReason at offset 153 (u8)
+    block[153] = ExpiryReason::NullVal as u8;
 
     buf.extend_from_slice(&block);
 
@@ -470,6 +476,42 @@ fn create_test_client(addr: &SocketAddr) -> BinanceSpotWsTradingClient {
         None,
         TransportBackend::default(),
     )
+}
+
+#[rstest]
+fn test_response_headers_use_current_sbe_schema() {
+    let result = build_new_order_full_response(12345, "test-order-1", "BTCUSDT");
+    let response = build_ws_response_envelope(200, "request-1", &result);
+    let header = MessageHeaderDecoder::default().wrap(ReadBuf::new(&response), 0);
+    let result_header = MessageHeaderDecoder::default().wrap(ReadBuf::new(&result), 0);
+
+    assert_eq!(header.schema_id(), SBE_SCHEMA_ID);
+    assert_eq!(header.version(), SBE_SCHEMA_VERSION);
+    assert_eq!(header.template_id(), WEBSOCKET_RESPONSE_TEMPLATE_ID);
+    assert_eq!(header.block_length(), WEBSOCKET_RESPONSE_BLOCK_LENGTH);
+    assert_eq!(result_header.schema_id(), SBE_SCHEMA_ID);
+    assert_eq!(result_header.version(), SBE_SCHEMA_VERSION);
+    assert_eq!(
+        result_header.template_id(),
+        new_order_full_response_codec::SBE_TEMPLATE_ID
+    );
+    assert_eq!(
+        result_header.block_length(),
+        new_order_full_response_codec::SBE_BLOCK_LENGTH
+    );
+
+    let decoder = WebSocketResponseDecoder::default().header(header, 0);
+    assert_eq!(decoder.status(), 200);
+
+    let mut rate_limits = decoder.rate_limits_decoder();
+    assert_eq!(rate_limits.count(), 0);
+
+    let mut decoder = rate_limits.parent().unwrap();
+    let id_coords = decoder.id_decoder();
+    let result_coords = decoder.result_decoder();
+
+    assert_eq!(decoder.id_slice(id_coords), b"request-1");
+    assert_eq!(decoder.result_slice(result_coords), result.as_slice());
 }
 
 #[rstest]

@@ -572,11 +572,14 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if node construction fails, including conflicting execution routes
     /// or multiple execution clients for a venue without an explicit route or default client.
+    /// Also returns an error if another live node exists or is being built on this thread.
     pub fn build(mut self) -> anyhow::Result<LiveNode> {
         self.build_in_place()
     }
 
     pub(crate) fn build_in_place(&mut self) -> anyhow::Result<LiveNode> {
+        let thread_owner = LiveNode::acquire_thread()?;
+
         log::info!(
             "Building LiveNode with {} data clients and {} execution clients",
             self.data_client_factories.len(),
@@ -612,6 +615,7 @@ impl LiveNodeBuilder {
                 .with_clock_factory(self.clock_factory.clone())
                 .with_event_store_factory(self.event_store_factory.take()),
         )?;
+
         #[cfg(feature = "python")]
         if let Some(controller) = self.config.controller.as_ref() {
             Trader::add_controller_from_importable_config(&kernel.trader, controller)?;
@@ -792,6 +796,7 @@ impl LiveNodeBuilder {
             socket_registry,
             None,
             external_ingress,
+            thread_owner,
         );
         node.load_configured_plugins()?;
         node.cache_database_factory = self.cache_database_factory.take();
@@ -928,6 +933,7 @@ mod tests {
         let mut builder =
             LiveNodeBuilder::new(TraderId::test_default(), Environment::Live).unwrap();
         let mut indices: Vec<_> = (0..count).collect();
+
         if reverse {
             indices.reverse();
         }

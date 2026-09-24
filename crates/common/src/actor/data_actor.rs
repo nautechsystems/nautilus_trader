@@ -1705,6 +1705,9 @@ pub trait DataActor {
 
     /// Subscribe to streaming [`OrderBookDepth`] data for the `instrument_id`.
     ///
+    /// `depth` limits the number of levels per side; `None` uses the adapter default.
+    /// Venue channel limits still apply.
+    ///
     /// When `managed` is true, the data engine maintains an [`OrderBook`] in the cache for each
     /// instrument the subscription resolves to, applying each update as it arrives.
     /// A parent subscription resolves to every matching underlying instrument.
@@ -1712,6 +1715,7 @@ pub trait DataActor {
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Params>,
@@ -1740,6 +1744,7 @@ pub trait DataActor {
             handler,
             instrument_id,
             book_type,
+            depth,
             client_id,
             managed,
             params,
@@ -4639,6 +4644,7 @@ impl DataActorCore {
         handler: TypedHandler<OrderBookDepth>,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Params>,
@@ -4652,7 +4658,7 @@ impl DataActorCore {
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
-            depth: NonZeroUsize::new(10),
+            depth,
             managed,
             correlation_id: None,
             params,

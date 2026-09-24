@@ -128,7 +128,7 @@ pub fn ethbtc_quanto(
 }
 
 #[fixture]
-pub fn xbtusd_inverse_perp(
+pub fn btcusd_inverse_perp(
     // One-decimal tick (0.5 USD) and integer contract size
     #[default(1)] price_precision: u8,
     #[default(0)] size_precision: u8,
@@ -136,9 +136,9 @@ pub fn xbtusd_inverse_perp(
     #[default(Quantity::from("1"))] size_increment: Quantity,
 ) -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        // BitMEX uses XBT for BTC; keep the "-PERP" suffix for clarity
-        .instrument_id(InstrumentId::from("XBTUSD-PERP.BITMEX"))
-        .raw_symbol(Symbol::from("XBTUSD"))
+        // Bybit lists inverse contracts as BTCUSD; keep the "-PERP" suffix for clarity
+        .instrument_id(InstrumentId::from("BTCUSD-PERP.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
         // base
         .base_currency(Currency::BTC())
         // quote
@@ -157,9 +157,6 @@ pub fn xbtusd_inverse_perp(
         .min_price(Price::from("0.01"))
         .margin_init(dec!(0.01))
         .margin_maint(dec!(0.0035))
-        // maker_fee (rebate)
-        .maker_fee(dec!(-0.00025))
-        .taker_fee(dec!(0.00075))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -195,8 +192,6 @@ pub fn crypto_option_btc_deribit(
         .max_quantity(Quantity::from("9000.0"))
         .min_quantity(Quantity::from("0.1"))
         .min_notional(Money::new(10.00, Currency::from("USD")))
-        .maker_fee(dec!(0.0003))
-        .taker_fee(dec!(0.0003))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()
@@ -223,8 +218,6 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         .min_price(Price::from("1.0"))
         .margin_init(dec!(1.0))
         .margin_maint(dec!(0.35))
-        .maker_fee(dec!(0.0002))
-        .taker_fee(dec!(0.0004))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -232,10 +225,10 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
 }
 
 #[fixture]
-pub fn xbtusd_bitmex() -> CryptoPerpetual {
+pub fn btcusd_bybit() -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        .instrument_id(InstrumentId::from("BTCUSDT.BITMEX"))
-        .raw_symbol(Symbol::from("XBTUSD"))
+        .instrument_id(InstrumentId::from("BTCUSD.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
         .base_currency(Currency::BTC())
         .quote_currency(Currency::USD())
         .settlement_currency(Currency::BTC())
@@ -250,8 +243,6 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         .min_price(Price::from("0.01"))
         .margin_init(dec!(0.01))
         .margin_maint(dec!(0.0035))
-        .maker_fee(dec!(-0.00025))
-        .taker_fee(dec!(0.00075))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -259,9 +250,9 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
 }
 
 #[fixture]
-pub fn ethusdt_bitmex() -> CryptoPerpetual {
+pub fn ethusd_bybit() -> CryptoPerpetual {
     CryptoPerpetual::builder()
-        .instrument_id(InstrumentId::from("ETHUSD.BITMEX"))
+        .instrument_id(InstrumentId::from("ETHUSD.BYBIT"))
         .raw_symbol(Symbol::from("ETHUSD"))
         .base_currency(Currency::ETH())
         .quote_currency(Currency::USD())
@@ -275,8 +266,6 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         .min_price(Price::from("0.01"))
         .margin_init(dec!(0.01))
         .margin_maint(dec!(0.0035))
-        .maker_fee(dec!(-0.00025))
-        .taker_fee(dec!(0.00075))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -300,8 +289,6 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         .min_price(Price::from("0.01"))
         .margin_init(dec!(0.001))
         .margin_maint(dec!(0.001))
-        .maker_fee(dec!(0.001))
-        .taker_fee(dec!(0.001))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -325,8 +312,6 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         .min_price(Price::from("0.01"))
         .margin_init(dec!(0.01))
         .margin_maint(dec!(0.0035))
-        .maker_fee(dec!(0.0001))
-        .taker_fee(dec!(0.0001))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -366,8 +351,6 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         .min_quantity(Quantity::from("100"))
         .margin_init(dec!(0.03))
         .margin_maint(dec!(0.03))
-        .maker_fee(dec!(0.00002))
-        .taker_fee(dec!(0.00002))
         .tick_scheme(Ustr::from(tick_scheme))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
@@ -548,8 +531,6 @@ pub fn crypto_futures_spread_btc_deribit() -> CryptoFuturesSpread {
         .size_increment(Quantity::from("1"))
         .multiplier(Quantity::from("10"))
         .min_quantity(Quantity::from("1"))
-        .maker_fee(dec!(0.0003))
-        .taker_fee(dec!(0.0003))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()
@@ -576,8 +557,6 @@ pub fn crypto_option_spread_btc_deribit() -> CryptoOptionSpread {
         .size_increment(Quantity::from("0.1"))
         .multiplier(Quantity::from(1))
         .min_quantity(Quantity::from("0.1"))
-        .maker_fee(dec!(0.0003))
-        .taker_fee(dec!(0.0003))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()
@@ -615,8 +594,6 @@ pub fn betting() -> BettingInstrument {
     let min_price = Some(Price::from("1.00"));
     let margin_init = Some(Decimal::from(1));
     let margin_maint = Some(Decimal::from(1));
-    let maker_fee = Some(Decimal::from(0));
-    let taker_fee = Some(Decimal::from(0));
     let ts_event = UnixNanos::default();
     let ts_init = UnixNanos::default();
 
@@ -652,8 +629,6 @@ pub fn betting() -> BettingInstrument {
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -729,8 +704,6 @@ pub fn perpetual_contract_eurusd() -> PerpetualContract {
         .size_increment(Quantity::from("1"))
         .margin_init(dec!(0.03))
         .margin_maint(dec!(0.03))
-        .maker_fee(dec!(0.00002))
-        .taker_fee(dec!(0.00002))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()
@@ -776,8 +749,6 @@ pub fn tokenized_asset_aaplx() -> TokenizedAsset {
         .price_increment(Price::from("0.01"))
         .size_increment(Quantity::from("0.0001"))
         .min_quantity(Quantity::from("0.0001"))
-        .maker_fee(dec!(-0.0002))
-        .taker_fee(dec!(0.001))
         .ts_event(UnixNanos::default())
         .ts_init(UnixNanos::default())
         .build()

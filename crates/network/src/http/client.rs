@@ -75,6 +75,10 @@ pub enum HttpRedirectPolicy {
 /// clients can share the same rate limiter when their requests consume one quota budget.
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
 /// HTTPS, explicit proxies, and redirect following are unsupported.
+///
+/// Transport error messages carry the request URL without its query string or fragment, so
+/// credentials passed as query parameters cannot reach logs through errors. Use the
+/// `_url_redacted` request variants to omit the URL entirely.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     pub(crate) client: InnerHttpClient,
@@ -111,7 +115,9 @@ impl HttpClient {
         proxy_url: Option<String>,
         rate_limiters: Option<Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>>,
         #[builder(default)] redirect_policy: HttpRedirectPolicy,
-        #[builder(default = true)] use_system_proxy: bool,
+        /// Whether to honor ambient proxy configuration when `proxy_url` is not set.
+        #[builder(default = true)]
+        use_system_proxy: bool,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -171,6 +177,7 @@ impl HttpClient {
         let client = super::transport::Client::new(
             proxy_url,
             use_system_proxy,
+            header_map.get(http::header::USER_AGENT).cloned(),
             super::transport::Settings {
                 pool_max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,
                 pool_idle_timeout: Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS),
@@ -266,7 +273,7 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request while redacting the URL from logs and transport errors.
+    /// Sends an HTTP request while omitting the URL from transport errors.
     ///
     /// Use this for endpoints whose path or other URL components can carry credentials.
     ///
@@ -319,8 +326,8 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request with serializable query parameters while redacting the URL from logs
-    /// and transport errors.
+    /// Sends an HTTP request with serializable query parameters while omitting the URL from
+    /// transport errors.
     ///
     /// Use this for query parameters that can carry credentials.
     ///
@@ -763,6 +770,13 @@ impl InnerHttpClient {
             request.method(),
         );
 
+        let error_url = (!redact_url).then(|| {
+            let mut error_url = url.clone();
+            error_url.set_query(None);
+            error_url.set_fragment(None);
+            error_url
+        });
+
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
         let operation = async {
@@ -773,7 +787,7 @@ impl InnerHttpClient {
             Ok(HttpResponseStream {
                 response,
                 deadline,
-                url: (!redact_url).then(|| url.clone()),
+                url: error_url.clone(),
                 #[cfg(all(feature = "simulation", madsim))]
                 _connection: connection,
             })
@@ -787,7 +801,8 @@ impl InnerHttpClient {
             },
             None => operation.await,
         };
-        result.map_err(|e| response_error(e, (!redact_url).then_some(&url)))
+
+        result.map_err(|e| response_error(e, error_url.as_ref()))
     }
 
     async fn consume_response<B>(
@@ -880,7 +895,7 @@ impl Default for InnerHttpClient {
         install_cryptographic_provider();
         #[cfg(not(all(feature = "simulation", madsim)))]
         let client =
-            super::transport::Client::new(None, true, super::transport::Settings::default())
+            super::transport::Client::new(None, true, None, super::transport::Settings::default())
                 .expect("failed to build default HTTP client");
         Self {
             #[cfg(not(all(feature = "simulation", madsim)))]
@@ -1900,6 +1915,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_request_removes_query_string_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-query-secret";
+        const FRAGMENT_MARKER: &str = "default-fragment-marker";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}#{FRAGMENT_MARKER}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request(Method::GET, url, None, None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+            assert!(!rendered.contains(FRAGMENT_MARKER), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_secret_body_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "secret-body-query-secret";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_secret_body(
+                Method::POST,
+                url,
+                None,
+                None,
+                SecretString::from("credential-body"),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-params-query-secret";
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            auth: &'a str,
+        }
+
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades");
+        let params = Query { auth: QUERY_SECRET };
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("auth="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_http_client_redacted_url_request_removes_endpoint_from_trace_logs() {
         const USERINFO_SECRET: &str = "trace-userinfo-secret";
         const PATH_SECRET: &str = "trace-path-secret";
@@ -1934,12 +2049,25 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case::without_user_agent(None)]
+    #[case::with_user_agent(Some("NautilusTrader/proxy-test-73"))]
     #[tokio::test]
-    async fn test_http_client_uses_connect_and_proxy_authorization_for_https() {
+    async fn test_http_client_uses_connect_and_proxy_authorization_for_https(
+        #[case] user_agent: Option<&str>,
+    ) {
         const USERNAME: &str = "proxytest";
         const PASSWORD: &str = "fixture42";
+        let mut headers =
+            HashMap::from([("authorization".into(), "Bearer origin-secret-19".into())]);
+
+        if let Some(user_agent) = user_agent {
+            headers.insert("user-agent".into(), user_agent.into());
+        }
+
         let (proxy_addr, request_rx) = spawn_rejecting_connect_proxy().await;
         let client = HttpClient::builder()
+            .headers(headers)
             .timeout_secs(2)
             .proxy_url(format!("http://{USERNAME}:{PASSWORD}@{proxy_addr}"))
             .build()
@@ -1959,17 +2087,26 @@ mod tests {
         let request = request_rx.await.expect("captured CONNECT request");
         let mut lines = request.split("\r\n");
         let request_line = lines.next().expect("CONNECT request line");
-        let auth_value = lines
-            .find_map(|line| {
+
+        let headers: HashMap<_, _> = lines
+            .filter_map(|line| {
                 let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("proxy-authorization")
-                    .then_some(value.trim())
+                Some((name.to_ascii_lowercase(), value.trim()))
             })
-            .expect("Proxy-Authorization header");
+            .collect();
+
         let expected_auth = format!("Basic {}", BASE64.encode(format!("{USERNAME}:{PASSWORD}")));
+        let mut expected_headers = HashMap::from([
+            ("host".into(), "fixture.example.test:443"),
+            ("proxy-authorization".into(), expected_auth.as_str()),
+        ]);
+
+        if let Some(user_agent) = user_agent {
+            expected_headers.insert("user-agent".into(), user_agent);
+        }
 
         assert_eq!(request_line, "CONNECT fixture.example.test:443 HTTP/1.1");
-        assert_eq!(auth_value, expected_auth);
+        assert_eq!(headers, expected_headers);
         assert!(!error.to_string().contains(PASSWORD));
         assert!(!error.to_string().contains(&BASE64.encode(PASSWORD)));
         assert!(!error.to_string().contains(&expected_auth));

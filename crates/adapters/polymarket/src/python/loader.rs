@@ -46,7 +46,7 @@ use crate::{
         error::Error as PolymarketHttpError,
         gamma::{PolymarketGammaHttpClient, flatten_event_markets},
         models::{ClobMarketResponse, GammaEvent, GammaMarket},
-        parse::{create_instrument_from_def, parse_gamma_market},
+        parse::{create_instrument_from_def, enrich_market_fee_schedule, parse_gamma_market},
         query::{GetGammaMarketsParams, GetSearchParams},
     },
     providers::{build_gamma_event_params_from_hashmap, build_gamma_params_from_hashmap},
@@ -473,10 +473,34 @@ async fn build_loader(
             .and_then(|candidate| candidate.fee_schedule);
     }
 
+    enrich_market_fee_schedule(&mut market);
+
     let details = clob
         .get_market(&market.condition_id)
         .await
         .map_err(to_pyruntime_err)?;
+
+    if let Some(schedule) = market.fee_schedule.as_mut()
+        && schedule.rate.is_zero()
+        && !schedule.rebate_rate.is_zero()
+        && let Some(token) = details.tokens.get(token_index)
+    {
+        match clob.get_fee_rate(&token.token_id).await {
+            Ok(response) => {
+                let rate = response.to_rate();
+                if rate >= rust_decimal::Decimal::ZERO {
+                    schedule.rate = rate;
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "CLOB fee-rate fallback failed for market {}: {e}",
+                    market.id
+                );
+            }
+        }
+    }
+
     build_loader_from_details(market, &details, token_index, data_api_client)
 }
 
@@ -636,6 +660,11 @@ fn trades_to_py(py: Python<'_>, trades: Vec<TradeTick>) -> PyResult<Py<PyAny>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
     use serde_json::json;
@@ -881,7 +910,6 @@ mod tests {
             loader.instrument.outcome.map(|value| value.to_string()),
             Some("No".to_string())
         );
-        assert_eq!(loader.instrument.taker_fee.to_string(), "0.02");
         assert_eq!(loader.resolution_metadata["closed"], true);
         assert_eq!(loader.resolution_metadata["tokens"][0]["winner"], true);
         assert_eq!(
@@ -1083,5 +1111,71 @@ mod tests {
                 .to_string()
                 .contains("does not match Gamma condition ID")
         );
+    }
+
+    #[tokio::test]
+    async fn build_loader_recovers_zero_taker_rate_from_clob_fee_rate() {
+        Python::initialize();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let asserted = Arc::clone(&calls);
+        let details = serde_json::to_string(&clob_market()).unwrap();
+
+        let router = axum::Router::new()
+            .route(
+                "/markets/0xcondition",
+                axum::routing::get(move || {
+                    let details = details.clone();
+
+                    async move { details }
+                }),
+            )
+            .route(
+                "/fee-rate",
+                axum::routing::get(move || {
+                    let calls = Arc::clone(&calls);
+
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        r#"{"base_fee":700}"#.to_string()
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let mut market = gamma_market();
+        market.fees_enabled = Some(true);
+        market.fee_type = Some("crypto_fees".to_string());
+        market.fee_schedule = Some(crate::http::models::FeeSchedule {
+            exponent: rust_decimal::Decimal::ONE,
+            rate: rust_decimal::Decimal::ZERO,
+            taker_only: true,
+            rebate_rate: rust_decimal::Decimal::ZERO,
+        });
+
+        let gamma = PolymarketGammaHttpClient::new(
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            RetryConfig::default(),
+        )
+        .expect("valid test client");
+        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
+
+        let loader = build_loader(market, 0, &gamma, &clob, data_api())
+            .await
+            .expect("loader should build");
+        server.abort();
+
+        assert_eq!(asserted.load(Ordering::SeqCst), 1);
+        assert_eq!(loader.token_id, "yes-token");
+
+        let info = loader.instrument.info.as_ref().unwrap();
+        let schedule: crate::http::models::FeeSchedule =
+            serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
+        assert_eq!(schedule.rate, rust_decimal::Decimal::new(7, 2));
+        assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
     }
 }

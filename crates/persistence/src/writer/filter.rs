@@ -44,6 +44,7 @@ impl WriterRecordFilter {
         for record_type in record_types {
             filter.insert(&record_type, None);
         }
+
         filter
     }
 

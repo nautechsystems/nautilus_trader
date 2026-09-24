@@ -185,6 +185,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                         handles.push(std::thread::spawn(move || {
                             let quote = create_test_quote();
+
                             for _ in 0..events_per_sender {
                                 tx_clone.send(DataEvent::Data(Data::Quote(quote))).unwrap();
                             }
@@ -198,6 +199,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                     // Drain receiver
                     let mut count = 0;
+
                     while rx.try_recv().is_ok() {
                         count += 1;
                     }
@@ -233,6 +235,7 @@ fn bench_batch_processing(c: &mut Criterion) {
 
                     // Receive batch
                     let mut received = 0;
+
                     while rx.try_recv().is_ok() {
                         received += 1;
                     }
@@ -313,6 +316,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
 
                 for _ in 0..iters {
                     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+
                     for _ in 0..size {
                         tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
                     }

@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{CryptoOption, InstrumentAny},
     types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -461,7 +461,7 @@ mod tests {
         enums::OptionKind,
         instruments::Instrument,
     };
-    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     use rstest::rstest;
     use tempfile::TempDir;
     use ustr::Ustr;

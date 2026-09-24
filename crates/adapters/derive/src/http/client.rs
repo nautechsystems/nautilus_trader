@@ -33,7 +33,10 @@ use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse,
+        create_standard_nautilus_headers,
+    },
     ratelimiter::clock::MonotonicClock,
     retry::{RetryConfig, RetryManager},
 };
@@ -796,6 +799,7 @@ fn build_client(
     // so the network client carries no limiter of its own and never sleeps
     // inside its request path.
     let client = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
         .headers(create_standard_nautilus_headers().into_iter().collect())
         .timeout_secs(timeout_secs)
         .maybe_proxy_url(proxy_url)
@@ -885,6 +889,7 @@ mod tests {
     use std::collections::HashMap;
 
     use nautilus_network::http::{HttpStatus, StatusCode};
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
@@ -904,6 +909,20 @@ mod tests {
             headers: HashMap::new(),
             body: serde_json::to_vec(body).unwrap().into(),
         }
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = build_client(3, None).unwrap().0;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]

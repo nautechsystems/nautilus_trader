@@ -22,6 +22,33 @@ Two scenarios:
 - **Cached state exists**: report data generates missing events to align the state.
 - **No cached state**: all orders and positions at the venue are generated from scratch.
 
+:::info[Position reports are market exposure]
+**An explicit position report is authoritative. During startup reconciliation,
+the engine either aligns to that report within reconciliation tolerances or fails closed.**
+
+Authoritative position reports:
+
+- An explicit open report, including quantity and direction.
+- An explicit flat report.
+
+Not evidence of a flat position:
+
+- A missing report.
+- A null quantity.
+- A venue that does not publish positions.
+
+The fill window does not decide whether the report is authoritative. Missing reports do
+not mean flat.
+
+By default, `generate_missing_orders` is enabled. The engine generates the
+orders and fills needed to align local state to the report. Disabling generation
+does not allow an unresolved report through startup.
+
+This guarantee covers reports included by the position-report and instrument
+filters, with reconciliation enabled. Unresolved reports prevent actors and
+strategies from starting.
+:::
+
 :::tip
 Persist all execution events to the cache database. This reduces reliance on venue history
 and gives reconciliation the retained order and position state needed to interpret short history
@@ -196,14 +223,16 @@ venue state that is already stale when collection starts.
 
 ### Order-only fill projection
 
-During startup reconciliation, a bounded historical report can prove an order's status and filled
-quantity without proving that its fill belongs in the current position lifecycle. The engine then
-projects the `OrderFilled` event onto the order only. The order reaches the exact reported state,
-while the fill does not create or change a position and does not update portfolio economics.
+During startup reconciliation, a bounded historical fill does not change a position or the portfolio
+when that instrument has no in-scope explicit position report. Omission is not a flat report. The order still
+reaches the reported status and filled quantity. An explicit position report, open or flat, is the
+quantity target: the engine applies the available fills, generates the difference when configured,
+or leaves the position unresolved.
 
-This projection applies only to reconciliation recovery. Raw reports remain available, and an
-authoritative position report can reconcile the current venue position separately. See
-[Bounded history safety](#bounded-history-safety) for the required evidence.
+This projection applies only to reconciliation recovery. Raw reports remain available. Setting
+`filter_position_reports` makes bounded historical fills order-only, even when the mass status
+contains position reports. See [Bounded history safety](#bounded-history-safety) for the
+undeclared-window exception and retained-fill rules.
 
 ### External order creation
 
@@ -302,11 +331,9 @@ match venue retention and request limits. See the integration guide for the sele
 :::
 
 :::warning
-A bounded history window can begin after the fill that opened a position. When an adapter declares
-the lower bound in its mass status, the engine applies historical fill economics only when the
-bounded report set and retained state prove a coherent position transition. Adapters that do not
-declare the bound use the compatibility fill-adjustment path, which can generate synthetic events
-with information loss. Some venues also filter or drop older execution data.
+A bounded history window can begin after the fill that opened a position. Some venues also filter
+or drop older execution data. That does not change the position-report rule above: an explicit
+report is still the quantity target.
 :::
 
 Each strategy can configure `external_order_instrument_ids` as its intent to claim venue-sourced
@@ -409,7 +436,9 @@ flowchart TD
     Pos --> Match{Positions<br/>match venue?}
     Match -->|Yes| Done[Reconciliation complete<br/>system ready for trading]
     Match -->|No| Gen[Generate missing orders<br/>strategy: EXTERNAL, tag: RECONCILIATION]
-    Gen --> Done
+    Gen --> Recovered{In-scope reports match<br/>within tolerances?}
+    Recovered -->|Yes| Done
+    Recovered -->|No| Abort[Startup fails<br/>actors and strategies do not start]
 ```
 
 These reports represent external reality. The procedure processes them in the order shown so each
@@ -425,9 +454,9 @@ An `ExecutionMassStatus` can declare the provenance of its historical reports:
 - `reports_complete=true` means that every order, fill, and position source needed to interpret
   the bounded history completed and all required records were mapped successfully.
 
-An adapter can still return authoritative active orders when a historical source fails. It marks
-the mass status incomplete so the engine can recover those orders without treating the partial
-history as proof of position or portfolio economics.
+An adapter can still return authoritative active orders and position reports when a historical
+source fails. It marks the mass status incomplete to record the missing history. Incompleteness
+does not prevent recovery from an explicit position report.
 
 ### Report deduplication
 
@@ -448,7 +477,7 @@ history as proof of position or portfolio economics.
 ### Position reconciliation
 
 - Matches the net position per account and instrument against venue position reports using
-  instrument precision.
+  the account's quantity tolerance.
 - Generates external order events when order reconciliation leaves a position that differs from
   the venue.
 - When `generate_missing_orders` is enabled (default: True), generates orders with strategy ID
@@ -456,49 +485,88 @@ history as proof of position or portfolio economics.
 - Logs a warning when NETTING ownership is split across multiple strategies for the same account
   and instrument, since venue position reports are account-level net positions.
 
-When generating reconciliation orders, the engine uses this price hierarchy:
+Reconciliation generates synthetic MARKET order reports and fills with a known price:
 
-1. **Calculated reconciliation price** (preferred): targets the correct average position.
-1. **Market mid-price**: uses the current bid-ask midpoint.
-1. **Current position average**: uses the existing position's average price.
-1. **MARKET order** (last resort): used only when no price data exists (no positions, no market data).
+- Opening from flat uses the reported `avg_px_open`.
+- Increasing an existing position uses a calculated price targeting the reported entry average.
+- Reducing an existing position uses the reported entry average, falling back to the cached average
+  when the report omits it. A reduction does not change the remaining position's entry average.
+- Closing to flat uses the cached entry average.
+- Reversing direction closes the cached position, then opens the reported position at its entry average.
 
-The engine uses LIMIT orders when a price can be determined (cases 1-3) to preserve PnL accuracy
-and skips zero quantity differences after precision rounding.
+The engine skips quantity differences that round to zero at instrument size precision. Startup
+validation still checks the remaining difference against the account's quantity tolerance.
 
-### Fill adjustment without an explicit report bound
+#### Startup position validation
 
-For compatibility, a mass status without an explicit `lookback_start` follows the existing fill
-adjustment path. The engine can analyze zero-crossings, remove closed lifecycles, and generate a
-synthetic fill when the reported fills do not explain the current venue position.
+After applying startup reports, the live node checks each **in-scope explicit position report, including flat reports,**
+against the cache. An unresolved position stops startup **before actor or strategy `on_start`**.
+The error identifies the account, instrument, venue quantity, and recovery failure.
+
+| Position case                              | Cache identity          | Quantity requirement     |
+| ------------------------------------------ | ----------------------- | ------------------------ |
+| HEDGING with venue position IDs            | Exact venue position ID | Exact quantity           |
+| NETTING with or without venue position IDs | Account and instrument  | Within account tolerance |
+| Net reports without position IDs           | Account and instrument  | Within account tolerance |
+
+When the venue reports both long and short positions, both side totals must also match;
+equal net quantities alone are insufficient. A residual difference outside the account tolerance
+remains unresolved even if it rounds to zero at the instrument size precision. Differences within
+the tolerance remain acceptable, including tiny residuals around zero.
+
+For an open position with a reported `avg_px_open`, startup also checks the entry average using
+the fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument
+price ticks; the comparison does not round them to instrument price precision. NETTING reports
+use quantity-weighted entry averages for each reported side. If a side spans several reports,
+all contributing reports must supply an average to establish that side's price target.
+
+Matching quantity alone does not resolve a reported entry-price mismatch. When quantities already
+match, position reconciliation does not generate a correction solely to change the entry average;
+the remaining price mismatch fails startup. When it corrects quantity, startup still fails if the
+resulting average remains outside tolerance. Synthetic recovery does not establish historical
+realized PnL.
+
+#### Recovery prerequisites and filters
+
+Creating a position in an empty cache from a report without order or fill history requires
+`avg_px_open`. The engine does not invent an entry price.
+
+- **Missing-order generation**: disabling `generate_missing_orders` does not bypass startup validation.
+- **Report scope**: position-report and instrument filters still apply; excluded reports are not checked.
+- **Reconciliation disabled**: disabling reconciliation skips the check entirely.
+
+### Fill adjustment
+
+The engine can analyze zero-crossings, remove closed lifecycles, and generate a synthetic fill when
+the reported fills do not explain the current venue position. A declared `lookback_start` does not
+skip this adjustment. Without a reported `avg_px_open`, the engine preserves the original
+orders and fills instead of inventing a price for synthetic fill adjustment. Setting
+`filter_position_reports` skips fill adjustment for both declared and undeclared windows.
 
 When `generate_missing_orders` is disabled, the engine still processes raw venue order reports. It
 filters completed lifecycles when the current lifecycle explains the venue position, but it does
 not add or replace synthetic reports to align a fill window with the venue position or materialize
 an order for a fill group that has no order report.
 
-Adapters that apply a history cutoff should declare it through the
-[mass-status history contract](#mass-status-history-contract) instead of relying on this inference.
+Adapters that apply a history cutoff should still declare it through the
+[mass-status history contract](#mass-status-history-contract). The declaration records provenance.
+It does not authorize leaving an explicit position report unmatched.
 
 ### Bounded history safety
 
-For explicitly bounded NETTING history without a venue position ID, the engine applies historical
-fills to positions and the portfolio only when all of the following evidence agrees:
+**An explicit position report is authoritative for the position, whether open or flat.
+The engine either aligns to that report within reconciliation tolerances or fails closed.** It does
+not replay the bounded window to decide whether the report is authoritative. It applies the available
+orders and fills, and by default generates the orders and fills required to reach the report. Disabling
+`generate_missing_orders` does not allow a mismatch to stand.
 
-- The report set is complete, and each fill has coherent account, instrument, order, side, and
-  strategy ownership.
-- Retained fills are excluded, and any cached predecessor is an unambiguous NETTING position for
-  the same account, instrument, and strategy.
-- A reduce-only fill has a sufficient opposite-side predecessor.
-- Fill intervals are ordered without overlapping or equal timestamp boundaries that make their
-  sequence ambiguous.
-- Replaying the fills from retained state matches one unambiguous authoritative position report,
-  including an explicit flat report.
+A bounded fill for an instrument with no in-scope explicit position report does not open, close, or change a
+position, and it does not update portfolio economics. The order still reaches the reported status
+and filled quantity. Raw reconciliation reports remain available.
 
-If any condition fails, the engine projects the affected historical fill onto its order only. This
-preserves the reported order status and filled quantity without opening, closing, or changing a
-position and without publishing fill economics to the portfolio. Raw reconciliation reports remain
-available, and position reconciliation can align an authoritative current position separately.
+For compatibility, a mass status without a declared `lookback_start` can still apply historical
+fills when there is no position report. This exception does not treat a missing report as flat.
+Retained-fill deduplication and projection of older lifecycles continue to apply in both paths.
 
 Reports with an explicit `venue_position_id` follow the position-specific reconciliation path and
 do not require NETTING lifecycle inference.
@@ -506,8 +574,8 @@ do not require NETTING lifecycle inference.
 ### Failure handling
 
 - An adapter can preserve successful report legs after an individual source failure. Explicitly
-  bounded mass statuses must mark the result incomplete, which makes unsupported historical fills
-  order-only.
+  bounded mass statuses must mark the result incomplete. Incompleteness does not veto an explicit
+  position report. A bounded fill with no explicit position report does not change a position.
 - Fill reports arriving before order status reports are deferred until order state is available.
 
 #### Commission failures
@@ -525,7 +593,8 @@ event, so a failure defers the entire external order. An unavailable responsible
 has the same fail-closed result.
 
 An inferred-fill commission failure while applying an otherwise successful mass status does not
-stop startup. The unresolved work remains pending for a later reconciliation cycle.
+by itself stop startup. Startup still fails if an in-scope explicit position report remains unresolved.
+Otherwise, the unresolved work remains pending for a later reconciliation cycle.
 
 If startup reconciliation fails for any other reason, the system logs an error and does not start.
 
@@ -541,8 +610,8 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 | **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                                          |
 | **Missed fills**                       | Complete venue history contains a fill the engine missed.                       | Generates the missing `OrderFilled` event and applies its economics.                                     |
 | **Multiple fills**                     | A complete, coherent report set contains several fills for an order.            | Reconstructs the reported fill history in event order.                                                   |
-| **Incomplete bounded history**         | A required order, fill, or position source failed or could not be mapped.       | Recovers order state but projects historical fills without position or portfolio effects.                |
-| **Ambiguous bounded lifecycle**        | The bounded reports do not prove one coherent NETTING position transition.      | Preserves order state and leaves current position alignment to position reconciliation.                  |
+| **Incomplete bounded history**         | A required order, fill, or position source failed or could not be mapped.       | Aligns an explicit position report, or leaves it unresolved. Fills with no report stay order-only.       |
+| **Ambiguous bounded lifecycle**        | The bounded reports do not prove one coherent NETTING position transition.      | An explicit position report is still the quantity target. Fills with no report stay order-only.          |
 | **External orders**                    | Orders exist on venue but not in local cache.                                   | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.                                    |
 | **Missing client origin**              | A cached order in the mass status has no recorded execution-client origin.      | Logs one aggregated warning with a count and sample IDs; reconciles against the reporting client.        |
 | **Conflicting client origin**          | A cached order's origin differs from the client that supplied the report.       | Logs one aggregated deprecation warning; reconciliation proceeds during the compatibility period.        |
@@ -663,7 +732,7 @@ handles bulk query failures across hundreds of orders without overwhelming the v
 - **Unresolved instruments**: A report references an instrument the adapter never loaded. Add it to
   `load_ids` or set `load_all=True`. Reports outside an explicit `load_ids` scope are dropped by
   design and need no action.
-- **Precision differences**: Small decimal differences are handled using instrument precision.
+- **Precision differences**: Reconciliation tolerances absorb small quantity and entry-price differences.
   Large discrepancies may indicate missing orders.
 - **Out-of-order reports**: Fill reports arriving before order status reports are deferred until
   order state is available.
@@ -678,52 +747,50 @@ flattening an account.
 The reconciliation path preserves these invariants for the reports and positions it processes:
 
 1. **Order state**: authoritative reports recover the exact order status and filled quantity even
-   when bounded history cannot support economic replay.
-1. **Evidence-gated economics**: an explicitly bounded historical fill changes a NETTING position
-   and portfolio only when complete, coherent evidence proves the transition.
-1. **Position quantity**: reconciled positions match authoritative venue reports within instrument
-   precision.
-1. **Price and PnL integrity**: applied or generated economic fills use reported or calculated
-   prices that preserve the reconciled average entry price and unrealized PnL.
+   when historical fills apply only to order state.
+1. **Explicit position report**: an explicit open or flat report is the quantity target. The engine
+   aligns to it, generating orders and fills when configured, or leaves it unresolved. A missing
+   report is not flat.
+1. **Missing position report**: an explicitly bounded historical fill with no in-scope position report updates
+   order state only, without changing positions or portfolio economics.
+1. **Position quantity**: reconciled positions match authoritative venue reports within the applicable
+   quantity tolerance.
+1. **Entry price**: reported entry averages match within relative tolerance before startup proceeds.
+   Synthetic fills use reported or calculated prices; they do not reconstruct missing historical PnL.
 1. **ID determinism**: synthetic `trade_id` and `venue_order_id` values are deterministic functions
    of the logical event, so replay deduplicates them across restarts.
 
-Incomplete or ambiguous bounded history therefore does not claim to reconstruct historical average
-entry price or realized PnL. It recovers the order record and leaves unsupported historical
-economics unapplied.
+Bounded history without a position report recovers the order record and leaves historical economics
+unapplied. An explicit open or flat report is aligned within tolerance or remains unresolved.
 
-## Fill adjustment scenarios without an explicit bound
+## Fill adjustment scenarios
 
-These scenarios apply when the mass status does not declare a `lookback_start`:
+These scenarios apply whether or not the mass status declares a `lookback_start`:
 
-| Scenario                                  | Description                                             | System behavior                                         |
-| ----------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
-| **Complete lifecycle**                    | All fills from opening to current state are captured.   | No adjustment.                                          |
-| **Incomplete single lifecycle**           | Reports miss opening fills, with no zero-crossings.     | Adds a synthetic opening fill with calculated price.    |
-| **Multiple lifecycles, current matches**  | Zero-crossings separate earlier and current lifecycles. | Filters out old lifecycles and retains the current one. |
-| **Multiple lifecycles, current mismatch** | The current lifecycle differs from the venue position.  | Replaces it with one synthetic fill.                    |
-| **Flat position**                         | The venue reports flat regardless of fill history.      | Makes no adjustment.                                    |
-| **No fills**                              | The report set contains no fills.                       | Returns the empty fill set.                             |
+| Scenario                                  | Description                                             | System behavior                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Complete lifecycle**                    | All fills from opening to current state are captured.   | No adjustment.                                                                                                                                    |
+| **Incomplete single lifecycle**           | Reports miss opening fills, with no zero-crossings.     | Adds a synthetic opening fill with calculated price.                                                                                              |
+| **Multiple lifecycles, current matches**  | Zero-crossings separate earlier and current lifecycles. | Filters out old lifecycles and retains the current one.                                                                                           |
+| **Multiple lifecycles, current mismatch** | The current lifecycle differs from the venue position.  | Generates a synthetic position fill and preserves reported orders for replay deduplication, projecting their earlier fills onto order state only. |
+| **Flat position**                         | The venue reports flat regardless of fill history.      | Makes no adjustment.                                                                                                                              |
+| **No fills**                              | The report set contains no fills.                       | Returns the empty fill set.                                                                                                                       |
 
 Concepts:
 
 - **Zero-crossing**: position quantity crosses through zero (FLAT), marking a lifecycle boundary.
 - **Lifecycle**: a sequence of fills between zero-crossings representing one open-close cycle.
 - **Synthetic fill**: a calculated fill report representing missing activity, priced to achieve the correct average position.
-- **Tolerance**: position matching uses configurable price tolerance (default 0.0001 = 0.01%) to absorb minor calculation differences.
+- **Tolerance**: fill adjustment uses a relative entry-price tolerance of 0.0001 (0.01%) to absorb minor calculation differences. Startup validation uses the same price tolerance and the account's separate quantity tolerance.
 
 ## Bounded history scenarios
 
-| Scenario                                 | Evidence                                                          | Economic fill behavior                                           |
-| ---------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
-| **Complete coherent sequence**           | Ordered fills replay to the one authoritative position report.    | Applies the fills normally.                                      |
-| **Isolated reduce-only close**           | No sufficient correlated predecessor exists.                      | Updates the order only.                                          |
-| **Correlated cached predecessor**        | Same account, instrument, and strategy with sufficient quantity.  | Applies the fill normally.                                       |
-| **Unrelated or undersized position**     | Cached state cannot fully support the transition.                 | Leaves the cached position unchanged and updates the order only. |
-| **Incomplete report source**             | A required order, fill, or position leg failed or did not map.    | Updates affected historical orders only.                         |
-| **Ambiguous fill ordering**              | Fill intervals overlap or share a boundary timestamp.             | Updates affected historical orders only.                         |
-| **Missing or ambiguous position report** | No single authoritative NETTING report proves the final quantity. | Updates affected historical orders only.                         |
-| **Explicit venue position identity**     | Reports carry a `venue_position_id`.                              | Uses the position-specific reconciliation path.                  |
+| Position report   | Historical reports                                        | System behavior                                                                                                                   |
+| ----------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Explicit open** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and attempts recovery to the reported quantity and entry average; unresolved differences block startup. |
+| **Explicit flat** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and closes residual exposure when generation is enabled; unresolved quantity differences block startup. |
+| **Missing**       | Bounded history, with or without a cached predecessor.    | Recovers order state only; fills do not change positions or portfolio economics.                                                  |
+| **Filtered**      | Position-report or instrument filters exclude the report. | Position-report filtering makes bounded fills order-only; instrument filtering excludes both orders and positions.                |
 
 ## Related guides
 

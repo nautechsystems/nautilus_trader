@@ -712,7 +712,10 @@ mod tests {
     use nautilus_core::{
         Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND, string::secret::SecretString,
     };
-    use nautilus_execution::client::core::ExecutionClientCore;
+    use nautilus_execution::{
+        client::core::ExecutionClientCore,
+        models::fee::{FeeModelAny, MakerTakerFeeModel},
+    };
     use nautilus_model::{
         data::{DataType, QuoteTick},
         enums::BookType,
@@ -842,6 +845,13 @@ mod tests {
             data_api,
             ws,
         )
+    }
+
+    #[rstest]
+    fn test_data_client_wires_clob_client_for_fee_rate_fallback() {
+        let client = make_client_for_reset_test();
+
+        assert!(client.provider().http_client().clob_client().is_some());
     }
 
     fn rtds_crypto_data_type(symbol: &str) -> DataType {
@@ -1848,6 +1858,7 @@ mod tests {
 
         let config = SandboxExecutionClientConfig::builder()
             .venue(*POLYMARKET_VENUE)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
             .build();
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
@@ -1859,7 +1870,7 @@ mod tests {
             config.base_currency,
             cache.clone(),
         );
-        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         replace_exec_event_sender(tx);

@@ -109,9 +109,51 @@ caches do not hold. A material change is any serialized field other than `ts_eve
   still back open subscriptions. Suspension, expiry, and delisting arrive as
   `InstrumentStatus` events through the instruments channel.
 
+## Order book subscriptions
+
+Rust and Python v2 support the following subscriptions for L2 market-by-price (`L2_MBP`) books:
+
+| Subscription                 | Delivery                            | Depth                                          |
+| ---------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `subscribe_book_deltas`      | `OrderBookDeltas` on venue updates. | 50 or 400 levels per side; five for spreads.   |
+| `subscribe_book_depth`       | Native `OrderBookDepth` snapshots.  | Up to five levels per side.                    |
+| `subscribe_book_at_interval` | Cached `OrderBook` at the interval. | All levels retained from the selected channel. |
+
+`subscribe_book_depth` uses OKX's native `books5` snapshots, published on changes at a 100 ms cadence.
+`depth=None` defaults to five levels. Requests in `[1, 5]` select the best available levels from each
+snapshot; larger requests and `rpi=True` are rejected. Prices, sizes, and venue order counts come
+directly from each snapshot. The adapter does not reconstruct depth snapshots from incremental data.
+
+Delta and interval subscriptions retain the existing channel selection: requests in `[1, 50]` select
+the 50-level channel when the configured VIP level permits it, otherwise the public 400-level `books`
+channel. Other depths select a 400-level channel. The `rpi` parameter selects `books-rpi` when true.
+Channel access remains subject to OKX account permissions.
+
+Within each client, native depth consumers share one requested limit per instrument, including
+unmanaged subscriptions. A conflicting requested depth is rejected.
+
+Native depth uses a separate feed from deltas and interval books. Unsubscribing either feed leaves
+the other active. Spread instruments use their existing shared five-level `sprd-books5` snapshot
+feed, which remains active until both delta and depth consumers unsubscribe.
+
+A managed book has one update source: deltas or depth. Compatible managed subscriptions share that
+source, but managed depth cannot coexist with managed deltas or interval subscriptions for the same
+instrument. The data engine rejects conflicting requests before changing the managed book.
+Consumers of the same source must agree on client, book type, depth, and subscription parameters.
+Different clients may use different configurations only when all consumers of that source are unmanaged.
+To receive both deltas and depth, set `managed=True` on the delta subscription and `managed=False`
+on the depth subscription. Unmanaged depth callbacks then leave the delta-managed book unchanged.
+DataTester selects this arrangement when both subscriptions are enabled.
+
+Interval delivery uses the data engine's existing delta subscription and timer. It publishes all
+retained levels, independently of an unmanaged depth consumer's requested limit. During a connection
+outage or book recovery, the timer can continue publishing the last cached book. Native depth delivery
+resumes with a new full snapshot after reconnect; it does not depend on delta recovery. See
+[order book recovery](#order-book-recovery) for recovery limits.
+
 ## Order book recovery
 
-The data client recovers each book independently. During recovery, it suppresses incremental
+The data client recovers each delta book independently. During recovery, it suppresses incremental
 updates and replaces the subscription to request a fresh snapshot. Output resumes only after the
 client accepts a snapshot, which requires the replacement unsubscribe and subscribe requests to
 have been sent. Accepted snapshots replace all existing price levels; an empty snapshot clears the book.
@@ -290,8 +332,8 @@ Spread instrument notes:
 
 - Spread market data streams on the OKX business WebSocket: quotes (`sprd-bbo-tbt`),
   trades (`sprd-public-trades`), and 5-level book snapshots (`sprd-books5`). Spreads have
-  no incremental book channel, so each `sprd-books5` update is a full snapshot delivered
-  through the order book subscription (flagged as a snapshot, not incremental L2 deltas).
+  no incremental book channel. Each `sprd-books5` update is delivered as `OrderBookDepth` to depth
+  subscribers and as snapshot-flagged `OrderBookDeltas` to delta subscribers.
 - The parser represents spot, swap, and futures leg combinations. It also represents
   option-leg spread definitions when OKX returns them through the same spread endpoint.
 - OKX option RFQ and block trading workflows are separate from the Nitro spread order

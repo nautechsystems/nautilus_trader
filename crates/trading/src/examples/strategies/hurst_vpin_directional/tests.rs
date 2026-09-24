@@ -53,8 +53,6 @@ fn pf_xbtusd() -> CryptoPerpetual {
         .size_increment(Quantity::from("0.0001"))
         .margin_init(dec!(0.02))
         .margin_maint(dec!(0.01))
-        .maker_fee(dec!(0.0002))
-        .taker_fee(dec!(0.0005))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()

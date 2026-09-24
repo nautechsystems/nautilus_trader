@@ -380,6 +380,12 @@ impl<T> Catalog for T where T: CatalogReader + CatalogWriter + ?Sized {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::StringArray,
+        datatypes::{DataType, Field, Schema},
+    };
     use nautilus_model::data::QuoteTick;
     use rstest::rstest;
 
@@ -416,28 +422,15 @@ mod tests {
     }
 
     #[rstest]
-    fn reader_only_catalog_uses_optional_capability_defaults() {
-        let mut catalog = ReaderOnlyCatalog;
-
-        let error = catalog
-            .query_metadata(&CatalogQuery::new(NautilusDataType::QuoteTick))
-            .unwrap_err();
-
-        match error.downcast_ref::<PersistenceError>() {
-            Some(PersistenceError::Unsupported(operation)) => {
-                assert_eq!(operation, "query_metadata");
-            }
-            other => panic!("Expected an unsupported capability error, received {other:?}"),
-        }
-    }
-
-    #[rstest]
     fn reader_only_catalog_reports_every_unimplemented_capability_as_unsupported() {
         let mut catalog = ReaderOnlyCatalog;
 
         let errors = [
             catalog
                 .query_identifiers(&CatalogQuery::new(NautilusDataType::QuoteTick))
+                .unwrap_err(),
+            catalog
+                .query_metadata(&CatalogQuery::new(NautilusDataType::QuoteTick))
                 .unwrap_err(),
             catalog
                 .get_missing_intervals_for_request(
@@ -470,11 +463,144 @@ mod tests {
             operations,
             vec![
                 "query_identifiers",
+                "query_metadata",
                 "get_missing_intervals_for_request",
                 "query_last_timestamp",
                 "query_display_record_batches",
                 "query_record_batches",
             ],
         );
+    }
+
+    #[derive(Debug)]
+    struct IntervalCatalog;
+
+    impl CatalogReader for IntervalCatalog {
+        fn reset_session(&mut self) {}
+
+        fn instruments(
+            &mut self,
+            _query: &CatalogInstrumentQuery,
+        ) -> anyhow::Result<Vec<InstrumentAny>> {
+            Ok(Vec::new())
+        }
+
+        fn query_batch(&mut self, _query: &CatalogQuery) -> anyhow::Result<DataBatch> {
+            Ok(DataBatch::Quote(Vec::new().into()))
+        }
+
+        fn query_batch_session(
+            &mut self,
+            _query: &CatalogQuery,
+            chunk_size: Option<usize>,
+        ) -> anyhow::Result<DataBatchQueryResult> {
+            Ok(Box::new(TypedDataBatchSession::<QuoteTick>::from_vec(
+                Vec::new(),
+                chunk_size,
+            )))
+        }
+
+        fn get_missing_intervals_for_request(
+            &mut self,
+            start: UnixNanos,
+            end: UnixNanos,
+            _data_type: NautilusDataType,
+            identifier: Option<&str>,
+        ) -> anyhow::Result<Vec<(u64, u64)>> {
+            match identifier {
+                Some("partial") => Ok(vec![(5, 6)]),
+                Some("missing") => Ok(vec![(start.as_u64(), end.as_u64())]),
+                _ => Ok(Vec::new()),
+            }
+        }
+
+        fn query_record_batches(
+            &mut self,
+            query: &CatalogRecordQuery,
+        ) -> anyhow::Result<Vec<RecordBatch>> {
+            let schema = Arc::new(Schema::new(vec![Field::new(
+                "identifier",
+                DataType::Utf8,
+                true,
+            )]));
+            let identifier = StringArray::from(vec![query.identifier.clone()]);
+            Ok(vec![RecordBatch::try_new(
+                schema,
+                vec![Arc::new(identifier)],
+            )?])
+        }
+    }
+
+    fn identifiers() -> Vec<String> {
+        vec![
+            "partial".to_string(),
+            "missing".to_string(),
+            "covered".to_string(),
+        ]
+    }
+
+    #[rstest]
+    fn missing_intervals_for_identifiers_default_queries_each_identifier() {
+        let mut catalog = IntervalCatalog;
+
+        let missing = catalog
+            .get_missing_intervals_for_identifiers(
+                UnixNanos::from(1),
+                UnixNanos::from(10),
+                NautilusDataType::QuoteTick,
+                &identifiers(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            missing,
+            AHashMap::from_iter([
+                ("partial".to_string(), vec![(5, 6)]),
+                ("missing".to_string(), vec![(1, 10)]),
+                ("covered".to_string(), Vec::new()),
+            ]),
+        );
+    }
+
+    #[rstest]
+    fn coverage_intervals_for_identifiers_default_reports_request_complement_as_data() {
+        let mut catalog = IntervalCatalog;
+
+        let coverage = catalog
+            .get_coverage_intervals_for_identifiers(
+                UnixNanos::from(1),
+                UnixNanos::from(10),
+                NautilusDataType::QuoteTick,
+                &identifiers(),
+            )
+            .unwrap();
+
+        let data = |pairs: &[(u64, u64)]| CoverageIntervals {
+            data: pairs
+                .iter()
+                .map(|&(start, end)| ClosedInterval::new(start, end).unwrap())
+                .collect(),
+            empty: Vec::new(),
+        };
+
+        assert_eq!(
+            coverage,
+            AHashMap::from_iter([
+                ("partial".to_string(), data(&[(1, 4), (7, 10)])),
+                ("missing".to_string(), data(&[])),
+                ("covered".to_string(), data(&[(1, 10)])),
+            ]),
+        );
+    }
+
+    #[rstest]
+    fn record_display_batches_default_returns_raw_record_batches() {
+        let mut catalog = IntervalCatalog;
+        let query = CatalogRecordQuery::new(NautilusRecordType::FillReport)
+            .with_identifier(Some("O-1".to_string()));
+
+        let display = catalog.query_record_display_batches(&query).unwrap();
+
+        assert_eq!(display, catalog.query_record_batches(&query).unwrap());
     }
 }

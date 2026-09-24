@@ -18,6 +18,7 @@
 # %%
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.backtest import BacktestNode
@@ -25,10 +26,12 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
@@ -125,13 +128,17 @@ venue_configs = [
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=["1000000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     ),
 ]
 
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         instrument_id=instrument.id,
         start_time=start,
         end_time=end,

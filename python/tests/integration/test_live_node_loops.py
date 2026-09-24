@@ -38,6 +38,9 @@ from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
 
 
+pytestmark = pytest.mark.usefixtures("collect_node_cycles")
+
+
 try:
     import uvloop
 except ImportError:  # uvloop is an optional test dependency and is unavailable on Windows
@@ -86,7 +89,10 @@ def test_node_runs_on_a_uvloop_event_loop() -> None:
         """
         observed["loop"] = type(asyncio.get_running_loop()).__module__
         task = asyncio.create_task(node.run_async())
-        await asyncio.sleep(0.2)
+        async with asyncio.timeout(15.0):
+            while not handle.is_running:
+                await asyncio.sleep(0.01)
+
         observed["running"] = handle.is_running
         handle.stop()
         async with asyncio.timeout(10.0):
@@ -155,7 +161,10 @@ def test_loop_closed_with_a_pending_run_still_stops_the_node() -> None:
         """
         task = asyncio.create_task(node.run_async())
         assert task is not None
-        await asyncio.sleep(0.2)
+        async with asyncio.timeout(15.0):
+            while not handle.is_running:
+                await asyncio.sleep(0.01)
+
         assert handle.is_running is True
 
     # Returning with the task pending closes the loop under it.
@@ -179,7 +188,11 @@ def test_loop_closed_with_a_pending_run_on_uvloop() -> None:
         """
         task = asyncio.create_task(node.run_async())
         assert task is not None
-        await asyncio.sleep(0.2)
+        async with asyncio.timeout(15.0):
+            while not handle.is_running:
+                await asyncio.sleep(0.01)
+
+        assert handle.is_running is True
 
     uvloop.run(main())
 

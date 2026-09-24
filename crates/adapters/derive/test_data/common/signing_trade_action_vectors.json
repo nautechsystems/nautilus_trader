@@ -5,7 +5,7 @@
     "source": "github.com/derivexyz/v2-action-signing-python",
     "upstream_version": "0.0.13",
     "upstream_revision": "d1914d61985e33559244da242892c7255b6fd0ca",
-    "generated_by": "crates/adapters/derive/tests/oracle-py/generate_oracle.py",
+    "generated_by": "scripts/oracle-py/derive/generate_oracle.py",
     "procedure": "Clone and install the upstream SDK at d1914d61985e33559244da242892c7255b6fd0ca, then run generate_oracle.py; the full procedure is documented in its module docstring",
     "note": "Signatures use RFC 6979 deterministic nonces, so every value is a byte-equality target. Protocol constants match src/common/consts.rs and docs.derive.xyz."
   },

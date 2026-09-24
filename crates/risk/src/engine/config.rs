@@ -45,12 +45,16 @@ use serde::{Deserialize, Serialize};
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(default, deny_unknown_fields)]
 pub struct RiskEngineConfig {
+    /// Whether to bypass risk checks and order rate limits.
     #[builder(default)]
     pub bypass: bool,
+    /// Rate limit for order submission commands.
     #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_submit: RateLimit,
+    /// Rate limit for order modifications, counting each batch child separately.
     #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_modify: RateLimit,
+    /// Maximum notional per order by instrument, in each instrument's quote currency.
     #[builder(default)]
     pub max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     /// Venues whose execution clients enforce whole-position conditional exits.
@@ -58,6 +62,7 @@ pub struct RiskEngineConfig {
     /// Validated exits skip bounds that apply only to their placeholder quantity and notional.
     #[builder(default)]
     pub full_position_exit_venues: AHashSet<Venue>,
+    /// Whether to emit additional debug logs.
     #[builder(default)]
     pub debug: bool,
 }

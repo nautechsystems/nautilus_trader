@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = DydxHttpClient::new(Some(base_url), 30, None, network, None)?;
 
     let start = std::time::Instant::now();
-    let instruments = client.request_instruments(None, None, None).await?;
+    let instruments = client.request_instruments(None).await?;
     let elapsed = start.elapsed();
 
     log::info!(

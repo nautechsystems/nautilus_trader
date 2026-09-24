@@ -25,11 +25,19 @@ use object_store::ObjectMeta;
 
 use super::{
     HashSet, ObjectPath, ObjectStore, ObjectStoreExt, ParquetDataCatalog, PathBuf, StreamExt,
-    UnixNanos, append_path_to_file_uri, are_intervals_disjoint, extract_path_components,
-    is_remote_uri_scheme, make_object_store_path, query_intersects_filename, remote_full_uri,
-    remote_store_root_url, timestamps_to_filename, urisafe_instrument_id,
+    UnixNanos, append_path_to_file_uri, are_intervals_disjoint, decode_object_store_segment,
+    is_remote_uri_scheme, make_object_store_path, parse_filename_timestamps,
+    query::{filter_identifier_files, is_parquet_bar_prefix},
+    query_intersects_filename, remote_full_uri, remote_store_root_url, timestamps_to_filename,
+    urisafe_instrument_id,
 };
-use crate::common::paths::normalize_path_separators;
+use crate::{
+    catalog::types::{
+        CatalogDataType, custom_data_read_prefixes, custom_type_name,
+        parquet_catalog_data_type_path_prefixes,
+    },
+    common::paths::normalize_path_separators,
+};
 
 impl ParquetDataCatalog {
     /// Extends the timestamp range of an existing Parquet file by renaming it.
@@ -45,7 +53,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `data_type`: The stored family to target.
     /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Start timestamp of the new range to extend to.
     /// - `end`: End timestamp of the new range to extend to.
@@ -67,6 +75,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -79,7 +88,7 @@ impl ParquetDataCatalog {
     ///
     /// // Extend a file's range backwards or forwards
     /// catalog.extend_file_name(
-    ///     "quotes",
+    ///     &NautilusDataType::QuoteTick.into(),
     ///     Some("BTC/USD.SIM"),
     ///     UnixNanos::from(1609459200000000000),
     ///     UnixNanos::from(1609545600000000000),
@@ -88,14 +97,39 @@ impl ParquetDataCatalog {
     /// ```
     pub fn extend_file_name(
         &self,
-        data_cls: &str,
+        data_type: &CatalogDataType,
         identifier: Option<&str>,
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, identifier)?;
+        let prefixes = parquet_catalog_data_type_path_prefixes(data_type);
 
-        self.extend_file_name_in_directory(&directory, start, end)
+        if let [data_cls] = prefixes.as_slice() {
+            let directory = self.make_path(data_cls.as_ref(), identifier)?;
+            return self.extend_file_name_in_directory(&directory, start, end);
+        }
+
+        // The aggregate instrument family spans every class directory, and one identifier can be
+        // stored under several classes, so extend each directory that already holds it rather
+        // than inventing a class for it.
+        let mut extended = false;
+
+        for data_cls in &prefixes {
+            let directory = self.make_path(data_cls.as_ref(), identifier)?;
+            if !self.get_directory_intervals(&directory)?.is_empty() {
+                self.extend_file_name_in_directory(&directory, start, end)?;
+                extended = true;
+            }
+        }
+
+        anyhow::ensure!(
+            extended,
+            "Cannot extend file name for {data_type}: no instrument class holds {}; \
+             name the class with a NautilusInstrumentType",
+            identifier.unwrap_or("any identifier"),
+        );
+
+        Ok(())
     }
 
     pub(super) fn extend_file_name_in_directory(
@@ -146,6 +180,41 @@ impl ParquetDataCatalog {
         );
 
         self.rename_parquet_file(directory, original.0, original.1, proposed.0, proposed.1)
+    }
+
+    /// Helper method to rename a parquet file by moving it via object store operations
+    fn rename_parquet_file(
+        &self,
+        directory: &str,
+        old_start: u64,
+        old_end: u64,
+        new_start: u64,
+        new_end: u64,
+    ) -> anyhow::Result<()> {
+        let new_filename =
+            timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
+        let new_path = format!("{directory}/{new_filename}");
+        let matches = self
+            .list_parquet_files(directory)?
+            .into_iter()
+            .filter(|file| parse_filename_timestamps(file) == Some((old_start, old_end)))
+            .collect::<Vec<_>>();
+
+        anyhow::ensure!(
+            matches.len() == 1,
+            "expected one parquet file for interval ({old_start}, {old_end}) in {directory}, \
+             found {}",
+            matches.len()
+        );
+
+        let old_path = &matches[0];
+        if old_path.ends_with(&new_filename) {
+            return Ok(());
+        }
+
+        let old_object_path = self.to_object_path_parsed(old_path)?;
+        let new_object_path = self.to_object_path(&new_path)?;
+        self.move_file(&old_object_path, &new_object_path)
     }
 
     /// Lists all Parquet files in a specified directory.
@@ -209,6 +278,7 @@ impl ParquetDataCatalog {
                     files.push(object.location.to_string());
                 }
             }
+
             Ok::<Vec<String>, anyhow::Error>(files)
         })
     }
@@ -220,7 +290,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The stored family to target.
     ///
     /// # Returns
     ///
@@ -229,20 +299,48 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if directory listing fails.
-    pub fn list_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
+    pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
+        let prefixes = match custom_type_name(data_type) {
+            Some(type_name) => Vec::from(custom_data_read_prefixes(type_name)),
+            None => parquet_catalog_data_type_path_prefixes(data_type),
+        };
+
+        let mut instruments = Vec::new();
+
+        for prefix in prefixes {
+            instruments.extend(self.list_prefix_instruments(prefix.as_ref())?);
+        }
+
+        // The same identifier can live under more than one instrument class.
+        instruments.sort();
+        instruments.dedup();
+
+        Ok(instruments)
+    }
+
+    fn list_prefix_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
+        let prefix = ObjectPath::from(self.make_path(data_type, None)?);
+
         self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("data/{data_type}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut instruments = HashSet::new();
 
             while let Some(object) = stream.next().await {
                 let object = object?;
-                let path = object.location.as_ref();
-                let parts: Vec<&str> = path.split('/').collect();
-                if parts.len() >= 3 {
-                    instruments.insert(parts[2].to_string());
+
+                // Relative to the prefix a datum is `{identifier}/{filename}.parquet`
+                let Some(relative) = object.location.prefix_match(&prefix) else {
+                    continue;
+                };
+                let segments: Vec<_> = relative.collect();
+
+                if let [identifier, filename] = segments.as_slice()
+                    && filename.as_ref().ends_with(".parquet")
+                {
+                    instruments.insert(decode_object_store_segment(identifier.as_ref()));
                 }
             }
+
             Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
         })
     }
@@ -254,7 +352,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "custom/MyType").
+    /// - `data_type`: The stored family to target.
     /// - `identifiers`: Optional list of identifiers to filter by.
     /// - `start`: Optional start timestamp to filter files by their time range.
     /// - `end`: Optional end timestamp to filter files by their time range.
@@ -268,49 +366,66 @@ impl ParquetDataCatalog {
     /// Returns an error if directory listing or file filtering fails.
     pub fn list_parquet_files_with_criteria(
         &self,
-        data_type: &str,
+        data_type: &CatalogDataType,
         identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
-        let mut all_files = Vec::new();
+        if let Some(type_name) = custom_type_name(data_type) {
+            let mut all_files = Vec::new();
+            for prefix in custom_data_read_prefixes(type_name) {
+                all_files.extend(self.list_prefix_files_with_criteria(
+                    prefix.as_ref(),
+                    identifiers,
+                    start,
+                    end,
+                )?);
+            }
 
+            all_files.sort();
+            all_files.dedup();
+            return Ok(all_files);
+        }
+
+        let mut all_files = Vec::new();
+        for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
+            all_files.extend(self.list_prefix_files_with_criteria(
+                data_cls.as_ref(),
+                identifiers,
+                start,
+                end,
+            )?);
+        }
+
+        Ok(all_files)
+    }
+
+    fn list_prefix_files_with_criteria(
+        &self,
+        data_cls: &str,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
         let start_u64 = start.map(|s| s.as_u64());
         let end_u64 = end.map(|e| e.as_u64());
 
-        let base_dir = self.make_path(data_type, None)?;
+        let base_dir = self.make_path(data_cls, None)?;
 
         // Use recursive listing to match Python's glob behavior
-        let list_result = self.list_objects(&base_dir)?;
+        let mut all_files = self
+            .list_objects(&base_dir)?
+            .into_iter()
+            .map(|object| object.location.to_string())
+            .filter(|path| path.ends_with(".parquet"))
+            .collect::<Vec<_>>();
 
-        for object in list_result {
-            let path_str = object.location.to_string();
-
-            // Filter by identifiers if provided
-            if let Some(ids) = identifiers {
-                let path_components = extract_path_components(&path_str);
-                let mut matches = false;
-
-                for id in ids {
-                    if path_components.iter().any(|c| c.contains(id)) {
-                        matches = true;
-                        break;
-                    }
-                }
-
-                if !matches {
-                    continue;
-                }
-            }
-
-            // Filter by timestamp range if filename can be parsed
-            if path_str.ends_with(".parquet")
-                && query_intersects_filename(&path_str, start_u64, end_u64)
-            {
-                all_files.push(path_str);
-            }
+        if let Some(identifiers) = identifiers {
+            all_files =
+                filter_identifier_files(all_files, identifiers, is_parquet_bar_prefix(data_cls));
         }
 
+        all_files.retain(|path| query_intersects_filename(path, start_u64, end_u64));
         Ok(all_files)
     }
 
@@ -323,6 +438,7 @@ impl ParquetDataCatalog {
             while let Some(object) = stream.next().await {
                 objects.push(object?);
             }
+
             Ok(objects)
         })
     }
@@ -386,6 +502,7 @@ impl ParquetDataCatalog {
         if self.original_uri.starts_with("file://") {
             return append_path_to_file_uri(&self.original_uri, path);
         }
+
         self.reconstruct_full_uri(path)
     }
 
@@ -396,6 +513,7 @@ impl ParquetDataCatalog {
         if !resolved.ends_with('/') {
             resolved.push('/');
         }
+
         resolved
     }
 
@@ -419,6 +537,16 @@ impl ParquetDataCatalog {
         } else {
             self.original_uri.clone()
         }
+    }
+
+    pub(crate) fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
+        if self.is_remote_uri() {
+            let base_url = remote_store_root_url(&self.original_uri)?;
+            self.session
+                .register_object_store(&base_url, self.object_store.clone());
+        }
+
+        Ok(())
     }
 
     /// Helper method to check if the original URI uses a remote object store scheme
@@ -494,8 +622,7 @@ impl ParquetDataCatalog {
         Ok(path)
     }
 
-    /// Builds the v1-compatible directory path for custom data:
-    /// `data/custom_{snake_type_name}[/{identifier}]`.
+    /// Builds the directory path for custom data: `data/custom/{type_name}[/{identifier}]`.
     pub fn make_path_custom_data(
         &self,
         type_name: &str,
@@ -514,30 +641,9 @@ impl ParquetDataCatalog {
                 components.push(safe_id);
             }
         }
+
         let path = make_object_store_path(&self.base_path, components);
         Ok(path)
-    }
-
-    /// Helper method to rename a parquet file by moving it via object store operations
-    fn rename_parquet_file(
-        &self,
-        directory: &str,
-        old_start: u64,
-        old_end: u64,
-        new_start: u64,
-        new_end: u64,
-    ) -> anyhow::Result<()> {
-        let old_filename =
-            timestamps_to_filename(UnixNanos::from(old_start), UnixNanos::from(old_end));
-        let old_path = format!("{directory}/{old_filename}");
-        let old_object_path = self.to_object_path(&old_path)?;
-
-        let new_filename =
-            timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
-        let new_path = format!("{directory}/{new_filename}");
-        let new_object_path = self.to_object_path(&new_path)?;
-
-        self.move_file(&old_object_path, &new_object_path)
     }
 
     /// Converts a catalog path string to an [`ObjectPath`] for object store operations.
@@ -592,16 +698,6 @@ impl ParquetDataCatalog {
     /// ```
     pub fn to_object_path(&self, path: &str) -> anyhow::Result<ObjectPath> {
         Ok(ObjectPath::from(self.object_store_path(path)?))
-    }
-
-    pub(crate) fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
-        if self.is_remote_uri() {
-            let base_url = remote_store_root_url(&self.original_uri)?;
-            self.session
-                .register_object_store(&base_url, self.object_store.clone());
-        }
-
-        Ok(())
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
@@ -662,7 +758,7 @@ impl ParquetDataCatalog {
         Ok(path_url.path().trim_start_matches('/').to_string())
     }
 
-    fn path_without_local_base(&self, path: &str) -> String {
+    pub(crate) fn path_without_local_base(&self, path: &str) -> String {
         let base_path = if self.base_path.is_empty() {
             self.native_base_path_string()
         } else {
@@ -712,6 +808,7 @@ impl ParquetDataCatalog {
         if old_path == new_path {
             return Ok(());
         }
+
         self.execute_async(|| async {
             self.object_store
                 .rename(old_path, new_path)
@@ -796,6 +893,7 @@ impl ParquetDataCatalog {
                     }
                 }
             }
+
             directories.sort();
             return Ok(directories);
         }
@@ -947,5 +1045,106 @@ impl ParquetDataCatalog {
     /// ```
     pub fn list_live_runs(&self) -> anyhow::Result<Vec<String>> {
         self.list_directory_stems("live")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use nautilus_model::data::NautilusDataType;
+    use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path as ObjectPath};
+    use rstest::rstest;
+
+    use super::ParquetDataCatalog;
+    use crate::{catalog::types::CatalogDataType, common::datafusion::DataBackendSession};
+
+    /// Builds a catalog over an in-memory store. Only remote catalogs carry a non-empty
+    /// `base_path`, so seeding one here is the sole way to reproduce a bucket sub-prefix.
+    fn memory_catalog(base_path: &str) -> ParquetDataCatalog {
+        ParquetDataCatalog {
+            base_path: base_path.to_string(),
+            original_uri: "memory://".to_string(),
+            object_store: Arc::new(InMemory::new()),
+            session: DataBackendSession::new(5_000),
+            batch_size: 5_000,
+            compression: parquet::basic::Compression::SNAPPY,
+            max_row_group_size: 5_000,
+        }
+    }
+
+    fn seed(catalog: &ParquetDataCatalog, keys: &[&str]) {
+        catalog
+            .execute_async(|| async {
+                for key in keys {
+                    catalog
+                        .object_store
+                        .put(&ObjectPath::from(*key), PutPayload::from_static(b"x"))
+                        .await?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[rstest]
+    #[case("nautilus-data", "nautilus-data/")]
+    #[case("", "")]
+    fn list_instruments_returns_ids_under_base_path(
+        #[case] base_path: &str,
+        #[case] key_prefix: &str,
+    ) {
+        let catalog = memory_catalog(base_path);
+        let keys = [
+            "data/quotes/EURUSD.SIM/0-1.parquet",
+            "data/quotes/EURUSD.SIM/2-3.parquet",
+            "data/quotes/GBPUSD.SIM/0-1.parquet",
+            "data/trades/AUDUSD.SIM/0-1.parquet",
+        ]
+        .map(|key| format!("{key_prefix}{key}"));
+        seed(&catalog, &keys.each_ref().map(String::as_str));
+
+        assert_eq!(
+            catalog
+                .list_instruments(&NautilusDataType::QuoteTick.into())
+                .unwrap(),
+            ["EURUSD.SIM", "GBPUSD.SIM"]
+        );
+    }
+
+    #[rstest]
+    fn list_instruments_ignores_unpartitioned_files() {
+        // An empty `base_path` keeps this distinct from the remote prefix defect, so an empty
+        // result can only come from the layout check.
+        let catalog = memory_catalog("");
+        seed(
+            &catalog,
+            &[
+                "data/custom/MyType/1-2.parquet",
+                "data/custom/MyType/1-2.json",
+            ],
+        );
+
+        let custom = CatalogDataType::Data(NautilusDataType::Custom {
+            type_name: "MyType".to_string(),
+        });
+
+        assert!(catalog.list_instruments(&custom).unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn list_instruments_decodes_percent_encoded_ids() {
+        let catalog = memory_catalog("nautilus-data");
+        seed(
+            &catalog,
+            &["nautilus-data/data/quotes/BTC€.SIM/0-1.parquet"],
+        );
+
+        assert_eq!(
+            catalog
+                .list_instruments(&NautilusDataType::QuoteTick.into())
+                .unwrap(),
+            ["BTC€.SIM"]
+        );
     }
 }

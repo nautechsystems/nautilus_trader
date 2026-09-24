@@ -384,6 +384,7 @@ mod tests {
             ts_event: UnixNanos::from(10),
             ts_init: UnixNanos::from(11),
         };
+
         let metadata = original.metadata();
         let batch =
             RustTestSerdeFieldCustomData::encode_batch(&metadata, std::slice::from_ref(&original))

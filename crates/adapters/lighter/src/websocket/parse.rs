@@ -664,8 +664,8 @@ pub(crate) fn parse_lighter_trade_id(trade: &LighterTrade) -> anyhow::Result<Tra
 
 /// Outcome of [`parse_lighter_order_event`] for tracked orders.
 ///
-/// Mirrors `ParsedOrderEvent` in the BitMEX adapter (see
-/// `crates/adapters/bitmex/src/websocket/parse.rs`). The execution
+/// Parses raw order events into typed intermediate events (see
+/// the execution
 /// consumption loop maps these into [`nautilus_model::events::OrderEventAny`]
 /// variants for tracked orders; untracked orders flow through the
 /// `OrderStatusReport` path instead.

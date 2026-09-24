@@ -152,7 +152,9 @@ impl PythonTimeEventCallback {
     pub fn call(&self, event: TimeEvent) {
         Python::attach(|py| {
             if let Err(e) = self.callback.call1(py, (event,)) {
-                log::error!("Python time event callback raised exception: {e}");
+                let exception = crate::python::logging::format_exception(&e);
+
+                log::error!("Python time event callback raised exception:\n{exception}");
             }
         });
     }
@@ -493,9 +495,10 @@ mod tests {
     #[cfg(feature = "python")]
     use pyo3::{
         Bound, PyResult, Python,
+        ffi::c_str,
         types::{
-            PyAnyMethods, PyCFunction, PyDict, PyList, PyListMethods, PyTuple, PyTupleMethods,
-            PyTypeMethods,
+            PyAnyMethods, PyCFunction, PyDict, PyList, PyListMethods, PyModule, PyTuple,
+            PyTupleMethods, PyTypeMethods,
         },
     };
     use rstest::*;
@@ -504,6 +507,11 @@ mod tests {
     use super::{
         ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, VirtualTimer,
         create_valid_interval,
+    };
+    #[cfg(feature = "python")]
+    use crate::logging::{
+        arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+        take_shutdown_on_error_trigger,
     };
     use crate::msgbus::{
         BusTap, Endpoint, MStr, MessagingSwitchboard, Topic, clear_bus_tap, set_bus_tap,
@@ -790,6 +798,76 @@ mod tests {
         let popped = std::iter::from_fn(|| heap.pop().map(ScheduledTimeEvent::into_inner))
             .collect::<Vec<_>>();
         assert_eq!(popped, expected);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_python_callback_exception_requests_shutdown(#[case] shutdown: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            "TRADER-001".into(),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+seen = []
+def callback(event):
+    seen.append(event.name)
+    raise RuntimeError("timer callback failure")
+"#
+                ),
+                c_str!("timer_callback.py"),
+                c_str!("timer_callback"),
+            )
+            .unwrap();
+            let callback = TimeEventCallback::from_python_time_event(
+                module.getattr("callback").unwrap().unbind(),
+            );
+
+            let event = TimeEvent::new(
+                Ustr::from("ALERT"),
+                UUID4::new(),
+                UnixNanos::from(10),
+                UnixNanos::from(11),
+            );
+            arm_shutdown_on_error(shutdown);
+            callback.call(event.clone());
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+            callback.call(event);
+            let seen = module
+                .getattr("seen")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+
+            assert_eq!(seen, ["ALERT", "ALERT"]);
+
+            if shutdown {
+                let trigger = trigger.expect("timer exception must request shutdown");
+                assert!(
+                    trigger
+                        .message
+                        .contains("Python time event callback raised exception:")
+                );
+                assert!(trigger.message.contains("in callback"));
+                assert!(
+                    trigger
+                        .message
+                        .contains("RuntimeError: timer callback failure")
+                );
+            } else {
+                assert_eq!(trigger, None);
+            }
+        });
     }
 
     #[cfg(feature = "python")]

@@ -173,8 +173,13 @@ impl RelativeVolatilityIndex {
                 self.neg_ma.update_raw(0.0);
             }
 
-            self.value = self.scalar * self.pos_ma.value();
-            self.value /= self.pos_ma.value() + self.neg_ma.value();
+            let total = self.pos_ma.value() + self.neg_ma.value();
+            // With no volatility in either direction the index sits at its midpoint
+            self.value = if total == 0.0 {
+                self.scalar / 2.0
+            } else {
+                self.scalar * self.pos_ma.value() / total
+            };
         }
 
         self.previous_close = close;
@@ -248,6 +253,16 @@ mod tests {
         assert!(rvi_10.initialized());
         assert_eq!(rvi_10.prices.len(), 10);
         assert_eq!(rvi_10.value, 10.0);
+    }
+
+    #[rstest]
+    fn test_value_is_midpoint_for_flat_prices(mut rvi_10: RelativeVolatilityIndex) {
+        for _ in 0..30 {
+            rvi_10.update_raw(100.0);
+        }
+
+        assert!(rvi_10.initialized());
+        assert_eq!(rvi_10.value, 5.0);
     }
 
     #[rstest]

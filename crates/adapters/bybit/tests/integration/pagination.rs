@@ -33,8 +33,8 @@ use nautilus_bybit::{
     http::{
         client::BybitHttpClient,
         models::{
-            BybitFeeRate, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
-            BybitPositionListResponse, BybitTradeHistoryResponse,
+            BybitOpenOrdersResponse, BybitOrderHistoryResponse, BybitPositionListResponse,
+            BybitTradeHistoryResponse,
         },
         query::BybitInstrumentsInfoParamsBuilder,
     },
@@ -164,14 +164,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
     let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
     for definition in response.result.list {
-        let fee_rate = BybitFeeRate {
-            symbol: definition.symbol,
-            taker_fee_rate: "0.00055".to_string(),
-            maker_fee_rate: "0.0001".to_string(),
-            base_coin: Some(definition.base_coin),
-        };
-
-        let instrument = parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init).unwrap();
+        let instrument = parse_linear_instrument(&definition, ts_init, ts_init).unwrap();
         client.cache_instrument(instrument);
     }
 }
@@ -1137,40 +1130,6 @@ async fn mock_instruments_info_cycling(
     }))
 }
 
-async fn mock_fee_rate(
-    Query(_params): Query<HashMap<String, String>>,
-    State(_log): State<CursorLog>,
-) -> Json<Value> {
-    Json(json!({
-        "retCode": 0,
-        "retMsg": "OK",
-        "result": {
-            "list": [
-                {
-                    "symbol": "ETHUSDT",
-                    "takerFeeRate": "0.0006",
-                    "makerFeeRate": "0.0001",
-                    "baseCoin": ""
-                },
-                {
-                    "symbol": "BTCUSDT",
-                    "takerFeeRate": "0.0006",
-                    "makerFeeRate": "0.0001",
-                    "baseCoin": ""
-                },
-                {
-                    "symbol": "SOLUSDT",
-                    "takerFeeRate": "0.00075",
-                    "makerFeeRate": "0.00025",
-                    "baseCoin": ""
-                }
-            ]
-        },
-        "retExtInfo": {},
-        "time": 1789221005855i64
-    }))
-}
-
 async fn start_cycling_instruments_server() -> Result<(SocketAddr, CursorLog), anyhow::Error> {
     let log = CursorLog::default();
     let app = Router::new()
@@ -1178,7 +1137,6 @@ async fn start_cycling_instruments_server() -> Result<(SocketAddr, CursorLog), a
             "/v5/market/instruments-info",
             get(mock_instruments_info_cycling),
         )
-        .route("/v5/account/fee-rate", get(mock_fee_rate))
         .with_state(log.clone());
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;

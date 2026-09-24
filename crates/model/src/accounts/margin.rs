@@ -669,6 +669,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{
@@ -676,8 +677,9 @@ mod tests {
             margin_model::{MarginModel, MarginModelHandle},
             stubs::*,
         },
-        enums::{AccountType, OrderSide, OrderType},
+        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
+        fees::{MakerTakerFeeRates, MakerTakerFeeSchedule},
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
             stubs::{uuid4, *},
@@ -1248,11 +1250,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_init_with_no_leverage_for_inverse(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result_use_quote_inverse_true = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(false),
@@ -1261,7 +1263,7 @@ mod tests {
         assert_eq!(result_use_quote_inverse_true, Money::from("0.08700494 BTC"));
         let result_use_quote_inverse_false = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(true),
@@ -1273,11 +1275,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_no_leverage(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 None,
@@ -1306,12 +1308,12 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_leverage_inverse_instrument(
         mut margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         margin_account.set_default_leverage(Decimal::from(10));
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("100000.00"),
                 None,
@@ -1933,5 +1935,64 @@ mod tests {
 
         assert_eq!(pnls.len(), 1);
         assert!(pnls[0].as_f64() < 0.0);
+    }
+
+    #[rstest]
+    fn test_commission_explicit_schedule_override(
+        margin_account: MarginAccount,
+        currency_pair_btcusdt: CurrencyPair,
+    ) {
+        let mut schedule = MakerTakerFeeSchedule::new(dec!(0.002), dec!(0.002));
+        schedule.set_override(
+            currency_pair_btcusdt.id,
+            MakerTakerFeeRates::new(dec!(0.0005), dec!(0.0005)),
+        );
+        let fee_rates = schedule.rates_for(currency_pair_btcusdt.id);
+        let result = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.into_any(),
+                Quantity::from("1"),
+                Price::from("50000.00"),
+                LiquiditySide::Maker,
+                fee_rates,
+                None,
+            )
+            .unwrap();
+        // Override (0.0005) wins over the schedule default (0.002) and the
+        // instrument's own 0.001 fee: 50000 * 0.0005 = 25 USDT.
+        assert_eq!(result, Money::from("25 USDT"));
+    }
+
+    #[rstest]
+    fn test_commission_shared_schedule_mutation(
+        margin_account: MarginAccount,
+        currency_pair_btcusdt: CurrencyPair,
+    ) {
+        let instrument_id = currency_pair_btcusdt.id;
+        let mut schedule = MakerTakerFeeSchedule::new(dec!(0.001), dec!(0.001));
+        let before = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.clone().into_any(),
+                Quantity::from("2"),
+                Price::from("50000.00"),
+                LiquiditySide::Taker,
+                schedule.rates_for(instrument_id),
+                None,
+            )
+            .unwrap();
+        assert_eq!(before, Money::from("100 USDT"));
+
+        schedule.default = MakerTakerFeeRates::new(dec!(0.002), dec!(0.002));
+        let after = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.into_any(),
+                Quantity::from("2"),
+                Price::from("50000.00"),
+                LiquiditySide::Taker,
+                schedule.rates_for(instrument_id),
+                None,
+            )
+            .unwrap();
+        assert_eq!(after, Money::from("200 USDT"));
     }
 }

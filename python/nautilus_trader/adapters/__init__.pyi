@@ -4,7 +4,6 @@
 from . import architect_ax
 from . import betfair
 from . import binance
-from . import bitmex
 from . import blockchain
 from . import bybit
 from . import coinbase
@@ -25,7 +24,6 @@ __all__ = [
     "architect_ax",
     "betfair",
     "binance",
-    "bitmex",
     "blockchain",
     "bybit",
     "coinbase",

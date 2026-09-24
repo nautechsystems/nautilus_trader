@@ -63,8 +63,8 @@ use crate::{
     common::{
         auth::run_auth_token_refresh,
         consts::{
-            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS, AX_POST_ONLY_REJECT,
-            AX_VENUE,
+            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS,
+            AX_FILLS_MAX_LOOKBACK_DAYS, AX_POST_ONLY_REJECT, AX_VENUE,
         },
         credential::Credential,
         enums::{AxOrderSide, AxTimeInForce},
@@ -549,9 +549,8 @@ impl ExecutionClient for AxExecutionClient {
         .context("API credentials not configured")?;
         let token = self.authenticate(&credential).await?;
 
-        // Instruments load after authenticating because their fee rates come from the
-        // authenticated `/whoami`. A zero-fee fallback would outlive the failure that caused it,
-        // since `set_instruments_initialized` stops a reconnect from retrying the load.
+        // Account fee lookup stays a connect precondition. Instruments do not carry the rates.
+        // `set_instruments_initialized` stops a reconnect from retrying the load.
         if !self.core.instruments_initialized() {
             self.http_client
                 .request_account_fees()
@@ -560,7 +559,7 @@ impl ExecutionClient for AxExecutionClient {
 
             let instruments = self
                 .http_client
-                .request_instruments(None, None)
+                .request_instruments()
                 .await
                 .context("failed to request AX instruments")?;
 
@@ -964,6 +963,49 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        if cmd.order_side.is_some() {
+            // AX cancel-all has no side parameter, so select matching open
+            // orders and cancel their explicit IDs through the batch path.
+            let cancels: Vec<CancelOrder> = {
+                let cache = self.core.cache();
+                cache
+                    .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
+                    .iter()
+                    .map(|order| CancelOrder {
+                        trader_id: order.trader_id(),
+                        client_id: cmd.client_id,
+                        strategy_id: order.strategy_id(),
+                        instrument_id: order.instrument_id(),
+                        client_order_id: order.client_order_id(),
+                        venue_order_id: order.venue_order_id(),
+                        command_id: cmd.command_id,
+                        ts_init: cmd.ts_init,
+                        params: cmd.params.clone(),
+                        correlation_id: cmd.correlation_id,
+                        causation_id: cmd.causation_id,
+                    })
+                    .collect()
+            };
+
+            if cancels.is_empty() {
+                log::debug!("No open orders to cancel for {}", cmd.instrument_id);
+                return Ok(());
+            }
+
+            return self.batch_cancel_orders(BatchCancelOrders {
+                trader_id: cmd.trader_id,
+                client_id: cmd.client_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                cancels,
+                command_id: cmd.command_id,
+                ts_init: cmd.ts_init,
+                params: cmd.params,
+                correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
+            });
+        }
+
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -1163,6 +1205,11 @@ impl ExecutionClient for AxExecutionClient {
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
 
+        // Floor the declared window at the /fills span cap so it does not overstate coverage
+        let fills_span = DurationNanos::try_from_days(u64::try_from(AX_FILLS_MAX_LOOKBACK_DAYS)?)?;
+        let fills_floor = ts_now.saturating_sub(fills_span);
+        let declared_start = start.map(|start| start.max(fills_floor));
+
         let order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),
             ts_now,
@@ -1212,6 +1259,9 @@ impl ExecutionClient for AxExecutionClient {
             ts_now,
             None,
         );
+
+        // Declare the window so these fills are bounded history, not live fills
+        mass_status.set_report_window(declared_start, true);
 
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
@@ -1374,15 +1424,11 @@ fn dispatch_order_event(
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
         AxWsOrderEvent::Rejected(msg) => {
-            let known_reason = msg.r.filter(|r| !matches!(r, AxOrderRejectReason::Unknown));
-            let reason = known_reason
-                .as_ref()
-                .map(AsRef::as_ref)
-                .or(msg.txt.as_deref())
-                .unwrap_or("UNKNOWN");
+            let reason = AxOrderRejectReason::reason_str(msg.r, msg.txt.as_deref())
+                .unwrap_or_else(|| "UNKNOWN".to_string());
 
             if let Some(event) =
-                create_order_rejected(&msg.o, reason, msg.ts, msg.tn, caches, account_id, clock)
+                create_order_rejected(&msg.o, &reason, msg.ts, msg.tn, caches, account_id, clock)
             {
                 emitter.send_order_event(OrderEventAny::Rejected(event));
             }
@@ -2279,8 +2325,6 @@ mod tests {
             .size_increment(Quantity::from("1"))
             .margin_init(Decimal::new(1, 2))
             .margin_maint(Decimal::new(5, 3))
-            .maker_fee(Decimal::new(2, 4))
-            .taker_fee(Decimal::new(5, 4))
             .ts_event(0.into())
             .ts_init(0.into())
             .build()

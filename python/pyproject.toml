@@ -163,7 +163,7 @@ test = [
   "pytest-cov>=7.1.0",
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
-  "uvicorn>=0.52.4",
+  "uvicorn>=0.53.0",
   "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [
@@ -494,7 +494,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "S603",
   "T201",
 ] # Tests can use asserts and mock credentials
-"crates/adapters/*/tests/oracle-py/generate_oracle.py" = [
+"scripts/oracle-py/*/generate_oracle.py" = [
   "PLR0913",
   "PLR0917",
   "SLF001",

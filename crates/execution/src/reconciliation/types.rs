@@ -15,7 +15,7 @@
 
 //! Shared reconciliation value types.
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
     identifiers::VenueOrderId,
@@ -65,8 +65,6 @@ pub(super) enum FillAdjustmentResult {
     ReplaceCurrentLifecycle {
         /// The single synthetic fill representing the entire position.
         synthetic_fill: FillSnapshot,
-        /// The first venue order ID to use.
-        first_venue_order_id: VenueOrderId,
     },
     /// Filter fills to current lifecycle only (after last zero-crossing).
     FilterToCurrentLifecycle {
@@ -113,4 +111,6 @@ pub struct ReconciliationResult {
     pub orders: IndexMap<VenueOrderId, OrderStatusReport>,
     /// Fill reports keyed by venue order ID.
     pub fills: IndexMap<VenueOrderId, Vec<FillReport>>,
+    /// Orders whose fills recover order state only because synthetic fills replace their economics.
+    pub order_only_ids: IndexSet<VenueOrderId>,
 }

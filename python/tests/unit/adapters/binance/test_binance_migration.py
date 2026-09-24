@@ -20,7 +20,6 @@ import asyncio
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
-from decimal import Decimal
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -266,8 +265,6 @@ def test_load_binance_instruments_uses_provider_config() -> None:
     assert str(instrument.raw_symbol) == "BTCUSDT"
     assert instrument.price_precision == 2
     assert instrument.size_precision == 3
-    assert instrument.maker_fee == Decimal("0.000200")
-    assert instrument.taker_fee == Decimal("0.000500")
 
 
 def test_load_binance_spot_us_instruments_uses_public_json_without_credentials() -> None:
@@ -320,8 +317,6 @@ def test_load_binance_spot_us_instruments_uses_public_json_without_credentials()
     assert str(instrument.raw_symbol) == "ETHBTC"
     assert instrument.price_precision == 6
     assert instrument.size_precision == 3
-    assert instrument.maker_fee == Decimal("0.001")
-    assert instrument.taker_fee == Decimal("0.001")
 
 
 def test_load_binance_instruments_rejects_unsupported_product() -> None:

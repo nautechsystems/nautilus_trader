@@ -498,8 +498,6 @@ mod tests {
             .min_quantity(size_increment)
             .margin_init(Decimal::new(1, 2))
             .margin_maint(Decimal::new(5, 3))
-            .maker_fee(Decimal::new(2, 4))
-            .taker_fee(Decimal::new(5, 4))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()

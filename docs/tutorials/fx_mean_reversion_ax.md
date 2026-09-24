@@ -171,8 +171,6 @@ EURUSD_PERP = PerpetualContract(
     lot_size=Quantity.from_int(1),
     margin_init=Decimal("0.05"),
     margin_maint=Decimal("0.025"),
-    maker_fee=Decimal("0.0002"),
-    taker_fee=Decimal("0.0005"),
     ts_event=0,
     ts_init=0,
 )
@@ -204,12 +202,14 @@ From the repository root:
 
 ```python
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Money
@@ -236,6 +236,10 @@ engine.add_venue(
     account_type=AccountType.MARGIN,
     base_currency=USD,
     starting_balances=[Money.from_str("100000 USD")],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.0002"),
+        taker_rate=Decimal("0.0005"),
+    ),
 )
 
 engine.add_instrument(EURUSD_PERP)

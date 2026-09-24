@@ -40,7 +40,9 @@ use nautilus_lighter::{
     signing::auth_token::build_auth_token_for,
 };
 use nautilus_model::identifiers::TraderId;
-use nautilus_network::http::{HttpClient, Method, create_standard_nautilus_headers};
+use nautilus_network::http::{
+    HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+};
 
 type RawQueryParam<'a> = (&'static str, Cow<'a, str>);
 type RawQueryProbe<'a> = (&'static str, Vec<RawQueryParam<'a>>);
@@ -313,6 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("=== Raw HTTP probes (bypass our query struct) ===");
     let raw = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
         .headers(create_standard_nautilus_headers().into_iter().collect())
         .build()?;
     let base = "https://mainnet.zklighter.elliot.ai/api/v1/trades";

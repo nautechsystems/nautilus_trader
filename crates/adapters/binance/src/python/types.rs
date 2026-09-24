@@ -21,7 +21,6 @@ use std::{
 use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
 use nautilus_model::{
     data::bar::BarType,
-    enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
@@ -36,9 +35,8 @@ use rust_decimal::Decimal;
 use crate::{
     common::bar::BinanceBar,
     data_types::{
-        BinanceFuturesLiquidation, BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterest,
-        BinanceFuturesOpenInterestHist, BinanceFuturesOpenInterestHistPoint, BinanceFuturesTicker,
-        BinanceSpotTicker,
+        BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterestHist,
+        BinanceFuturesOpenInterestHistPoint, BinanceSpotTicker,
     },
 };
 
@@ -192,170 +190,6 @@ impl BinanceBar {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BinanceFuturesLiquidation {
-    #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    #[pyo3(name = "side")]
-    fn py_side(&self) -> OrderSide {
-        self.side
-    }
-
-    #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> Price {
-        self.price
-    }
-
-    #[getter]
-    #[pyo3(name = "average_price")]
-    fn py_average_price(&self) -> Price {
-        self.average_price
-    }
-
-    #[getter]
-    #[pyo3(name = "last_filled_qty")]
-    fn py_last_filled_qty(&self) -> Quantity {
-        self.last_filled_qty
-    }
-
-    #[getter]
-    #[pyo3(name = "accumulated_qty")]
-    fn py_accumulated_qty(&self) -> Quantity {
-        self.accumulated_qty
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BinanceFuturesTicker {
-    #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    #[pyo3(name = "price_change")]
-    fn py_price_change(&self) -> Decimal {
-        self.price_change
-    }
-
-    #[getter]
-    #[pyo3(name = "price_change_percent")]
-    fn py_price_change_percent(&self) -> Decimal {
-        self.price_change_percent
-    }
-
-    #[getter]
-    #[pyo3(name = "weighted_avg_price")]
-    fn py_weighted_avg_price(&self) -> Decimal {
-        self.weighted_avg_price
-    }
-
-    #[getter]
-    #[pyo3(name = "last_price")]
-    fn py_last_price(&self) -> Decimal {
-        self.last_price
-    }
-
-    #[getter]
-    #[pyo3(name = "last_qty")]
-    fn py_last_qty(&self) -> Decimal {
-        self.last_qty
-    }
-
-    #[getter]
-    #[pyo3(name = "open_price")]
-    fn py_open_price(&self) -> Decimal {
-        self.open_price
-    }
-
-    #[getter]
-    #[pyo3(name = "high_price")]
-    fn py_high_price(&self) -> Decimal {
-        self.high_price
-    }
-
-    #[getter]
-    #[pyo3(name = "low_price")]
-    fn py_low_price(&self) -> Decimal {
-        self.low_price
-    }
-
-    #[getter]
-    #[pyo3(name = "volume")]
-    fn py_volume(&self) -> Decimal {
-        self.volume
-    }
-
-    #[getter]
-    #[pyo3(name = "quote_volume")]
-    fn py_quote_volume(&self) -> Decimal {
-        self.quote_volume
-    }
-
-    #[getter]
-    #[pyo3(name = "open_time")]
-    fn py_open_time(&self) -> u64 {
-        self.open_time.as_u64()
-    }
-
-    #[getter]
-    #[pyo3(name = "close_time")]
-    fn py_close_time(&self) -> u64 {
-        self.close_time.as_u64()
-    }
-
-    #[getter]
-    #[pyo3(name = "first_trade_id")]
-    fn py_first_trade_id(&self) -> i64 {
-        self.first_trade_id
-    }
-
-    #[getter]
-    #[pyo3(name = "last_trade_id")]
-    fn py_last_trade_id(&self) -> i64 {
-        self.last_trade_id
-    }
-
-    #[getter]
-    #[pyo3(name = "num_trades")]
-    fn py_num_trades(&self) -> i64 {
-        self.num_trades
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BinanceSpotTicker {
     #[getter]
     fn instrument_id(&self) -> InstrumentId {
@@ -484,34 +318,6 @@ impl BinanceFuturesMarkPriceUpdate {
     }
     #[getter]
     fn ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BinanceFuturesOpenInterest {
-    #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    #[pyo3(name = "open_interest")]
-    fn py_open_interest(&self) -> Decimal {
-        self.open_interest
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 }

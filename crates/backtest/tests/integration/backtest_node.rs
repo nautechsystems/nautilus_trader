@@ -28,6 +28,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
         BarSpecification, BookOrder, FundingRateUpdate, NautilusDataType, OrderBookDelta,
@@ -42,7 +43,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+    backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
@@ -176,6 +177,7 @@ fn binance_venue_config() -> BacktestVenueConfig {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap()
 }
@@ -600,6 +602,7 @@ fn test_new_validates_venue_exists_for_instruments(crypto_perpetual_ethusdt: Cry
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
@@ -1401,6 +1404,7 @@ fn test_l2_venue_without_book_data_rejected(crypto_perpetual_ethusdt: CryptoPerp
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
@@ -1432,6 +1436,7 @@ fn test_l2_venue_with_book_data_accepted(#[case] data_type: NautilusDataType) {
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
@@ -1497,6 +1502,7 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
     let book_data = BacktestDataConfig::builder()

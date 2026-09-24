@@ -659,11 +659,13 @@ mod tests {
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, WalletAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
+        fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, stubs::uuid4},
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1559,12 +1561,12 @@ mod tests {
 
     #[rstest]
     fn test_calculate_balance_locked_buy_inverse_locks_base_currency(
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let wallet_account = wallet_with_total(Currency::BTC(), Money::from("100 BTC").raw());
         let balance_locked = wallet_account
             .calculate_balance_locked(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 OrderSide::Buy,
                 Quantity::from("100000"),
                 Price::from("10000.0"),
@@ -1663,12 +1665,14 @@ mod tests {
 
     #[rstest]
     fn test_calculate_commission(wallet_account: WalletAccount, audusd_sim: CurrencyPair) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(0.00002), dec!(0.00002));
         let commission = wallet_account
             .calculate_commission(
                 &audusd_sim.into_any(),
                 Quantity::from("100000"),
                 Price::from("0.8"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();
@@ -1686,6 +1690,7 @@ mod tests {
             Quantity::from("1"),
             Price::from("1"),
             LiquiditySide::NoLiquiditySide,
+            MakerTakerFeeRates::zero(),
             None,
         );
 

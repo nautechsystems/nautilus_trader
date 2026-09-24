@@ -69,17 +69,21 @@ signing path as perps and options; the in-repo fixtures under
 `crates/adapters/derive/test_data/spot/` capture the spot instrument, order book, ticker, and
 trade field shapes the parser and execution paths are pinned to.
 
+### Spot behavior
+
 :::warning
 Spot trading has had less live exercise than perpetuals and options. Testnet accepts and cancels a
 passive `ETH-USDC` limit order at the `0.1 ETH` minimum amount, and mainnet place/cancel has been
-exercised manually. Public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
-successfully but can be low-volume, so expect sparse trade frames. When the spot book is empty the
-venue still broadcasts ticker and order book frames with a zeroed top of book; the adapter drops
-those partial quotes (logged at DEBUG), so the quote feed stays silent until a book forms. Trade
-frames are match-driven and independent of book state, so a trade that empties the book still
-emits an event.
-Spot orders under Standard Margin are margined by initial margin fraction, not full notional.
+exercised manually.
 :::
+
+- **Sparse trades:** public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
+  successfully but can be low-volume, so expect sparse trade frames.
+- **Empty books:** the venue still broadcasts ticker and order book frames with a zeroed top of
+  book. The adapter drops those partial quotes (logged at DEBUG), so the quote feed stays silent
+  until a book forms. Trade frames are match-driven and independent of book state, so a trade
+  that empties the book still emits an event.
+- **Standard Margin:** spot orders are margined by initial margin fraction, not full notional.
 
 ## Environments
 
@@ -90,9 +94,12 @@ Configure the environment with the `DeriveEnvironment` enum on either client con
 | Mainnet     | `DeriveEnvironment::Mainnet` | `https://api.lyra.finance`      | `wss://api.lyra.finance/ws`      |
 | Testnet     | `DeriveEnvironment::Testnet` | `https://api-demo.lyra.finance` | `wss://api-demo.lyra.finance/ws` |
 
-Testnet is a separate chain with its own session keys and balances; mainnet and testnet API
-keys are not interchangeable. Public market data (book, ticker, trades) does not require
-credentials.
+:::important
+Testnet is a separate chain with its own session keys and balances. **Mainnet and testnet API
+keys are not interchangeable.**
+:::
+
+Public market data (book, ticker, trades) does not require credentials.
 
 The EIP-712 protocol constants (`DOMAIN_SEPARATOR`, `ACTION_TYPEHASH`, per-action module
 addresses) for both networks are shipped in `crates/adapters/derive/src/common/consts.rs`
@@ -110,22 +117,22 @@ Steps to reach a position where the execution client can submit a signed order:
    [testnet.derive.xyz](https://testnet.derive.xyz) and connect an EVM wallet (MetaMask,
    WalletConnect, social login, etc.). This is the owner EOA that authorizes the
    smart-contract wallet below.
-2. **Register the Derive Chain smart-contract wallet.** First sign-in deploys a per-user
+1. **Register the Derive Chain smart-contract wallet.** First sign-in deploys a per-user
    smart-contract wallet on the Derive testnet chain. The address shown under
    "Developers" -> "Derive Wallet" is the `wallet_address` (and the `X-LYRAWALLET` header)
    the client uses. It is distinct from the EOA you just connected.
-3. **Create a subaccount.** Open a subaccount under the wallet (Standard Margin is the
+1. **Create a subaccount.** Open a subaccount under the wallet (Standard Margin is the
    simplest mode for test trading). The integer id is the `subaccount_id` the client signs
    each `private/order` request against.
-4. **Generate a session key.** Under "Developers" -> "Session Keys", create a session key
+1. **Generate a session key.** Under "Developers" -> "Session Keys", create a session key
    scoped to the subaccount and copy the raw secp256k1 private key. This is the
    `session_key` value; it never leaves the client and is redacted from `Debug` output.
    Session keys can be rotated or revoked from the same panel.
-5. **Fund the subaccount via the faucet.** The testnet dashboard exposes a USDC faucet
+1. **Fund the subaccount via the faucet.** The testnet dashboard exposes a USDC faucet
    that drips test collateral. Deposit into the subaccount so the on-chain balance shows
    non-zero collateral; the API will reject orders until the subaccount has enough margin
    for the requested size.
-6. **Set the environment variables.** Export the three values the client reads in testnet
+1. **Set the environment variables.** Export the three values the client reads in testnet
    mode (or pass them on `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
@@ -136,26 +143,35 @@ Steps to reach a position where the execution client can submit a signed order:
 
 ### Minimum funding
 
-There is no fixed venue minimum. The matching engine accepts any order that satisfies the
-subaccount's initial-margin requirement for the resulting position. Treat these as
-practical floors for the smallest viable test:
+Funding must cover the subaccount's initial-margin requirement for the resulting position.
+Order acceptance also depends on the venue's price, quantity, and execution rules.
+Treat these as practical funding estimates for the smallest viable test:
 
-- **Smoke test (submit and cancel, no fills):** any positive USDC balance covers the
-  signed-order plumbing.
+- **Smoke test (submit and cancel, no fills):** fund enough to cover the margin required
+  for a passive order at the instrument's `minimum_amount`.
 - **Round-trip an `ETH-PERP` fill:** budget for the worst-case slippage-adjusted notional
   plus the initial-margin cushion. For one contract at $3500 and the venue's ~10% IM, that
   is roughly $350 collateral plus $400 cushion. Around $1000 USDC is a comfortable working
   balance for a first-fill test.
-- **Options:** options carry higher IM than perps. Pull `public/get_instrument` for the
-  option, multiply the contract size by mark price, then add the option-specific IM
-  (visible on the instrument response) before sizing the deposit.
+- **Options:** size the deposit to cover the venue's margin requirement for the resulting
+  position. `public/get_instrument` provides contract details but does not report initial-margin
+  requirements.
 
-Use the `private/get_subaccount` endpoint after funding to confirm `initial_margin` stays positive
-once the intended order's initial margin is applied: `initial_margin` and `maintenance_margin` are
-the subaccount's signed net health (collateral credit minus the corresponding requirement), the
-venue rejects risk-increasing orders that would drive `initial_margin` negative, and a negative
-`maintenance_margin` exposes the subaccount to liquidation. The adapter's `query_account` command
-emits this snapshot as an `AccountState` event so the strategy layer can gate trading on it.
+For order-size limits and taker exceptions, see [Instrument loading](#instrument-loading).
+
+### Check account health
+
+Use `private/get_subaccount` after funding to confirm `initial_margin` stays positive once the
+intended order's initial margin is applied. Both health fields report collateral credit minus
+the corresponding requirement:
+
+| Venue field          | Meaning                              | Consequence when negative                                                 |
+| -------------------- | ------------------------------------ | ------------------------------------------------------------------------- |
+| `initial_margin`     | Signed net initial-margin health     | Venue rejects risk-increasing orders that would make this value negative. |
+| `maintenance_margin` | Signed net maintenance-margin health | Subaccount is exposed to liquidation.                                     |
+
+The adapter's `query_account` command emits this snapshot as an `AccountState` event so the
+strategy layer can gate trading on it. See [Account state](#account-state) for the mapping.
 
 ## Mainnet onboarding
 
@@ -164,22 +180,22 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 1. **Sign in to the mainnet dashboard.** Open [derive.xyz](https://derive.xyz) and connect
    the EVM owner wallet (MetaMask, WalletConnect, social login, etc.). First sign-in
    deploys your Derive Chain smart-contract wallet.
-2. **Copy the wallet address.** Under "Developers" -> "Derive Wallet", copy the
+1. **Copy the wallet address.** Under "Developers" -> "Derive Wallet", copy the
    smart-contract wallet address. This is the `wallet_address` the client signs against; it
    is **distinct** from the EOA you signed in with. Verify on the Derive Chain explorer
    that the address has contract code (EOAs do not).
-3. **Create or pick a subaccount.** Open a subaccount under the wallet (Standard Margin is
+1. **Create or pick a subaccount.** Open a subaccount under the wallet (Standard Margin is
    the simplest mode; switch to Portfolio Margin only once you understand the cross-margin
    semantics). The integer id is the `subaccount_id`.
-4. **Generate a mainnet session key.** Under "Developers" -> "Session Keys", create a
+1. **Generate a mainnet session key.** Under "Developers" -> "Session Keys", create a
    session key scoped to the subaccount and copy the raw secp256k1 private key. Session
    keys can be rotated or revoked from the same panel; prefer short-lived keys for
    exploratory tester runs.
-5. **Fund the subaccount.** Deposit USDC (or supported collateral) into the subaccount via
+1. **Fund the subaccount.** Deposit USDC (or supported collateral) into the subaccount via
    the dashboard's deposit flow. Confirm via `private/get_subaccount` (or the adapter's
    `query_account`) that the deposit lands in `collaterals_value` and `initial_margin` stays
    positive after the intended order.
-6. **Set the environment variables.** Export the three mainnet values (or pass them on
+1. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
@@ -188,12 +204,17 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    export DERIVE_SUBACCOUNT_ID="12345"  # integer subaccount id
    ```
 
-   Each Rust example (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`) pins
-   the network with a `const DERIVE_ENVIRONMENT: DeriveEnvironment` literal near the top
-   of the file. Check that constant before every run and edit it to switch networks; the
-   examples do not read the network from the environment. Production deployments select
-   the network via `DeriveDataClientConfig::environment` /
-   `DeriveExecutionClientConfig::environment`.
+### Select the example network
+
+:::warning
+Each Rust example (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`) pins the network
+with a `const DERIVE_ENVIRONMENT: DeriveEnvironment` literal near the top of the file.
+**Check that constant before every run** and edit it to switch networks; the examples do not
+read the network from the environment.
+:::
+
+Production deployments select the network via `DeriveDataClientConfig::environment` /
+`DeriveExecutionClientConfig::environment`.
 
 ## Referral code attribution
 
@@ -238,25 +259,50 @@ and prioritize ongoing maintenance.
 caches the returned definition before emitting the response. The cached instrument carries
 the precision and increment fields used by later quote, trade, book, and bar parsing.
 
+The quantity fields map as follows for perpetuals, options, and spot:
+
+| Derive field     | Nautilus field           | Handling                                                |
+| ---------------- | ------------------------ | ------------------------------------------------------- |
+| `minimum_amount` | `info["minimum_amount"]` | Retained as venue metadata; `min_quantity` stays unset. |
+| `amount_step`    | `size_increment`         | Order quantity increment.                               |
+| `maximum_amount` | `max_quantity`           | Maximum order quantity.                                 |
+
+:::important
+Derive can fill taker orders below `minimum_amount`, while orders that would rest on the book
+can be rejected with `11012: Invalid amount`. **Derive decides whether a sub-minimum order is valid.**
+:::
+
 Instrument loading treats venue error `12001` as an empty result for the affected product type,
 so a currency without a perp, option, or spot listing does not block its other products. Invalid
 instrument rows are logged and skipped while valid rows continue to load.
 
 #### Historical data
 
-Historical requests use `public/get_trade_history`, `public/get_tradingview_chart_data`, and
-`public/get_funding_rate_history`. The bar `end` bound still selects buckets by their start time at
-the venue. Responses omit any bucket whose close is after the request time, including the
-still-forming bucket returned by the venue. Trade history returns one maker row and one taker row
-per trade under the same `trade_id`, and each row's `direction` is that participant's own
-side, while the public WS trades feed defines `direction` as the taker's side. Trade requests
-emit one `TradeTick` per trade whose aggressor side is the taker's direction, independent of
-row order; rows with an absent or `unknown` `liquidity_role` fall back to treating `direction`
-as the taker's side.
+| Data          | REST endpoint                       |
+| ------------- | ----------------------------------- |
+| Trades        | `public/get_trade_history`          |
+| Bars          | `public/get_tradingview_chart_data` |
+| Funding rates | `public/get_funding_rate_history`   |
 
-Bars require `EXTERNAL` aggregation and `PriceType::Last`, since Derive candles are trade-based.
-The venue's candle periods map to 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
-steps; any other bar specification is rejected before the request goes out.
+##### Trade direction and deduplication
+
+Trade history returns one maker row and one taker row per trade under the same `trade_id`.
+Each row's `direction` is that participant's own side, while the public WS trades feed defines
+`direction` as the taker's side.
+
+Trade requests emit **one `TradeTick` per trade**, with the taker's direction as the aggressor side,
+independent of row order. Rows with an absent or `unknown` `liquidity_role` fall back to treating
+`direction` as the taker's side.
+
+##### Bar requirements and time bounds
+
+- **Aggregation and price:** bars require `EXTERNAL` aggregation and `PriceType::Last`, since
+  Derive candles are trade-based.
+- **Periods:** the venue supports 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
+  steps. Any other bar specification is rejected before the request goes out.
+- **Time bounds:** the bar `end` bound selects buckets by their start time at the venue. Responses
+  omit any bucket whose close is after the request time, including the still-forming bucket
+  returned by the venue.
 
 #### Order book feeds
 
@@ -287,29 +333,53 @@ The adapter supports ordinary `private/order` requests: `LIMIT` and `MARKET` ord
 Nautilus-native stop and if-touched order types listed below. Unsupported Nautilus order
 types are denied locally with `OrderDenied` before submission, so they cannot fill at the venue.
 
-Market orders require a cached quote before submission; without one the adapter emits
-`OrderDenied` and never signs. After the async submit task resolves the instrument, it refreshes
-the current ticker snapshot and derives the signed slippage-bound `limit_price` from that
-refreshed quote.
+:::important
+**Market orders require a cached quote before submission.** Without one, the adapter emits
+`OrderDenied` and never signs.
+:::
+
+After the async submit task resolves the instrument, it refreshes the current ticker snapshot
+and derives the signed slippage-bound `limit_price` from that refreshed quote.
 
 #### Account state
 
-Derive holds margin at the subaccount level, so the `AccountState` mapping is:
+Derive holds margin at the subaccount level. `AccountState` separates collateral balances,
+margin requirements, and net account health.
 
-- Balances: `total` is the collateral `amount` (for example USDC or ETH) in its native units and
-  `locked` is zero, because the venue reports no per-collateral reservation.
-  `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
-- Margins: one account-wide `MarginBalance` where `initial = positions_initial_margin +
-  open_orders_margin` and `maintenance = positions_maintenance_margin`. These venue fields are
-  USD requirements, stamped with the subaccount currency. Immediately after a closing trade the
-  venue can transiently report negative `positions_*_margin` values equal to the not-yet-settled
-  cash movement (realized PnL and fees); the fields return to zero once settlement lands in the
-  collateral balance. Gate trading on `net_initial_margin` / `net_maintenance_margin` in
-  `AccountState.info`, not on these requirement fields.
-- Info: the subaccount's signed net health is not a margin requirement, so it travels in the
-  `AccountState.info` map as `net_initial_margin` and `net_maintenance_margin` alongside
-  `positions_initial_margin`, `positions_maintenance_margin`, `open_orders_margin`, and
-  `is_under_liquidation`. Decimal values are JSON strings.
+##### Collateral balances
+
+- `total` is the collateral `amount` (for example USDC or ETH) in its native units.
+- `locked` is zero because the venue reports no per-collateral reservation.
+- `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
+
+##### Margin requirements
+
+The adapter emits one account-wide `MarginBalance`:
+
+| Nautilus field | Derive requirement                              |
+| -------------- | ----------------------------------------------- |
+| `initial`      | `positions_initial_margin + open_orders_margin` |
+| `maintenance`  | `positions_maintenance_margin`                  |
+
+These venue fields are USD requirements, stamped with the subaccount currency. Immediately after
+a closing trade, the venue can transiently report negative `positions_*_margin` values equal to
+the not-yet-settled cash movement (realized PnL and fees). The fields return to zero once
+settlement lands in the collateral balance.
+
+:::warning
+Gate trading on **`net_initial_margin` and `net_maintenance_margin` in `AccountState.info`**,
+not on the margin requirement fields.
+:::
+
+##### Account metadata
+
+The subaccount's signed net health is not a margin requirement, so it travels in `AccountState.info`:
+
+- `net_initial_margin` and `net_maintenance_margin` carry net health.
+- `positions_initial_margin`, `positions_maintenance_margin`, and `open_orders_margin` carry requirements.
+- `is_under_liquidation` carries liquidation status.
+
+Decimal values are JSON strings.
 
 #### Conditional orders
 
@@ -318,10 +388,14 @@ Derive trigger orders use the WebSocket-only `private/trigger_order` endpoint, n
 trigger worker submits the signed child order. Reconciliation therefore reads both
 `private/get_open_orders` and `private/get_trigger_orders`.
 
-Derive mainnet requires trigger-order signatures to expire 30 to 90 days from venue time. The
+##### Signature expiry
+
+Derive mainnet requires trigger-order signatures to expire in [30, 90] days from venue time. The
 adapter signs trigger orders with a fixed 31-day expiry; `signature_expiry_secs` still controls
 ordinary `private/order` and `private/replace` writes, and must be greater than the 300s venue
 minimum.
+
+##### Supported types
 
 | Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                          |
 | ------------------- | --------- | ------------------- | --------------------- | ------------------------------ |
@@ -338,16 +412,24 @@ The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to
 last-trade trigger price types are not supported yet, so `IndexPrice`, `LastPrice`, `BidAsk`,
 and other trigger price types are denied locally with `OrderDenied` before submission.
 
+##### Updating a trigger
+
 Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter
 therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
 event; cancel and resubmit for trigger updates.
 
+##### Trigger price offsets
+
 Derive validates the trigger price side and rejects a trigger that does not sit beyond the
 current price in the expected direction with error `11051`. The trigger price is fixed when the
 order is signed, so a tight offset on a fast-moving or high-priced instrument can drift onto the
-wrong side before the venue receives the order. Size the trigger offset to comfortably exceed
-expected price movement during submission (for `ETH-PERP`, tens of dollars rather than a few
-cents); a too-tight offset produces spurious `11051` rejections.
+wrong side before the venue receives the order.
+
+:::warning
+Size the trigger offset to comfortably exceed expected price movement during submission
+(for `ETH-PERP`, tens of dollars rather than a few cents). A too-tight offset produces
+spurious `11051` rejections.
+:::
 
 #### Bulk cancellation
 
@@ -362,14 +444,16 @@ Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
 The Derive execution client applies these methods as follows:
 
-- `cancel_orders` cancels each requested regular or trigger order individually.
-- `cancel_all_orders` with `strategy_only=True` expands cached matches into individual cancels.
-- `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects open regular and
-  trigger orders from the cache for the configured execution client, account, exact instrument,
-  and side, then cancels each match. It never widens to both sides.
-- `cancel_all_orders` with `strategy_only=False` and no side filter selects matching open triggers
-  from the same execution client, account, and instrument scope and cancels them individually, then sends
-  `private/cancel_by_instrument` for regular orders. It never sends `private/cancel_all`.
+- **Explicit orders:** `cancel_orders` cancels each requested regular or trigger order individually.
+- **Strategy-only:** `cancel_all_orders` with `strategy_only=True` expands cached matches into
+  individual cancels.
+- **Side-filtered:** `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects
+  open regular and trigger orders from the cache for the configured execution client, account,
+  exact instrument, and side, then cancels each match. It never widens to both sides.
+- **Both sides:** `cancel_all_orders` with `strategy_only=False` and no side filter selects matching
+  open triggers from the same execution client, account, and instrument scope and cancels them
+  individually, then sends `private/cancel_by_instrument` for regular orders. It never sends
+  `private/cancel_all`.
 
 `cancel_all_orders` treats the cache as authoritative and does not query venue order state before
 cancellation. Eligibility follows the cache-selection rules above.
@@ -421,19 +505,28 @@ depends on the subaccount's position state. The `derive-flatten` bin closes deri
 positions only and never spot, since flattening a spot balance would dump the base asset
 into a different quote.
 
+##### Reduce-only time-in-force limits
+
 Derive only honors `reduce_only` on market orders or non-resting limits (`IOC`/`FOK`). A
 resting `GTC` or post-only limit with `reduce_only` is rejected by the venue with error
-`11024 Reduce only not supported with this time in force`. As a result a Nautilus bracket whose
-take-profit leg is a reduce-only `GTC` limit cannot rest on Derive: the entry and stop-loss legs
-submit, but the take-profit is rejected. Use a reduce-only `IOC`/`FOK` close or a
-non-reduce-only take-profit when targeting Derive.
+`11024 Reduce only not supported with this time in force`.
+
+:::warning
+A Nautilus bracket whose take-profit leg is a reduce-only `GTC` limit cannot rest on Derive:
+the entry and stop-loss legs submit, but the take-profit is rejected. Use a reduce-only
+`IOC`/`FOK` close or a non-reduce-only take-profit when targeting Derive.
+:::
 
 #### Order rejection semantics
 
 State-changing writes (`submit_order`, `modify_order`, `cancel_order`) are sent once over the
-WebSocket and are not replayed. The adapter keys terminal vs ambiguous handling off the
-WebSocket request outcome. It emits a terminal rejection event (`OrderRejected`,
-`OrderModifyRejected`, `OrderCancelRejected`) for definitive venue failures:
+WebSocket and **are not replayed**. The WebSocket request outcome determines whether the
+adapter emits a terminal rejection or waits for reconciliation.
+
+##### Definitive failures
+
+The adapter emits a terminal rejection event (`OrderRejected`, `OrderModifyRejected`,
+`OrderCancelRejected`) for definitive venue failures:
 
 - Signed-action rejections such as invalid params, insufficient margin, or unknown orders.
 - Venue business codes such as `11009 Zero liquidity`.
@@ -449,12 +542,16 @@ venue order notification or later reconciliation to settle the state. The venue 
 `cancelled_orders == -1` for a cancel that matched its label-wildcard path; this is treated as
 success and settled the same way.
 
+##### Post-only classification
+
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
 `11008` and message `Post only order cannot cross the market`. The adapter marks that
 terminal rejection with `due_post_only=true`; if a WebSocket/order-report rejection carries
 the same reason, the tracked order path applies the same classification. Local denials
 for unsupported post-only IOC/FOK combinations are `OrderDenied` events without
 `due_post_only`, because they do not represent a venue crossing rejection.
+
+##### Ambiguous outcomes
 
 For ambiguous write outcomes, the adapter emits no terminal event and lets WebSocket
 reconciliation or later status reports settle the state. The ambiguous set is deliberately
@@ -500,15 +597,23 @@ window:
 | `private/cancel_all`               | 5 requests per window  |
 | Unscoped `private/cancel_by_label` | 50 requests per window |
 
-The REST per-IP allowance is flat across tiers. The WebSocket non-matching allowance applies to
-sessions authorized via `public/login`; the venue applies a reduced, unspecified allowance to
-unauthenticated sessions, so public data-client traffic can hit venue limits earlier. The venue
-also caps concurrent WebSocket connections per IP (4 for a Trader).
+#### Session and connection limits
+
+- **REST:** the per-IP allowance is flat across tiers.
+- **Authenticated WebSocket:** the non-matching allowance applies to sessions authorized via
+  `public/login`.
+- **Unauthenticated WebSocket:** the venue applies a reduced, unspecified allowance, so public
+  data-client traffic can hit venue limits earlier.
+- **Connections:** the venue caps concurrent WebSocket connections per IP (4 for a Trader).
+
+#### Matching write allocation
 
 Matching-engine writes that carry an instrument (order, replace, trigger order, single-order
 cancel, and `private/cancel_by_instrument`) draw on both the account-wide matching bucket and that
 instrument's independent bucket, so a Market Maker's account-wide override never inflates the
-per-instrument allowance. Trigger order create and cancel methods are paced as matching writes even
+per-instrument allowance.
+
+Trigger order create and cancel methods are paced as matching writes even
 though the venue does not list them explicitly; `private/cancel_trigger_order` carries no instrument
 and draws on the account-wide bucket only.
 This conservative classification stays within Derive's documented rate contract.
@@ -568,16 +673,30 @@ Unknown values are rejected at subscribe time.
 
 Quotes, mark prices, index prices, funding rates, and option greeks are all derived from the
 same `ticker_slim.{instrument}.{interval}` WebSocket subscription. The adapter reference-counts
-the underlying WS subscribe call: the first feed subscribed for an instrument opens the channel
-and the last unsubscribe closes it. As a consequence, the `interval` from the first subscribe
-wins; subsequent feeds subscribing with a different interval share the existing channel.
+the underlying WS subscribe call:
+
+- The first feed subscribed for an instrument opens the channel.
+- The last unsubscribe closes it.
+
+:::note
+**The first subscription's `interval` wins.** Subsequent feeds subscribing with a different
+interval share the existing channel.
+:::
+
+#### Ticker fields
 
 Mark prices, index prices, funding rates, and option greeks read fields from the ticker payload.
-Both the full ticker shape and the compact `ticker_slim` shape carry these fields, so the
-derived feeds work on either: `mark_price` and `index_price` are required (a frame missing them
-fails to deserialize and is logged, rather than silently dropped), while `funding_rate` and
-`option_pricing` are optional and present only for the relevant instrument class. The quote feed
-always works because bid/ask are present in both shapes.
+Both the full ticker shape and the compact `ticker_slim` shape carry these fields, so derived
+feeds work on either:
+
+| Fields                      | Presence                  | Feed behavior                                                              |
+| --------------------------- | ------------------------- | -------------------------------------------------------------------------- |
+| `mark_price`, `index_price` | Required                  | A missing field fails deserialization and is logged, not silently dropped. |
+| `funding_rate`              | Optional; perpetuals only | Supplies funding-rate events.                                              |
+| `option_pricing`            | Optional; options only    | Supplies option greeks.                                                    |
+| Bid/ask                     | Present in both shapes    | Quote feed works with either shape.                                        |
+
+#### Instrument class restrictions
 
 Funding rates are only meaningful for perpetuals, and option greeks only for options.
 Subscribing the wrong feed for an instrument's class (e.g. funding rates for an option) is
@@ -605,43 +724,75 @@ Class/struct: `DeriveDataClientConfig`.
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
 | `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
 
-`auto_load_missing_instruments` covers subscribe commands only. The request commands
-(`request_quotes`, `request_trades`, `request_bars`, and `request_funding_rates`) fail when
-the instrument is not already cached, so bulk-load its currency or subscribe first.
-`request_instrument` is the exception: it always fetches `public/get_instrument`. Option-chain
-subscriptions also require a cached option from the series to fetch the initial reference price.
+:::important
+**`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,
+trades, bars, or funding rates, bulk-load the instrument's currency or subscribe first.
+:::
+
+- `request_quotes`, `request_trades`, `request_bars`, and `request_funding_rates` fail when the
+  instrument is not already cached.
+- `request_instrument` is the exception: it always fetches `public/get_instrument`.
+- Option-chain subscriptions require a cached option from the series to fetch the initial reference price.
 
 ### Execution client configuration options
 
 Class/struct: `DeriveExecutionClientConfig`.
 
-| Option                                            | Default   | Description                                                                                                                                                                       |
-| ------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account_id`                                      | `Venue`   | Nautilus account identifier; defaults to `DERIVE-001`.                                                                                                                            |
-| `wallet_address`                                  | `None`    | Derive Chain smart-contract wallet address. Falls back to env vars below.                                                                                                         |
-| `session_key`                                     | `None`    | secp256k1 session-key private key. Falls back to env vars below.                                                                                                                  |
-| `subaccount_id`                                   | `None`    | Derive subaccount id. Falls back to env vars below.                                                                                                                               |
-| `base_url_rest`                                   | `None`    | Override for the REST base URL.                                                                                                                                                   |
-| `base_url_ws`                                     | `None`    | Override for the WebSocket base URL.                                                                                                                                              |
-| `proxy_url`                                       | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                                                             |
-| `environment`                                     | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                                                                                                              |
-| `http_timeout_secs`                               | `10`      | REST request timeout in seconds.                                                                                                                                                  |
-| `ws_timeout_secs`                                 | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s.                                                                                       |
-| `max_retries`                                     | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.                                                                                          |
-| `retry_delay_initial_ms`                          | `100`     | Initial retry delay in milliseconds.                                                                                                                                              |
-| `retry_delay_max_ms`                              | `5,000`   | Maximum retry delay in milliseconds.                                                                                                                                              |
-| `max_fee_per_contract`                            | Required  | Positive per-contract USDC fee cap signed into each order.                                                                                                                        |
-| `domain_separator`                                | `None`    | Optional EIP-712 domain separator override.                                                                                                                                       |
-| `action_typehash`                                 | `None`    | Optional EIP-712 action typehash override.                                                                                                                                        |
-| `trade_module_address`                            | `None`    | Optional Trade module contract address override.                                                                                                                                  |
-| `signature_expiry_secs`                           | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL.                                                                                                            |
-| `market_order_slippage_bps`                       | `50`      | Slippage bound for market-order limit prices.                                                                                                                                     |
-| `max_matching_requests_per_second`                | `None`    | Account-wide matching-engine write requests/sec (order/replace/cancel incl. trigger methods). Defaults to the Trader-tier limit of 1 when unset; raise for Market Maker accounts. |
-| `max_per_instrument_matching_requests_per_second` | `None`    | Per-instrument matching write requests/sec, enforced independently of the account-wide limit. Defaults to the Trader-tier limit of 1 when unset; raise for Market Maker accounts. |
-| `transport_backend`                               | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                                                                                                          |
+#### Account and credentials
+
+| Option           | Default | Description                                                               |
+| ---------------- | ------- | ------------------------------------------------------------------------- |
+| `account_id`     | `Venue` | Nautilus account identifier; defaults to `DERIVE-001`.                    |
+| `wallet_address` | `None`  | Derive Chain smart-contract wallet address. Falls back to env vars below. |
+| `session_key`    | `None`  | secp256k1 session-key private key. Falls back to env vars below.          |
+| `subaccount_id`  | `None`  | Derive subaccount id. Falls back to env vars below.                       |
+
+#### Connectivity and retries
+
+| Option                   | Default   | Description                                                                                 |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------- |
+| `base_url_rest`          | `None`    | Override for the REST base URL.                                                             |
+| `base_url_ws`            | `None`    | Override for the WebSocket base URL.                                                        |
+| `proxy_url`              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                       |
+| `environment`            | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
+| `http_timeout_secs`      | `10`      | REST request timeout in seconds.                                                            |
+| `ws_timeout_secs`        | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
+| `transport_backend`      | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `max_retries`            | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.    |
+| `retry_delay_initial_ms` | `100`     | Initial retry delay in milliseconds.                                                        |
+| `retry_delay_max_ms`     | `5,000`   | Maximum retry delay in milliseconds.                                                        |
 
 The default transport falls back to `Tungstenite` when the build disables the
 `transport-sockudo` feature.
+
+#### Order signing and pricing
+
+:::important
+`max_fee_per_contract` is required and must be greater than zero. Execution-client construction
+fails before creating venue clients when the field is missing or non-positive.
+:::
+
+| Option                      | Default  | Description                                                            |
+| --------------------------- | -------- | ---------------------------------------------------------------------- |
+| `max_fee_per_contract`      | Required | Positive per-contract USDC fee cap signed into each order.             |
+| `domain_separator`          | `None`   | Optional EIP-712 domain separator override.                            |
+| `action_typehash`           | `None`   | Optional EIP-712 action typehash override.                             |
+| `trade_module_address`      | `None`   | Optional Trade module contract address override.                       |
+| `signature_expiry_secs`     | `600`    | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
+| `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                          |
+
+#### Matching request limits
+
+Both limits default to the Trader-tier rate of **1 request per second** when unset; raise them
+for Market Maker accounts. Matching writes include order, replace, and cancel requests, including
+trigger methods. The per-instrument limit is enforced independently of the account-wide limit.
+
+| Option                                            | Default | Description                                        |
+| ------------------------------------------------- | ------- | -------------------------------------------------- |
+| `max_matching_requests_per_second`                | `None`  | Account-wide matching write requests per second.   |
+| `max_per_instrument_matching_requests_per_second` | `None`  | Per-instrument matching write requests per second. |
+
+#### Credential environment variables
 
 The `wallet_address`, `session_key`, and `subaccount_id` fall back to environment variables when
 unset:
@@ -727,9 +878,6 @@ let config = DeriveExecutionClientConfig {
     ..Default::default()
 };
 ```
-
-`max_fee_per_contract` is required and must be greater than zero. Execution-client construction
-fails before creating venue clients when the field is missing or non-positive.
 
 ## Known limitations
 

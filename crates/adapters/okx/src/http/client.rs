@@ -70,7 +70,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, StatusCode, create_standard_nautilus_headers},
+    http::{HttpClient, HttpRedirectPolicy, Method, StatusCode, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -122,9 +122,9 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXContractType, OKXEnvironment,
-            OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode,
-            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment, OKXInstrumentStatus,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
             conditional_order_to_algo_type,
         },
         models::OKXInstrument,
@@ -305,6 +305,7 @@ fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Dura
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::{Serialize, Serializer, ser::Error as _};
@@ -325,6 +326,33 @@ mod tests {
         {
             Err(S::Error::custom("intentional serialization failure"))
         }
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = OKXRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "pass".into(),
+            "http://localhost".into(),
+            3,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]
@@ -886,6 +914,7 @@ impl OKXRawHttpClient {
             clock: get_atomic_clock_realtime(),
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers(environment))
                 .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas())
@@ -2620,30 +2649,6 @@ impl OKXHttpClient {
                 .map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let fee_rate_opt = {
-            let fee_params = GetTradeFeeParams {
-                inst_type: instrument_type,
-                uly: None,
-                inst_family: if instrument_type == OKXInstrumentType::Events {
-                    None
-                } else {
-                    instrument_family
-                },
-            };
-
-            match self.inner.get_trade_fee(fee_params).await {
-                Ok(rates) => rates.into_iter().next(),
-                Err(OKXHttpError::MissingCredentials) => {
-                    log::debug!("Missing credentials for fee rates, using None");
-                    None
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch fee rates for {instrument_type}: {e}");
-                    None
-                }
-            }
-        };
-
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
@@ -2666,35 +2671,7 @@ impl OKXHttpClient {
                 continue;
             }
 
-            // Determine which fee fields to use based on contract type
-            // OKX fee rate convention: positive = rebate, negative = commission
-            // Nautilus convention: negative = rebate, positive = commission
-            // Negate to convert between conventions
-            let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
-                let is_usdt_margined = inst.ct_type == OKXContractType::Linear;
-                let (maker_str, taker_str) = if is_usdt_margined {
-                    (&fee_rate.maker_u, &fee_rate.taker_u)
-                } else {
-                    (&fee_rate.maker, &fee_rate.taker)
-                };
-
-                let maker = if maker_str.is_empty() {
-                    None
-                } else {
-                    Decimal::from_str(maker_str).ok().map(|v| -v)
-                };
-                let taker = if taker_str.is_empty() {
-                    None
-                } else {
-                    Decimal::from_str(taker_str).ok().map(|v| -v)
-                };
-
-                (maker, taker)
-            } else {
-                (None, None)
-            };
-
-            match parse_instrument_any(inst, None, None, maker_fee, taker_fee, ts_init) {
+            match parse_instrument_any(inst, None, None, ts_init) {
                 Ok(Some(instrument_any)) => {
                     instruments.push(instrument_any);
                 }
@@ -2731,7 +2708,7 @@ impl OKXHttpClient {
         let mut instruments = Vec::new();
 
         for spread in &resp {
-            match parse_spread_instrument(spread, None, None, None, None, ts_init) {
+            match parse_spread_instrument(spread, None, None, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => log::warn!("Failed to parse spread {}: {e}", spread.sprd_id),
             }
@@ -2818,57 +2795,9 @@ impl OKXHttpClient {
             .into());
         }
 
-        let fee_rate_opt = {
-            let fee_params = GetTradeFeeParams {
-                inst_type: instrument_type,
-                uly: None,
-                inst_family: None,
-            };
-
-            match self.inner.get_trade_fee(fee_params).await {
-                Ok(rates) => rates.into_iter().next(),
-                Err(OKXHttpError::MissingCredentials) => {
-                    log::debug!("Missing credentials for fee rates, using None");
-                    None
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch fee rates for {symbol}: {e}");
-                    None
-                }
-            }
-        };
-
-        // OKX fee rate convention: positive = rebate, negative = commission
-        // Nautilus convention: negative = rebate, positive = commission
-        // Negate to convert between conventions
-        let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
-            let is_usdt_margined = raw_inst.ct_type == OKXContractType::Linear;
-            let (maker_str, taker_str) = if is_usdt_margined {
-                (&fee_rate.maker_u, &fee_rate.taker_u)
-            } else {
-                (&fee_rate.maker, &fee_rate.taker)
-            };
-
-            let maker = if maker_str.is_empty() {
-                None
-            } else {
-                Decimal::from_str(maker_str).ok().map(|v| -v)
-            };
-            let taker = if taker_str.is_empty() {
-                None
-            } else {
-                Decimal::from_str(taker_str).ok().map(|v| -v)
-            };
-
-            (maker, taker)
-        } else {
-            (None, None)
-        };
-
         let ts_init = self.generate_ts_init();
-        let Some(instrument) =
-            parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)
-                .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
+        let Some(instrument) = parse_instrument_any(raw_inst, None, None, ts_init)
+            .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
         else {
             return Err(OKXInstrumentDefinitionError::new(
                 symbol,
@@ -2897,7 +2826,7 @@ impl OKXHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Spread instrument {symbol} not found"))?;
         let ts_init = self.generate_ts_init();
 
-        parse_spread_instrument(raw_spread, None, None, None, None, ts_init)
+        parse_spread_instrument(raw_spread, None, None, ts_init)
             .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e).into())
     }
 

@@ -35,8 +35,7 @@ pub(crate) fn arrow_metadata_to_params(metadata: &HashMap<String, String>) -> Pa
 
 /// Returns the inclusive `ts_init` range across Arrow record batches.
 pub(crate) fn record_batch_ts_init_range(batches: &[RecordBatch]) -> anyhow::Result<(u64, u64)> {
-    let mut start_ts: Option<u64> = None;
-    let mut end_ts: Option<u64> = None;
+    let mut range: Option<(u64, u64)> = None;
 
     for batch in batches {
         let ts_init = batch
@@ -53,13 +52,50 @@ pub(crate) fn record_batch_ts_init_range(batches: &[RecordBatch]) -> anyhow::Res
             let value = ts_init
                 .value(row)
                 .ok_or_else(|| anyhow::anyhow!("ts_init column contains a negative value"))?;
-            start_ts = Some(start_ts.map_or(value, |current| current.min(value)));
-            end_ts = Some(end_ts.map_or(value, |current| current.max(value)));
+            range = Some(range.map_or((value, value), |(start_ts, end_ts)| {
+                (start_ts.min(value), end_ts.max(value))
+            }));
         }
     }
 
-    match (start_ts, end_ts) {
-        (Some(start_ts), Some(end_ts)) => Ok((start_ts, end_ts)),
-        _ => anyhow::bail!("Record batches contain no non-null ts_init values"),
+    range.ok_or_else(|| anyhow::anyhow!("Record batches contain no non-null ts_init values"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{ArrayRef, UInt64Array},
+        datatypes::{DataType, Field, Schema},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn ts_init_batch(values: Vec<u64>) -> RecordBatch {
+        let field = Field::new("ts_init", DataType::UInt64, false);
+        let schema = Arc::new(Schema::new(vec![field]));
+        let column: ArrayRef = Arc::new(UInt64Array::from(values));
+        RecordBatch::try_new(schema, vec![column]).unwrap()
+    }
+
+    #[rstest]
+    fn record_batch_ts_init_range_spans_unordered_batches() {
+        let batches = [ts_init_batch(vec![5, 3]), ts_init_batch(vec![9, 1, 4])];
+
+        let range = record_batch_ts_init_range(&batches).unwrap();
+
+        assert_eq!(range, (1, 9));
+    }
+
+    #[rstest]
+    fn record_batch_ts_init_range_rejects_batches_without_rows() {
+        let error = record_batch_ts_init_range(&[ts_init_batch(Vec::new())]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Record batches contain no non-null ts_init values"
+        );
     }
 }

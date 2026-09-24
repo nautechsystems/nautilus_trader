@@ -43,6 +43,24 @@ pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) ->
     format!("{datetime_1}_{datetime_2}.parquet")
 }
 
+/// Builds a catalog parquet filename, appending a promotion-identity hash when present.
+#[must_use]
+pub(crate) fn catalog_filename(
+    start_ts: UnixNanos,
+    end_ts: UnixNanos,
+    replay_identity: Option<&str>,
+) -> String {
+    let filename = timestamps_to_filename(start_ts, end_ts);
+
+    let Some(identity) = replay_identity else {
+        return filename;
+    };
+
+    let stem = filename.strip_suffix(".parquet").unwrap_or(&filename);
+    let digest = blake3::hash(identity.as_bytes()).to_hex();
+    format!("{stem}_{}.parquet", &digest[..16])
+}
+
 /// Converts an ISO 8601 timestamp to a filesystem-safe format.
 pub(crate) fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
     iso_timestamp.replace([':', '.'], "-")
@@ -56,24 +74,13 @@ pub(crate) fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
     let time_part = time_part.strip_suffix('Z').unwrap_or(time_part);
 
     // Find the last hyphen to separate nanoseconds
-    if let Some(last_hyphen_idx) = time_part.rfind('-') {
-        let time_with_dot_for_nanos = format!(
-            "{}.{}",
-            &time_part[..last_hyphen_idx],
-            &time_part[last_hyphen_idx + 1..]
-        );
-        let final_time_part = time_with_dot_for_nanos.replace('-', ":");
-        format!("{date_part}T{final_time_part}Z")
-    } else {
+    let final_time_part = match time_part.rsplit_once('-') {
+        Some((time, nanos)) => format!("{}.{nanos}", time.replace('-', ":")),
         // Fallback if no nanoseconds part found
-        let final_time_part = time_part.replace('-', ":");
-        format!("{date_part}T{final_time_part}Z")
-    }
-}
+        None => time_part.replace('-', ":"),
+    };
 
-/// Converts an ISO 8601 timestamp string to Unix nanoseconds.
-pub(crate) fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
-    Ok(iso8601_to_unix_nanos(iso_timestamp)?.into())
+    format!("{date_part}T{final_time_part}Z")
 }
 
 // Extract the instrument ID portion from a bar type directory name.
@@ -119,10 +126,8 @@ pub fn extract_sql_safe_filename(file_path: &str) -> String {
 
 /// Creates a platform-appropriate local path using `PathBuf`.
 pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> PathBuf {
-    let mut path = PathBuf::from(base_path.as_ref());
-    for component in components {
-        path.push(component);
-    }
+    let mut path = base_path.as_ref().to_path_buf();
+    path.extend(components);
     path
 }
 
@@ -132,11 +137,11 @@ pub(crate) fn query_intersects_filename(
     start: Option<u64>,
     end: Option<u64>,
 ) -> bool {
-    if let Some((file_start, file_end)) = parse_filename_timestamps(filename) {
-        start.is_none_or(|start| start <= file_end) && end.is_none_or(|end| file_start <= end)
-    } else {
-        true
-    }
+    let Some((file_start, file_end)) = parse_filename_timestamps(filename) else {
+        return true;
+    };
+
+    start.is_none_or(|start| start <= file_end) && end.is_none_or(|end| file_start <= end)
 }
 
 /// Parses timestamps from a Parquet filename.
@@ -167,8 +172,8 @@ pub fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
     let first_iso = file_timestamp_to_iso_timestamp(first_part);
     let second_iso = file_timestamp_to_iso_timestamp(second_part);
 
-    let first_ts = iso_to_unix_nanos(&first_iso).ok()?;
-    let second_ts = iso_to_unix_nanos(&second_iso).ok()?;
+    let first_ts = iso8601_to_unix_nanos(&first_iso).ok()?.as_u64();
+    let second_ts = iso8601_to_unix_nanos(&second_iso).ok()?.as_u64();
 
     Some((first_ts, second_ts))
 }
@@ -178,7 +183,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use rstest::rstest;
 
-    use super::{parse_filename_timestamps, timestamps_to_filename};
+    use super::{parse_filename_timestamps, query_intersects_filename, timestamps_to_filename};
 
     #[rstest]
     fn parse_filename_timestamps_accepts_replay_identity_suffix() {
@@ -194,5 +199,28 @@ mod tests {
         let filename = base.replace(".parquet", "_bad-suffix.parquet");
 
         assert_eq!(parse_filename_timestamps(&filename), None);
+    }
+
+    #[rstest]
+    #[case::unparsable_name_is_kept(None, Some(10), Some(20), true)]
+    #[case::start_on_file_end(Some((10, 20)), Some(20), None, true)]
+    #[case::start_after_file_end(Some((10, 20)), Some(21), None, false)]
+    #[case::end_on_file_start(Some((10, 20)), None, Some(10), true)]
+    #[case::end_before_file_start(Some((10, 20)), None, Some(9), false)]
+    #[case::unbounded(Some((10, 20)), None, None, true)]
+    fn query_intersects_filename_cases(
+        #[case] interval: Option<(u64, u64)>,
+        #[case] start: Option<u64>,
+        #[case] end: Option<u64>,
+        #[case] expected: bool,
+    ) {
+        let filename = interval.map_or_else(
+            || "value.parquet".to_string(),
+            |(file_start, file_end)| {
+                timestamps_to_filename(UnixNanos::from(file_start), UnixNanos::from(file_end))
+            },
+        );
+
+        assert_eq!(query_intersects_filename(&filename, start, end), expected);
     }
 }

@@ -21,7 +21,7 @@ use nautilus_core::{
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::{HttpClient, create_standard_nautilus_headers};
+use nautilus_network::http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers};
 
 use super::{
     error::{Error, TardisErrorResponse},
@@ -108,6 +108,7 @@ impl TardisHttpClient {
 
         let keyed_quotas = vec![(TARDIS_REST_RATE_KEY.to_string(), *TARDIS_REST_QUOTA)];
         let client = HttpClient::builder()
+            .redirect_policy(HttpRedirectPolicy::Reject)
             .headers(headers)
             .keyed_quotas(keyed_quotas)
             .default_quota(*TARDIS_REST_QUOTA)
@@ -299,5 +300,27 @@ impl TardisHttpClient {
         }
 
         Ok((instrument_map, nautilus_instruments))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
+
+    use super::*;
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = TardisHttpClient::new(Some("test-key"), None, Some(3), false, None)
+            .unwrap()
+            .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 }

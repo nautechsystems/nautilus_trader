@@ -44,6 +44,12 @@
 //! [`SocketReconnectReplay`] can place protocol setup messages before that buffer on the replacement
 //! connection, and a post-reconnection callback runs after the writer, buffer, and reader are ready.
 //!
+//! [`SocketConfig::writer_capacity`] limits the combined number of messages queued, in flight,
+//! or retained for replay (default 1,024). A full buffer rejects new sends with
+//! [`crate::error::SendError::BufferFull`] before enqueueing, including sends through
+//! [`SocketClient::writer_tx`]. Accepted messages retain FIFO replay and keyed replay deduplication.
+//! This is a message-count limit, not a payload-byte limit.
+//!
 //! # Transport policy
 //!
 //! Connections support plain TCP or `rustls`, enable `TCP_NODELAY`, and accept either a raw

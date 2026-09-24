@@ -127,9 +127,9 @@ impl DataEngine {
     /// or if the underlying client operation fails.
     pub fn execute_defi_subscribe(&mut self, cmd: DefiSubscribeCommand) -> anyhow::Result<()> {
         if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
@@ -175,9 +175,9 @@ impl DataEngine {
     /// Returns an error if the underlying client operation fails.
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
         if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
@@ -205,9 +205,9 @@ impl DataEngine {
     pub fn execute_defi_request(&mut self, req: DefiRequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
         if let Some(cid) = req.client_id()
-            && self.external_clients.contains(cid)
+            && self.is_external_client(*cid)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi data request for external client {cid}: {req:?}");
             }
             return Ok(());
@@ -234,7 +234,7 @@ impl DataEngine {
                 msgbus::publish_defi_block(topic, &block);
             }
             DefiData::Pool(pool) => {
-                if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                if let Err(e) = self.cache().borrow_mut().add_pool(pool.clone()) {
                     log::error!("Failed to add Pool to cache: {e}");
                 }
 
@@ -291,7 +291,7 @@ impl DataEngine {
                 }
 
                 // Get pool from cache
-                let pool = match self.cache.borrow().pool(&instrument_id) {
+                let pool = match self.cache().borrow().pool(&instrument_id) {
                     Some(pool) => Arc::new(pool.clone()),
                     None => {
                         log::error!(
@@ -355,7 +355,7 @@ impl DataEngine {
                 }
 
                 // Add profiler to cache
-                if let Err(e) = self.cache.borrow_mut().add_pool_profiler(profiler) {
+                if let Err(e) = self.cache().borrow_mut().add_pool_profiler(profiler) {
                     log::error!("Failed to add pool profiler to cache for {instrument_id}: {e}");
                     return;
                 }
@@ -363,7 +363,7 @@ impl DataEngine {
                 // Create updater and subscribe to topics
                 self.pool_snapshot_pending.remove(&instrument_id);
                 self.pool_updaters_pending.remove(&instrument_id);
-                let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache.clone()));
+                let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache().clone()));
 
                 self.subscribe_pool_updater_topics(instrument_id, updater.clone());
                 self.pool_updaters.insert(instrument_id, updater);
@@ -432,7 +432,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFeeProtocolUpdate(update));
                 } else if let Some(profiler) =
-                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    self.cache().borrow_mut().pool_profiler_mut(&instrument_id)
                     && let Err(e) = profiler.process_fee_protocol_update(&update)
                 {
                     log::error!("Failed to process pool fee protocol update: {e}");
@@ -452,7 +452,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFeeProtocolCollect(collect));
                 } else if let Some(profiler) =
-                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    self.cache().borrow_mut().pool_profiler_mut(&instrument_id)
                     && let Err(e) = profiler.process_fee_protocol_collect(&collect)
                 {
                     log::error!("Failed to process pool fee protocol collect event: {e}");
@@ -477,7 +477,7 @@ impl DataEngine {
 
     /// Subscribes a pool updater to all relevant pool data topics using typed handlers.
     fn subscribe_pool_updater_topics(&self, instrument_id: InstrumentId, updater: Rc<PoolUpdater>) {
-        let priority = Some(self.msgbus_priority);
+        let priority = Some(self.msgbus_priority());
 
         // Subscribe swap handler
         let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
@@ -549,7 +549,7 @@ impl DataEngine {
 
         // Check cache state and ensure profiler exists
         {
-            let mut cache = self.cache.borrow_mut();
+            let mut cache = self.cache().borrow_mut();
 
             if cache.pool_profiler(instrument_id).is_some() {
                 // Profiler already exists, proceed to create updater
@@ -583,7 +583,8 @@ impl DataEngine {
                 drop(cache);
 
                 let request_id = UUID4::new();
-                let ts_init = self.clock.borrow().timestamp_ns();
+                let ts_init = self.clock().borrow().timestamp_ns();
+
                 let request = RequestPoolSnapshot::new(
                     *instrument_id,
                     client_id.copied(),
@@ -606,7 +607,7 @@ impl DataEngine {
         }
 
         // Profiler exists, create updater and subscribe to topics
-        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
+        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache().clone()));
 
         self.subscribe_pool_updater_topics(*instrument_id, updater.clone());
         self.pool_updaters.insert(*instrument_id, updater);

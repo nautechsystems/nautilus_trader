@@ -158,8 +158,6 @@ class TestInstrumentProvider:
             min_notional=Money(1_000.00, Currency.from_str("USD")),
             margin_init=Decimal("0.03"),
             margin_maint=Decimal("0.03"),
-            maker_fee=Decimal("0.00002"),
-            taker_fee=Decimal("0.00002"),
         )
 
     @staticmethod
@@ -206,8 +204,6 @@ class TestInstrumentProvider:
             min_price=Price(0.01, precision=2),
             margin_init=Decimal("1.00"),
             margin_maint=Decimal("0.35"),
-            maker_fee=Decimal("0.0001"),
-            taker_fee=Decimal("0.0001"),
         )
 
     @staticmethod
@@ -233,8 +229,6 @@ class TestInstrumentProvider:
             min_price=Price(0.01, precision=2),
             margin_init=Decimal(0),
             margin_maint=Decimal(0),
-            maker_fee=Decimal("0.001"),
-            taker_fee=Decimal("0.001"),
         )
 
     @staticmethod
@@ -262,18 +256,16 @@ class TestInstrumentProvider:
             min_price=Price.from_str("261.1"),
             margin_init=Decimal("0.0500"),
             margin_maint=Decimal("0.0250"),
-            maker_fee=Decimal("0.000200"),
-            taker_fee=Decimal("0.000180"),
         )
 
     @staticmethod
-    def xbtusd_bitmex() -> CryptoPerpetual:
+    def btcusd_bybit() -> CryptoPerpetual:
         """
-        Return the XBTUSD BitMEX perpetual instrument.
+        Return the BTCUSD Bybit inverse perpetual instrument.
         """
         return CryptoPerpetual(
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BITMEX")),
-            raw_symbol=Symbol("XBTUSD"),
+            instrument_id=InstrumentId(Symbol("BTCUSD"), Venue("BYBIT")),
+            raw_symbol=Symbol("BTCUSD"),
             base_currency=Currency.from_str("BTC"),
             quote_currency=Currency.from_str("USD"),
             settlement_currency=Currency.from_str("BTC"),
@@ -290,8 +282,6 @@ class TestInstrumentProvider:
             min_price=Price.from_str("0.01"),
             margin_init=Decimal("0.01"),
             margin_maint=Decimal("0.0035"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
         )
 
 

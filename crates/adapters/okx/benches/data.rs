@@ -33,9 +33,9 @@ use nautilus_model::{
 use nautilus_okx::websocket::{
     messages::{OKXOrderMsg, OKXWsFrame},
     parse::{
-        FeeCache, FilledQtyCache, parse_book_msg_vec, parse_book10_msg_vec, parse_candle_msg_vec,
-        parse_funding_rate_msg_vec, parse_index_price_msg_vec, parse_mark_price_msg_vec,
-        parse_order_msg_vec, parse_quote_msg_vec, parse_trade_msg_vec,
+        FeeCache, FilledQtyCache, parse_book_depth_msg_vec, parse_book_msg_vec,
+        parse_candle_msg_vec, parse_funding_rate_msg_vec, parse_index_price_msg_vec,
+        parse_mark_price_msg_vec, parse_order_msg_vec, parse_quote_msg_vec, parse_trade_msg_vec,
     },
 };
 use ustr::Ustr;
@@ -84,7 +84,7 @@ fn bench_book_depth(c: &mut Criterion) {
             };
             let inst_id = arg.inst_id.unwrap();
             let instrument = instruments.get(&inst_id).unwrap();
-            let depth = parse_book10_msg_vec(
+            let depth = parse_book_depth_msg_vec(
                 data,
                 &instrument.id(),
                 instrument.price_precision(),

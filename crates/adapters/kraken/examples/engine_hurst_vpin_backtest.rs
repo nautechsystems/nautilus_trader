@@ -40,6 +40,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_kraken::common::consts::KRAKEN_VENUE;
 use nautilus_model::{
     data::{BarType, Data},
@@ -84,8 +85,6 @@ fn main() -> anyhow::Result<()> {
         .size_increment(Quantity::from("0.0001"))
         .margin_init(dec!(0.02))
         .margin_maint(dec!(0.01))
-        .maker_fee(dec!(0.0002))
-        .taker_fee(dec!(0.0005))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()
@@ -100,6 +99,9 @@ fn main() -> anyhow::Result<()> {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from(STARTING_BALANCE)])
+            .fee_model(
+                FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0005))).into(),
+            )
             .build()?,
     )?;
 

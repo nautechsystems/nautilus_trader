@@ -117,7 +117,7 @@ pub(super) enum AssetContextDataType {
     OpenInterest,
 }
 
-/// Hyperliquid WebSocket client following the BitMEX pattern.
+/// Hyperliquid WebSocket client.
 ///
 /// Orchestrates WebSocket connection and subscriptions using a command-based architecture,
 /// where the inner FeedHandler owns the WebSocketClient and handles all I/O.
@@ -310,11 +310,14 @@ impl HyperliquidWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(HEARTBEAT_INTERVAL.as_secs() * 3),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([self.rate_limits.connection_key()]);
         let client_result = WebSocketClient::builder()

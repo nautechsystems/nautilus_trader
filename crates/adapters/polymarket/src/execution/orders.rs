@@ -260,7 +260,13 @@ impl PolymarketExecutionClient {
 
         let needs_fee_adjustment = side == OrderSide::Buy && is_quote_qty;
         let fee_rate = if needs_fee_adjustment {
-            instrument_taker_fee(&instrument)
+            match instrument_taker_fee(&instrument) {
+                Ok(rate) => rate,
+                Err(e) => {
+                    self.emitter.emit_order_denied(&order, &e.to_string());
+                    return;
+                }
+            }
         } else {
             Decimal::ZERO
         };
@@ -1520,7 +1526,11 @@ pub(super) fn calculate_commission(
     last_px: Price,
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Money> {
-    let fee_rate = instrument_taker_fee(instrument);
+    let fee_rate = if liquidity_side == LiquiditySide::Taker {
+        instrument_taker_fee(instrument)?
+    } else {
+        Decimal::ZERO
+    };
     let fee_exponent = instrument_fee_exponent(instrument)?;
 
     let commission = compute_commission(
@@ -1547,7 +1557,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_calculate_commission_returns_exact_money() {
+    fn test_calculate_commission_is_zero_when_schedule_is_absent() {
         let instrument = InstrumentAny::BinaryOption(binary_option());
 
         let commission = calculate_commission(
@@ -1556,20 +1566,9 @@ mod tests {
             Price::from("0.50"),
             LiquiditySide::Taker,
         )
-        .expect("a representable commission succeeds");
+        .expect("a zero commission is representable");
 
-        assert_eq!(commission.currency, instrument.quote_currency());
-        assert_eq!(
-            commission.as_decimal(),
-            compute_commission(
-                instrument_taker_fee(&instrument),
-                instrument_fee_exponent(&instrument).unwrap(),
-                dec!(100),
-                dec!(0.50),
-                LiquiditySide::Taker,
-            )
-            .unwrap()
-        );
+        assert_eq!(commission.as_decimal(), dec!(0));
     }
 
     #[rstest]

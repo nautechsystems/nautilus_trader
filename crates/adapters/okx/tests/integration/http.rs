@@ -234,7 +234,7 @@ fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            nautilus_okx::common::parse::parse_instrument_any(raw, None, None, None, None, ts_init)
+            nautilus_okx::common::parse::parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -7671,7 +7671,7 @@ fn load_usdc_spot_instrument() -> (InstrumentAny, OKXInstrument) {
     let response: OKXResponse<OKXInstrument> =
         serde_json::from_value(payload).expect("invalid USDC instrument payload");
     let raw = response.data.into_iter().next().expect("USDC instrument");
-    let instrument = parse_instrument_any(&raw, None, None, None, None, UnixNanos::default())
+    let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
         .expect("USDC instrument parses")
         .expect("USDC instrument supported");
     (instrument, raw)

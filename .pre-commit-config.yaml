@@ -97,7 +97,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.1
+    rev: v1.50.2
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos

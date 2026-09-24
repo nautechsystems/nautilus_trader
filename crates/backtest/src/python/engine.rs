@@ -224,7 +224,12 @@ impl PyBacktestEngine {
         let fee_model = fee_model
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_handle(obj.bind(py))))
             .transpose()?
-            .unwrap_or_default();
+            .ok_or_else(|| {
+                to_pyvalue_err(
+                    "Backtest venue requires an explicit fee_model, including an explicit zero-fee model",
+                )
+            })?;
+
         let latency_model = latency_model
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?

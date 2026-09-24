@@ -30,6 +30,12 @@ use ustr::Ustr;
 
 use super::OrderMatchingEngine;
 
+enum UnderlyingLookup {
+    Found(InstrumentId),
+    NotFound,
+    Ambiguous(Vec<InstrumentId>),
+}
+
 impl OrderMatchingEngine {
     pub(super) fn process_option_expiry(&mut self, ts_now: UnixNanos) -> anyhow::Result<bool> {
         let instrument_id = self.instrument.id();
@@ -56,22 +62,61 @@ impl OrderMatchingEngine {
                 ));
             }
         };
-        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
+        let same_venue_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
 
-        let underlying_instrument = {
+        let lookup = {
             let cache = self.cache.borrow();
-            cache.instrument(&underlying_id).cloned()
+            if cache.instrument(&same_venue_id).is_some() {
+                UnderlyingLookup::Found(same_venue_id)
+            } else {
+                let matches: Vec<InstrumentId> = cache
+                    .instrument_ids(None)
+                    .into_iter()
+                    .filter(|id| id.symbol.as_str() == underlying.as_str())
+                    .copied()
+                    .collect();
+
+                match matches.len() {
+                    0 => UnderlyingLookup::NotFound,
+                    1 => {
+                        let resolved = matches[0];
+                        log::info!(
+                            "Resolved underlying for option {instrument_id} via cross-venue fallback: {resolved}"
+                        );
+                        UnderlyingLookup::Found(resolved)
+                    }
+                    _ => UnderlyingLookup::Ambiguous(matches),
+                }
+            }
         };
 
-        let underlying_instrument = match underlying_instrument {
-            Some(u) => u,
-            None => {
+        let underlying_id = match lookup {
+            UnderlyingLookup::Found(id) => id,
+            UnderlyingLookup::NotFound => {
                 return Ok(self.option_settlement_retry(
                     "missing-underlying-instrument",
                     &format!("No underlying instrument for option {instrument_id}"),
                 ));
             }
+            UnderlyingLookup::Ambiguous(candidates) => {
+                let names = candidates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Ok(self.option_settlement_retry(
+                    "ambiguous-underlying-instrument",
+                    &format!("Ambiguous underlying for option {instrument_id}: {names}"),
+                ));
+            }
         };
+
+        let underlying_instrument = self
+            .cache
+            .borrow()
+            .instrument(&underlying_id)
+            .cloned()
+            .expect("underlying instrument resolved above");
 
         // Resolve the underlying price by the underlying's instrument type. An index
         // is disseminated via `IndexPriceUpdate` (it does not trade), so its level is

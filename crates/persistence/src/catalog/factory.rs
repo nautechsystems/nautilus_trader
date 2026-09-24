@@ -21,7 +21,7 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::Params;
 
-use crate::catalog::traits::DataCatalog;
+use crate::{catalog::traits::DataCatalog, common::paths::file_protocol_uri};
 
 /// Conventional name of the Parquet catalog factory registration.
 pub const PARQUET_CATALOG_FACTORY_NAME: &str = "Parquet";
@@ -49,6 +49,9 @@ impl CatalogConnectConfig {
     }
 
     /// Builds a [`CatalogConnectConfig`] from `path` + optional `fs_protocol`.
+    ///
+    /// A `file` protocol with a Windows drive path becomes `file:///C:/...`.
+    /// A path that already contains `://` is left unchanged.
     #[must_use]
     pub fn from_path_and_protocol(
         path: &str,
@@ -57,9 +60,11 @@ impl CatalogConnectConfig {
     ) -> Self {
         let uri = match fs_protocol {
             _ if path.contains("://") => path.to_string(),
+            Some("file") => file_protocol_uri(path),
             Some(protocol) => format!("{protocol}://{path}"),
             None => path.to_string(),
         };
+
         Self::new(uri, storage_options)
     }
 }
@@ -91,5 +96,33 @@ mod tests {
             None,
         );
         assert_eq!(cfg.uri, "postgres://user:pass@localhost/catalog");
+    }
+
+    #[rstest]
+    #[case(r"C:\data\catalog", "file:///C:/data/catalog")]
+    #[case("C:/data/catalog", "file:///C:/data/catalog")]
+    #[case(r"D:\", "file:///D:/")]
+    fn from_path_and_protocol_normalizes_windows_drive_paths(
+        #[case] path: &str,
+        #[case] expected: &str,
+    ) {
+        let cfg = CatalogConnectConfig::from_path_and_protocol(path, Some("file"), None);
+        assert_eq!(cfg.uri, expected);
+    }
+
+    #[rstest]
+    fn from_path_and_protocol_keeps_non_drive_file_joins() {
+        let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", Some("file"), None);
+        assert_eq!(cfg.uri, "file:///tmp/cat");
+
+        let cfg = CatalogConnectConfig::from_path_and_protocol("data/cat", Some("file"), None);
+        assert_eq!(cfg.uri, "file://data/cat");
+
+        let cfg = CatalogConnectConfig::from_path_and_protocol(
+            r"\\server\share\catalog",
+            Some("file"),
+            None,
+        );
+        assert_eq!(cfg.uri, r"file://\\server\share\catalog");
     }
 }

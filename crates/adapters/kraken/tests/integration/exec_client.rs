@@ -23,7 +23,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -65,7 +65,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -131,12 +131,14 @@ struct TestServerState {
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
+    /// Last raw body posted to a batch-cancel endpoint, for asserting the submitted IDs.
+    last_batch_cancel_body: Arc<tokio::sync::Mutex<Option<String>>>,
     collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
-    /// When true, `/0/private/TradeVolume` returns a Kraken API permission error.
-    trade_volume_api_error: Arc<AtomicBool>,
+    /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
+    trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -145,13 +147,14 @@ impl Default for TestServerState {
         let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
         Self {
             command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
-            trade_volume_api_error: Arc::new(AtomicBool::new(false)),
+            trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            last_batch_cancel_body: Arc::new(tokio::sync::Mutex::new(None)),
             collection_request_ts: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
@@ -378,6 +381,8 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             state
                 .batch_cancel_request_count
                 .fetch_add(1, Ordering::Relaxed);
+            *state.last_batch_cancel_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
 
             match state.command_responses.lock().await.batch_cancel {
                 BatchCancelResponse::Success => json_response(
@@ -412,27 +417,43 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/0/public/AssetPairs" => {
             let query =
                 Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
-            let filename = match query.get("aclass_base").map(String::as_str) {
-                Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
-                _ => "http_asset_pairs.json",
-            };
-            json_response(load_test_data(filename))
-        }
-        "/0/private/TradeVolume" => {
-            if state.trade_volume_api_error.load(Ordering::Relaxed) {
-                json_response(r#"{"error":["EGeneral:Permission denied"]}"#.to_string())
-            } else {
-                json_response(
-                    r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
-                        .to_string(),
-                )
+            match query.get("aclass_base").map(String::as_str) {
+                Some("tokenized_asset") => {
+                    json_response(load_test_data("http_asset_pairs_tokenized.json"))
+                }
+                _ => {
+                    // The order and trade fixtures also reference ETHUSDT, so the listing has to
+                    // carry it for every report to resolve to an instrument.
+                    let mut data: serde_json::Value =
+                        serde_json::from_str(&load_test_data("http_asset_pairs.json")).unwrap();
+                    let mut eth = data["result"]["XBTUSDT"].clone();
+                    eth["altname"] = serde_json::json!("ETHUSDT");
+                    eth["wsname"] = serde_json::json!("ETH/USDT");
+                    eth["base"] = serde_json::json!("ETH");
+                    eth["quote"] = serde_json::json!("USDT");
+                    data["result"]["ETHUSDT"] = eth;
+                    json_response(data.to_string())
+                }
             }
         }
+        "/0/private/TradeVolume" => json_response(
+            r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"ETHUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"ETHUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
+                .to_string(),
+        ),
         "/0/private/GetWebSocketsToken" => json_response(
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
         "/0/private/OpenOrders" => json_response(load_test_data("http_open_orders.json")),
         "/0/private/TradesHistory" => {
+            {
+                let mut guard = state.trades_history_json.lock().await;
+                if let Some(json) = guard.take() {
+                    // Serve once, then empty pages so the caller's pagination terminates.
+                    *guard = Some(r#"{"error":[],"result":{"trades":{},"count":0}}"#.to_string());
+                    return json_response(json);
+                }
+            }
+
             let mut value: Value =
                 serde_json::from_str(&load_test_data("http_trades_history.json")).unwrap();
             value["result"]["trades"] = json!({});
@@ -524,6 +545,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             state
                 .batch_cancel_request_count
                 .fetch_add(1, Ordering::Relaxed);
+
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            *state.last_batch_cancel_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
 
             match state.command_responses.lock().await.batch_cancel {
                 BatchCancelResponse::Success => {
@@ -727,26 +752,189 @@ async fn connected_spot_client_with_command_responses(
     (client, rx, cache, state)
 }
 
-/// A denied `TradeVolume` request must not stop the spot execution client connecting.
+fn spot_trades_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""TTRADE-{i}":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"0.50000000","margin":"0.00000","misc":"","trade_id":{i},"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+fn spot_trades_json_with_unparsable_vol(pair: &str) -> String {
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{"TTRADE-BAD":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"not_a_number","margin":"0.00000","misc":"","trade_id":1,"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}}},"count":1}}}}"#
+    )
+}
+
+/// A historical row that cannot be parsed makes the bounded set incomplete.
 ///
-/// The account fee request runs inside `connect()` while loading instruments, so aborting it costs
-/// the execution client entirely: the node comes up with no account state and no reconciliation.
-/// Instruments must load on the public `AssetPairs` rates instead.
+/// The guide counts a required row that cannot be parsed or mapped as incomplete, the same as an
+/// unresolved instrument.
 #[rstest]
 #[tokio::test]
-async fn test_spot_execution_client_connects_when_trade_volume_denied() {
+async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
     let (addr, state) = start_test_server().await.unwrap();
-    state.trade_volume_api_error.store(true, Ordering::Relaxed);
-
     let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
     add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
 
-    client
-        .connect()
+    // Control: the same row with a parsable volume reports complete, so the flag below is driven
+    // by the parse failure rather than by the row being rejected for some other reason.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
         .await
-        .expect("execution client must connect when the account fee request is denied");
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
 
-    assert!(client.is_connected());
+    *state.trades_history_json.lock().await = Some(spot_trades_json_with_unparsable_vol("XBTUSDT"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unparsable historical row must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
+fn futures_fills_for_symbol(symbol: &str) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-window-1","symbol":"{symbol}","side":"buy","order_id":"V-WINDOW","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-window-001","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+/// A bounded futures mass status must declare the cutoff it applied.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_declares_lookback_window() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot.lookback_start().is_some(),
+        "a bounded mass status must record its cutoff"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// An unresolved futures fill marks the bounded set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    // Control: the same fill on a listed symbol reports complete, so the flag below is driven by
+    // the unresolved symbol rather than by the payload itself.
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 1);
+
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_NOTLISTED"));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unresolved futures fill must mark the bounded set incomplete"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0);
+}
+
+/// A bounded mass status must declare the cutoff it applied.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_declares_lookback_window() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT"]));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot.lookback_start().is_some(),
+        "a bounded mass status must record its cutoff"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A skipped historical row makes the bounded set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_incomplete_when_historical_fill_unresolved() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: the identical payload with a resolvable pair reports complete, so the flag below
+    // is driven by the unresolved instrument rather than by the payload itself.
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT", "ETHUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.reports_complete());
+    // `fill_reports` groups by venue order id, so count the fills themselves.
+    let control_fills: usize = control.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(control_fills, 2);
+
+    *state.trades_history_json.lock().await = Some(spot_trades_json(&["XBTUSDT", "DELISTEDPAIR"]));
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot.reports_complete(),
+        "an unresolved historical row must mark the bounded set incomplete"
+    );
+    assert!(snapshot.lookback_start().is_some());
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
 }
 
 fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>) {
@@ -802,12 +990,28 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
+    add_futures_limit_order_to_cache(
+        cache,
+        client_order_id,
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+    )
+}
+
+fn add_futures_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    strategy_id: StrategyId,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
+        strategy_id,
+        instrument_id,
         client_order_id,
-        OrderSide::Buy,
+        side,
         Quantity::from("1"),
         Price::from("50000"),
         TimeInForce::Gtc,
@@ -850,12 +1054,21 @@ fn add_spot_limit_order_on_instrument_to_cache(
     client_order_id: ClientOrderId,
     instrument_id: InstrumentId,
 ) -> OrderAny {
+    add_spot_limit_order_with_side_to_cache(cache, client_order_id, instrument_id, OrderSide::Buy)
+}
+
+fn add_spot_limit_order_with_side_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
         test_strategy_id(),
         instrument_id,
         client_order_id,
-        OrderSide::Buy,
+        side,
         Quantity::from("0.1"),
         Price::from("50000"),
         TimeInForce::Gtc,
@@ -1051,6 +1264,20 @@ fn cancel_all_orders_command() -> CancelAllOrders {
     )
 }
 
+fn cancel_all_orders_command_with_side(order_side: Option<OrderSide>) -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        order_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
 fn spot_cancel_all_orders_command() -> CancelAllOrders {
     CancelAllOrders::new(
         test_trader_id(),
@@ -1058,6 +1285,20 @@ fn spot_cancel_all_orders_command() -> CancelAllOrders {
         test_strategy_id(),
         test_spot_instrument_id(),
         None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn spot_cancel_all_orders_command_with_side(order_side: Option<OrderSide>) -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_spot_instrument_id(),
+        order_side,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -1355,6 +1596,25 @@ async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
 }
 
+/// Applies an `OrderSubmitted`, mirroring an order the venue may already hold while the cache
+/// still records it as submitted.
+fn mark_cached_order_submitted(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    let submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+}
+
 /// Applies an `OrderAccepted` carrying the venue order ID, mirroring how the
 /// engine records a venue ID on a cached order once the venue acknowledges it.
 fn set_venue_order_id_on_cached_order(
@@ -1491,7 +1751,11 @@ async fn test_mass_status_captures_collection_start(#[case] spot: bool) {
     let before = get_atomic_clock_realtime().get_time_ns();
 
     let snapshot = if spot {
-        let (client, _rx, _cache) = create_test_spot_execution_client(addr);
+        // Connect first so instruments are cached, as they are on the production path: an
+        // unresolvable pair now fails the read rather than being dropped from it.
+        let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+        add_test_spot_account_to_cache(&cache);
+        client.connect().await.unwrap();
         client.generate_mass_status(None).await.unwrap().unwrap()
     } else {
         let (client, _rx, _cache) = create_test_execution_client(addr);
@@ -2437,18 +2701,376 @@ async fn test_spot_whole_batch_cancel_failure_does_not_emit_one_reject_per_order
 #[rstest]
 #[tokio::test]
 async fn test_spot_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
-    let (client, mut rx, _cache, state) =
+    let (client, mut rx, cache, state) =
         connected_spot_client_with_command_responses(CommandResponses {
-            cancel_all: BatchCancelResponse::WholeFailure,
+            batch_cancel: BatchCancelResponse::WholeFailure,
             ..Default::default()
         })
         .await;
+
+    // Cancel-all now selects open orders and cancels them by id, so the cache needs one.
+    let order = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("cancel-all-whole-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-WHOLE");
 
     client
         .cancel_all_orders(spot_cancel_all_orders_command())
         .unwrap();
 
-    wait_for_count(&state.cancel_all_request_count, 1).await;
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+/// Futures side-filtered cancellation goes through the explicit-id batch path.
+///
+/// The unsided path keeps its symbol-scoped bulk cancellation, which is already correct.
+#[rstest]
+#[tokio::test]
+async fn test_futures_cancel_all_side_filter_uses_batch_path() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-side-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-FUT-BUY");
+
+    client
+        .cancel_all_orders(cancel_all_orders_command_with_side(Some(OrderSide::Buy)))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_eq!(
+        state.cancel_request_count.load(Ordering::Relaxed),
+        0,
+        "side-filtered cancellation must not send per-order cancels"
+    );
+}
+
+/// Returns the `orders` and `cl_ord_ids` arrays from the captured batch-cancel body.
+///
+/// Kraken keys transaction IDs and client order IDs separately, so a test that only looks for the
+/// identifier anywhere in the body would pass even if it were sent in the wrong field.
+async fn captured_batch_cancel_fields(state: &TestServerState) -> (Vec<String>, Vec<String>) {
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    let value: Value = serde_json::from_str(&body).expect("batch cancel body is JSON");
+
+    let read = |key: &str| -> Vec<String> {
+        value
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    (read("orders"), read("cl_ord_ids"))
+}
+
+/// Cancel-all must reach an order the venue may already hold while the cache still records it
+/// as submitted, without widening beyond the requested instrument.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_includes_submitted_orders_within_instrument_scope() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    // Submitted, so not open: the venue may already hold it.
+    let submitted = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("submitted-001"));
+    mark_cached_order_submitted(&cache, &submitted);
+
+    // Submitted on another instrument, which the request never named.
+    let other = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        ClientOrderId::new("submitted-other"),
+        InstrumentId::from("ETH/USDT.KRAKEN"),
+    );
+    mark_cached_order_submitted(&cache, &other);
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let (orders, cl_ord_ids) = captured_batch_cancel_fields(&state).await;
+
+    // A submitted order has no venue ID yet, so Kraken requires it under `cl_ord_ids`.
+    assert!(
+        cl_ord_ids.contains(&"submitted-001".to_string()),
+        "a submitted order must be cancelled by client order ID: orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
+    );
+    assert!(
+        !orders.contains(&"submitted-001".to_string()),
+        "a client order ID must not be sent as a transaction ID: orders={orders:?}"
+    );
+    assert!(
+        !orders.contains(&"submitted-other".to_string())
+            && !cl_ord_ids.contains(&"submitted-other".to_string()),
+        "another instrument must stay untouched: orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
+    );
+}
+
+/// Futures side-filtered cancellation submits the matching IDs only, and a per-order rejection
+/// carries the strategy that owns the order.
+#[rstest]
+#[tokio::test]
+async fn test_futures_cancel_all_submits_ids_and_preserves_owning_strategy() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+
+    let strategy_ok = StrategyId::from("S-101");
+    let strategy_rejected = StrategyId::from("S-202");
+
+    // Two buy orders on the requested instrument, owned by different strategies. The mock
+    // cancels V-BATCH-OK and rejects V-BATCH-REJECT.
+    let ok = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-ok-001"),
+        test_instrument_id(),
+        OrderSide::Buy,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &ok, "V-BATCH-OK");
+
+    let rejected = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-reject-001"),
+        test_instrument_id(),
+        OrderSide::Buy,
+        strategy_rejected,
+    );
+    set_venue_order_id_on_cached_order(&cache, &rejected, "V-BATCH-REJECT");
+
+    // Opposite side on the same instrument.
+    let sell = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-sell-001"),
+        test_instrument_id(),
+        OrderSide::Sell,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &sell, "V-FUT-SELL");
+
+    // A different instrument.
+    let other = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("fut-other-001"),
+        InstrumentId::from("PI_ETHUSD.KRAKEN"),
+        OrderSide::Buy,
+        strategy_ok,
+    );
+    set_venue_order_id_on_cached_order(&cache, &other, "V-FUT-OTHER");
+
+    client
+        .cancel_all_orders(cancel_all_orders_command_with_side(Some(OrderSide::Buy)))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(body.contains("V-BATCH-OK"), "body: {body}");
+    assert!(body.contains("V-BATCH-REJECT"), "body: {body}");
+    assert!(
+        !body.contains("V-FUT-SELL"),
+        "the opposite side must be untouched: {body}"
+    );
+    assert!(
+        !body.contains("V-FUT-OTHER"),
+        "another instrument must be untouched: {body}"
+    );
+
+    let event = recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected))
+                if rejected.client_order_id == ClientOrderId::new("fut-reject-001")
+        )
+    })
+    .await;
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+            assert_eq!(
+                rejected.strategy_id, strategy_rejected,
+                "the rejection must carry the strategy that owns the order"
+            );
+        }
+        other => panic!("expected a cancel rejection, was {other:?}"),
+    }
+}
+
+/// An unsided cancel-all must stay scoped to the instrument it names.
+///
+/// Kraken's account-wide `CancelAll` ignores the instrument, so it could cancel orders the
+/// request never named.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_unsided_scopes_to_requested_instrument() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let target = add_spot_limit_order_to_cache(&cache, ClientOrderId::new("scoped-target-001"));
+    set_venue_order_id_on_cached_order(&cache, &target, "V-TARGET");
+
+    let other = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        ClientOrderId::new("scoped-other-001"),
+        InstrumentId::from("ETH/USDT.KRAKEN"),
+    );
+    set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER");
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let (orders, cl_ord_ids) = captured_batch_cancel_fields(&state).await;
+
+    // An accepted order carries a venue ID, which Kraken expects under `orders`.
+    assert!(
+        orders.contains(&"V-TARGET".to_string()),
+        "orders={orders:?} cl_ord_ids={cl_ord_ids:?}"
+    );
+    assert!(
+        !cl_ord_ids.contains(&"V-TARGET".to_string()),
+        "a transaction ID must not be sent as a client order ID: cl_ord_ids={cl_ord_ids:?}"
+    );
+    assert!(
+        !orders.contains(&"V-OTHER".to_string()),
+        "an order on another instrument must be untouched: orders={orders:?}"
+    );
+    assert_eq!(
+        state.cancel_all_request_count.load(Ordering::Relaxed),
+        0,
+        "account-wide CancelAll must not be used"
+    );
+}
+
+/// A side-filtered cancel-all submits only the matching side, through the batch path.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_side_filter_selects_only_that_side() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let buy = add_spot_limit_order_with_side_to_cache(
+        &cache,
+        ClientOrderId::new("side-buy-001"),
+        test_spot_instrument_id(),
+        OrderSide::Buy,
+    );
+    set_venue_order_id_on_cached_order(&cache, &buy, "V-BUY");
+
+    let sell = add_spot_limit_order_with_side_to_cache(
+        &cache,
+        ClientOrderId::new("side-sell-001"),
+        test_spot_instrument_id(),
+        OrderSide::Sell,
+    );
+    set_venue_order_id_on_cached_order(&cache, &sell, "V-SELL");
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command_with_side(Some(
+            OrderSide::Sell,
+        )))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    let body = state
+        .last_batch_cancel_body
+        .lock()
+        .await
+        .clone()
+        .expect("batch cancel body");
+    assert!(body.contains("V-SELL"), "body: {body}");
+    assert!(
+        !body.contains("V-BUY"),
+        "the opposite side must be untouched: {body}"
+    );
+}
+
+/// With nothing to cancel the adapter must not send a request at all.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_without_matching_orders_sends_no_request() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(state.batch_cancel_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(state.cancel_all_request_count.load(Ordering::Relaxed), 0);
+}
+
+/// Selected ids are chunked at the venue batch limit.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_chunks_at_venue_batch_limit() {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    for i in 0..51 {
+        let order = add_spot_limit_order_to_cache(&cache, ClientOrderId::new(format!("chunk-{i}")));
+        set_venue_order_id_on_cached_order(&cache, &order, &format!("V-CHUNK-{i}"));
+    }
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    // 51 selected ids exceed the 50-order venue limit, so two requests are sent.
+    wait_for_count(&state.batch_cancel_request_count, 2).await;
+}
+
+/// A partial batch result is left to reconciliation rather than rejecting individual orders.
+#[rstest]
+#[tokio::test]
+async fn test_spot_cancel_all_partial_result_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+
+    for i in 0..2 {
+        let order =
+            add_spot_limit_order_to_cache(&cache, ClientOrderId::new(format!("partial-{i}")));
+        set_venue_order_id_on_cached_order(&cache, &order, &format!("V-PARTIAL-{i}"));
+    }
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
 
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(event, OrderEventAny::CancelRejected(_))

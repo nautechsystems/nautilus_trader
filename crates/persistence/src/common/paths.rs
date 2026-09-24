@@ -44,9 +44,7 @@ pub fn normalize_path_separators(path: &str) -> String {
 /// Extracts path components using platform-appropriate path parsing.
 #[must_use]
 pub fn extract_path_components(path_str: &str) -> Vec<String> {
-    // Normalize separators and split
-    let normalized = normalize_path_separators(path_str);
-    normalized
+    normalize_path_separators(path_str)
         .split('/')
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
@@ -69,15 +67,12 @@ where
     S: AsRef<str>,
 {
     let mut parts = Vec::new();
+    let normalized_base = normalize_path_separators(base_path)
+        .trim_end_matches('/')
+        .to_string();
 
-    if !base_path.is_empty() {
-        let normalized_base = normalize_path_separators(base_path)
-            .trim_end_matches('/')
-            .to_string();
-
-        if !normalized_base.is_empty() {
-            parts.push(normalized_base);
-        }
+    if !normalized_base.is_empty() {
+        parts.push(normalized_base);
     }
 
     for component in components {
@@ -189,11 +184,29 @@ pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
 /// Checks if a path is absolute on any supported platform.
 #[must_use]
 fn is_absolute_path(path: &str) -> bool {
-    path.starts_with('/')
-        || path.starts_with("\\\\")
-        || (path.len() >= 3
-            && path.chars().nth(1) == Some(':')
-            && matches!(path.chars().nth(2), Some('\\' | '/')))
+    path.starts_with('/') || path.starts_with("\\\\") || is_windows_drive_path(path)
+}
+
+/// Returns whether `path` is a Windows drive path such as `C:\data` or `C:/data`.
+#[must_use]
+fn is_windows_drive_path(path: &str) -> bool {
+    path.len() >= 3
+        && path.chars().nth(1) == Some(':')
+        && matches!(path.chars().nth(2), Some('\\' | '/'))
+}
+
+/// Returns a `file://` URI for a local catalog path.
+///
+/// A Windows drive path becomes `file:///C:/...`. UNC paths keep a direct
+/// `file://` join because [`file_uri_to_native_path`] does not restore the
+/// `\\server\share` prefix from `file://server/share`.
+#[must_use]
+pub(crate) fn file_protocol_uri(path: &str) -> String {
+    if is_windows_drive_path(path) {
+        path_to_file_uri(path)
+    } else {
+        format!("file://{path}")
+    }
 }
 
 /// Converts an absolute path to a file:// URI with proper platform handling.
@@ -250,25 +263,21 @@ pub(crate) fn type_name_from_session_feather_path(
     kind: &str,
     instance_id: &str,
 ) -> anyhow::Result<String> {
-    let normalized = normalize_path_separators(path);
-    let components: Vec<&str> = normalized
-        .trim_matches('/')
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect();
+    let components = extract_path_components(path);
     let type_index = session_type_index(&components, kind, instance_id, path)?;
-    if components.get(type_index) == Some(&"data")
-        && components.get(type_index + 1) == Some(&"custom")
-    {
+    if has_custom_data_prefix(&components, type_index) {
         let type_name = components.get(type_index + 2).ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot infer custom data type from Feather session path '{path}' for {kind}/{instance_id}"
             )
         })?;
+
         return Ok(format!("custom/{type_name}"));
     }
-    let type_segment = components[type_index];
-    let file_name = components.last().copied().unwrap_or(type_segment);
+
+    let type_segment = components[type_index].as_str();
+    let file_name = components.last().map_or(type_segment, String::as_str);
+
     let type_name = if type_segment.ends_with(".feather") {
         file_name
             .strip_suffix(".feather")
@@ -277,6 +286,7 @@ pub(crate) fn type_name_from_session_feather_path(
     } else {
         type_segment
     };
+
     Ok(type_name.to_string())
 }
 
@@ -288,23 +298,18 @@ pub(crate) fn identifier_from_session_feather_path(
     kind: &str,
     instance_id: &str,
 ) -> Option<String> {
-    let normalized = normalize_path_separators(path);
-    let components: Vec<&str> = normalized
-        .trim_matches('/')
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect();
+    let components = extract_path_components(path);
     let type_index = session_type_index(&components, kind, instance_id, path).ok()?;
-    if components.get(type_index) == Some(&"data")
-        && components.get(type_index + 1) == Some(&"custom")
-    {
+    if has_custom_data_prefix(&components, type_index) {
         let identifier_start = type_index + 3;
         let file_index = components.len().checked_sub(1)?;
         if identifier_start >= file_index {
             return None;
         }
-        return Some(components[identifier_start].to_string());
+
+        return Some(components[identifier_start].clone());
     }
+
     let identifier = components.get(type_index + 1)?;
     let file_name = components.last()?;
 
@@ -312,11 +317,11 @@ pub(crate) fn identifier_from_session_feather_path(
         return None;
     }
 
-    (identifier != file_name).then(|| (*identifier).to_string())
+    (identifier != file_name).then(|| identifier.clone())
 }
 
 fn session_type_index(
-    components: &[&str],
+    components: &[String],
     kind: &str,
     instance_id: &str,
     path: &str,
@@ -331,6 +336,13 @@ fn session_type_index(
                 "Cannot infer data type from Feather session path '{path}' for {kind}/{instance_id}"
             )
         })
+}
+
+fn has_custom_data_prefix(components: &[String], type_index: usize) -> bool {
+    components.get(type_index).is_some_and(|c| c == "data")
+        && components
+            .get(type_index + 1)
+            .is_some_and(|c| c == "custom")
 }
 
 #[cfg(test)]
@@ -466,6 +478,23 @@ mod tests {
     }
 
     #[rstest]
+    fn file_protocol_uri_normalizes_windows_drive_path() {
+        assert_eq!(
+            file_protocol_uri(r"C:\data\catalog"),
+            "file:///C:/data/catalog",
+        );
+        assert_eq!(
+            file_protocol_uri("C:/data/catalog"),
+            "file:///C:/data/catalog"
+        );
+        assert_eq!(file_protocol_uri("/tmp/cat"), "file:///tmp/cat");
+        assert_eq!(
+            file_protocol_uri(r"\\server\share\catalog"),
+            r"file://\\server\share\catalog",
+        );
+    }
+
+    #[rstest]
     fn test_path_to_file_uri() {
         // Unix absolute paths
         assert_eq!(path_to_file_uri("/tmp/test"), "file:///tmp/test");
@@ -519,6 +548,64 @@ mod tests {
         assert_eq!(
             identifier_from_session_feather_path(custom, "backtest", "run-1").as_deref(),
             Some("inst"),
+        );
+    }
+
+    #[rstest]
+    #[case::prefixed_custom(
+        "catalog/backtest/run-1/data/custom/MyType/inst/0001.feather",
+        "custom/MyType",
+        Some("inst")
+    )]
+    #[case::custom_without_identifier(
+        "backtest/run-1/data/custom/MyType/0001.feather",
+        "custom/MyType",
+        None
+    )]
+    #[case::identifier_named_custom(
+        "backtest/run-1/bars/custom/0001.feather",
+        "bars",
+        Some("custom")
+    )]
+    #[case::type_without_identifier("backtest/run-1/quotes/0001.feather", "quotes", None)]
+    fn session_feather_paths_recover_type_and_identifier_from_layouts(
+        #[case] path: &str,
+        #[case] expected_type: &str,
+        #[case] expected_identifier: Option<&str>,
+    ) {
+        assert_eq!(
+            type_name_from_session_feather_path(path, "backtest", "run-1").unwrap(),
+            expected_type,
+        );
+        assert_eq!(
+            identifier_from_session_feather_path(path, "backtest", "run-1").as_deref(),
+            expected_identifier,
+        );
+    }
+
+    #[rstest]
+    #[case::missing_type_segment(
+        "backtest/run-1",
+        "Cannot infer data type from Feather session path 'backtest/run-1' for backtest/run-1"
+    )]
+    #[case::other_instance(
+        "backtest/run-2/quotes/0001.feather",
+        "Cannot infer data type from Feather session path 'backtest/run-2/quotes/0001.feather' for backtest/run-1"
+    )]
+    #[case::missing_custom_type(
+        "backtest/run-1/data/custom",
+        "Cannot infer custom data type from Feather session path 'backtest/run-1/data/custom' for backtest/run-1"
+    )]
+    fn session_feather_paths_reject_unrecognized_layouts(
+        #[case] path: &str,
+        #[case] expected: &str,
+    ) {
+        let error = type_name_from_session_feather_path(path, "backtest", "run-1").unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            identifier_from_session_feather_path(path, "backtest", "run-1"),
+            None
         );
     }
 

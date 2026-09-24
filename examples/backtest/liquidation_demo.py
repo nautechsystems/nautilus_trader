@@ -25,9 +25,11 @@ Run with:
 
 import json
 import sys
+from decimal import Decimal
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
@@ -44,8 +46,8 @@ from nautilus_trader.trading import Strategy
 
 
 BTC = Currency.from_str("BTC")
-BITMEX = Venue("BITMEX")
-XBTUSD = TestInstrumentProvider.xbtusd_bitmex()
+BYBIT = Venue("BYBIT")
+BTCUSD = TestInstrumentProvider.btcusd_bybit()
 
 
 class MarketBuyOnStart(Strategy):
@@ -105,7 +107,7 @@ def _log(msg: str) -> None:
 def _make_quote(price: float, ts: int = 0) -> QuoteTick:
     p = Price.from_str(f"{price:.1f}")
     return QuoteTick(
-        instrument_id=XBTUSD.id,
+        instrument_id=BTCUSD.id,
         bid_price=p,
         ask_price=p,
         bid_size=Quantity.from_int(10_000_000),
@@ -132,27 +134,31 @@ def run_demo() -> dict:
     QUANTITY = 10_000_000
 
     _log("\n[CONFIG]")
-    _log("  Exchange      : BITMEX  (XBTUSD inverse perpetual)")
+    _log("  Exchange      : BYBIT  (BTCUSD inverse perpetual)")
     _log("  Leverage      : 100x (default)")
     _log(f"  Starting BTC  : {STARTING_BTC} BTC")
     _log("  Liquidation   : ENABLED  (trigger_ratio=1.0)")
 
     engine = BacktestEngine(config=BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_venue(
-        venue=BITMEX,
+        venue=BYBIT,
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=BTC,
         starting_balances=[Money(STARTING_BTC, BTC)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("-0.00025"),
+            taker_rate=Decimal("0.00075"),
+        ),
         liquidation_enabled=True,
         liquidation_trigger_ratio=1.0,
         liquidation_cancel_open_orders=True,
     )
-    engine.add_instrument(XBTUSD)
+    engine.add_instrument(BTCUSD)
 
     engine.add_strategy(
         MarketBuyOnStart(
-            instrument_id=XBTUSD.id,
+            instrument_id=BTCUSD.id,
             trade_size=Quantity.from_int(QUANTITY),
         ),
     )
@@ -164,7 +170,7 @@ def run_demo() -> dict:
     engine.add_data(ticks)
 
     _log(f"\n[STEP 1] Market opens @ ${ENTRY_PRICE:,.0f}")
-    _log(f"  Strategy will submit BUY {QUANTITY:,} XBTUSD contracts on first tick")
+    _log(f"  Strategy will submit BUY {QUANTITY:,} BTCUSD contracts on first tick")
     _log(f"\n[STEP 2] Price crashes from ${ENTRY_PRICE:,.0f} to ${CRASH_PRICE:,.0f} (-50%)")
 
     engine.run()

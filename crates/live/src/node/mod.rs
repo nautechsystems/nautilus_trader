@@ -81,7 +81,13 @@
 //! become eligible on the next maintenance tick. Event processing and runtime
 //! scheduling can delay dispatch further; the timer does not guarantee a maximum delay.
 
-use std::{any::Any, fmt::Debug, time::Duration};
+use std::{
+    any::Any,
+    cell::RefCell,
+    fmt::Debug,
+    rc::{Rc, Weak},
+    time::Duration,
+};
 
 use anyhow::Context;
 use nautilus_common::{
@@ -167,6 +173,10 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
 
+thread_local! {
+    static NODE_THREAD_OWNER: RefCell<Weak<()>> = const { RefCell::new(Weak::new()) };
+}
+
 type StreamProcessorCallback = dyn Fn(&dyn Any, &serde_json::Value) -> anyhow::Result<()> + 'static;
 
 struct StreamProcessor(Box<StreamProcessorCallback>);
@@ -181,6 +191,10 @@ impl Debug for StreamProcessor {
 ///
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
+///
+/// Only one live node may exist on a thread at a time. Drop the node before building another,
+/// including after disposal, because retained nodes can still access thread-local messaging.
+/// Concurrent nodes in one process remain unsupported, even on separate threads.
 #[derive(Debug)]
 pub struct LiveNode {
     kernel: NautilusKernel,
@@ -196,6 +210,7 @@ pub struct LiveNode {
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
+    _thread_owner: Rc<()>,
 }
 
 impl LiveNode {
@@ -216,6 +231,7 @@ impl LiveNode {
         socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
+        thread_owner: Rc<()>,
     ) -> Self {
         Self {
             kernel,
@@ -231,6 +247,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
+            _thread_owner: thread_owner,
         }
     }
 
@@ -254,8 +271,10 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if kernel construction fails.
+    /// Returns an error if kernel construction fails or another live node exists or is being
+    /// built on this thread.
     pub fn build(name: String, config: Option<LiveNodeConfig>) -> anyhow::Result<Self> {
+        let thread_owner = Self::acquire_thread()?;
         let config = config.unwrap_or_default();
         validate_live_environment(config.environment())?;
 
@@ -308,6 +327,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
+            _thread_owner: thread_owner,
         };
 
         node.load_configured_plugins()?;
@@ -315,6 +335,19 @@ impl LiveNode {
         log::info!("LiveNode built successfully with kernel config");
 
         Ok(node)
+    }
+
+    fn acquire_thread() -> anyhow::Result<Rc<()>> {
+        NODE_THREAD_OWNER.with(|slot| {
+            let mut owner = slot.borrow_mut();
+            anyhow::ensure!(
+                owner.upgrade().is_none(),
+                "A LiveNode already exists or is being built on this thread; drop it before building another"
+            );
+            let token = Rc::new(());
+            *owner = Rc::downgrade(&token);
+            Ok(token)
+        })
     }
 
     /// Loads and registers plug-ins declared on the node config.
@@ -941,6 +974,12 @@ impl LiveNode {
                             .get_client(&client_id)
                             .is_some(),
                         "Execution client {client_id} disappeared during startup reconciliation",
+                    );
+
+                    anyhow::ensure!(
+                        result.unresolved_positions.is_empty(),
+                        "Unresolved positions during startup reconciliation for {client_id}: {}",
+                        result.unresolved_positions.join("; "),
                     );
 
                     if result.events.is_empty() {
@@ -2160,6 +2199,7 @@ impl LiveNode {
                 .borrow()
                 .order(client_order_id)
                 .is_some_and(|order| order.is_closed());
+
             if is_closed && (clear_closed_orders || closed_report_id == Some(*client_order_id)) {
                 self.exec_manager
                     .clear_recon_tracking(client_order_id, true);
@@ -2485,6 +2525,7 @@ impl LiveNode {
         self.handle.set_stopped();
 
         let mut errors = Vec::new();
+
         if let Err(e) = disconnect_result {
             errors.push(e.to_string());
         }
@@ -3389,7 +3430,8 @@ mod tests {
             data::{SubscribeCommand, SubscribeQuotes},
             execution::{
                 GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
-                QueryAccount, SubmitOrder, SubmitOrderList, TradingCommand,
+                GeneratePositionStatusReports, QueryAccount, SubmitOrder, SubmitOrderList,
+                TradingCommand,
             },
             system::{
                 QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
@@ -3447,6 +3489,7 @@ mod tests {
     };
     use parking_lot::Mutex;
     use rstest::*;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
@@ -3533,6 +3576,26 @@ mod tests {
 
         fn stop(&mut self) -> anyhow::Result<()> {
             Ok(())
+        }
+
+        async fn generate_order_status_reports(
+            &self,
+            _cmd: &GenerateOrderStatusReports,
+        ) -> anyhow::Result<Vec<OrderStatusReport>> {
+            match self.outcome {
+                FillReportClientOutcome::Failure => anyhow::bail!("order reports unavailable"),
+                FillReportClientOutcome::Reports(_) => Ok(Vec::new()),
+            }
+        }
+
+        async fn generate_position_status_reports(
+            &self,
+            _cmd: &GeneratePositionStatusReports,
+        ) -> anyhow::Result<Vec<PositionStatusReport>> {
+            match self.outcome {
+                FillReportClientOutcome::Failure => anyhow::bail!("position reports unavailable"),
+                FillReportClientOutcome::Reports(_) => Ok(Vec::new()),
+            }
         }
 
         async fn generate_fill_reports(
@@ -3860,6 +3923,7 @@ mod tests {
         let expected = transitions
             .into_iter()
             .filter(|transition| channel.is_none_or(|channel| channel == transition.channel));
+
         for (event, transition) in events.iter().zip(expected) {
             assert_eq!(event.trader_id, TraderId::from("QUEUE-001"));
             assert_eq!(event.channel, transition.channel);
@@ -4879,6 +4943,177 @@ mod tests {
     }
 
     #[rstest]
+    #[case::query_error(false)]
+    #[case::missing_client(true)]
+    #[tokio::test]
+    async fn test_position_fill_collection_discards_partial_failure(
+        #[case] missing_client: bool,
+        #[values(false, true)] failure_first: bool,
+        position_fill_query: (FillReport, PositionFillReportQuery),
+    ) {
+        let (report, query) = position_fill_query;
+        let failed_client_id = ClientId::from("FAILED-FILLS");
+        let healthy_key = (report.instrument_id, AccountId::from("HEALTHY-001"));
+        let mut healthy_report = report.clone();
+        healthy_report.account_id = healthy_key.1;
+        let healthy_client_id = ClientId::from("HEALTHY-FILLS");
+        let mut clients = vec![
+            LiveExecutionClient::new(Box::new(FillReportClient {
+                client_id: query.client_id,
+                account_id: query.key.1,
+                venue: query.key.0.venue,
+                outcome: FillReportClientOutcome::Reports(vec![report]),
+                commands: Rc::new(RefCell::new(Vec::new())),
+            })),
+            LiveExecutionClient::new(Box::new(FillReportClient {
+                client_id: healthy_client_id,
+                account_id: healthy_key.1,
+                venue: healthy_key.0.venue,
+                outcome: FillReportClientOutcome::Reports(vec![healthy_report.clone()]),
+                commands: Rc::new(RefCell::new(Vec::new())),
+            })),
+        ];
+
+        if !missing_client {
+            clients.push(LiveExecutionClient::new(Box::new(FillReportClient {
+                client_id: failed_client_id,
+                account_id: query.key.1,
+                venue: query.key.0.venue,
+                outcome: FillReportClientOutcome::Failure,
+                commands: Rc::new(RefCell::new(Vec::new())),
+            })));
+        }
+
+        let failed_query = PositionFillReportQuery {
+            client_id: failed_client_id,
+            key: query.key,
+            command: query.command.clone(),
+        };
+
+        let healthy_query = PositionFillReportQuery {
+            key: healthy_key,
+            client_id: healthy_client_id,
+            command: query.command.clone(),
+        };
+
+        let mut queries = vec![query, failed_query];
+
+        if failure_first {
+            queries.reverse();
+        }
+
+        queries.push(healthy_query);
+
+        let result = request_position_fill_reports(clients, queries).await;
+
+        assert_eq!(result.successful_keys, IndexSet::from([healthy_key]));
+        assert_eq!(
+            result.reports,
+            IndexMap::from([(healthy_key, vec![healthy_report])])
+        );
+    }
+
+    #[rstest]
+    #[case::same_economics("metadata", true)]
+    #[case::venue_order("venue_order", false)]
+    #[case::side("side", false)]
+    #[case::quantity("quantity", false)]
+    #[case::price("price", false)]
+    #[case::commission("commission", false)]
+    #[case::liquidity("liquidity", false)]
+    #[case::average("average", false)]
+    #[case::event_time("event_time", false)]
+    #[case::client_order("client_order", false)]
+    #[case::position("position", false)]
+    #[tokio::test]
+    async fn test_position_fill_collection_validates_duplicate_economics(
+        #[case] changed: &str,
+        #[case] accepted: bool,
+        position_fill_query: (FillReport, PositionFillReportQuery),
+    ) {
+        let (report, query) = position_fill_query;
+        let mut duplicate = report.clone();
+
+        match changed {
+            "metadata" => {
+                duplicate.report_id = UUID4::new();
+                duplicate.ts_init = UnixNanos::from(3_000);
+            }
+            "venue_order" => duplicate.venue_order_id = VenueOrderId::from("OTHER-ORDER"),
+            "side" => duplicate.order_side = OrderSide::Sell,
+            "quantity" => duplicate.last_qty = Quantity::from("2.0"),
+            "price" => duplicate.last_px = Price::from("101.0"),
+            "commission" => duplicate.commission = Money::from("0.25 USDT"),
+            "liquidity" => duplicate.liquidity_side = LiquiditySide::Maker,
+            "average" => duplicate.avg_px = Some(dec!(100.5)),
+            "event_time" => duplicate.ts_event = UnixNanos::from(1_501),
+            "client_order" => duplicate.client_order_id = None,
+            "position" => duplicate.venue_position_id = Some(PositionId::from("OTHER-POSITION")),
+            _ => unreachable!(),
+        }
+
+        let key = query.key;
+
+        let client = LiveExecutionClient::new(Box::new(FillReportClient {
+            client_id: query.client_id,
+            account_id: key.1,
+            venue: key.0.venue,
+            outcome: FillReportClientOutcome::Reports(vec![report.clone(), duplicate]),
+            commands: Rc::new(RefCell::new(Vec::new())),
+        }));
+
+        let result = request_position_fill_reports(vec![client], vec![query]).await;
+
+        if accepted {
+            assert_eq!(result.successful_keys, IndexSet::from([key]));
+            assert_eq!(result.reports, IndexMap::from([(key, vec![report])]));
+        } else {
+            assert!(result.successful_keys.is_empty());
+            assert!(result.reports.is_empty());
+        }
+    }
+
+    #[fixture]
+    fn position_fill_query() -> (FillReport, PositionFillReportQuery) {
+        let account_id = AccountId::from("POSITION-FILLS-001");
+        let instrument_id = crypto_perpetual_ethusdt().id();
+
+        let report = FillReport::new(
+            account_id,
+            instrument_id,
+            VenueOrderId::from("V-POSITION-FILLS"),
+            TradeId::from("T-POSITION-FILLS"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-POSITION-FILLS")),
+            None,
+            UnixNanos::from(1_500),
+            UnixNanos::from(2_000),
+            None,
+        );
+
+        let query = PositionFillReportQuery {
+            key: (instrument_id, account_id),
+            client_id: ClientId::from("POSITION-FILLS"),
+            command: GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::from(2_000),
+                Some(instrument_id),
+                None,
+                Some(UnixNanos::from(1_000)),
+                Some(UnixNanos::from(2_000)),
+                None,
+                None,
+            ),
+        };
+
+        (report, query)
+    }
+
+    #[rstest]
     #[case::failed_query(false)]
     #[case::local_activity(true)]
     fn test_position_fallback_preserves_deferred_venue_only_retries(#[case] local_activity: bool) {
@@ -4940,6 +5175,7 @@ mod tests {
             .queried_clients
             .insert(ClientId::from("SECOND"));
         let mut successful_keys = IndexSet::from([active_key]);
+
         if local_activity {
             successful_keys.insert(deferred_key);
             node.exec_manager
@@ -5165,6 +5401,137 @@ mod tests {
     }
 
     #[rstest]
+    #[case::below_limit(63)]
+    #[case::at_limit(64)]
+    #[case::above_limit(65)]
+    fn test_position_fill_dispatch_limit_resumes_without_duplicate_economics(#[case] count: usize) {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("PositionFillLimitNode", Quantity::from("0.1"));
+        let expected_quantity = dec!(1) + Decimal::new(i64::try_from(count).unwrap(), 1);
+
+        let venue_report = PositionStatusReport::new(
+            venue_report.account_id,
+            venue_report.instrument_id,
+            PositionSide::Long,
+            Quantity::from_decimal_dp(expected_quantity, 1).unwrap(),
+            venue_report.ts_last,
+            venue_report.ts_init,
+            None,
+            None,
+            venue_report.avg_px_open,
+        );
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let client_order_id = fill_report.client_order_id.unwrap();
+
+        let reports = (0..count)
+            .map(|index| {
+                let mut report = fill_report.clone();
+                report.trade_id = TradeId::from(format!("T-LIMIT-{index:03}"));
+                report.ts_event = UnixNanos::from(1_000 + index as u64);
+                report
+            })
+            .collect::<Vec<_>>();
+
+        let position_result = position_report_result(&node, venue_report.clone());
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, reports.clone())]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        {
+            let cache = node.kernel.cache.borrow();
+            let order = cache.order(&client_order_id).unwrap();
+            let applied = count.min(64);
+            assert_eq!(
+                order.filled_qty().as_decimal(),
+                dec!(1) + Decimal::new(i64::try_from(applied).unwrap(), 1)
+            );
+            assert_eq!(order.trade_ids().len(), applied + 1);
+
+            for (index, report) in reports.iter().enumerate() {
+                assert_eq!(
+                    order.trade_ids().contains(&&report.trade_id),
+                    index < applied
+                );
+            }
+
+            assert_eq!(
+                cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+                1
+            );
+        }
+
+        // A fresh cycle replays the full response; only the deferred fill may change exposure
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, reports)]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(order.filled_qty().as_decimal(), expected_quantity);
+        assert_eq!(order.trade_ids().len(), count + 1);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity.as_decimal(), expected_quantity);
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+    }
+
+    #[rstest]
+    #[case::client_order(0)]
+    #[case::venue_order(1)]
+    #[case::side(2)]
+    #[case::position(3)]
+    fn test_position_fill_conflict_blocks_remaining_fills_and_fallback(#[case] conflict: u8) {
+        let (mut node, venue_report, valid_report) =
+            position_fill_test_fixture("ConflictingPositionFillNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let client_order_id = valid_report.client_order_id.unwrap();
+        let revision = node.exec_manager.position_activity_revision(&key);
+        let position_result = position_report_result(&node, venue_report);
+        let mut conflicting_report = valid_report.clone();
+        conflicting_report.trade_id = TradeId::from("T-CONFLICTING-FILL");
+
+        match conflict {
+            0 => conflicting_report.client_order_id = Some(ClientOrderId::from("O-CONFLICT")),
+            1 => conflicting_report.venue_order_id = VenueOrderId::from("V-CONFLICT"),
+            2 => conflicting_report.order_side = OrderSide::Sell,
+            3 => conflicting_report.venue_position_id = Some(PositionId::from("P-CONFLICT")),
+            _ => unreachable!(),
+        }
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![conflicting_report, valid_report])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+        assert_eq!(
+            order.trade_ids(),
+            vec![&TradeId::from("T-POSITION-INITIAL")]
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.0"));
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+        assert_eq!(node.exec_manager.position_activity_revision(&key), revision);
+    }
+
+    #[rstest]
     fn test_position_fill_report_failure_does_not_trigger_synthetic_fallback() {
         let (mut node, venue_report, _) =
             position_fill_test_fixture("FailedPositionFillNode", Quantity::from("1.0"));
@@ -5230,6 +5597,71 @@ mod tests {
             !node
                 .exec_manager
                 .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
+    fn test_bundled_fill_report_invalidates_prepared_position_reconciliation() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("BundledPositionActivityNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let client_order_id = fill_report.client_order_id.unwrap();
+        let position_result = position_report_result(&node, venue_report);
+        let revision = node.exec_manager.position_activity_revision(&key);
+
+        let order_report = OrderStatusReport::new(
+            key.1,
+            key.0,
+            Some(client_order_id),
+            fill_report.venue_order_id,
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.0"),
+            Quantity::from("2.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            UnixNanos::from(2_000),
+            None,
+        );
+        let event = ExecutionEvent::Report(ExecutionReport::OrderWithFills(
+            Box::new(order_report),
+            vec![fill_report.clone()],
+        ));
+
+        assert_eq!(
+            node.observe_exec_event_before_dispatch(&event),
+            Some(vec![client_order_id])
+        );
+
+        assert_eq!(
+            node.exec_manager.position_activity_revision(&key),
+            revision + 1
+        );
+        assert!(
+            !node
+                .exec_manager
+                .position_report_check_is_current(&position_result.check, &key)
+        );
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+        assert!(!order.trade_ids().contains(&&fill_report.trade_id));
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.0"));
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
         );
     }
 
@@ -7293,6 +7725,151 @@ mod tests {
         ExecutionEngine::register_msgbus_handlers(&node.kernel.exec_engine);
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_recurring_report_failure_preserves_client_coverage(
+        #[values(false, true)] positions: bool,
+        #[values(false, true)] failure_first: bool,
+    ) {
+        let mut node = LiveNode::build("ReportFailureNode".to_string(), None).unwrap();
+        let failed_id = ClientId::from("FAILED");
+        let healthy_id = ClientId::from("HEALTHY");
+
+        for (client_id, outcome) in [
+            (failed_id, FillReportClientOutcome::Failure),
+            (healthy_id, FillReportClientOutcome::Reports(Vec::new())),
+        ] {
+            node.exec_clients
+                .push(LiveExecutionClient::new(Box::new(FillReportClient {
+                    client_id,
+                    account_id: AccountId::from("TEST-001"),
+                    venue: Venue::from("BINANCE"),
+                    outcome,
+                    commands: Rc::new(RefCell::new(Vec::new())),
+                })));
+        }
+
+        if !failure_first {
+            node.exec_clients.reverse();
+        }
+
+        let last = dst::time::Instant::now();
+        let now = last + Duration::from_secs(1);
+        let mut last_inflight = last;
+        let mut last_open = last;
+        let mut last_position = last;
+        let mut open_task = None;
+        let mut targeted_task = None;
+        let mut position_task = None;
+
+        node.run_reconciliation_checks(
+            now,
+            ReconciliationCheckIntervals {
+                inflight: Duration::ZERO,
+                open: if positions {
+                    Duration::ZERO
+                } else {
+                    Duration::from_secs(1)
+                },
+                position: if positions {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::ZERO
+                },
+            },
+            &mut ReconciliationCheckState {
+                last_inflight_check: &mut last_inflight,
+                last_open_check: &mut last_open,
+                last_position_check: &mut last_position,
+                open_order_report_task: &mut open_task,
+                targeted_order_report_task: &mut targeted_task,
+                position_report_task: &mut position_task,
+            },
+        );
+
+        let (queried_clients, failed_clients) = if positions {
+            let ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) =
+                position_task.unwrap().future.await
+            else {
+                panic!("position collection should complete despite one client failure");
+            };
+
+            assert!(result.reports.is_empty());
+            assert!(open_task.is_none());
+            (result.queried_clients, result.failed_clients)
+        } else {
+            let ReportTaskOutcome::Completed(result) = open_task.unwrap().future.await else {
+                panic!("order collection should complete despite one client failure");
+            };
+
+            assert!(result.reports.is_empty());
+            assert!(position_task.is_none());
+            (result.queried_clients, result.failed_clients)
+        };
+
+        assert_eq!(queried_clients, IndexSet::from([failed_id, healthy_id]));
+        assert_eq!(failed_clients, IndexSet::from([failed_id]));
+        assert!(targeted_task.is_none());
+    }
+
+    #[rstest]
+    #[case::inflight(true, false)]
+    #[case::open(false, false)]
+    #[case::positions(false, true)]
+    #[tokio::test]
+    async fn test_reconciliation_shutdown_preserves_pending_checks(
+        #[case] inflight: bool,
+        #[case] positions: bool,
+    ) {
+        let mut node = LiveNode::build("ShutdownChecksNode".to_string(), None).unwrap();
+        node.handle.set_shutting_down();
+        let last = dst::time::Instant::now();
+        let now = last + Duration::from_secs(1);
+        let mut last_inflight = last;
+        let mut last_open = last;
+        let mut last_position = last;
+        let mut open_task = None;
+        let mut targeted_task = None;
+        let mut position_task = None;
+
+        node.run_reconciliation_checks(
+            now,
+            ReconciliationCheckIntervals {
+                inflight: if inflight {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::ZERO
+                },
+                open: if !inflight && !positions {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::ZERO
+                },
+                position: if positions {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::ZERO
+                },
+            },
+            &mut ReconciliationCheckState {
+                last_inflight_check: &mut last_inflight,
+                last_open_check: &mut last_open,
+                last_position_check: &mut last_position,
+                open_order_report_task: &mut open_task,
+                targeted_order_report_task: &mut targeted_task,
+                position_report_task: &mut position_task,
+            },
+        );
+
+        assert_eq!(
+            (last_inflight, last_open, last_position),
+            (last, last, last)
+        );
+        assert!(open_task.is_none());
+        assert!(targeted_task.is_none());
+        assert!(position_task.is_none());
+    }
+
     fn insert_accepted_limit_order_in_node(
         node: &LiveNode,
         account_id: AccountId,
@@ -8922,6 +9499,148 @@ mod tests {
         );
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(closed.get());
+    }
+
+    #[rstest]
+    fn test_node_build_rejects_existing_node_preserving_account_delivery(
+        #[values(false, true)] first_builder: bool,
+        #[values(false, true)] second_builder: bool,
+    ) {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("PROBE-001"),
+            ..Default::default()
+        };
+
+        let mut node = if first_builder {
+            LiveNodeBuilder::from_config(config)
+                .unwrap()
+                .build()
+                .unwrap()
+        } else {
+            LiveNode::build("Original".to_string(), Some(config)).unwrap()
+        };
+
+        let bus = msgbus::get_message_bus();
+
+        let ExecutionEvent::Account(before) = stub_account_event() else {
+            unreachable!()
+        };
+
+        get_exec_event_sender()
+            .send(ExecutionEvent::Account(before.clone()))
+            .unwrap();
+        assert_eq!(node.drain_runner_pending(), 1);
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .account(&before.account_id)
+                .unwrap()
+                .last_event(),
+            Some(before)
+        );
+
+        let result = if second_builder {
+            LiveNodeBuilder::from_config(LiveNodeConfig::default())
+                .unwrap()
+                .build()
+        } else {
+            LiveNode::build("Extra".to_string(), None)
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "A LiveNode already exists or is being built on this thread; drop it before building another"
+        );
+
+        let ExecutionEvent::Account(after) = stub_account_event() else {
+            unreachable!()
+        };
+
+        get_exec_event_sender()
+            .send(ExecutionEvent::Account(after.clone()))
+            .unwrap();
+        assert_eq!(node.drain_runner_pending(), 1);
+        assert_eq!(node.trader_id(), TraderId::from("PROBE-001"));
+        assert!(Rc::ptr_eq(&bus, &msgbus::get_message_bus()));
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .account(&after.account_id)
+                .unwrap()
+                .last_event(),
+            Some(after)
+        );
+    }
+
+    #[rstest]
+    fn test_node_build_rejects_reentry_and_releases_thread_after_factory_failure() {
+        let result = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
+            .unwrap()
+            .with_event_store(|_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
+                let error = LiveNode::build("Reentrant".to_string(), None).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("already exists or is being built")
+                );
+                anyhow::bail!("Event store construction failed")
+            })
+            .build();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Event store construction failed"
+        );
+
+        let node = LiveNode::build("Retry".to_string(), None).unwrap();
+        assert_eq!(node.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_allows_separate_threads() {
+        let node = LiveNode::build("First".to_string(), None).unwrap();
+
+        let other_state = std::thread::spawn(|| {
+            let other = LiveNode::build("OtherThread".to_string(), None).unwrap();
+            other.state()
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(node.state(), NodeState::Idle);
+        assert_eq!(other_state, NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_releases_thread_after_drop() {
+        let mut node = LiveNode::build("First".to_string(), None).unwrap();
+        node.dispose();
+        assert!(LiveNode::build("WhileRetained".to_string(), None).is_err());
+        drop(node);
+
+        let replacement = LiveNode::build("Replacement".to_string(), None).unwrap();
+        assert_eq!(replacement.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_node_build_releases_thread_after_failure(#[values(false, true)] builder: bool) {
+        let config = LiveNodeConfig {
+            event_store: Some(EventStoreConfig::default()),
+            ..Default::default()
+        };
+
+        let result = if builder {
+            LiveNodeBuilder::from_config(config).unwrap().build()
+        } else {
+            LiveNode::build("Failure".to_string(), Some(config))
+        };
+
+        assert!(result.unwrap_err().to_string().contains("factory"));
+
+        let node = LiveNode::build("Retry".to_string(), None).unwrap();
+        assert_eq!(node.state(), NodeState::Idle);
     }
 
     #[cfg(feature = "python")]
@@ -12038,6 +12757,7 @@ mod tests {
 
         let results = std::thread::spawn(move || {
             let mut results = Vec::new();
+
             for event in pending.data_evts {
                 results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                     || event.dispatch(drop),

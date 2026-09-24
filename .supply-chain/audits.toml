@@ -1425,6 +1425,12 @@ criteria = "safe-to-deploy"
 delta = "1.4.4 -> 1.4.5"
 notes = "Reviewed the published crate delta. Compiler flag probes use unique create_new temporary files with owner-only Unix permissions and RAII cleanup. Handles close before compiler invocation. Remaining lazy initialization and iterator changes preserve existing behavior."
 
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.5 -> 1.4.7"
+notes = "Strips OUT_DIR in addition to CARGO_MANIFEST_DIR when hashing object file names, keeps compiler flags in check_exe, migrates pipe fd handling to BorrowedFd, and regenerates target tables with Z80 and SM83 entries. Compiler process execution remains the existing build-time capability; no new network, credential, or filesystem behavior."
+
 [[audits.cfg-if]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1491,10 +1497,34 @@ criteria = "safe-to-deploy"
 delta = "4.6.4 -> 4.6.7"
 notes = "Adds optional defer=bool for Parser/Subcommand enums (lazy subcommand init) and related attribute parsing. Remaining edits are syn API compatibility. Proc-macro only; no filesystem, network, or process behavior."
 
+[[audits.clap_lex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.0 -> 1.1.1"
+notes = "Packaging include-list fix, lint configuration, license template text, and OsStr to Self style changes in existing unsafe conversions with unchanged safety arguments. No functional, dependency, or build-script change."
+
 [[audits.cmake]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.57 -> 0.1.58"
+
+[[audits.codspeed]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "5.0.1 -> 5.0.2"
+notes = "Adds callgrind collection-toggle and object-skip registration to the Valgrind helper layer, replaces the feature bitset with atomic word operations, and adds a sched_yield spinlock shared by the runner FIFO handles. Instrumentation scope is unchanged; no new network, credential, or filesystem destinations."
+
+[[audits.codspeed-criterion-compat]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "5.0.1 -> 5.0.2"
+notes = "Version-bump-only release coordinating the =5.0.2 pins on codspeed and codspeed-criterion-compat-walltime. No source change."
+
+[[audits.codspeed-criterion-compat-walltime]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "5.0.1 -> 5.0.2"
+notes = "Version-bump-only release coordinating the =5.0.2 pins on codspeed and codspeed-criterion-compat. No source change."
 
 [[audits.combine]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2312,6 +2342,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.11 -> 0.1.12"
 notes = "Reviewed the published crate delta. Equivalent Visual Studio discovery iteration and condition simplifications; no new process or network behavior."
 
+[[audits.find-msvc-tools]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.12 -> 0.1.13"
+notes = "Regenerates the Windows sys bindings, renaming WIN32_ERROR to LSTATUS and widening call sites with try_into; discovery reads the same registry keys and COM interfaces. Windows-only toolchain probing; no new process, network, or credential behavior."
+
 [[audits.flate2]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2455,6 +2491,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.11.0 -> 1.11.1"
 notes = "Fixes HTTP/1 connection reuse, buffered-write flushing, head termination, and trailer token parsing, plus minimal HTTP/2 send capacity. Reviewed the published source; no new dependencies, unsafe blocks, network destinations, or ambient capabilities."
+
+[[audits.hyper-rustls]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.27.9 -> 0.27.10"
+notes = "Adds lint configuration, renames the docsrs cfg, and fixes lifetime elision and import style. No functional, dependency, unsafe, or API change; TLS connection behavior is unchanged."
 
 [[audits.hypersync-client]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2919,6 +2961,12 @@ criteria = "safe-to-deploy"
 delta = "0.8.7 -> 0.8.8"
 notes = "Reviewed 0.8.7 -> 0.8.8: no-std serde compatibility fix"
 
+[[audits.rand]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.10.2 -> 0.10.3"
+notes = "Returns Error::Overflow from WeightedIndex instead of panicking on infinite float weight sums, fixes spurious NonFinite errors on large finite float ranges and panics from deserialized Uniform<char> samplers, and reports exact iterator lengths. Sampling algorithms are unchanged; no new unsafe, I/O, or OS interfaces."
+
 [[audits.rapidhash]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3062,6 +3110,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.42.1 -> 1.43.0"
 notes = "Reviewed the published arithmetic, conversion, formatting, and feature delta. Chunked rescaling preserves digit-by-digit rounding and adds boundary tests; addition, multiplication, floor, ceiling, equality, and normalization changes are bounded arithmetic fast paths with fallbacks. The crate forbids unsafe code, removes the rkyv 0.7 feature bridge, and adds no build script or ambient capabilities."
+
+[[audits.rustix]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.4 -> 1.1.5"
+notes = "Adds the openat2 wrapper plus documentation, libc-version gating, and backend maintenance across the fs, net, pipe, process, and thread modules. Syscall-shim scope is unchanged; no new linked libraries, build-script behavior, or capability beyond the existing thin syscall surface."
 
 [[audits.rustls]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3219,6 +3273,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.4 -> 2.0.1"
 notes = "Reviewed the 2.0 Compio runtime, split-driver, heartbeat, timeout, and API changes. The one added unsafe buffer copy is capacity-bounded before setting initialized length; normal Message UTF-8 validation remains intact, enabled fastrand avoids the non-random masking fallback, and no hidden filesystem, process, credential, or data-exfiltration capability was added."
 
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.0.1 -> 2.1.0"
+notes = "Reviewed the header-aware handshake builder with token/reserved/control-byte validation, rustls provider deselection (ring moved to dev-dependencies), deflate context-takeover fix, incremental UTF-8 validation, streaming frame unmask, lazy heartbeat timer, atomic activity clock, and handshake leftover replay. No new unsafe, dependencies, build script, filesystem, process, or network capability."
+
 [[audits.syn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3230,6 +3290,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "3.0.4 -> 3.0.5"
 notes = "Reviewed the published crate delta. Literal-string parse diagnostics retain the literal span; no parser acceptance or build-script changes."
+
+[[audits.syn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.0.5 -> 3.0.6"
+notes = "Fixes early-boundary parsing of interpolated lifetimes at statement start with a speculative fork and updates tests for current rustc ASTs. No unsafe, dependency, or build-script change."
 
 [[audits.syn-solidity]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3470,6 +3536,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.3 -> 2.1.4"
 notes = "Adds portability documentation and lint-driven source cleanup. Reviewed SIMD and unchecked invariants; unsafe bodies and preconditions are unchanged. No dependency, build script, ambient capability, or hash behavior changes."
+
+[[audits.unicode-ident]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.24 -> 1.0.26"
+notes = "Regenerated Unicode identifier tables with a rehashed trie index and refreshed documentation benchmarks. Data-table update only; no API, dependency, or build-script change."
 
 [[audits.unicode-segmentation]]
 who = "Chris Sellers <chris@cjdsellers.io>"

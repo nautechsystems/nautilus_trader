@@ -191,8 +191,11 @@ async fn main() -> anyhow::Result<()> {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
+        writer_capacity: None,
         backend: TransportBackend::Tungstenite,
         proxy_url: None,
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
     let client = WebSocketClient::builder()

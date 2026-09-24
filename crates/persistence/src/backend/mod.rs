@@ -27,7 +27,6 @@ use crate::{
 };
 
 pub mod binary_heap;
-pub mod catalog;
 pub mod compare;
 pub mod feather;
 pub mod kmerge_batch;
@@ -97,7 +96,12 @@ fn extend_factories<T>(
             }
         }
     }
+
     Ok(registry)
+}
+
+fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
+    parquet::register_catalog_factory(registry);
 }
 
 fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactoryRegistry) {
@@ -117,7 +121,7 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
                         clock,
                         config.rotation_config.clone(),
                         None,
-                        None,
+                        Some(feather_writer::FeatherWriter::default_per_instrument_types()),
                         config.flush_interval_ms,
                     )
                     .with_record_filter(config.record_filter.clone()),
@@ -125,10 +129,6 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
             },
         ),
     );
-}
-
-fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
-    parquet::register_catalog_factory(registry);
 }
 
 /// Runs an async operation from a synchronous persistence API.

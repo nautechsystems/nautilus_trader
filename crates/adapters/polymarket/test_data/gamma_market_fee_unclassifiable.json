@@ -1,0 +1,19 @@
+{
+  "id": "fee-unknown-1",
+  "conditionId": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "question": "Unclassifiable market",
+  "clobTokenIds": "[\"99999999999999999999999999999999999999999999999999999999999999999999999999999\", \"10101010101010101010101010101010101010101010101010101010101010101010101010101\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

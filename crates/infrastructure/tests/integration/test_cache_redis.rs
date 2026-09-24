@@ -1364,6 +1364,7 @@ mod serial_tests {
 
         node.stop().await.unwrap();
         node.dispose();
+        drop(node);
 
         let disabled_node_adapter = connect_redis_cache_adapter()
             .await
@@ -1394,6 +1395,7 @@ mod serial_tests {
             .is_some();
         disabled_node.stop().await.unwrap();
         disabled_node.dispose();
+        drop(disabled_node);
 
         assert!(!order_loaded_when_disabled);
 

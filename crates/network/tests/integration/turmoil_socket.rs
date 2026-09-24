@@ -162,6 +162,7 @@ fn socket_config() -> SocketConfig {
         connection_max_retries: None,
         reconnect_max_attempts: None,
         heartbeat_timeout_secs: None,
+        writer_capacity: None,
         certs_dir: None,
     }
 }

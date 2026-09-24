@@ -982,7 +982,7 @@ pub fn parse_position_status_report(
 /// Parsed order event result from a Deribit order message.
 ///
 /// This enum represents the discrete order events that can be derived from
-/// Deribit order state transitions, following the same pattern as OKX.
+/// Deribit order state transitions.
 #[derive(Debug, Clone)]
 pub enum ParsedOrderEvent {
     /// Order was accepted by the venue.

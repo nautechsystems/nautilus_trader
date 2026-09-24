@@ -53,6 +53,7 @@ pub(crate) fn validate_catalog_schema(schema: &Schema) -> anyhow::Result<()> {
             .field_with_name(name)
             .is_ok_and(|field| field.data_type() != &timestamp_data_type())
     });
+
     anyhow::ensure!(
         !legacy_timestamps && !is_nautilus_legacy_schema(schema),
         "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
@@ -109,7 +110,7 @@ pub(crate) fn data_to_arrow_batches(
 
 #[cfg(feature = "python")]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct BatchIdentity {
+struct BatchIdentity {
     identifier: String,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
@@ -131,7 +132,7 @@ impl BatchIdentity {
 }
 
 #[cfg(feature = "python")]
-pub(crate) trait CatalogBatchIdentity {
+trait CatalogBatchIdentity {
     fn batch_identity(&self) -> BatchIdentity;
 }
 
@@ -239,7 +240,7 @@ impl_batch_identity!(
 // Groups order lexically and retain input order within each group. Precision is part of the key,
 // so one identifier can produce separate batches after a precision change.
 #[cfg(feature = "python")]
-pub(crate) fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
+fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
 where
     T: CatalogBatchIdentity + EncodeToRecordBatch,
 {
@@ -265,7 +266,7 @@ where
     clippy::unnecessary_wraps,
     reason = "DeFi builds reject the non-fixed record selector"
 )]
-pub(crate) fn catalog_record_schema(record_type: &NautilusRecordType) -> anyhow::Result<Schema> {
+pub(crate) fn catalog_record_schema(record_type: NautilusRecordType) -> anyhow::Result<Schema> {
     macro_rules! schema {
         ($type:ty) => {
             <$type>::get_schema(None)
@@ -313,4 +314,72 @@ pub(crate) fn empty_display_batch_with_identifier(
 ) -> anyhow::Result<RecordBatch> {
     let schema = schema_with_identifier_column(&catalog_display_schema(data_type)?);
     Ok(RecordBatch::new_empty(Arc::new(schema)))
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+    use nautilus_serialization::arrow::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn quote(instrument_id: &str, price: &str, ts: u64) -> Data {
+        Data::Quote(QuoteTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from(price),
+            Price::from(price),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        ))
+    }
+
+    #[rstest]
+    fn data_to_arrow_batches_groups_by_identifier_and_precision() {
+        let data = vec![
+            quote("ETHUSDT.BINANCE", "1.00", 1),
+            quote("AUD/USD.SIM", "1.00000", 2),
+            quote("AUD/USD.SIM", "1.000000", 3),
+            quote("AUD/USD.SIM", "1.00001", 4),
+        ];
+
+        let batches = data_to_arrow_batches(&NautilusDataType::QuoteTick, data).unwrap();
+
+        let groups = batches
+            .iter()
+            .map(|batch| {
+                let metadata = batch.schema().metadata().clone();
+                (
+                    metadata[KEY_INSTRUMENT_ID].clone(),
+                    metadata[KEY_PRICE_PRECISION].clone(),
+                    batch.num_rows(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            groups,
+            vec![
+                ("AUD/USD.SIM".to_string(), "5".to_string(), 2),
+                ("AUD/USD.SIM".to_string(), "6".to_string(), 1),
+                ("ETHUSDT.BINANCE".to_string(), "2".to_string(), 1),
+            ],
+        );
+    }
+
+    #[rstest]
+    fn data_to_arrow_batches_rejects_instruments() {
+        let error = data_to_arrow_batches(&NautilusDataType::Instrument, Vec::new()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Instrument definitions do not have one shared Arrow schema"
+        );
+    }
 }

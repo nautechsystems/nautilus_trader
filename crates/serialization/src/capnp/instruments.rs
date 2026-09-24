@@ -132,10 +132,6 @@ impl<'a> ToCapnp<'a> for BettingInstrument {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -191,8 +187,6 @@ impl<'a> FromCapnp<'a> for BettingInstrument {
             size_increment: Quantity::from_capnp(reader.get_size_increment()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -247,10 +241,6 @@ impl<'a> ToCapnp<'a> for BinaryOption {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         write_optional_ustr(self.event_id, |value| {
             builder.reborrow().set_event_id(value);
         });
@@ -305,8 +295,6 @@ impl<'a> FromCapnp<'a> for BinaryOption {
             size_increment: Quantity::from_capnp(reader.get_size_increment()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             event_id: read_optional_ustr(reader.has_event_id(), || reader.get_event_id())?,
             outcome: read_optional_ustr(reader.has_outcome(), || reader.get_outcome())?,
             description: read_optional_ustr(reader.has_description(), || reader.get_description())?,
@@ -364,10 +352,6 @@ impl<'a> ToCapnp<'a> for Cfd {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.lot_size
             .write_capnp(|| builder.reborrow().init_lot_size());
         self.max_quantity
@@ -414,8 +398,6 @@ impl<'a> FromCapnp<'a> for Cfd {
             size_increment: Quantity::from_capnp(reader.get_size_increment()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             lot_size: read_optional_from_capnp(|| reader.has_lot_size(), || reader.get_lot_size())?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
@@ -469,10 +451,6 @@ impl<'a> ToCapnp<'a> for Commodity {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.lot_size
             .write_capnp(|| builder.reborrow().init_lot_size());
         self.max_quantity
@@ -515,8 +493,6 @@ impl<'a> FromCapnp<'a> for Commodity {
             size_increment: Quantity::from_capnp(reader.get_size_increment()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             lot_size: read_optional_from_capnp(|| reader.has_lot_size(), || reader.get_lot_size())?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
@@ -580,10 +556,6 @@ impl<'a> ToCapnp<'a> for CryptoFuture {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -630,8 +602,6 @@ impl<'a> FromCapnp<'a> for CryptoFuture {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -695,10 +665,6 @@ impl<'a> ToCapnp<'a> for CryptoFuturesSpread {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -746,8 +712,6 @@ impl<'a> FromCapnp<'a> for CryptoFuturesSpread {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -813,10 +777,6 @@ impl<'a> ToCapnp<'a> for CryptoOption {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -865,8 +825,6 @@ impl<'a> FromCapnp<'a> for CryptoOption {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -930,10 +888,6 @@ impl<'a> ToCapnp<'a> for CryptoOptionSpread {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -981,8 +935,6 @@ impl<'a> FromCapnp<'a> for CryptoOptionSpread {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1043,10 +995,6 @@ impl<'a> ToCapnp<'a> for CryptoPerpetual {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1091,8 +1039,6 @@ impl<'a> FromCapnp<'a> for CryptoPerpetual {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1150,10 +1096,6 @@ impl<'a> ToCapnp<'a> for CurrencyPair {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1196,8 +1138,6 @@ impl<'a> FromCapnp<'a> for CurrencyPair {
             lot_size: read_optional_from_capnp(|| reader.has_lot_size(), || reader.get_lot_size())?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1250,10 +1190,6 @@ impl<'a> ToCapnp<'a> for Equity {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.lot_size
             .write_capnp(|| builder.reborrow().init_lot_size());
         self.max_quantity
@@ -1290,8 +1226,6 @@ impl<'a> FromCapnp<'a> for Equity {
             price_increment: Price::from_capnp(reader.get_price_increment()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             lot_size: read_optional_from_capnp(|| reader.has_lot_size(), || reader.get_lot_size())?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
@@ -1348,10 +1282,6 @@ impl<'a> ToCapnp<'a> for FuturesContract {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1394,8 +1324,6 @@ impl<'a> FromCapnp<'a> for FuturesContract {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1452,10 +1380,6 @@ impl<'a> ToCapnp<'a> for FuturesSpread {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1499,8 +1423,6 @@ impl<'a> FromCapnp<'a> for FuturesSpread {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1607,10 +1529,6 @@ impl<'a> ToCapnp<'a> for OptionContract {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1655,8 +1573,6 @@ impl<'a> FromCapnp<'a> for OptionContract {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1713,10 +1629,6 @@ impl<'a> ToCapnp<'a> for OptionSpread {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1760,8 +1672,6 @@ impl<'a> FromCapnp<'a> for OptionSpread {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1816,10 +1726,6 @@ impl<'a> ToCapnp<'a> for PerpetualContract {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1869,8 +1775,6 @@ impl<'a> FromCapnp<'a> for PerpetualContract {
             lot_size: Quantity::from_capnp(reader.get_lot_size()?)?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),
@@ -1933,10 +1837,6 @@ impl<'a> ToCapnp<'a> for TokenizedAsset {
             .write_capnp(|| builder.reborrow().init_margin_init());
         self.margin_maint
             .write_capnp(|| builder.reborrow().init_margin_maint());
-        self.maker_fee
-            .write_capnp(|| builder.reborrow().init_maker_fee());
-        self.taker_fee
-            .write_capnp(|| builder.reborrow().init_taker_fee());
         self.max_quantity
             .write_capnp(|| builder.reborrow().init_max_quantity());
         self.min_quantity
@@ -1981,8 +1881,6 @@ impl<'a> FromCapnp<'a> for TokenizedAsset {
             lot_size: read_optional_from_capnp(|| reader.has_lot_size(), || reader.get_lot_size())?,
             margin_init: Decimal::from_capnp(reader.get_margin_init()?)?,
             margin_maint: Decimal::from_capnp(reader.get_margin_maint()?)?,
-            maker_fee: Decimal::from_capnp(reader.get_maker_fee()?)?,
-            taker_fee: Decimal::from_capnp(reader.get_taker_fee()?)?,
             max_quantity: read_optional_from_capnp(
                 || reader.has_max_quantity(),
                 || reader.get_max_quantity(),

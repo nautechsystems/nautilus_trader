@@ -234,10 +234,7 @@ async fn create_dydx_data_client(
         Some(retry_config),
     )
     .unwrap();
-    let instruments = http_client
-        .request_instruments(None, None, None)
-        .await
-        .unwrap();
+    let instruments = http_client.request_instruments(None).await.unwrap();
     http_client.cache_instruments(instruments);
 
     let ws_client = DydxWebSocketClient::new_public_with_cache(
@@ -401,7 +398,7 @@ async fn test_request_instruments_returns_all_active_markets() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     // All active markets from fixture (BTC-USD, ETH-USD, SOL-USD)
     assert_eq!(instruments.len(), 3);
@@ -426,7 +423,7 @@ async fn test_instrument_properties_btc() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     let btc = instruments
         .iter()
@@ -446,7 +443,7 @@ async fn test_instrument_properties_eth() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     let eth = instruments
         .iter()
@@ -464,7 +461,7 @@ async fn test_instrument_caching() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     // Cache instruments
     client.cache_instruments(instruments);
@@ -483,7 +480,7 @@ async fn test_cache_single_instrument() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
 
     let btc = instruments
         .into_iter()
@@ -664,7 +661,7 @@ async fn test_empty_instruments_response() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    let instruments = client.request_instruments(None).await.unwrap();
     assert!(instruments.is_empty());
 }
 
@@ -680,7 +677,7 @@ async fn test_network_error() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -717,7 +714,7 @@ async fn test_server_error_500() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -754,7 +751,7 @@ async fn test_server_error_429_rate_limit() {
     )
     .unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 
@@ -779,7 +776,7 @@ async fn test_malformed_json_response() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let result = client.request_instruments(None, None, None).await;
+    let result = client.request_instruments(None).await;
     assert!(result.is_err());
 }
 

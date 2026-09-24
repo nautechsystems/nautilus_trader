@@ -272,24 +272,26 @@ async def test_unawaited_run_returns_the_node_to_the_wrapper() -> None:
     node.dispose()
 
 
-async def test_second_node_on_the_same_loop_is_rejected() -> None:
+async def test_second_node_construction_is_rejected_while_hosted() -> None:
     """
-    Test second node on the same loop is rejected.
+    Reject a second construction while a node runs on the host loop.
     """
     first = build_node("HOSTED-015")
-    second = build_node("HOSTED-016")
     handle = first.handle()
 
     task = asyncio.create_task(first.run_async())
     await asyncio.sleep(0.1)
 
     # Thread-local runner senders and msgbus mean two hosted nodes would cross-wire silently.
-    with pytest.raises(RuntimeError, match="already running on this event loop"):
-        second.run_async()
+    with pytest.raises(RuntimeError, match="A LiveNode already exists"):
+        build_node("HOSTED-016")
 
     await stop_and_await(handle, task)
 
-    # The guard clears once the first run finishes, so the loop can host another node.
+    first.dispose()
+    del first
+
+    second = build_node("HOSTED-016")
     second_handle = second.handle()
     second_task = asyncio.create_task(second.run_async())
     await asyncio.sleep(0.1)
@@ -662,19 +664,12 @@ def test_close_after_the_loop_stops_drives_shutdown_inline() -> None:
         node.dispose()
 
 
-async def test_a_late_drop_does_not_release_another_runs_guard() -> None:
+async def test_late_run_collection_does_not_release_another_nodes_thread() -> None:
     """
-    Only the run that set the per-loop guard may release it.
-
-    Releasing on every restore would let a completed run's delayed collection reopen the
-    gate while a newer run is live, which is the cross-wiring the guard exists to
-    prevent.
-
+    Collecting a completed run must not release a newer node's thread reservation.
     """
     first = build_node("HOSTED-027")
-    second = build_node("HOSTED-028")
-    third = build_node("HOSTED-029")
-    first_handle, second_handle = first.handle(), second.handle()
+    first_handle = first.handle()
 
     # Keep a strong reference so the completed run is not collected yet.
     first_run = first.run_async()
@@ -684,6 +679,10 @@ async def test_a_late_drop_does_not_release_another_runs_guard() -> None:
     async with asyncio.timeout(10.0):
         await first_task
 
+    first.dispose()
+    del first
+    second = build_node("HOSTED-028")
+    second_handle = second.handle()
     second_task = asyncio.create_task(second.run_async())
     await asyncio.sleep(0.1)
     assert second_handle.state == NodeState.RUNNING
@@ -692,12 +691,11 @@ async def test_a_late_drop_does_not_release_another_runs_guard() -> None:
     del first_run, first_task
     gc.collect()
 
-    with pytest.raises(RuntimeError, match="already running on this event loop"):
-        third.run_async()
+    with pytest.raises(RuntimeError, match="A LiveNode already exists"):
+        build_node("HOSTED-029")
 
     await stop_and_await(second_handle, second_task)
-    first.dispose()
-    third.dispose()
+    second.dispose()
 
 
 async def test_concurrent_stop_calls_from_many_threads_resolve_once() -> None:
@@ -780,5 +778,6 @@ async def test_repeated_node_lifecycles_on_one_loop() -> None:
 
         observed.append((running, handle.state))
         node.dispose()
+        del node
 
     assert observed == [(NodeState.RUNNING, NodeState.STOPPED)] * 5

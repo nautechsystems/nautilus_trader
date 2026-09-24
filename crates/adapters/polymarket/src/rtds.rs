@@ -1001,12 +1001,15 @@ impl PolymarketRtdsFeed {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.inner.transport_backend,
             proxy_url: self
                 .inner
                 .proxy_url
                 .as_ref()
                 .map(|url| url.expose().to_string()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         }
     }
 
@@ -2305,8 +2308,11 @@ mod tests {
                     reconnect_max_attempts: None,
                     heartbeat_timeout_secs: Some(POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS),
                     idle_timeout_ms: None,
+                    writer_capacity: None,
                     backend: TransportBackend::default(),
                     proxy_url: None,
+                    max_message_size_bytes: None,
+                    max_frame_size_bytes: None,
                 })
                 .message_handler(handler)
                 .connect()
