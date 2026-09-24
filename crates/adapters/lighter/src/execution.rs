@@ -4280,6 +4280,7 @@ fn classify_lighter_ws_command_failure(action: &str, error: &LighterWsError) -> 
         }
         LighterWsError::Transport(
             SendError::InvalidInput(_)
+            | SendError::BufferFull
             | SendError::Closed
             | SendError::Timeout
             | SendError::ConnectionChanged,
@@ -6674,6 +6675,7 @@ mod tests {
         LighterWsError::Transport(SendError::InvalidInput("invalid payload".to_string())),
         "NotSent",
     )]
+    #[case::buffer_full(LighterWsError::Transport(SendError::BufferFull), "NotSent")]
     #[case::closed(LighterWsError::Transport(SendError::Closed), "NotSent")]
     #[case::connection_changed(LighterWsError::Transport(SendError::ConnectionChanged), "NotSent")]
     #[case::wait_timeout(LighterWsError::Transport(SendError::Timeout), "NotSent")]

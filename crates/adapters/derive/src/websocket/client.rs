@@ -417,6 +417,7 @@ impl DeriveWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(WS_HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url

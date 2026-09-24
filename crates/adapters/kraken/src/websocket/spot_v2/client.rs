@@ -306,6 +306,7 @@ impl KrakenSpotWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: (self.config.ws_idle_timeout_ms != 0)
                 .then_some(self.config.ws_idle_timeout_ms),
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url

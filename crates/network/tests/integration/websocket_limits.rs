@@ -66,6 +66,7 @@ fn config(
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
+        writer_capacity: None,
         backend,
         proxy_url,
         max_message_size_bytes,

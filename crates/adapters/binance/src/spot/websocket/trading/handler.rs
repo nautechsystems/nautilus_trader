@@ -318,7 +318,7 @@ impl BinanceSpotWsTradingHandler {
         let params_json = serde_json::json!({});
         let signed_params = self.sign_params(params_json)?;
 
-        let request = BinanceSpotWsTradingRequest::new(&id, "session.logon", signed_params);
+        let request = BinanceSpotWsTradingRequest::new(&id, method::SESSION_LOGON, signed_params);
         self.pending_requests
             .insert(id, BinanceSpotWsTradingRequestMeta::SessionLogon);
         self.send_request(request).await
@@ -396,13 +396,27 @@ impl BinanceSpotWsTradingHandler {
             request.method
         );
 
-        // Apply rate limiting for order operations
-        client
-            .send_text(json, Some(BINANCE_WS_RATE_LIMIT_KEY_ORDER.as_slice()))
-            .await
-            .map_err(|e| {
-                BinanceWsApiError::ConnectionError(format!("Failed to send request: {e}"))
-            })?;
+        let keys = Some(BINANCE_WS_RATE_LIMIT_KEY_ORDER.as_slice());
+
+        let is_session_setup = matches!(
+            self.pending_requests.get(&request.id),
+            Some(
+                BinanceSpotWsTradingRequestMeta::SessionLogon
+                    | BinanceSpotWsTradingRequestMeta::SubscribeUserData
+            )
+        );
+
+        let result = if is_session_setup {
+            client
+                .send_text_on_connection(json, keys, client.connection_epoch())
+                .await
+        } else {
+            client.send_text(json, keys).await
+        };
+
+        result.map_err(|e| {
+            BinanceWsApiError::ConnectionError(format!("Failed to send request: {e}"))
+        })?;
 
         Ok(())
     }
@@ -945,6 +959,14 @@ pub(crate) fn parse_server_shutdown_event_time_ms(data: &[u8]) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use futures_util::StreamExt;
+    use nautilus_common::testing::wait_until_async;
+    use nautilus_network::{
+        error::SendError,
+        websocket::{AuthTracker, WebSocketConfig},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -953,6 +975,97 @@ mod tests {
         new_order_full_response_codec::NewOrderFullResponseDecoder,
         self_trade_prevention_mode::SelfTradePreventionMode,
     };
+
+    #[tokio::test]
+    async fn test_authentication_with_full_replay_buffer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (replayed_tx, replayed_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let _first = tokio_tungstenite::accept_async(first).await.unwrap();
+            let (replacement, _) = listener.accept().await.unwrap();
+            let mut replacement = tokio_tungstenite::accept_async(replacement).await.unwrap();
+            let auth = replacement.next().await.unwrap().unwrap();
+            let auth: serde_json::Value = serde_json::from_str(auth.to_text().unwrap()).unwrap();
+            assert_eq!(auth["method"], method::SESSION_LOGON);
+            assert_eq!(auth["id"], "ws-1000");
+            assert_eq!(auth["params"]["apiKey"], "api-key");
+            let subscribe = replacement.next().await.unwrap().unwrap();
+            let subscribe: serde_json::Value =
+                serde_json::from_str(subscribe.to_text().unwrap()).unwrap();
+            assert_eq!(subscribe["method"], "userDataStream.subscribe");
+            assert_eq!(subscribe["id"], "ws-1001");
+            assert_eq!(subscribe["params"], serde_json::json!({}));
+            assert_eq!(
+                replacement.next().await.unwrap().unwrap(),
+                Message::text("held")
+            );
+            replayed_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let tracker = AuthTracker::new();
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Arc::new(SigningCredential::new(
+                "api-key".to_string(),
+                "secret".to_string(),
+            )),
+        );
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{address}"))
+            .writer_capacity(1)
+            .reconnect_delay_initial_ms(1)
+            .reconnect_delay_max_ms(1)
+            .reconnect_jitter_ms(0)
+            .build()
+            .unwrap();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(Arc::new(|_| {}))
+            .connect()
+            .await
+            .unwrap();
+        client.set_auth_tracker(tracker.clone(), true);
+
+        // Enqueue and request reconnect without yielding so the writer retains this message
+        client.send_text("held".to_string(), None).await.unwrap();
+        assert!(client.request_reconnect());
+        wait_until_async(
+            || async { client.is_active() && client.connection_epoch() == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(matches!(
+            client.send_text("overflow".to_string(), None).await,
+            Err(SendError::BufferFull)
+        ));
+        handler.inner = Some(client);
+        tokio::time::timeout(Duration::from_secs(5), handler.handle_session_logon())
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), handler.handle_subscribe_user_data())
+            .await
+            .unwrap()
+            .unwrap();
+        tracker.succeed();
+        tokio::time::timeout(Duration::from_secs(5), replayed_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        handler.inner.as_ref().unwrap().disconnect().await;
+        server.abort();
+    }
 
     #[rstest]
     fn test_cancel_replace_response_decodes_both_orders() {

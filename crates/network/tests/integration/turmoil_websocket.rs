@@ -190,6 +190,7 @@ fn websocket_config_for_backend(backend: TransportBackend) -> WebSocketConfig {
         reconnect_max_attempts: None,
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
+        writer_capacity: None,
         backend,
         proxy_url: None,
         max_message_size_bytes: None,

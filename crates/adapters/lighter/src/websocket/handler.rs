@@ -2320,6 +2320,7 @@ pub(crate) fn should_retry_lighter_ws_error(error: &LighterWsError) -> bool {
         LighterWsError::Transport(send_error) => match send_error {
             SendError::Timeout => true,
             SendError::InvalidInput(_)
+            | SendError::BufferFull
             | SendError::Closed
             | SendError::ConnectionChanged
             | SendError::BrokenPipe(_)
@@ -4413,6 +4414,7 @@ mod tests {
         )),
         false,
     )]
+    #[case::buffer_full(LighterWsError::Transport(SendError::BufferFull), false)]
     fn test_should_retry_lighter_ws_error(#[case] error: LighterWsError, #[case] expected: bool) {
         assert_eq!(should_retry_lighter_ws_error(&error), expected);
     }

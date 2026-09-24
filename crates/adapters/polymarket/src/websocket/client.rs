@@ -436,6 +436,7 @@ impl PolymarketWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(POLYMARKET_HEARTBEAT_TIMEOUT_SECS),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.as_ref().map(|url| url.expose().to_string()),
             max_message_size_bytes: None,

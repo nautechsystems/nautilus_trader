@@ -41,7 +41,10 @@
 //! Ordinary sends return after entering the writer channel. Failed ordinary writes and ordinary
 //! messages encountered during reconnect enter a FIFO buffer for replay on an active replacement
 //! connection. Registered authentication state can hold or discard that replay before it reaches
-//! the replacement sink.
+//! the replacement sink. [`WebSocketConfig::writer_capacity`] bounds ordinary messages across
+//! the channel, in-flight writes, and replay. Full capacity rejects a send with
+//! [`SendError::BufferFull`] before enqueueing. Ownership-bound sends and control traffic use
+//! a separate bounded allowance so authentication can unblock replay.
 //!
 //! Ownership-bound sends wait for the writer result, require the expected connection epoch, and
 //! never enter the reconnect buffer. The writer advances the epoch only when it installs a
@@ -127,6 +130,7 @@ use crate::{
         BoxedWsTransport, Message, TransportError, error::retryable_status,
         tungstenite::TungsteniteTransport,
     },
+    writer::{DEFAULT_WRITER_CAPACITY, WriterReceiver, WriterSender},
 };
 
 const WRITE_TIMEOUT_SECS: u64 = 5;
@@ -168,7 +172,7 @@ pub struct WebSocketClientInner {
     read_task: Option<dst::task::JoinHandle<()>>,
     read_fence: Option<ReadSessionFence>,
     write_task: dst::task::JoinHandle<()>,
-    writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    writer_tx: WriterSender<WriterCommand>,
     heartbeat_task: Option<dst::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
     connection_epoch: Arc<AtomicU64>,
@@ -227,6 +231,10 @@ impl WebSocketClientInner {
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
+        crate::writer::validate_capacity(config.writer_capacity).map_err(|e| {
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        })?;
+
         if config.heartbeat_interval_secs == Some(0) {
             return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -262,7 +270,9 @@ impl WebSocketClientInner {
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let (writer_tx, writer_rx) = crate::writer::channel::<WriterCommand>(
+            config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
+        );
         let write_task = Self::spawn_write_task(
             connection_mode.clone(),
             Arc::clone(&controller_notify),
@@ -322,6 +332,7 @@ impl WebSocketClientInner {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The writer capacity is invalid.
     /// - The connection to the server fails.
     /// - The exponential backoff configuration is invalid.
     pub async fn connect_url(
@@ -356,6 +367,10 @@ impl WebSocketClientInner {
         // place the field invariants are enforced for them. Stream mode documents the reconnect and
         // liveness fields as ignored and permits zero for them, so it checks only what it honors.
         if is_stream_mode {
+            crate::writer::validate_capacity(config.writer_capacity).map_err(|e| {
+                TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+            })?;
+
             if config.heartbeat_interval_secs == Some(0) {
                 return Err(TransportError::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -496,7 +511,9 @@ impl WebSocketClientInner {
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let (writer_tx, writer_rx) = crate::writer::channel::<WriterCommand>(
+            config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
+        );
         let write_task = Self::spawn_write_task(
             connection_mode.clone(),
             Arc::clone(&controller_notify),
@@ -1508,7 +1525,11 @@ impl WebSocketClientInner {
         // Use a oneshot channel to synchronize the writer swap before transitioning
         // back to ACTIVE. Buffered messages stay in the writer task and replay later.
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
+
+        if let Err(e) = self
+            .writer_tx
+            .send_update(WriterCommand::Update(new_writer, tx))
+        {
             log::error!("{e}");
             return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -1772,7 +1793,11 @@ impl WebSocketClientInner {
     /// carries its meaning on a replacement connection, so those messages are dropped
     /// instead. Text keepalives reach the writer as [`WriterCommand::Heartbeat`] and
     /// never enter this buffer.
-    fn buffer_for_replay(buffer: &mut VecDeque<Message>, msg: Message) {
+    fn buffer_for_replay(
+        buffer: &mut VecDeque<(Message, tokio::sync::OwnedSemaphorePermit)>,
+        msg: Message,
+        permit: tokio::sync::OwnedSemaphorePermit,
+    ) {
         if msg.is_control() {
             return;
         }
@@ -1782,7 +1807,7 @@ impl WebSocketClientInner {
             buffer.len() + 1
         );
 
-        buffer.push_back(msg);
+        buffer.push_back((msg, permit));
     }
 
     /// Attempts to send all buffered messages after reconnection.
@@ -1790,7 +1815,7 @@ impl WebSocketClientInner {
     /// Returns `true` if a send error occurred (caller should trigger reconnection).
     /// Messages remain in buffer if send fails, preserving them for the next reconnection attempt.
     async fn drain_reconnect_buffer(
-        buffer: &mut VecDeque<Message>,
+        buffer: &mut VecDeque<(Message, tokio::sync::OwnedSemaphorePermit)>,
         writer: &mut MessageWriter,
         connection_state: &AtomicU8,
         auth_tracker: &Arc<OnceLock<AuthTracker>>,
@@ -1825,6 +1850,7 @@ impl WebSocketClientInner {
             let msg_to_send = buffer
                 .front()
                 .expect("reconnect buffer should not be empty")
+                .0
                 .clone();
 
             if let Err(e) = writer.send(msg_to_send).await {
@@ -1895,7 +1921,7 @@ impl WebSocketClientInner {
         controller_notify: Arc<tokio::sync::Notify>,
         reconnect_published: Arc<AtomicBool>,
         writer: MessageWriter,
-        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
+        mut writer_rx: WriterReceiver<WriterCommand>,
         connection_epoch: Arc<AtomicU64>,
         auth_tracker: Arc<OnceLock<AuthTracker>>,
         reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
@@ -1910,7 +1936,8 @@ impl WebSocketClientInner {
             let mut active_writer = writer;
             // Buffer for messages received during reconnection
             // VecDeque for efficient pop_front() operations
-            let mut reconnect_buffer: VecDeque<Message> = VecDeque::new();
+            let mut reconnect_buffer: VecDeque<(Message, tokio::sync::OwnedSemaphorePermit)> =
+                VecDeque::new();
 
             loop {
                 let mode = ConnectionMode::from_atomic(&connection_state);
@@ -2002,7 +2029,7 @@ impl WebSocketClientInner {
                 }
 
                 match dst::time::timeout(check_interval, writer_rx.recv()).await {
-                    Ok(Some(msg)) => {
+                    Ok(Some((msg, permit))) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
                         if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
@@ -2035,7 +2062,7 @@ impl WebSocketClientInner {
                                 }
                             }
                             WriterCommand::Send(msg) if mode.is_reconnect() => {
-                                Self::buffer_for_replay(&mut reconnect_buffer, msg);
+                                Self::buffer_for_replay(&mut reconnect_buffer, msg, permit);
                             }
                             WriterCommand::Heartbeat(_)
                             | WriterCommand::SendPongOnConnection { .. }
@@ -2150,7 +2177,7 @@ impl WebSocketClientInner {
                                     Self::write_outbound(&mut active_writer, msg.clone()).await;
 
                                 if send_failed {
-                                    Self::buffer_for_replay(&mut reconnect_buffer, msg);
+                                    Self::buffer_for_replay(&mut reconnect_buffer, msg, permit);
 
                                     // CAS: a disconnect landing mid-send must not be overwritten
                                     if request_websocket_reconnect(
@@ -2233,7 +2260,7 @@ impl WebSocketClientInner {
         connection_state: Arc<AtomicU8>,
         heartbeat_secs: u64,
         message: Option<String>,
-        writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+        writer_tx: WriterSender<WriterCommand>,
     ) -> dst::task::JoinHandle<()> {
         log_task_started("heartbeat");
 
@@ -2252,7 +2279,7 @@ impl WebSocketClientInner {
                             None => WriterCommand::Heartbeat(Message::Ping(vec![].into())),
                         };
 
-                        match writer_tx.send(msg) {
+                        match writer_tx.send_control(msg) {
                             Ok(()) => log::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
                                 log::warn!("Failed to send heartbeat to writer task: {e}");
@@ -2400,7 +2427,7 @@ pub struct WebSocketClient {
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) connect_timeout: Duration,
     pub(crate) rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
-    pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    pub(crate) writer_tx: WriterSender<WriterCommand>,
     auth_tracker: Arc<OnceLock<AuthTracker>>,
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
     reconnect_headers: ReconnectHeaders,
@@ -3398,7 +3425,8 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns a websocket error if unable to send.
+    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
+    /// if the client cannot send.
     #[allow(unused_variables)]
     pub async fn send_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
@@ -3409,9 +3437,7 @@ impl WebSocketClient {
         log::trace!("Sending text frame ({} bytes)", data.len());
 
         let msg = Message::Text(data.into());
-        self.writer_tx
-            .send(WriterCommand::Send(msg))
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+        self.writer_tx.send(WriterCommand::Send(msg))
     }
 
     /// Sends text once if the active connection matches `connection_epoch`.
@@ -3422,6 +3448,7 @@ impl WebSocketClient {
     /// # Errors
     ///
     /// Returns:
+    /// - [`SendError::BufferFull`] if the shared control allowance is full.
     /// - [`SendError::Closed`] if the client closes.
     /// - [`SendError::Timeout`] if the active wait times out before the write starts.
     /// - [`SendError::ConnectionChanged`] if the expected connection no longer owns the writer.
@@ -3446,12 +3473,12 @@ impl WebSocketClient {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::Text(data.into()),
                 connection_epoch,
                 response_tx,
-            })
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))?;
+            })?;
+
         response_rx
             .await
             .map_err(|e| SendError::BrokenPipe(e.to_string()))?
@@ -3467,7 +3494,7 @@ impl WebSocketClient {
     ///
     /// Returns an error if:
     /// - The payload exceeds 125 bytes, the RFC 6455 control-frame limit.
-    /// - The writer channel is broken.
+    /// - The writer channel is broken or its control allowance is full.
     #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
     #[expect(
         clippy::unused_async,
@@ -3485,8 +3512,7 @@ impl WebSocketClient {
         log::trace!("Sending pong frame ({} bytes)", data.len());
 
         self.writer_tx
-            .send(WriterCommand::Send(Message::Pong(data.into())))
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+            .send_control(WriterCommand::Send(Message::Pong(data.into())))
     }
 
     /// Sends a pong if the connection that received its ping is still active.
@@ -3497,7 +3523,7 @@ impl WebSocketClient {
     ///
     /// Returns an error if:
     /// - The payload exceeds 125 bytes, the RFC 6455 control-frame limit.
-    /// - The writer channel is broken.
+    /// - The writer channel is broken or its control allowance is full.
     #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
     #[expect(
         clippy::unused_async,
@@ -3522,11 +3548,10 @@ impl WebSocketClient {
         );
 
         self.writer_tx
-            .send(WriterCommand::SendPongOnConnection {
+            .send_control(WriterCommand::SendPongOnConnection {
                 data,
                 connection_epoch,
             })
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     /// Sends the given bytes `data` to the server.
@@ -3537,7 +3562,8 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns a websocket error if unable to send.
+    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
+    /// if the client cannot send.
     #[allow(unused_variables)]
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
@@ -3548,23 +3574,20 @@ impl WebSocketClient {
         log::trace!("Sending binary frame ({} bytes)", data.len());
 
         let msg = Message::Binary(data.into());
-        self.writer_tx
-            .send(WriterCommand::Send(msg))
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+        self.writer_tx.send(WriterCommand::Send(msg))
     }
 
     /// Sends a close message to the server.
     ///
     /// # Errors
     ///
-    /// Returns a websocket error if unable to send.
+    /// Returns [`SendError::BufferFull`] if the shared control allowance is full, or an error
+    /// if the client cannot send.
     pub async fn send_close_message(&self) -> Result<(), SendError> {
         self.wait_for_active().await?;
 
         let msg = Message::Close(None);
-        self.writer_tx
-            .send(WriterCommand::Send(msg))
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+        self.writer_tx.send_control(WriterCommand::Send(msg))
     }
 
     fn spawn_controller_task(
@@ -3893,10 +3916,10 @@ mod tests {
         logging::tests::capture_logs_for,
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
-        transport::TransportError,
+        transport::{Message, TransportError},
         websocket::{
             InitialConnectRetryPolicy, ReconnectHeaders, TransportBackend, WebSocketClient,
-            WebSocketConfig,
+            WebSocketConfig, types::WriterCommand,
         },
     };
 
@@ -4031,6 +4054,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4042,6 +4066,75 @@ mod tests {
             .connect()
             .await
             .expect("Failed to connect")
+    }
+
+    #[rstest]
+    #[case::handler(false)]
+    #[case::stream(true)]
+    #[tokio::test]
+    async fn test_writer_capacity_from_config(#[case] stream_mode: bool) {
+        let server = TestServer::setup().await;
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://127.0.0.1:{}", server.port))
+            .headers(vec![("test".to_string(), "test".to_string())])
+            .backend(TransportBackend::Tungstenite)
+            .writer_capacity(2)
+            .build()
+            .unwrap();
+
+        let (client, _reader) = if stream_mode {
+            let (reader, client) = WebSocketClient::stream_builder()
+                .config(config)
+                .connect()
+                .await
+                .unwrap();
+            (client, Some(reader))
+        } else {
+            let client = WebSocketClient::builder()
+                .config(config)
+                .message_handler(Arc::new(|_| {}))
+                .connect()
+                .await
+                .unwrap();
+            (client, None)
+        };
+
+        // Ready sends do not yield on this current-thread runtime, keeping the queue occupied
+        client.send_text("first".to_string(), None).await.unwrap();
+        client.send_bytes(vec![2], None).await.unwrap();
+        let overflow = client.send_text("overflow".to_string(), None).await;
+
+        assert_eq!(client.connection_mode(), ConnectionMode::Active);
+        assert!(matches!(overflow, Err(SendError::BufferFull)));
+        client.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_reports_writer_buffer_full() {
+        let server = TestServer::setup().await;
+        let mut client = setup_test_client(server.port).await;
+        let (writer_tx, mut writer_rx) = crate::writer::channel(1);
+        client.writer_tx = writer_tx;
+
+        client.send_text("first".to_string(), None).await.unwrap();
+        let result = client.send_bytes(vec![2], None).await;
+        assert!(matches!(result, Err(SendError::BufferFull)));
+        let (command, permit) = writer_rx.recv().await.unwrap();
+        assert!(
+            matches!(command, WriterCommand::Send(message) if message == Message::text("first"))
+        );
+        assert!(matches!(
+            client.send_text("overflow".to_string(), None).await,
+            Err(SendError::BufferFull)
+        ));
+        drop(permit);
+        client.send_bytes(vec![3], None).await.unwrap();
+        let (command, _) = writer_rx.recv().await.unwrap();
+        assert!(
+            matches!(command, WriterCommand::Send(message) if message == Message::Binary(vec![3].into()))
+        );
+        client.disconnect().await;
     }
 
     async fn setup_reconnecting_client(port: u16) -> WebSocketClient {
@@ -4058,6 +4151,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4209,6 +4303,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4555,6 +4650,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4666,6 +4762,7 @@ mod tests {
             reconnect_max_attempts: Some(3),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4726,6 +4823,7 @@ mod tests {
             reconnect_max_attempts: Some(3),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4768,6 +4866,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4823,6 +4922,7 @@ mod tests {
             reconnect_max_attempts: Some(2),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4936,6 +5036,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -4990,6 +5091,7 @@ mod tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -5181,6 +5283,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6248,6 +6351,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6301,6 +6405,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6359,6 +6464,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6413,6 +6519,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6494,6 +6601,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6562,6 +6670,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6652,6 +6761,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6744,6 +6854,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6837,6 +6948,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -6930,6 +7042,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7003,6 +7116,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7155,6 +7269,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7204,6 +7319,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7262,6 +7378,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7314,6 +7431,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(500),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7380,6 +7498,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(1_000),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7446,6 +7565,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(500),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7521,6 +7641,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(1_500),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7587,6 +7708,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7664,6 +7786,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -7760,6 +7883,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -8008,7 +8132,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8035,7 +8159,7 @@ mod rust_tests {
             .send(WriterCommand::Update(replacement_writer, update_tx))
             .unwrap();
         writer_tx
-            .send(WriterCommand::SendPongOnConnection {
+            .send_control(WriterCommand::SendPongOnConnection {
                 data: b"stale-pong".to_vec(),
                 connection_epoch: 0,
             })
@@ -8046,7 +8170,7 @@ mod rust_tests {
 
         let (sentinel_tx, sentinel_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("sentinel-1"),
                 connection_epoch: 1,
                 response_tx: sentinel_tx,
@@ -8056,14 +8180,14 @@ mod rust_tests {
         assert_eq!(recorded.lock().as_slice(), &[Message::text("sentinel-1")]);
 
         writer_tx
-            .send(WriterCommand::SendPongOnConnection {
+            .send_control(WriterCommand::SendPongOnConnection {
                 data: b"fresh-pong".to_vec(),
                 connection_epoch: 1,
             })
             .unwrap();
         let (sentinel_tx, sentinel_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("sentinel-2"),
                 connection_epoch: 1,
                 response_tx: sentinel_tx,
@@ -8154,9 +8278,12 @@ mod rust_tests {
         let drain_task = tokio::spawn(async move {
             let auth_tracker = Arc::new(OnceLock::new());
             let reconnect_buffer_waits_for_auth = AtomicBool::new(false);
+            let (sender, mut receiver) = crate::writer::channel(2);
+            sender.send(Message::text("admitted")).unwrap();
+            sender.send(Message::text("held-for-reconnect")).unwrap();
             let mut buffer = VecDeque::from([
-                Message::text("admitted"),
-                Message::text("held-for-reconnect"),
+                receiver.recv().await.unwrap(),
+                receiver.recv().await.unwrap(),
             ]);
             let send_error = WebSocketClientInner::drain_reconnect_buffer(
                 &mut buffer,
@@ -8179,8 +8306,52 @@ mod rust_tests {
             .unwrap();
         assert!(!send_error);
         assert_eq!(
-            buffer,
-            VecDeque::from([Message::text("held-for-reconnect")])
+            buffer
+                .into_iter()
+                .map(|(message, _)| message)
+                .collect::<Vec<_>>(),
+            vec![Message::text("held-for-reconnect")]
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(usize::MAX)]
+    #[tokio::test]
+    async fn test_stream_writer_rejects_invalid_capacity(#[case] capacity: usize) {
+        let transport: BoxedWsTransport = Box::pin(BlockingFailTransport {
+            state: Arc::new(BlockingFailState::default()),
+        });
+
+        let (writer, _reader) = transport.split();
+        let mut config = WebSocketConfig::builder()
+            .url("ws://localhost".to_string())
+            .build()
+            .unwrap();
+        config.writer_capacity = Some(capacity);
+
+        let result = WebSocketClientInner::new_with_writer(config, writer).await;
+
+        assert!(
+            matches!(result, Err(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidInput && e.to_string().contains("writer_capacity"))
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(usize::MAX)]
+    #[tokio::test]
+    async fn test_handlerless_connect_rejects_invalid_capacity(#[case] capacity: usize) {
+        let mut config = WebSocketConfig::builder()
+            .url("ws://127.0.0.1:1".to_string())
+            .build()
+            .unwrap();
+        config.writer_capacity = Some(capacity);
+
+        let result = WebSocketClientInner::connect_url(config, None, None).await;
+
+        assert!(
+            matches!(result, Err(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidInput && e.to_string().contains("writer_capacity"))
         );
     }
 
@@ -8196,7 +8367,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(2);
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
@@ -8218,6 +8389,31 @@ mod rust_tests {
             .send(WriterCommand::Send(Message::text("complete-message")))
             .unwrap();
         state.send_entered_notify.notified().await;
+        writer_tx
+            .send(WriterCommand::Send(Message::text("second-message")))
+            .unwrap();
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Active
+        );
+
+        for _ in 0..100 {
+            assert!(matches!(
+                writer_tx.send(WriterCommand::Send(Message::text("overflow"))),
+                Err(SendError::BufferFull)
+            ));
+        }
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert!(matches!(
+            writer_tx.send(WriterCommand::Send(Message::text("overflow"))),
+            Err(SendError::BufferFull)
+        ));
 
         let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
@@ -8230,7 +8426,7 @@ mod rust_tests {
         let (new_writer, _reader) = transport.split();
         let (update_tx, update_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::Update(new_writer, update_tx))
+            .send_update(WriterCommand::Update(new_writer, update_tx))
             .unwrap();
 
         tokio::time::advance(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS)).await;
@@ -8253,8 +8449,15 @@ mod rust_tests {
         recording_state.recorded_notify.notified().await;
         assert_eq!(
             recorded.lock().as_slice(),
-            &[Message::text("complete-message")]
+            &[
+                Message::text("complete-message"),
+                Message::text("second-message")
+            ]
         );
+
+        writer_tx
+            .send(WriterCommand::Send(Message::text("second-message")))
+            .unwrap();
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
@@ -8279,7 +8482,7 @@ mod rust_tests {
         let (writer, _reader) = transport.split();
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8365,7 +8568,7 @@ mod rust_tests {
         let (writer, _reader) = transport.split();
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8411,7 +8614,7 @@ mod rust_tests {
         let (writer, _reader) = transport.split();
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8493,7 +8696,7 @@ mod rust_tests {
         let (writer, _reader) = transport.split();
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8544,7 +8747,8 @@ mod rust_tests {
         #[case] expected: Message,
     ) {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
-        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, mut writer_rx) =
+            crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let task = WebSocketClientInner::spawn_heartbeat_task(
             Arc::clone(&connection_state),
             1,
@@ -8558,7 +8762,7 @@ mod rust_tests {
             .await
             .expect("heartbeat task should enqueue");
 
-        match cmd {
+        match cmd.0 {
             WriterCommand::Heartbeat(msg) => assert_eq!(msg, expected),
             other => panic!("expected Heartbeat, was {other:?}"),
         }
@@ -8574,7 +8778,8 @@ mod rust_tests {
     async fn test_heartbeat_task_warns_when_writer_channel_closed() {
         let capture = capture_logs_for(&["nautilus_network::websocket::client"]).await;
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
-        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, mut writer_rx) =
+            crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let task = WebSocketClientInner::spawn_heartbeat_task(
             Arc::clone(&connection_state),
             1,
@@ -8582,7 +8787,7 @@ mod rust_tests {
             writer_tx,
         );
 
-        tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
+        let _ = tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
             .await
             .expect("timed out waiting for the first heartbeat")
             .expect("heartbeat channel closed before the first heartbeat");
@@ -8620,7 +8825,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8635,7 +8840,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("ownership-bound"),
                 connection_epoch: 0,
                 response_tx,
@@ -8694,7 +8899,7 @@ mod rust_tests {
         for name in ["sentinel-1", "sentinel-2"] {
             let (sentinel_tx, sentinel_rx) = tokio::sync::oneshot::channel();
             writer_tx
-                .send(WriterCommand::SendOnConnection {
+                .send_control(WriterCommand::SendOnConnection {
                     message: Message::text(name),
                     connection_epoch: 1,
                     response_tx: sentinel_tx,
@@ -8735,7 +8940,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -8834,6 +9039,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -8880,6 +9086,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -8965,6 +9172,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9041,6 +9249,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(500),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9086,7 +9295,7 @@ mod rust_tests {
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
         let connection_epoch = Arc::new(AtomicU64::new(0));
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -9140,7 +9349,7 @@ mod rust_tests {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let connection_epoch = Arc::new(AtomicU64::new(0));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -9155,7 +9364,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("doomed"),
                 connection_epoch: 0,
                 response_tx,
@@ -9213,7 +9422,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let connection_epoch = Arc::new(AtomicU64::new(0));
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -9228,7 +9437,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("epoch-0"),
                 connection_epoch: 0,
                 response_tx,
@@ -9239,7 +9448,7 @@ mod rust_tests {
         connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("during-reconnect"),
                 connection_epoch: 0,
                 response_tx,
@@ -9269,7 +9478,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("stale"),
                 connection_epoch: 0,
                 response_tx,
@@ -9282,7 +9491,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("epoch-1"),
                 connection_epoch: 1,
                 response_tx,
@@ -9310,7 +9519,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("stale-after-second-reconnect"),
                 connection_epoch: 1,
                 response_tx,
@@ -9323,7 +9532,7 @@ mod rust_tests {
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::SendOnConnection {
+            .send_control(WriterCommand::SendOnConnection {
                 message: Message::text("epoch-2"),
                 connection_epoch: 2,
                 response_tx,
@@ -9409,7 +9618,7 @@ mod rust_tests {
         let tracker = AuthTracker::new();
         auth_tracker.set(tracker.clone()).unwrap();
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(1);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -9438,7 +9647,7 @@ mod rust_tests {
         .unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         writer_tx
-            .send(WriterCommand::Update(new_writer, tx))
+            .send_update(WriterCommand::Update(new_writer, tx))
             .unwrap();
         assert_eq!(rx.await.unwrap(), 1);
 
@@ -9450,18 +9659,35 @@ mod rust_tests {
             "buffered messages should wait for re-authentication"
         );
 
+        assert!(matches!(
+            writer_tx.send(WriterCommand::Send(Message::text("overflow"))),
+            Err(SendError::BufferFull)
+        ));
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send_control(WriterCommand::SendOnConnection {
+                message: Message::text("authenticate"),
+                connection_epoch: 1,
+                response_tx,
+            })
+            .unwrap();
+
+        response_rx.await.unwrap().unwrap();
         tracker.succeed();
 
         wait_until_async(
             || {
                 let messages = Arc::clone(&server.messages);
-                async move { !messages.lock().await.is_empty() }
+                async move { messages.lock().await.len() == 2 }
             },
             Duration::from_secs(3),
         )
         .await;
 
-        assert_eq!(server.messages().await, vec!["stale".to_string()]);
+        assert_eq!(
+            server.messages().await,
+            vec!["authenticate".to_string(), "stale".to_string()]
+        );
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
@@ -9492,7 +9718,7 @@ mod rust_tests {
         let tracker = AuthTracker::new();
         auth_tracker.set(tracker.clone()).unwrap();
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, writer_rx) = crate::writer::channel(crate::writer::DEFAULT_WRITER_CAPACITY);
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -9567,6 +9793,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: Some(0),
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9605,6 +9832,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(0),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9644,6 +9872,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Sockudo,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9714,6 +9943,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Sockudo,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9828,6 +10058,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Sockudo,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9912,6 +10143,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Sockudo,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -9993,6 +10225,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Sockudo,
             proxy_url: None,
             max_message_size_bytes: None,
@@ -10829,6 +11062,7 @@ mod turmoil_tests {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
             max_message_size_bytes: None,

@@ -908,6 +908,7 @@ fn should_retry_replay_safe_error(error: &OKXWsError) -> bool {
         | OKXWsError::HandlerUnavailable(_)
         | OKXWsError::TransportSend(
             SendError::InvalidInput(_)
+            | SendError::BufferFull
             | SendError::Closed
             | SendError::WriteTimeout
             | SendError::BrokenPipe(_),
@@ -1503,6 +1504,9 @@ mod tests {
 
     #[rstest]
     fn test_should_retry_typed_transport_and_timeout_errors() {
+        assert!(!should_retry_replay_safe_error(&OKXWsError::TransportSend(
+            SendError::BufferFull
+        )));
         assert!(should_retry_replay_safe_error(&OKXWsError::TransportSend(
             SendError::Timeout
         )));

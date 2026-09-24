@@ -202,6 +202,15 @@ pub struct WebSocketConfig {
     /// Only applies to handler mode; stream mode ignores this field.
     #[serde(default)]
     pub idle_timeout_ms: Option<u64>,
+    /// The maximum number of outstanding ordinary messages, including queued, in-flight, and replay messages.
+    ///
+    /// Ownership-bound sends, keepalives, and control frames share a separate allowance of the same size,
+    /// so authentication can proceed when replay fills the ordinary allowance.
+    ///
+    /// Defaults to 1,024. Sends fail immediately when full. Must be positive and no greater
+    /// than [`tokio::sync::Semaphore::MAX_PERMITS`]. This bounds message count, not payload bytes.
+    #[serde(default)]
+    pub writer_capacity: Option<usize>,
     /// The transport backend to use for the WebSocket connection.
     ///
     /// Defaults to [`TransportBackend::Sockudo`] when the `transport-sockudo`
@@ -249,6 +258,7 @@ impl Debug for WebSocketConfig {
             )
             .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
             .field("heartbeat_payload", &self.heartbeat_payload)
+            .field("writer_capacity", &self.writer_capacity)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field(
                 "reconnect_delay_initial_ms",
@@ -289,10 +299,15 @@ impl WebSocketConfig {
     ///
     /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval, a
     /// reconnection timing field, or an inbound size limit is not positive,
-    /// `reconnect_backoff_factor` is outside `[1.0, 100.0]`, or `reconnect_delay_initial_ms`
-    /// exceeds `reconnect_delay_max_ms`.
+    /// `reconnect_backoff_factor` is outside `[1.0, 100.0]`, `reconnect_delay_initial_ms`
+    /// exceeds `reconnect_delay_max_ms`, or `writer_capacity` is outside
+    /// `[1, Semaphore::MAX_PERMITS]`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
+
+        if let Err(e) = crate::writer::validate_capacity(self.writer_capacity) {
+            errors.push(e);
+        }
 
         if self.url.trim().is_empty() {
             errors.push(NetworkConfigError::invalid("url", "must not be empty"));
@@ -488,6 +503,8 @@ mod tests {
     }
 
     #[rstest]
+    #[case::writer_capacity_zero(|c: &mut WebSocketConfig| c.writer_capacity = Some(0), "writer_capacity")]
+    #[case::writer_capacity_excess(|c: &mut WebSocketConfig| c.writer_capacity = Some(usize::MAX), "writer_capacity")]
     #[case::empty_url(|c: &mut WebSocketConfig| c.url = String::new(), "url")]
     #[case::heartbeat_interval(|c: &mut WebSocketConfig| c.heartbeat_interval_secs = Some(0), "heartbeat_interval_secs")]
     #[case::heartbeat_timeout_below_interval(|c: &mut WebSocketConfig| { c.heartbeat_interval_secs = Some(30); c.heartbeat_timeout_secs = Some(30); }, "heartbeat_timeout_secs")]

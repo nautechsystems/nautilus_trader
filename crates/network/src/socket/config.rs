@@ -111,6 +111,11 @@ pub struct SocketConfig {
     /// detection otherwise. `Some(0)` is rejected. Set an explicit value above the heartbeat
     /// interval so a healthy connection cannot trip it.
     pub heartbeat_timeout_secs: Option<u64>,
+    /// The maximum number of outstanding messages, including queued, in-flight, and replay messages.
+    ///
+    /// Defaults to 1,024. Sends fail immediately when full. Must be positive and no greater
+    /// than [`tokio::sync::Semaphore::MAX_PERMITS`]. This bounds message count, not payload bytes.
+    pub writer_capacity: Option<usize>,
     /// The path to the certificates directory.
     ///
     /// Every certificate that parses from any file directly inside the directory, regardless of
@@ -144,9 +149,14 @@ impl SocketConfig {
     ///
     /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
     /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
-    /// `[1.0, 100.0]`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
+    /// `[1.0, 100.0]`, `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`, or
+    /// `writer_capacity` is outside `[1, Semaphore::MAX_PERMITS]`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
+
+        if let Err(e) = crate::writer::validate_capacity(self.writer_capacity) {
+            errors.push(e);
+        }
 
         if self.url.trim().is_empty() {
             errors.push(NetworkConfigError::invalid("url", "must not be empty"));
@@ -240,6 +250,7 @@ impl Debug for SocketConfig {
                 &self.message_handler.as_ref().map(|_| "<function>"),
             )
             .field("heartbeat", &self.heartbeat)
+            .field("writer_capacity", &self.writer_capacity)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field(
                 "reconnect_delay_initial_ms",
@@ -321,6 +332,8 @@ mod tests {
     }
 
     #[rstest]
+    #[case::writer_capacity_zero(|c: &mut SocketConfig| c.writer_capacity = Some(0), "writer_capacity")]
+    #[case::writer_capacity_excess(|c: &mut SocketConfig| c.writer_capacity = Some(usize::MAX), "writer_capacity")]
     #[case::empty_url(|c: &mut SocketConfig| c.url = String::new(), "url")]
     #[case::heartbeat_interval(|c: &mut SocketConfig| { c.heartbeat = Some(SocketHeartbeat { interval_secs: 0, payload: vec![] }); }, "heartbeat")]
     #[case::heartbeat_timeout_below_interval(|c: &mut SocketConfig| { c.heartbeat = Some(SocketHeartbeat { interval_secs: 5, payload: vec![b'p'] }); c.heartbeat_timeout_secs = Some(5); }, "heartbeat_timeout_secs")]

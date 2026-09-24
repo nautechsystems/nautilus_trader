@@ -319,6 +319,14 @@ If a bound write times out after it starts, **delivery is undetermined** and the
 retry blindly.
 :::
 
+### Writer capacity
+
+`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes,
+and reconnect buffer. It defaults to 1,024 messages. Ownership-bound sends, keepalives, and control
+frames share a separate allowance of the same size so authentication can proceed when replay fills
+the ordinary allowance. A full allowance rejects new sends with `SendError::BufferFull` before
+enqueueing. These limits bound message count, not payload bytes.
+
 ### Backend benchmarks
 
 The [WebSocket benchmark](../../crates/network/benches/BENCHMARKS.md) was measured on
@@ -467,6 +475,13 @@ concurrent disconnect can still prevent delivery. Reconnect replay and buffering
 so protocols that require durable or exactly-once delivery must enforce those guarantees above the
 socket client.
 :::
+
+### Writer capacity
+
+`SocketConfig::writer_capacity` limits the combined number of queued, in-flight, and replay messages
+and defaults to 1,024. Once full, the writer rejects new sends with `SendError::BufferFull`, including
+sends through `SocketClient::writer_tx`. Accepted messages retain their replay policy. This limits
+message count, not payload bytes.
 
 ## TCP socket options
 

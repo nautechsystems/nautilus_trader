@@ -71,6 +71,7 @@ use crate::{
     },
     net::TcpStream,
     tls::{create_tls_config_from_certs_dir, tcp_tls},
+    writer::{self, DEFAULT_WRITER_CAPACITY, WriterReceiver, WriterSender},
 };
 
 // Connection timing constants
@@ -85,6 +86,7 @@ const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
 struct BufferedWrite {
     data: Bytes,
     replay_key: Option<u64>,
+    _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 /// Produces protocol messages that must precede buffered application writes after reconnect.
@@ -96,7 +98,7 @@ struct SocketClientInner {
     read_task: tokio::task::JoinHandle<()>,
     read_fence: ReadSessionFence,
     write_task: tokio::task::JoinHandle<()>,
-    writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    writer_tx: WriterSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
     state_notify: Arc<tokio::sync::Notify>,
@@ -224,7 +226,9 @@ impl SocketClientInner {
             config.resolved_heartbeat_timeout(),
         );
 
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let (writer_tx, writer_rx) = writer::channel::<WriterCommand>(
+            config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
+        );
 
         let write_task = Self::spawn_write_task(
             connection_mode.clone(),
@@ -407,7 +411,7 @@ impl SocketClientInner {
             WriterCommand::Update(new_writer, tx)
         };
 
-        if let Err(e) = self.writer_tx.send(command) {
+        if let Err(e) = self.writer_tx.send_update(command) {
             log::error!("{e}");
             return Err(Error::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -728,7 +732,7 @@ impl SocketClientInner {
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
         writer: W,
-        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand<W>>,
+        mut writer_rx: WriterReceiver<WriterCommand<W>>,
         suffix: Vec<u8>,
         state_sink: Option<SocketStateSink>,
     ) -> tokio::task::JoinHandle<()>
@@ -783,7 +787,7 @@ impl SocketClientInner {
                 }
 
                 match dst::time::timeout(check_interval, writer_rx.recv()).await {
-                    Ok(Some(msg)) => {
+                    Ok(Some((msg, permit))) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
                         if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
@@ -830,7 +834,12 @@ impl SocketClientInner {
                                     "Buffering message until reconnect drain completes ({} bytes)",
                                     data.len()
                                 );
-                                Self::buffer_reconnect_write(&mut reconnect_buffer, data, None);
+                                Self::buffer_reconnect_write(
+                                    &mut reconnect_buffer,
+                                    data,
+                                    None,
+                                    permit,
+                                );
                             }
                             WriterCommand::SendOrReplay { key, data } if mode.is_reconnect() => {
                                 log::debug!(
@@ -841,6 +850,7 @@ impl SocketClientInner {
                                     &mut reconnect_buffer,
                                     data,
                                     Some(key),
+                                    permit,
                                 );
                             }
                             command @ (WriterCommand::Send(_)
@@ -882,6 +892,7 @@ impl SocketClientInner {
                                         &mut reconnect_buffer,
                                         msg,
                                         replay_key,
+                                        permit,
                                     );
 
                                     // CAS: a disconnect landing mid-write must not be overwritten
@@ -923,18 +934,24 @@ impl SocketClientInner {
         buffer: &mut VecDeque<BufferedWrite>,
         data: Bytes,
         replay_key: Option<u64>,
+        permit: tokio::sync::OwnedSemaphorePermit,
     ) {
         if let Some(key) = replay_key {
             buffer.retain(|buffered| buffered.replay_key != Some(key));
         }
-        buffer.push_back(BufferedWrite { data, replay_key });
+
+        buffer.push_back(BufferedWrite {
+            data,
+            replay_key,
+            _permit: permit,
+        });
     }
 
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
         interval_secs: u64,
         message: Vec<u8>,
-        writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+        writer_tx: WriterSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("heartbeat");
 
@@ -998,7 +1015,7 @@ pub struct SocketClient {
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) connect_timeout: Duration,
-    pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    pub writer_tx: WriterSender<WriterCommand>,
     state_sink: Option<SocketStateSink>,
     controller_lifecycle: Arc<ControllerLifecycle>,
     controller_notify: Arc<tokio::sync::Notify>,
@@ -1279,15 +1296,14 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if sending fails.
+    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
+    /// if the client cannot send.
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         self.check_not_terminal()?;
         self.wait_for_active().await?;
 
         let msg = WriterCommand::Send(data.into());
-        self.writer_tx
-            .send(msg)
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+        self.writer_tx.send(msg)
     }
 
     fn spawn_controller_task(
@@ -1593,6 +1609,34 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_writer_capacity_from_config() {
+        let (port, listener) = bind_test_server().await;
+        let config = SocketConfig::builder()
+            .url(format!("127.0.0.1:{port}"))
+            .mode(Mode::Plain)
+            .suffix(b"\r\n".to_vec())
+            .writer_capacity(2)
+            .build()
+            .unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+
+        // Ready sends do not yield on this current-thread runtime, keeping the queue occupied
+        client.send_bytes(vec![1]).await.unwrap();
+        client.send_bytes(vec![2]).await.unwrap();
+        let overflow = client.send_bytes(vec![3]).await;
+
+        assert_eq!(client.connection_mode(), ConnectionMode::Active);
+        assert!(matches!(overflow, Err(SendError::BufferFull)));
+        client.close().await;
+    }
+
+    #[rstest]
     #[case::drain_failed(
         Some(false),
         std::io::ErrorKind::Other,
@@ -1622,14 +1666,14 @@ mod tests {
         client.write_task.abort();
         let _ = (&mut client.read_task).await;
         let _ = (&mut client.write_task).await;
-        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, mut writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
         client.writer_tx = writer_tx;
         client
             .connection_mode
             .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
 
         let writer = tokio::spawn(async move {
-            let WriterCommand::Update(_, sender) = writer_rx.recv().await.unwrap() else {
+            let WriterCommand::Update(_, sender) = writer_rx.recv().await.unwrap().0 else {
                 panic!("expected writer update");
             };
 
@@ -1675,6 +1719,7 @@ mod tests {
             reconnect_max_attempts: None,
             connection_max_retries: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1725,6 +1770,7 @@ mod tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1772,6 +1818,7 @@ mod tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1846,6 +1893,7 @@ mod tests {
             reconnect_max_attempts: None,
             connection_max_retries: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1887,6 +1935,7 @@ mod tests {
             connection_max_retries: None,
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1923,7 +1972,7 @@ mod tests {
     async fn test_heartbeat_task_warns_when_writer_channel_closed() {
         let capture = capture_logs_for(&["nautilus_network::socket::client"]).await;
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
-        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, mut writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
         let task = SocketClientInner::spawn_heartbeat_task(
             Arc::clone(&connection_state),
             1,
@@ -1931,7 +1980,7 @@ mod tests {
             writer_tx,
         );
 
-        tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
+        let _ = tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
             .await
             .expect("timed out waiting for the first heartbeat")
             .expect("heartbeat channel closed before the first heartbeat");
@@ -2001,6 +2050,7 @@ mod tests {
             reconnect_max_attempts: None,
             connection_max_retries: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -2066,6 +2116,7 @@ mod tests {
             reconnect_max_attempts: None,
             connection_max_retries: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -2117,6 +2168,7 @@ mod tests {
             reconnect_max_attempts: Some(3),
             connection_max_retries: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
         let states = Arc::new(BlockingMutex::new(Vec::new()));
@@ -2175,6 +2227,7 @@ mod tests {
             reconnect_max_attempts: Some(1),
             connection_max_retries: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
         let states = Arc::new(BlockingMutex::new(Vec::new()));
@@ -2290,6 +2343,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         }
     }
@@ -2582,7 +2636,7 @@ mod rust_tests {
         state_notify: Arc<tokio::sync::Notify>,
         controller_task: tokio::task::JoinHandle<()>,
     ) -> SocketClient {
-        let (writer_tx, _writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, _writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
         let controller_lifecycle = Arc::new(ControllerLifecycle::new());
         let abort_handle = controller_task.abort_handle();
         controller_lifecycle.set_abort(move || abort_handle.abort());
@@ -2597,6 +2651,34 @@ mod rust_tests {
             controller_notify: Arc::new(tokio::sync::Notify::new()),
             state_sink: None,
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_reports_writer_buffer_full() {
+        let state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let notify = Arc::new(tokio::sync::Notify::new());
+
+        let task = tokio::spawn(std::future::pending::<()>());
+        let mut client = test_socket_client(state, notify, task);
+        let (writer_tx, mut writer_rx) = writer::channel(1);
+        client.writer_tx = writer_tx;
+
+        client.send_bytes(vec![1]).await.unwrap();
+        assert!(matches!(
+            client.send_bytes(vec![2]).await,
+            Err(SendError::BufferFull)
+        ));
+        let (command, permit) = writer_rx.recv().await.unwrap();
+        assert!(matches!(command, WriterCommand::Send(data) if data == vec![1]));
+        assert!(matches!(
+            client.send_bytes(vec![2]).await,
+            Err(SendError::BufferFull)
+        ));
+        drop(permit);
+        client.send_bytes(vec![3]).await.unwrap();
+        let (command, _) = writer_rx.recv().await.unwrap();
+        assert!(matches!(command, WriterCommand::Send(data) if data == vec![3]));
     }
 
     #[rstest]
@@ -2860,6 +2942,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -2917,6 +3000,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
         let states = Arc::new(Mutex::new(Vec::new()));
@@ -2965,6 +3049,7 @@ mod rust_tests {
             connection_max_retries: None,
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
         let client = SocketClient::builder()
@@ -3160,8 +3245,8 @@ mod rust_tests {
             stream,
             pending_tx: Some(pending_tx),
         });
-        let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+
+        let (writer_tx, writer_rx) = writer::channel::<WriterCommand<TestWriter>>(2);
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
@@ -3180,6 +3265,31 @@ mod rust_tests {
             .send(WriterCommand::Send(Bytes::from_static(b"complete-message")))
             .unwrap();
         pending_rx.await.unwrap();
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"second-message")))
+            .unwrap();
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Active
+        );
+
+        for _ in 0..100 {
+            assert!(matches!(
+                writer_tx.send(WriterCommand::Send(Bytes::from_static(b"overflow"))),
+                Err(SendError::BufferFull)
+            ));
+        }
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert!(matches!(
+            writer_tx.send(WriterCommand::Send(Bytes::from_static(b"overflow"))),
+            Err(SendError::BufferFull)
+        ));
 
         let recorded = Arc::new(Mutex::new(Vec::new()));
         let new_writer: TestWriter = Box::pin(RecordingWriter {
@@ -3187,7 +3297,7 @@ mod rust_tests {
         });
         let (update_tx, update_rx) = oneshot::channel();
         writer_tx
-            .send(WriterCommand::UpdateWithReplay(
+            .send_update(WriterCommand::UpdateWithReplay(
                 new_writer,
                 vec![Bytes::from_static(b"authentication")],
                 update_tx,
@@ -3210,8 +3320,12 @@ mod rust_tests {
         );
         assert_eq!(
             recorded.lock().as_slice(),
-            b"authentication\r\ncomplete-message\r\n"
+            b"authentication\r\ncomplete-message\r\nsecond-message\r\n"
         );
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"second-message")))
+            .unwrap();
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
@@ -3232,7 +3346,7 @@ mod rust_tests {
             bytes: Arc::new(Mutex::new(Vec::new())),
         });
         let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
         let write_task = SocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -3302,7 +3416,7 @@ mod rust_tests {
             bytes: Arc::new(Mutex::new(Vec::new())),
         });
         let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
         let write_task = SocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -3355,7 +3469,7 @@ mod rust_tests {
             bytes: Arc::new(Mutex::new(Vec::new())),
         });
         let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
@@ -3427,7 +3541,7 @@ mod rust_tests {
             pending_tx: Some(pending_tx),
         });
         let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
         let write_task = SocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
@@ -3490,6 +3604,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3540,6 +3655,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3592,6 +3708,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3718,6 +3835,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3762,6 +3880,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3830,6 +3949,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3893,6 +4013,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -3959,6 +4080,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -4027,6 +4149,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: Some(1),
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -4086,6 +4209,7 @@ mod rust_tests {
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
             heartbeat_timeout_secs: Some(1),
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -4141,6 +4265,7 @@ mod rust_tests {
             connection_max_retries: None,
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -4192,6 +4317,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             connection_max_retries: Some(1),
             heartbeat_timeout_secs: Some(0),
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -4222,6 +4348,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             connection_max_retries: Some(1),
             heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 

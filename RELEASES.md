@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added `WebSocketConfig.max_message_size_bytes` and `max_frame_size_bytes` configurable inbound size limits
+- Added configurable `writer_capacity` limits for socket and WebSocket clients, defaulting to 1,024 messages
 - Added same-venue execution client registration with explicit venue or default routing
 - Added Python `Cache.top_of_book()` without cloning the resident book (#5011), thanks @youayouly
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
@@ -26,9 +27,9 @@ Released on TBD (UTC).
 - Added Lighter transport batching for batch cancellation and cancel-all requests (#4470)
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
-- Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
 - Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
+- Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes
 
@@ -37,6 +38,8 @@ Released on TBD (UTC).
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
 - Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
+- Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
+- Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
 - Changed backtest venues to require an explicit `fee_model`, including an explicit zero-fee model
 - Changed fee models that read instrument fees to require explicit `maker_rate` and `taker_rate`
 - Changed account `calculate_commission` to require explicit `maker_rate` and `taker_rate`

@@ -80,6 +80,7 @@ pub fn classify_okx_ws_failure(error: &OKXWsError) -> CommandFailure {
         | OKXWsError::HandlerUnavailable(_)
         | OKXWsError::TransportSend(
             SendError::InvalidInput(_)
+            | SendError::BufferFull
             | SendError::Closed
             | SendError::Timeout
             | SendError::ConnectionChanged,
@@ -312,8 +313,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_classify_okx_ws_pre_write_timeout_is_not_sent() {
-        let error = OKXWsError::TransportSend(SendError::Timeout);
+    #[case(SendError::Timeout)]
+    #[case(SendError::BufferFull)]
+    fn test_classify_okx_ws_pre_write_failure_is_not_sent(#[case] error: SendError) {
+        let error = OKXWsError::TransportSend(error);
 
         assert_eq!(
             classify_okx_ws_failure(&error),

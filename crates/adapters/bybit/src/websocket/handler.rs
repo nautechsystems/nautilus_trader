@@ -151,10 +151,14 @@ impl BybitWsFeedHandler {
 
     /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> Result<(), BybitWsError> {
-        self.send_secret_with_retry(payload.into()).await
+        self.send_secret_with_retry(payload.into(), None).await
     }
 
-    async fn send_secret_with_retry(&self, payload: SecretString) -> Result<(), BybitWsError> {
+    async fn send_secret_with_retry(
+        &self,
+        payload: SecretString,
+        connection_epoch: Option<u64>,
+    ) -> Result<(), BybitWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager
                 .invocation(
@@ -162,10 +166,21 @@ impl BybitWsFeedHandler {
                     || {
                         let payload = payload.clone();
                         async move {
-                            client
-                                .send_text(payload.expose_secret().to_owned(), None)
-                                .await
-                                .map_err(|e| BybitWsError::Transport(format!("Send failed: {e}")))
+                            let payload = payload.expose_secret().to_owned();
+
+                            let result = match connection_epoch {
+                                Some(epoch) => {
+                                    client.send_text_on_connection(payload, None, epoch).await
+                                }
+                                None => client.send_text(payload, None).await,
+                            };
+
+                            result.map_err(|e| match e {
+                                SendError::ConnectionChanged => BybitWsError::Authentication(
+                                    "Connection changed before authentication".to_string(),
+                                ),
+                                e => BybitWsError::Transport(format!("Send failed: {e}")),
+                            })
                         }
                     },
                     should_retry_bybit_error,
@@ -252,7 +267,7 @@ impl BybitWsFeedHandler {
                     "Order command was not written".to_string(),
                 )))
             }
-            SendError::InvalidInput(_) | SendError::Closed => {
+            SendError::InvalidInput(_) | SendError::BufferFull | SendError::Closed => {
                 self.pending_rates.remove(req_id);
                 Err(OrderSendFailure::NotSent(BybitWsError::ClientError(
                     "Order command was not written".to_string(),
@@ -300,7 +315,8 @@ impl BybitWsFeedHandler {
                         HandlerCommand::Authenticate { payload } => {
                             log::debug!("Authenticate command received");
 
-                            if let Err(e) = self.send_secret_with_retry(payload).await {
+                            let epoch = self.inner.as_ref().map(WebSocketClient::connection_epoch);
+                            if let Err(e) = self.send_secret_with_retry(payload, epoch).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
                         }
@@ -667,7 +683,12 @@ fn is_already_subscribed_error(error_msg: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::string::secret::REDACTED;
+    use nautilus_network::websocket::{WebSocketConfig, channel_message_handler};
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -696,6 +717,103 @@ mod tests {
             ),
             Arc::new(AtomicU64::new(5_000)),
         )
+    }
+
+    #[tokio::test]
+    async fn test_authentication_with_full_replay_buffer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (replayed_tx, replayed_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let _first = tokio_tungstenite::accept_async(first).await.unwrap();
+            let (replacement, _) = listener.accept().await.unwrap();
+            let mut replacement = tokio_tungstenite::accept_async(replacement).await.unwrap();
+            assert_eq!(
+                replacement.next().await.unwrap().unwrap(),
+                Message::text("authenticate")
+            );
+            replacement
+                .send(Message::text(load_test_json("ws_auth_success.json")))
+                .await
+                .unwrap();
+            assert_eq!(
+                replacement.next().await.unwrap().unwrap(),
+                Message::text("held")
+            );
+            replayed_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut handler = create_test_handler();
+        let tracker = handler.auth_tracker.clone();
+        let (message_handler, raw_rx) = channel_message_handler();
+        handler.raw_rx = raw_rx;
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{address}"))
+            .writer_capacity(1)
+            .reconnect_delay_initial_ms(1)
+            .reconnect_delay_max_ms(1)
+            .reconnect_jitter_ms(0)
+            .build()
+            .unwrap();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .unwrap();
+        client.set_auth_tracker(tracker.clone(), true);
+
+        // Enqueue and request reconnect without yielding so the writer retains this message
+        client.send_text("held".to_string(), None).await.unwrap();
+        assert!(client.request_reconnect());
+        wait_until_async(
+            || async { client.is_active() && client.connection_epoch() == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(matches!(
+            client.send_text("overflow".to_string(), None).await,
+            Err(SendError::BufferFull)
+        ));
+        handler.inner = Some(client);
+        let stale = tokio::time::timeout(
+            Duration::from_secs(5),
+            handler.send_secret_with_retry(SecretString::from("stale-auth".to_string()), Some(0)),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(stale, Err(BybitWsError::Authentication(message)) if message == "Connection changed before authentication")
+        );
+        cmd_tx
+            .send(HandlerCommand::Authenticate {
+                payload: SecretString::from("authenticate".to_string()),
+            })
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(BybitWsMessage::Auth(response)) = handler.next().await {
+                    assert_eq!(response.success, Some(true));
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        assert!(tracker.is_authenticated());
+        tokio::time::timeout(Duration::from_secs(5), replayed_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        handler.inner.as_ref().unwrap().disconnect().await;
+        server.abort();
     }
 
     #[rstest]
@@ -789,6 +907,27 @@ mod tests {
         assert!(matches!(failure, OrderSendFailure::NotSent(_)));
         assert!(!handler.auth_tracker.is_authenticated());
         assert!(!handler.pending_rates.contains_key("timeout-request"));
+    }
+
+    #[rstest]
+    fn buffer_full_is_not_sent_and_preserves_authentication() {
+        let handler = create_test_handler();
+        handler.auth_tracker.succeed();
+        handler.pending_rates.insert(
+            "full-request".to_string(),
+            PendingRate {
+                endpoint: "/v5/order/create",
+                category: BybitProductType::Linear,
+            },
+        );
+
+        let failure = handler
+            .classify_order_send_error("full-request", SendError::BufferFull)
+            .unwrap_err();
+
+        assert!(matches!(failure, OrderSendFailure::NotSent(_)));
+        assert!(handler.auth_tracker.is_authenticated());
+        assert!(!handler.pending_rates.contains_key("full-request"));
     }
 
     #[rstest]

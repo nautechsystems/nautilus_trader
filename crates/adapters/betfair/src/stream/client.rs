@@ -32,7 +32,7 @@ use bytes::Bytes;
 use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
-    SocketState, SocketStateSink,
+    SocketState, SocketStateSink, WriterSender,
     mode::ReconnectRequestOutcome,
     socket::{
         SocketClient, SocketConfig, SocketHeartbeat, SocketReconnectHandle, SocketReconnectReplay,
@@ -736,6 +736,7 @@ impl BetfairStreamClient {
                 config.heartbeat_secs,
                 config.heartbeat_timeout_secs,
             ),
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1301,6 +1302,7 @@ impl BetfairRaceStreamClient {
                 config.heartbeat_secs,
                 config.heartbeat_timeout_secs,
             ),
+            writer_capacity: None,
             certs_dir: None,
         };
 
@@ -1428,7 +1430,7 @@ fn reissue_market_subscription(
     sub_tx: &watch::Sender<Option<MarketSubscription>>,
     clk_tx: &watch::Sender<Option<String>>,
     initial_clk_tx: &watch::Sender<Option<String>>,
-    writer_tx: Option<&tokio::sync::mpsc::UnboundedSender<WriterCommand>>,
+    writer_tx: Option<&WriterSender<WriterCommand>>,
 ) {
     let Some(writer_tx) = writer_tx else {
         log::error!("Cannot recover Betfair market stream before writer initialization");
@@ -1478,7 +1480,7 @@ fn reissue_order_subscription(
     sub_tx: &watch::Sender<Option<OrderSubscription>>,
     clk_tx: &watch::Sender<Option<String>>,
     initial_clk_tx: &watch::Sender<Option<String>>,
-    writer_tx: Option<&tokio::sync::mpsc::UnboundedSender<WriterCommand>>,
+    writer_tx: Option<&WriterSender<WriterCommand>>,
 ) {
     let Some(writer_tx) = writer_tx else {
         log::error!("Cannot recover Betfair order stream before writer initialization");
