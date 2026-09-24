@@ -457,9 +457,12 @@ impl RiskEngine {
         self.throttler_submit.reset();
         self.throttler_modify.reset();
         self.max_notional_per_order = self.config.max_notional_per_order.clone();
-        self.trading_state = TradingState::Active;
         self.command_count = 0;
         self.event_count = 0;
+
+        if self.trading_state != TradingState::Active {
+            self.set_trading_state(TradingState::Active);
+        }
 
         log::info!("Reset");
     }

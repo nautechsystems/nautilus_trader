@@ -9536,7 +9536,10 @@ impl log::Log for RiskLogCapture {
             RISK_LOGS.with_borrow_mut(|logs| {
                 if let Some(logs) = logs {
                     let message = record.args().to_string();
-                    if message.starts_with("Net ") || message.contains("no trigger price set") {
+                    if message.starts_with("Net ")
+                        || message.contains("no trigger price set")
+                        || message.contains("No change to trading state")
+                    {
                         logs.push(message);
                     }
                 }
@@ -11321,6 +11324,57 @@ fn test_reset_restores_trading_state_and_config_notionals() {
         risk_engine.max_notional_per_order().get(&instrument_id),
         Some(&config_notional),
     );
+}
+
+#[rstest]
+#[case(TradingState::Halted)]
+#[case(TradingState::Reducing)]
+fn test_reset_publishes_active_state_with_restored_notionals(#[case] initial_state: TradingState) {
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let config_notional = Decimal::from_i64(50_000).unwrap();
+    let config = RiskEngineConfig {
+        max_notional_per_order: [(instrument_id, config_notional)].into(),
+        ..RiskEngineConfig::default()
+    };
+    let mut risk_engine = get_risk_engine(None, Some(config), None, false);
+    risk_engine.set_trading_state(initial_state);
+    risk_engine.set_max_notional_per_order(instrument_id, Decimal::from_i64(100_000).unwrap());
+
+    let handler = msgbus::stubs::get_message_saving_handler::<TradingStateChanged>(None);
+    msgbus::subscribe_any(
+        MessagingSwitchboard::risk_events_topic().into(),
+        handler.clone(),
+        None,
+    );
+
+    risk_engine.reset();
+
+    msgbus::unsubscribe_any(MessagingSwitchboard::risk_events_topic().into(), &handler);
+    let events = msgbus::stubs::get_saved_messages::<TradingStateChanged>(&handler);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].state, TradingState::Active);
+    assert_eq!(
+        events[0].config["max_notional_per_order.AUD/USD.SIM"],
+        "50000"
+    );
+}
+
+#[rstest]
+fn test_reset_from_active_publishes_nothing_and_logs_no_unchanged_state_warning() {
+    let mut risk_engine = get_risk_engine(None, None, None, false);
+    let handler = msgbus::stubs::get_message_saving_handler::<TradingStateChanged>(None);
+    msgbus::subscribe_any(
+        MessagingSwitchboard::risk_events_topic().into(),
+        handler.clone(),
+        None,
+    );
+    capture_risk_logs();
+
+    risk_engine.reset();
+
+    msgbus::unsubscribe_any(MessagingSwitchboard::risk_events_topic().into(), &handler);
+    assert!(msgbus::stubs::get_saved_messages::<TradingStateChanged>(&handler).is_empty());
+    assert!(take_risk_logs().is_empty());
 }
 
 #[rstest]
