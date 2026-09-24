@@ -525,6 +525,7 @@ impl AccountsManager {
 
             if order.is_pending_update() {
                 let source_currency = match order.order_side() {
+                    OrderSide::Buy if !instrument.is_inverse() => instrument.cost_currency(),
                     OrderSide::Buy => instrument.quote_currency(),
                     OrderSide::Sell => instrument
                         .base_currency()
@@ -2557,6 +2558,78 @@ mod tests {
     }
 
     #[rstest]
+    fn test_update_orders_wallet_quanto_pending_update_locks_settlement_currency(
+        ethbtc_quanto: CryptoFuture,
+    ) {
+        let usdt = Currency::USDT();
+        let total = Money::from("100 USDT");
+        let account = WalletAccount::new(
+            AccountState::new(
+                AccountId::new("WALLET-001"),
+                AccountType::Wallet,
+                vec![AccountBalance::new(total, Money::zero(usdt), total)],
+                Vec::new(),
+                true,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            true,
+        );
+        let account_id = account.id;
+        let manager = AccountsManager::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::new(None, None))),
+        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(ethbtc_quanto.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("5.000"))
+            .price(Price::from("0.03600"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for_account(
+                &order, account_id,
+            )))
+            .unwrap();
+        let venue_order_id = VenueOrderId::new("1");
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for_account(
+                &order,
+                venue_order_id,
+                account_id,
+            )))
+            .unwrap();
+        let pending_update = OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+
+        let (updated_account, _) = manager
+            .update_orders(
+                &AccountAny::Wallet(account),
+                &InstrumentAny::CryptoFuture(ethbtc_quanto),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        assert_eq!(updated_account.balance_locked(Some(usdt)), Some(total));
+        assert_eq!(
+            updated_account.balance_free(Some(usdt)),
+            Some(Money::zero(usdt))
+        );
+    }
+
+    #[rstest]
     fn test_update_orders_wallet_preserves_dex_terms_at_observed_precision() {
         let Some((wallet, instrument, base, quote)) = wallet_precision_pair(18) else {
             return;
@@ -2847,6 +2920,65 @@ mod tests {
             }
             _ => panic!("Expected MarginAccount"),
         }
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_quanto_locks_settlement_balance(ethbtc_quanto: CryptoFuture) {
+        let usdt = Currency::USDT();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(1_000.0, usdt),
+                Money::zero(usdt),
+                Money::new(1_000.0, usdt),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let account = CashAccount::new(account_state, true, false);
+        let manager = AccountsManager::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::new(None, None))),
+        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(ethbtc_quanto.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100.000"))
+            .price(Price::from("0.05000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+
+        let (updated_account, _) = manager
+            .update_orders(
+                &AccountAny::Cash(account),
+                &InstrumentAny::CryptoFuture(ethbtc_quanto),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        // notional = 100 * 0.05 = 5 USDT
+        assert_eq!(
+            updated_account.balance_locked(Some(usdt)),
+            Some(Money::new(5.0, usdt))
+        );
+        assert_eq!(
+            updated_account.balance_free(Some(usdt)),
+            Some(Money::new(995.0, usdt))
+        );
     }
 
     #[rstest]

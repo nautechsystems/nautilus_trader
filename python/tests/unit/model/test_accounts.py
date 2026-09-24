@@ -1038,6 +1038,39 @@ def test_margin_account_quanto_margin_is_in_settlement_currency() -> None:
     assert maintenance == Money.from_str("0.25 USDT")
 
 
+def test_cash_account_calculate_balance_locked_buy_quanto_uses_settlement_currency() -> None:
+    """
+    Test cash account calculate balance locked buy quanto uses settlement currency.
+    """
+    state = AccountState(
+        account_id=AccountId("SIM-001"),
+        account_type=AccountType.CASH,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("1000 USDT"),
+                locked=Money.from_str("0 USDT"),
+                free=Money.from_str("1000 USDT"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=None,
+    )
+    account = CashAccount(state, calculate_account_state=True)
+
+    locked = account.calculate_balance_locked(
+        instrument=_ethbtc_quanto(),
+        side=OrderSide.BUY,
+        quantity=Quantity.from_str("5.000"),
+        price=Price.from_str("0.03600"),
+    )
+
+    assert locked == Money.from_str("0.18 USDT")
+
+
 def test_margin_account_is_unleveraged_default() -> None:
     """
     Test margin account is unleveraged default.

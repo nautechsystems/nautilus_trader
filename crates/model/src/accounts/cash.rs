@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_buy_quanto_uses_quote_currency(
+    fn test_calculate_balance_locked_buy_quanto_uses_settlement_currency(
         cash_account_million_usd: CashAccount,
         ethbtc_quanto: CryptoFuture,
     ) {
@@ -576,7 +576,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("0.18 BTC"));
+        assert_eq!(balance_locked, Money::from("0.18 USDT"));
     }
 
     #[rstest]
