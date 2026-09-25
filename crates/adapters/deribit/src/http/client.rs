@@ -491,9 +491,25 @@ impl DeribitRawHttpClient {
                 // Note: Deribit may return JSON-RPC errors with non-2xx HTTP status (e.g., 400)
                 // Always try to parse as JSON-RPC first, then fall back to HTTP error handling
 
-                // Try to parse as JSON first
-                let json_value: serde_json::Value = match serde_json::from_slice(&resp.body) {
-                    Ok(json) => json,
+                // Decode the body directly so exact decimal fields read the raw numeric tokens
+                let json_rpc_response: DeribitJsonRpcResponse<T> = match serde_json::from_slice(
+                    &resp.body,
+                ) {
+                    Ok(response) => response,
+                    Err(e) if e.is_data() => {
+                        log::warn!(
+                            "Failed to deserialize Deribit JSON-RPC response: method={method}, status={}, error={e}",
+                            resp.status.as_u16()
+                        );
+                        log::debug!(
+                            "Response JSON (first 2000 chars): {}",
+                            String::from_utf8_lossy(&resp.body)
+                                .chars()
+                                .take(2000)
+                                .collect::<String>()
+                        );
+                        return Err(DeribitHttpError::JsonError(e.to_string()));
+                    }
                     Err(_) => {
                         // Not valid JSON - treat as HTTP error
                         let error_body = String::from_utf8_lossy(&resp.body);
@@ -507,24 +523,6 @@ impl DeribitRawHttpClient {
                         });
                     }
                 };
-
-                // Try to parse as JSON-RPC response
-                let json_rpc_response: DeribitJsonRpcResponse<T> =
-                    serde_json::from_value(json_value.clone()).map_err(|e| {
-                        log::warn!(
-                            "Failed to deserialize Deribit JSON-RPC response: method={method}, status={}, error={e}",
-                            resp.status.as_u16()
-                        );
-                        log::debug!(
-                            "Response JSON (first 2000 chars): {}",
-                            json_value
-                                .to_string()
-                                .chars()
-                                .take(2000)
-                                .collect::<String>()
-                        );
-                        DeribitHttpError::JsonError(e.to_string())
-                    })?;
 
                 // Check if it's a success or error result
                 if json_rpc_response.result.is_some() {

@@ -21,6 +21,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol, TradeId},
     types::{PRICE_MAX, PRICE_MIN, Price, fixed::check_fixed_precision},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de};
 use ustr::Ustr;
 
@@ -141,12 +142,16 @@ where
 /// symbol, timestamp, price, amount, and side so replayed data yields the same
 /// identifier across runs. FNV-1a is stable across architectures and crate
 /// versions; the 0x1f delimiter keeps variable-length fields from colliding.
+///
+/// `price` and `amount` are plain decimal text without trailing zeros, such as the `Display`
+/// output of a normalized `Decimal` or of an `f64`, so equal values derive the same identifier
+/// from machine messages and CSV records.
 #[must_use]
 pub fn derive_trade_id(
     symbol: Ustr,
     ts_event_ns: u64,
-    price: f64,
-    amount: f64,
+    price: &str,
+    amount: &str,
     side: &str,
 ) -> TradeId {
     let mut hash: u64 = FNV_OFFSET_BASIS;
@@ -156,9 +161,9 @@ pub fn derive_trade_id(
         b"\x1f",
         &ts_event_ns.to_le_bytes(),
         b"\x1f",
-        &price.to_bits().to_le_bytes(),
+        price.as_bytes(),
         b"\x1f",
-        &amount.to_bits().to_le_bytes(),
+        amount.as_bytes(),
         b"\x1f",
         side.as_bytes(),
     ] {
@@ -251,23 +256,23 @@ pub fn normalize_instrument_id(
 
 /// Normalizes the given amount by truncating it to the specified decimal precision.
 ///
-/// Uses rounding to the nearest integer before truncation to avoid floating-point
-/// precision issues (e.g., `0.1 * 10` becoming `0.9999999999`).
+/// Amounts within 1e-9 of a step at `precision` (in units of that step) snap to the step
+/// instead, so upstream floating-point artifacts such as `2.9999999999999996` keep their
+/// intended size.
+///
+/// # Panics
+///
+/// Panics if `precision` exceeds 19, beyond which the tolerance is not representable.
 #[must_use]
-pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
-    let factor = 10_f64.powi(i32::from(precision));
-    // Round to nearest integer first to handle floating-point precision issues,
-    // then truncate toward zero to maintain the original truncation semantics
-    let scaled = amount * factor;
-    let rounded = scaled.round();
-    // If the rounded value is very close to scaled, use it; otherwise use trunc
-    // This handles edge cases like 0.1 * 10 = 0.9999999999... -> 1.0
-    let result = if (rounded - scaled).abs() < 1e-9 {
-        rounded.trunc()
+pub fn normalize_amount(amount: Decimal, precision: u8) -> Decimal {
+    let precision = u32::from(precision);
+    let rounded = amount.round_dp(precision);
+
+    if (rounded - amount).abs() < Decimal::new(1, 9 + precision) {
+        rounded
     } else {
-        scaled.trunc()
-    };
-    result / factor
+        amount.trunc_with_scale(precision)
+    }
 }
 
 /// Parses a Nautilus price from the given `value`.
@@ -432,6 +437,7 @@ mod tests {
     use std::str::FromStr;
 
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -578,38 +584,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0.00001, 4, 0.0)]
-    #[case(1.2345, 3, 1.234)]
-    #[case(1.2345, 2, 1.23)]
-    #[case(-1.2345, 3, -1.234)]
-    #[case(123.456, 0, 123.0)]
-    fn test_normalize_amount(#[case] amount: f64, #[case] precision: u8, #[case] expected: f64) {
+    #[case(dec!(0.00001), 4, dec!(0))]
+    #[case(dec!(1.2345), 3, dec!(1.234))]
+    #[case(dec!(1.2345), 2, dec!(1.23))]
+    #[case(dec!(-1.2345), 3, dec!(-1.234))]
+    #[case(dec!(123.456), 0, dec!(123))]
+    #[case(dec!(0.1), 1, dec!(0.1))]
+    #[case(dec!(1.123456789), 9, dec!(1.123456789))]
+    #[case(dec!(0), 8, dec!(0))]
+    #[case(dec!(-0.1), 1, dec!(-0.1))]
+    #[case(dec!(2.9999999999999996), 0, dec!(3))]
+    #[case(dec!(0.29999999999999998), 1, dec!(0.3))]
+    #[case(dec!(2.999999998), 0, dec!(2))]
+    #[case(dec!(100000000.123456789), 8, dec!(100000000.12345678))]
+    fn test_normalize_amount(
+        #[case] amount: Decimal,
+        #[case] precision: u8,
+        #[case] expected: Decimal,
+    ) {
         let result = normalize_amount(amount, precision);
         assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    fn test_normalize_amount_floating_point_edge_cases() {
-        // Test that floating-point edge cases are handled correctly
-        // 0.1 * 10 can become 0.9999999... due to IEEE 754
-        let result = normalize_amount(0.1, 1);
-        assert_eq!(result, 0.1);
-
-        // Test with values that could have precision issues
-        let result = normalize_amount(0.7, 1);
-        assert_eq!(result, 0.7);
-
-        // Test large precision
-        let result = normalize_amount(1.123456789, 9);
-        assert_eq!(result, 1.123456789);
-
-        // Test zero
-        let result = normalize_amount(0.0, 8);
-        assert_eq!(result, 0.0);
-
-        // Test negative values
-        let result = normalize_amount(-0.1, 1);
-        assert_eq!(result, -0.1);
     }
 
     #[rstest]
@@ -718,20 +712,20 @@ mod tests {
 
     #[rstest]
     fn test_derive_trade_id_is_deterministic_and_16_hex_chars() {
-        let first = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, 7996.0, 50.0, "sell");
-        let second = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, 7996.0, 50.0, "sell");
+        let first = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, "7996", "50", "sell");
+        let second = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, "7996", "50", "sell");
         assert_eq!(first, second);
         assert_eq!(first.as_str().len(), 16);
     }
 
     #[rstest]
-    #[case::symbol_changed(derive_trade_id(Ustr::from("ETHUSD"), 1, 1.0, 1.0, "buy"))]
-    #[case::ts_changed(derive_trade_id(Ustr::from("XBTUSD"), 2, 1.0, 1.0, "buy"))]
-    #[case::price_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 2.0, 1.0, "buy"))]
-    #[case::amount_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 2.0, "buy"))]
-    #[case::side_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 1.0, "sell"))]
+    #[case::symbol_changed(derive_trade_id(Ustr::from("ETHUSD"), 1, "1", "1", "buy"))]
+    #[case::ts_changed(derive_trade_id(Ustr::from("XBTUSD"), 2, "1", "1", "buy"))]
+    #[case::price_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, "2", "1", "buy"))]
+    #[case::amount_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, "1", "2", "buy"))]
+    #[case::side_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, "1", "1", "sell"))]
     fn test_derive_trade_id_each_field_affects_output(#[case] altered: TradeId) {
-        let baseline = derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 1.0, "buy");
+        let baseline = derive_trade_id(Ustr::from("XBTUSD"), 1, "1", "1", "buy");
         assert_ne!(baseline, altered);
     }
 
@@ -739,8 +733,25 @@ mod tests {
     fn test_derive_trade_id_field_delimiter_prevents_collision() {
         // Without the 0x1f delimiter, concatenated bytes for these two inputs
         // would collapse into the same stream.
-        let a = derive_trade_id(Ustr::from("A"), 1, 0.0, 0.0, "buy");
-        let b = derive_trade_id(Ustr::from("A\x00"), 256, 0.0, 0.0, "buy");
+        let a = derive_trade_id(Ustr::from("A"), 1, "0", "0", "buy");
+        let b = derive_trade_id(Ustr::from("A\x00"), 256, "0", "0", "buy");
         assert_ne!(a, b);
+    }
+
+    #[rstest]
+    fn test_derive_trade_id_matches_csv_and_machine_text() {
+        let price = dec!(7996.50).normalize().to_string();
+        let amount = dec!(0.000000150).normalize().to_string();
+
+        let machine = derive_trade_id(Ustr::from("XBTUSD"), 1, &price, &amount, "buy");
+        let csv = derive_trade_id(
+            Ustr::from("XBTUSD"),
+            1,
+            &7996.5_f64.to_string(),
+            &0.000_000_15_f64.to_string(),
+            "buy",
+        );
+
+        assert_eq!(machine, csv);
     }
 }

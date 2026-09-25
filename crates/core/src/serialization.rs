@@ -22,7 +22,7 @@
 //! - Type conversions from strings to primitives.
 //! - Decimal values represented as strings.
 
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 use bytes::Bytes;
 use rust_decimal::Decimal;
@@ -31,6 +31,7 @@ use serde::{
     de::{Error, MapAccess, Unexpected, Visitor, value::MapAccessDeserializer},
     ser::SerializeSeq,
 };
+use serde_json::value::RawValue;
 use ustr::Ustr;
 
 /// Exact decimal parsing and JSON serialization contracts.
@@ -202,6 +203,14 @@ impl<'de> Visitor<'de> for OptionalDecimalVisitor {
     }
 }
 
+fn json_token_text(raw: &RawValue) -> serde_json::Result<Cow<'_, str>> {
+    if raw.get().starts_with('"') {
+        serde_json::from_str::<String>(raw.get()).map(Cow::Owned)
+    } else {
+        Ok(Cow::Borrowed(raw.get()))
+    }
+}
+
 fn parse_decimal_str(value: &str) -> Result<Decimal, String> {
     let parsed = if value.contains('e') || value.contains('E') {
         Decimal::from_scientific(value)
@@ -211,21 +220,22 @@ fn parse_decimal_str(value: &str) -> Result<Decimal, String> {
 
     match parsed {
         Ok(decimal) => Ok(decimal),
-        Err(e) => {
-            // Fractional digits beyond Decimal's maximum scale are
-            // sub-representable; round to the highest scale that fits
-            // (venues quoting 18-decimal on-chain units emit such values).
-            for scale in (0..=Decimal::MAX_SCALE as usize).rev() {
-                let clamped =
-                    decimal_string_clamped_to_scale(value, scale).ok_or_else(|| e.to_string())?;
+        Err(e) => decimal_str_rounded(value).ok_or_else(|| e.to_string()),
+    }
+}
 
-                if let Ok(decimal) = Decimal::from_str(&clamped) {
-                    return Ok(decimal);
-                }
-            }
-            Err(e.to_string())
+// Fractional digits beyond Decimal's maximum scale are sub-representable; round to the highest
+// scale that fits (venues quoting 18-decimal on-chain units emit such values)
+fn decimal_str_rounded(value: &str) -> Option<Decimal> {
+    for scale in (0..=Decimal::MAX_SCALE as usize).rev() {
+        let clamped = decimal_string_clamped_to_scale(value, scale)?;
+
+        if let Ok(decimal) = Decimal::from_str(&clamped) {
+            return Some(decimal);
         }
     }
+
+    None
 }
 
 fn decimal_string_clamped_to_scale(value: &str, max_scale: usize) -> Option<String> {
@@ -553,30 +563,63 @@ where
     deserializer.deserialize_any(OptionalDecimalVisitor)
 }
 
-/// Serializes a `Decimal` as a JSON number (float).
+/// Deserializes a `Decimal` from the source text of a JSON number or numeric string.
 ///
-/// Used for outgoing requests where exchange APIs expect JSON numbers.
+/// Numeric tokens keep their source digits instead of passing through `f64`. Representable
+/// values, including scientific notation, parse exactly. Values with fractional digits beyond
+/// `Decimal`'s maximum scale (28) round as strings do in [`deserialize_decimal`]. Unlike
+/// [`deserialize_decimal`], null and empty strings are errors.
+///
+/// The raw token is only available from direct JSON input: serde's internally tagged and
+/// untagged enum buffers cannot carry it. A buffered `serde_json::Value` renders its number,
+/// which keeps the source digits only with `serde_json/arbitrary_precision`.
 ///
 /// # Errors
 ///
-/// Returns an error if serialization fails.
-pub fn serialize_decimal<S: Serializer>(d: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-    rust_decimal::serde::float::serialize(d, s)
+/// Returns an error if the token is null, an empty string, not a decimal, or outside `Decimal`'s
+/// range.
+pub fn deserialize_decimal_token<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_optional_decimal_token(deserializer)?
+        .ok_or_else(|| D::Error::custom("expected a decimal, was null or an empty string"))
 }
 
-/// Serializes an `Option<Decimal>` as a JSON number or null.
+/// Deserializes an `Option<Decimal>` from the source text of a JSON number, numeric string, or
+/// null.
+///
+/// Null and empty strings read as `None`; other tokens parse as in
+/// [`deserialize_decimal_token`]. Add `#[serde(default)]` to accept a missing field.
 ///
 /// # Errors
 ///
-/// Returns an error if serialization fails.
-pub fn serialize_optional_decimal<S: Serializer>(
-    d: &Option<Decimal>,
-    s: S,
-) -> Result<S::Ok, S::Error> {
-    match d {
-        Some(decimal) => rust_decimal::serde::float::serialize(decimal, s),
-        None => s.serialize_none(),
+/// Returns an error if a token other than null or an empty string is not a decimal or is outside
+/// `Decimal`'s range.
+pub fn deserialize_optional_decimal_token<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(raw) = Option::<Box<RawValue>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+
+    let text = json_token_text(&raw).map_err(D::Error::custom)?;
+
+    if let Ok(value) = decimal::parse(&text) {
+        return Ok(Some(value));
     }
+
+    // `Decimal::from_scientific` rounds the significand before applying the exponent
+    if text.contains(['e', 'E'])
+        && let Some(value) = decimal_str_rounded(&text)
+    {
+        return Ok(Some(value));
+    }
+
+    OptionalDecimalVisitor.visit_str(&text)
 }
 
 /// Deserializes a `Decimal` from a JSON string.
@@ -868,17 +911,16 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        DecimalVisitor, OptionalDecimalVisitor, Serializable, default_false, default_true,
+        DecimalVisitor, OptionalDecimalVisitor, Serializable, decimal, default_false, default_true,
         deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_native,
-        deserialize_decimal_or_zero, deserialize_empty_string_as_none,
+        deserialize_decimal_or_zero, deserialize_decimal_token, deserialize_empty_string_as_none,
         deserialize_empty_ustr_as_none, deserialize_optional_decimal,
         deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
-        deserialize_optional_string_to_u64, deserialize_string_to_u8, deserialize_string_to_u64,
-        deserialize_vec_decimal_from_str,
+        deserialize_optional_decimal_token, deserialize_optional_string_to_u64,
+        deserialize_string_to_u8, deserialize_string_to_u64, deserialize_vec_decimal_from_str,
         msgpack::{FromMsgPack, ToMsgPack},
-        parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
-        serialize_optional_decimal, serialize_optional_decimal_as_str,
-        serialize_vec_decimal_as_str, sorted_hashset,
+        parse_decimal, parse_optional_decimal, serialize_decimal_as_str,
+        serialize_optional_decimal_as_str, serialize_vec_decimal_as_str, sorted_hashset,
     };
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -1375,12 +1417,12 @@ mod tests {
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     struct TestFlexibleDecimal {
         #[serde(
-            serialize_with = "serialize_decimal",
+            serialize_with = "decimal::serialize",
             deserialize_with = "deserialize_decimal"
         )]
         value: Decimal,
         #[serde(
-            serialize_with = "serialize_optional_decimal",
+            serialize_with = "decimal::serialize_optional",
             deserialize_with = "deserialize_optional_decimal"
         )]
         optional_value: Option<Decimal>,
@@ -1433,6 +1475,129 @@ mod tests {
         let parsed: TestFlexibleDecimal = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.value, dec!(100));
         assert_eq!(parsed.optional_value, None);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestDecimalToken {
+        #[serde(deserialize_with = "deserialize_decimal_token")]
+        value: Decimal,
+        #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+        optional_value: Option<Decimal>,
+    }
+
+    #[rstest]
+    #[case(r#"{"value": 100000000.123456789}"#, "100000000.123456789", None)]
+    #[case(
+        r#"{"value": 100000000.123456788, "optional_value": null}"#,
+        "100000000.123456788",
+        None
+    )]
+    #[case(r#"{"value": "0.10", "optional_value": ""}"#, "0.10", None)]
+    #[case(
+        r#"{"value": 18446744073709551617, "optional_value": 0.30000000000000004}"#,
+        "18446744073709551617",
+        Some("0.30000000000000004")
+    )]
+    #[case(
+        r#"{"value": 1.1403e-4, "optional_value": "2.5e2"}"#,
+        "0.00011403",
+        Some("250")
+    )]
+    #[case(
+        r#"{"value": 5.551115123125783e-17}"#,
+        "0.0000000000000000555111512313",
+        None
+    )]
+    #[case(r#"{"value": 0.00000000000000000000000000001e28}"#, "0.1", None)]
+    #[case(
+        r#"{"value": 0.000000000000000000000000000012345678901234567890123456789e28}"#,
+        "0.1234567890123456789012345679",
+        None
+    )]
+    #[case(
+        r#"{"value": 0.12345678901234567890123456789}"#,
+        "0.1234567890123456789012345679",
+        None
+    )]
+    #[case(
+        r#"{"value": "-7.50", "optional_value": -0.001}"#,
+        "-7.50",
+        Some("-0.001")
+    )]
+    fn test_deserialize_decimal_token(
+        #[case] json: &str,
+        #[case] expected_value: &str,
+        #[case] expected_optional: Option<&str>,
+    ) {
+        let result: TestDecimalToken = serde_json::from_str(json).unwrap();
+
+        assert_eq!(result.value.to_string(), expected_value);
+        assert_eq!(
+            result
+                .optional_value
+                .map(|value| value.to_string())
+                .as_deref(),
+            expected_optional
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_decimal_token_keeps_decimals_that_collapse_in_f64() {
+        let first: TestDecimalToken =
+            serde_json::from_str(r#"{"value": 100000000.123456789}"#).unwrap();
+        let second: TestDecimalToken =
+            serde_json::from_str(r#"{"value": 100000000.123456788}"#).unwrap();
+        let first_f64 = "100000000.123456789".parse::<f64>().unwrap();
+        let second_f64 = "100000000.123456788".parse::<f64>().unwrap();
+
+        assert_eq!(first_f64.to_bits(), second_f64.to_bits());
+        assert_eq!(first.value, dec!(100000000.123456789));
+        assert_eq!(second.value, dec!(100000000.123456788));
+    }
+
+    #[rstest]
+    #[case(r#"{"value": null}"#)]
+    #[case(r#"{"value": ""}"#)]
+    #[case(r#"{"value": "abc"}"#)]
+    #[case(r#"{"value": true}"#)]
+    #[case(r#"{"value": {}}"#)]
+    #[case(r#"{"value": [1]}"#)]
+    #[case(r#"{"value": 1e400}"#)]
+    #[case(r#"{"value": 79228162514264337593543950336}"#)]
+    #[case(r#"{"value": 1, "optional_value": "abc"}"#)]
+    #[case(r#"{"optional_value": 1}"#)]
+    fn test_deserialize_decimal_token_rejects_invalid(#[case] json: &str) {
+        assert!(serde_json::from_str::<TestDecimalToken>(json).is_err());
+    }
+
+    #[rstest]
+    fn test_deserialize_decimal_token_buffered_value_renders_number() {
+        let value = json!({"value": 65000.5, "optional_value": "0.10"});
+
+        let result: TestDecimalToken = serde_json::from_value(value).unwrap();
+
+        assert_eq!(result.value.to_string(), "65000.5");
+        assert_eq!(
+            result
+                .optional_value
+                .map(|value| value.to_string())
+                .as_deref(),
+            Some("0.10")
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_decimal_token_rejects_tagged_enum_buffer() {
+        #[derive(Debug, Deserialize)]
+        #[serde(tag = "type")]
+        #[allow(dead_code, reason = "the test only checks that decoding fails")]
+        enum Tagged {
+            Token(TestDecimalToken),
+        }
+
+        let result = serde_json::from_str::<Tagged>(r#"{"type": "Token", "value": 1.5}"#);
+
+        assert!(result.is_err());
     }
 
     // Additional tests for DecimalVisitor edge cases

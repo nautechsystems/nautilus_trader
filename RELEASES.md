@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added legacy `custom_<snake_case>` layout discovery to custom data queries
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
+- Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 - Removed instrument `maker_fee` and `taker_fee`; set those rates on the venue `fee_model` instead
 - Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
 - Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
+- Removed `serialize_decimal` and `serialize_optional_decimal` - use `decimal::serialize` and `serialize_optional`
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
@@ -79,6 +81,7 @@ Released on TBD (UTC).
 - Changed Polymarket fills on orders from before a reconnect or restart to wait for a terminal REST result
 - Changed Polymarket reconciliation reports to fail while trade settlement evidence is unresolved
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
+- Changed Tardis derived trade IDs to hash decimal values, changing IDs for trades without venue IDs
 - Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
 - Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
 - Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
@@ -181,6 +184,9 @@ Released on TBD (UTC).
 - Fixed Binance Spot `batch_cancel_orders` using a non-existent batch endpoint
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
+- Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
+- Fixed Deribit order and edit amounts and prices losing digits through `f64` serialization
+- Fixed Deribit and Tardis Machine book parsing panicking on out-of-range prices
 - Fixed Derive rejecting valid sub-minimum taker orders (#5045), thanks for reporting @Aviksaikat
 - Fixed Derive instrument `info` dropping fields from the venue response
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
@@ -204,6 +210,7 @@ Released on TBD (UTC).
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`
+- Fixed Tardis Machine prices, sizes, and funding rates losing digits through `f64` parsing
 
 ### Internal Improvements
 

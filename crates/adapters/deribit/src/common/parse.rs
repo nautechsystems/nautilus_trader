@@ -855,20 +855,21 @@ pub fn parse_bars(
     let mut bars = Vec::with_capacity(num_bars);
 
     for i in 0..num_bars {
-        let open = Price::new_checked(chart_data.open[i], price_precision)
+        let open = Price::from_decimal_dp(chart_data.open[i], price_precision)
             .with_context(|| format!("Invalid open price at index {i}"))?;
-        let high = Price::new_checked(chart_data.high[i], price_precision)
+        let high = Price::from_decimal_dp(chart_data.high[i], price_precision)
             .with_context(|| format!("Invalid high price at index {i}"))?;
-        let low = Price::new_checked(chart_data.low[i], price_precision)
+        let low = Price::from_decimal_dp(chart_data.low[i], price_precision)
             .with_context(|| format!("Invalid low price at index {i}"))?;
-        let close = Price::new_checked(chart_data.close[i], price_precision)
+        let close = Price::from_decimal_dp(chart_data.close[i], price_precision)
             .with_context(|| format!("Invalid close price at index {i}"))?;
         let raw_volume = if use_cost_for_volume {
             chart_data.cost[i]
         } else {
             chart_data.volume[i]
         };
-        let volume = Quantity::new_checked(raw_volume, size_precision)
+
+        let volume = Quantity::from_decimal_dp(raw_volume, size_precision)
             .with_context(|| format!("Invalid volume at index {i}"))?;
 
         // Convert timestamp from milliseconds to nanoseconds
@@ -889,7 +890,7 @@ pub fn parse_bars(
 ///
 /// # Errors
 ///
-/// Returns an error if order book creation fails.
+/// Returns an error if order book creation fails or a level price or amount is invalid.
 pub fn parse_order_book(
     order_book_data: &DeribitOrderBook,
     instrument_id: InstrumentId,
@@ -901,23 +902,17 @@ pub fn parse_order_book(
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
     for (idx, [price, amount]) in order_book_data.bids.iter().enumerate() {
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(*price, price_precision),
-            Quantity::new(*amount, size_precision),
-            idx as u64,
-        );
+        let price = Price::from_decimal_dp(*price, price_precision)?;
+        let size = Quantity::from_decimal_dp(*amount, size_precision)?;
+        let order = BookOrder::new(OrderSide::Buy, price, size, idx as u64);
         book.add(order, 0, idx as u64, ts_event);
     }
 
     let bids_len = order_book_data.bids.len();
     for (idx, [price, amount]) in order_book_data.asks.iter().enumerate() {
-        let order = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(*price, price_precision),
-            Quantity::new(*amount, size_precision),
-            (bids_len + idx) as u64,
-        );
+        let price = Price::from_decimal_dp(*price, price_precision)?;
+        let size = Quantity::from_decimal_dp(*amount, size_precision)?;
+        let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + idx) as u64);
         book.add(order, 0, (bids_len + idx) as u64, ts_event);
     }
 
@@ -1473,6 +1468,40 @@ mod tests {
         assert_eq!(bars.len(), 5);
         assert_eq!(bars[0].volume, Quantity::from("257490"));
         assert_eq!(bars[4].volume, Quantity::from("8910"));
+    }
+
+    #[rstest]
+    fn test_parse_order_book_keeps_decimals_that_collapse_in_f64() {
+        let json_data = load_test_json("http_get_order_book_exact.json");
+        let response: DeribitJsonRpcResponse<DeribitOrderBook> =
+            serde_json::from_str(&json_data).unwrap();
+        let order_book_data = response.result.expect("Test data must have result");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+        let book =
+            parse_order_book(&order_book_data, instrument_id, 9, 9, UnixNanos::default()).unwrap();
+
+        assert_eq!(
+            order_book_data.bids,
+            vec![[dec!(100000000.123456789), dec!(100000000.123456789)]]
+        );
+        assert_eq!(
+            order_book_data.asks,
+            vec![[dec!(100000000.123456788), dec!(0.00011403)]]
+        );
+        assert_eq!(
+            book.best_bid_price(),
+            Some(Price::from("100000000.123456789"))
+        );
+        assert_eq!(
+            book.best_bid_size(),
+            Some(Quantity::from("100000000.123456789"))
+        );
+        assert_eq!(
+            book.best_ask_price(),
+            Some(Price::from("100000000.123456788"))
+        );
+        assert_eq!(book.best_ask_size(), Some(Quantity::from("0.000114030")));
     }
 
     #[rstest]

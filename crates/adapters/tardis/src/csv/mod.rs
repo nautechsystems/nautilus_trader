@@ -285,8 +285,8 @@ fn parse_trade_record(
         derive_trade_id(
             data.symbol,
             ts_event.as_u64(),
-            data.price,
-            data.amount,
+            &data.price.to_string(),
+            &data.amount.to_string(),
             &data.side,
         )
     } else {

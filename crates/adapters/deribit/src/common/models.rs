@@ -15,9 +15,11 @@
 
 //! Models shared between Deribit HTTP and WebSocket layers.
 
-use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+use nautilus_core::serialization::deserialize_optional_decimal_token;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+use crate::common::serialization::deserialize_decimal_token_or_zero;
 
 /// A single leg entry of a Deribit combo trade.
 ///
@@ -31,16 +33,16 @@ pub struct DeribitTradeLeg {
     /// Trade timestamp in milliseconds.
     pub timestamp: i64,
     /// Trade price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero")]
     pub price: Decimal,
     /// Trade amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero")]
     pub amount: Decimal,
     /// Trade direction: `buy` or `sell`.
     pub direction: String,
     /// Underlying index price at trade time (may be empty on older historical trades,
     /// matching the optionality on the parent [`crate::http::models::DeribitPublicTrade`]).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
     pub index_price: Option<Decimal>,
     /// Leg instrument name (e.g., `BTC-PERPETUAL`).
     pub instrument_name: String,
@@ -48,7 +50,7 @@ pub struct DeribitTradeLeg {
     pub trade_seq: i64,
     /// Mark price at trade time (may be empty on older historical trades,
     /// matching the optionality on the parent [`crate::http::models::DeribitPublicTrade`]).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
     pub mark_price: Option<Decimal>,
     /// Tick direction: 0 = Plus, 1 = Zero-Plus, 2 = Minus, 3 = Zero-Minus.
     pub tick_direction: i32,
@@ -56,13 +58,13 @@ pub struct DeribitTradeLeg {
     pub combo_id: String,
     /// Trade size in contract units (may be absent on historical combo trades,
     /// matching the optionality on the parent [`crate::http::models::DeribitPublicTrade`]).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
     pub contracts: Option<Decimal>,
     /// Unique (per currency) trade identifier for the leg.
     pub trade_id: String,
     /// Trade identifier of the parent combo trade.
     pub combo_trade_id: String,
     /// Implied volatility (option legs only).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
     pub iv: Option<Decimal>,
 }

@@ -18,7 +18,10 @@
 use ahash::AHashMap;
 use anyhow::Context;
 use jiff::{Span, Timestamp, tz::Offset};
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{
+    UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND,
+    serialization::deserialize_decimal_token,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
@@ -38,7 +41,8 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 
 use super::{
@@ -125,19 +129,20 @@ pub fn parse_trades_data(
 }
 
 fn parse_snapshot_level(
-    level: &[serde_json::Value],
+    level: &[Box<RawValue>],
     index: usize,
     side: &str,
     instrument_name: &str,
-) -> Option<(f64, f64)> {
+) -> Option<(Decimal, Decimal)> {
     let (price_val, amount_val) = if level.len() >= 3 {
-        let price = level[1].as_f64().or_else(|| {
+        let price = deserialize_decimal_token(&*level[1]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
             );
             None
         })?;
-        let amount = level[2].as_f64().or_else(|| {
+
+        let amount = deserialize_decimal_token(&*level[2]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
             );
@@ -145,13 +150,14 @@ fn parse_snapshot_level(
         })?;
         (price, amount)
     } else if level.len() >= 2 {
-        let price = level[0].as_f64().or_else(|| {
+        let price = deserialize_decimal_token(&*level[0]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
             );
             None
         })?;
-        let amount = level[1].as_f64().or_else(|| {
+
+        let amount = deserialize_decimal_token(&*level[1]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
             );
@@ -166,7 +172,7 @@ fn parse_snapshot_level(
         return None;
     };
 
-    if price_val <= 0.0 {
+    if price_val <= Decimal::ZERO {
         log::warn!(
             "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
         );
@@ -177,11 +183,11 @@ fn parse_snapshot_level(
 }
 
 fn parse_delta_level(
-    level: &[serde_json::Value],
+    level: &[Box<RawValue>],
     index: usize,
     side: &str,
     instrument_name: &str,
-) -> Option<(BookAction, f64, f64)> {
+) -> Option<(BookAction, Decimal, Decimal)> {
     if level.len() < 3 {
         log::warn!(
             "Invalid {side} delta format at index {index} for {instrument_name}: expected 3 elements, was {}",
@@ -190,12 +196,14 @@ fn parse_delta_level(
         return None;
     }
 
-    let action_str = level[0].as_str().or_else(|| {
-        log::warn!(
-            "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
-        );
-        None
-    })?;
+    let action_str = serde_json::from_str::<&str>(level[0].get())
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
 
     let deribit_action: DeribitBookAction = action_str.parse().ok().or_else(|| {
         log::warn!(
@@ -204,21 +212,21 @@ fn parse_delta_level(
         None
     })?;
 
-    let price_val = level[1].as_f64().or_else(|| {
+    let price_val = deserialize_decimal_token(&*level[1]).ok().or_else(|| {
         log::warn!(
             "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
         );
         None
     })?;
 
-    let amount_val = level[2].as_f64().or_else(|| {
+    let amount_val = deserialize_decimal_token(&*level[2]).ok().or_else(|| {
         log::warn!(
             "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
         );
         None
     })?;
 
-    if price_val <= 0.0 {
+    if price_val <= Decimal::ZERO {
         log::warn!(
             "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
         );
@@ -271,9 +279,9 @@ pub fn parse_book_snapshot(
             continue;
         };
 
-        if amount_val > 0.0 {
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val, size_precision);
+        if amount_val > Decimal::ZERO {
+            let price = Price::from_decimal_dp(price_val, price_precision)?;
+            let size = Quantity::from_decimal_dp(amount_val, size_precision)?;
 
             deltas.push(OrderBookDelta::new(
                 instrument_id,
@@ -295,9 +303,9 @@ pub fn parse_book_snapshot(
             continue;
         };
 
-        if amount_val > 0.0 {
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val, size_precision);
+        if amount_val > Decimal::ZERO {
+            let price = Price::from_decimal_dp(price_val, price_precision)?;
+            let size = Quantity::from_decimal_dp(amount_val, size_precision)?;
 
             deltas.push(OrderBookDelta::new(
                 instrument_id,
@@ -350,8 +358,8 @@ pub fn parse_book_delta(
             continue;
         };
 
-        let price = Price::new(price_val, price_precision);
-        let size = Quantity::new(amount_val.abs(), size_precision);
+        let price = Price::from_decimal_dp(price_val, price_precision)?;
+        let size = Quantity::from_decimal_dp(amount_val.abs(), size_precision)?;
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -372,8 +380,8 @@ pub fn parse_book_delta(
             continue;
         };
 
-        let price = Price::new(price_val, price_precision);
-        let size = Quantity::new(amount_val.abs(), size_precision);
+        let price = Price::from_decimal_dp(price_val, price_precision)?;
+        let size = Quantity::from_decimal_dp(amount_val.abs(), size_precision)?;
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -670,17 +678,22 @@ pub fn parse_chart_msg(
     timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let open = Price::new_checked(chart_msg.open, price_precision).context("Invalid open price")?;
-    let high = Price::new_checked(chart_msg.high, price_precision).context("Invalid high price")?;
-    let low = Price::new_checked(chart_msg.low, price_precision).context("Invalid low price")?;
+    let open =
+        Price::from_decimal_dp(chart_msg.open, price_precision).context("Invalid open price")?;
+    let high =
+        Price::from_decimal_dp(chart_msg.high, price_precision).context("Invalid high price")?;
+    let low =
+        Price::from_decimal_dp(chart_msg.low, price_precision).context("Invalid low price")?;
     let close =
-        Price::new_checked(chart_msg.close, price_precision).context("Invalid close price")?;
+        Price::from_decimal_dp(chart_msg.close, price_precision).context("Invalid close price")?;
+
     let raw_volume = if use_cost_for_volume {
         chart_msg.cost
     } else {
         chart_msg.volume
     };
-    let volume = Quantity::new_checked(raw_volume, size_precision).context("Invalid volume")?;
+
+    let volume = Quantity::from_decimal_dp(raw_volume, size_precision).context("Invalid volume")?;
 
     // Convert timestamp from milliseconds to nanoseconds
     let mut ts_event = UnixNanos::from(chart_msg.tick * NANOSECONDS_IN_MILLISECOND);
@@ -1301,11 +1314,16 @@ pub enum OrderEventType {
 mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::de::DeserializeOwned;
 
     use super::*;
     use crate::{
-        common::{parse::parse_deribit_instrument_any, testing::load_test_json},
+        common::{
+            parse::{parse_deribit_instrument_any, parse_portfolio_to_account_state},
+            testing::load_test_json,
+        },
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
+        websocket::messages::{DeribitPortfolioMsg, DeribitWsMessage, parse_raw_message},
     };
 
     /// Creates a BTC-PERPETUAL test instrument.
@@ -1678,8 +1696,8 @@ mod tests {
             "Snapshot bids should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.bids[0][0].as_str(),
-            Some("new"),
+            msg.bids[0][0].get(),
+            r#""new""#,
             "First element should be 'new' action for snapshot"
         );
         assert_eq!(
@@ -1688,8 +1706,8 @@ mod tests {
             "Snapshot asks should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.asks[0][0].as_str(),
-            Some("new"),
+            msg.asks[0][0].get(),
+            r#""new""#,
             "First element should be 'new' action for snapshot"
         );
 
@@ -1732,13 +1750,13 @@ mod tests {
             "Delta bids should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.bids[0][0].as_str(),
-            Some("change"),
+            msg.bids[0][0].get(),
+            r#""change""#,
             "First bid should be 'change' action"
         );
         assert_eq!(
-            msg.bids[1][0].as_str(),
-            Some("new"),
+            msg.bids[1][0].get(),
+            r#""new""#,
             "Second bid should be 'new' action"
         );
         assert_eq!(
@@ -1747,8 +1765,8 @@ mod tests {
             "Delta asks should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.asks[0][0].as_str(),
-            Some("delete"),
+            msg.asks[0][0].get(),
+            r#""delete""#,
             "First ask should be 'delete' action"
         );
 
@@ -1972,12 +1990,12 @@ mod tests {
 
         // Verify chart message was deserialized correctly
         assert_eq!(chart_msg.tick, 1_767_200_040_000);
-        assert_eq!(chart_msg.open, 87490.0);
-        assert_eq!(chart_msg.high, 87500.0);
-        assert_eq!(chart_msg.low, 87465.0);
-        assert_eq!(chart_msg.close, 87474.0);
-        assert_eq!(chart_msg.volume, 0.95978896);
-        assert_eq!(chart_msg.cost, 83970.0);
+        assert_eq!(chart_msg.open, dec!(87490.0));
+        assert_eq!(chart_msg.high, dec!(87500.0));
+        assert_eq!(chart_msg.low, dec!(87465.0));
+        assert_eq!(chart_msg.close, dec!(87474.0));
+        assert_eq!(chart_msg.volume, dec!(0.95978896));
+        assert_eq!(chart_msg.cost, dec!(83970.0));
 
         let bar_type = resolution_to_bar_type(instrument.id(), "1").unwrap();
 
@@ -2311,5 +2329,168 @@ mod tests {
             determine_order_event_type("filled", false, false),
             OrderEventType::None
         );
+    }
+
+    fn perpetual_instrument_with_increments(
+        tick_size: &str,
+        min_trade_amount: &str,
+    ) -> InstrumentAny {
+        let json = load_test_json("http_get_instruments.json");
+        let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        response["result"][0]["tick_size"] = serde_json::json!(tick_size);
+        response["result"][0]["min_trade_amount"] = serde_json::json!(min_trade_amount);
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&response.to_string()).unwrap();
+        let instrument = &response.result.unwrap()[0];
+        parse_deribit_instrument_any(instrument, UnixNanos::default(), UnixNanos::default())
+            .unwrap()
+            .unwrap()
+    }
+
+    fn parse_notification_data<T: DeserializeOwned>(fixture: &str) -> T {
+        let json = load_test_json(fixture);
+
+        let DeribitWsMessage::Notification(notification) = parse_raw_message(&json).unwrap() else {
+            panic!("Expected notification from {fixture}");
+        };
+
+        serde_json::from_str(notification.params.data.get()).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_user_trade_msg_keeps_decimals_that_collapse_in_f64() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let trades: Vec<DeribitUserTradeMsg> = parse_notification_data("ws_user_trades_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+        let btc = Currency::BTC();
+
+        let first = parse_user_trade_msg(&trades[0], &instrument, account_id, UnixNanos::default())
+            .unwrap();
+        let second =
+            parse_user_trade_msg(&trades[1], &instrument, account_id, UnixNanos::default())
+                .unwrap();
+
+        let fee_f64 = "1000000000.12345678".parse::<f64>().unwrap();
+        let next_fee_f64 = "1000000000.12345679".parse::<f64>().unwrap();
+        assert_eq!(fee_f64.to_bits(), next_fee_f64.to_bits());
+        assert_eq!(instrument.price_precision(), 9);
+        assert_eq!(instrument.size_precision(), 9);
+        assert_eq!(first.last_px, Price::from("100000000.123456789"));
+        assert_eq!(first.last_qty, Quantity::from("100000000.123456789"));
+        assert_eq!(
+            first.commission,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(second.last_px, Price::from("100000000.123456788"));
+        assert_eq!(second.last_qty, Quantity::from("100000000.123456788"));
+        assert_eq!(
+            second.commission,
+            Money::from_decimal(dec!(1000000000.12345679), btc).unwrap()
+        );
+        assert_eq!(trades[0].mark_price, dec!(100000000.123456788));
+        assert_eq!(trades[0].profit_loss, Some(dec!(0.30000000000000004)));
+    }
+
+    #[rstest]
+    fn test_parse_user_trade_msg_rounds_exact_token_half_even() {
+        let instrument = perpetual_instrument_with_increments("0.01", "0.01");
+        let trades: Vec<DeribitUserTradeMsg> = parse_notification_data("ws_user_trades_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+
+        let fill = parse_user_trade_msg(&trades[2], &instrument, account_id, UnixNanos::default())
+            .unwrap();
+
+        let token_f64 = "100000000.005000001".parse::<f64>().unwrap();
+        let via_f64 = Price::from_decimal_dp(Decimal::try_from(token_f64).unwrap(), 2).unwrap();
+        assert_eq!(via_f64, Price::from("100000000.00"));
+        assert_eq!(fill.last_px, Price::from("100000000.01"));
+        assert_eq!(fill.last_qty, Quantity::from("100000000.01"));
+        assert_eq!(
+            fill.commission,
+            Money::from_decimal(dec!(0.00011403), Currency::BTC()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_portfolio_keeps_decimals_that_collapse_in_f64() {
+        let portfolio: DeribitPortfolioMsg = parse_notification_data("ws_portfolio_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+        let btc = Currency::BTC();
+
+        let state =
+            parse_portfolio_to_account_state(&portfolio, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(
+            state.balances[0].total,
+            Money::from_decimal(dec!(1000000000.12345679), btc).unwrap()
+        );
+        assert_eq!(
+            state.balances[0].free,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(
+            state.balances[0].locked,
+            Money::from_decimal(dec!(0.00000001), btc).unwrap()
+        );
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(
+            state.margins[0].initial,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(state.margins[0].maintenance, Money::zero(btc));
+        assert_eq!(
+            portfolio.maintenance_margin,
+            dec!(0.0000000000000000555111512313)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_keeps_decimals_that_collapse_in_f64() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let msg: DeribitBookMsg = parse_notification_data("ws_book_snapshot_exact.json");
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::from("100000000.123456789")
+        );
+        assert_eq!(
+            deltas.deltas[1].order.size,
+            Quantity::from("100000000.123456789")
+        );
+        assert_eq!(
+            deltas.deltas[2].order.price,
+            Price::from("100000000.123456788")
+        );
+        assert_eq!(
+            deltas.deltas[2].order.size,
+            Quantity::from("100000000.123456788")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_delta_rounds_levels_beyond_decimal_scale() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let msg: DeribitBookMsg = parse_notification_data("ws_book_delta_exact.json");
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(
+            deltas.deltas[0].order.price,
+            Price::from("100000000.123456789")
+        );
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from("0.123456789"));
+        assert_eq!(deltas.deltas[1].action, BookAction::Add);
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::from("100000000.123456788")
+        );
+        assert_eq!(deltas.deltas[1].order.size, Quantity::from("0.000012346"));
     }
 }

@@ -51,8 +51,8 @@
 //! [`serialize_decimal_as_str`](crate::serialization::serialize_decimal_as_str) and
 //! [`serialize_optional_decimal_as_str`](crate::serialization::serialize_optional_decimal_as_str).
 //! These JSON number contracts do not extend to MessagePack or other Serde formats.
-//! Existing permissive parsing and float serializers in the parent module retain their semantics,
-//! except that oversized integer inputs return errors instead of panicking.
+//! Existing permissive parsing in the parent module retains its semantics, except that oversized
+//! integer inputs return errors instead of panicking.
 
 use std::str::FromStr;
 
@@ -63,7 +63,7 @@ use serde::{
 };
 use serde_json::{Number, value::RawValue};
 
-use super::{DecimalVisitor, decimal_components};
+use super::{DecimalVisitor, decimal_components, json_token_text};
 
 /// Deserializes an exact decimal from strings, integers, or arbitrary-precision number maps.
 ///
@@ -249,12 +249,8 @@ pub fn parse(value: &str) -> Result<Decimal, rust_decimal::Error> {
 }
 
 fn parse_json(raw: &RawValue) -> Result<Decimal, String> {
-    if raw.get().starts_with('"') {
-        let value: String = serde_json::from_str(raw.get()).map_err(|e| e.to_string())?;
-        parse(&value).map_err(|e| e.to_string())
-    } else {
-        parse(raw.get()).map_err(|e| e.to_string())
-    }
+    let text = json_token_text(raw).map_err(|e| e.to_string())?;
+    parse(&text).map_err(|e| e.to_string())
 }
 
 struct ExactDecimalVisitor;

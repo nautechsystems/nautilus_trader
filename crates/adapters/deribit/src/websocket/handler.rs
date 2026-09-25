@@ -1037,7 +1037,7 @@ impl DeribitWsFeedHandler {
                                 self.auth_tracker.fail(reason.clone());
                                 return Some(NautilusWsMessage::AuthenticationFailed(reason));
                             } else if let Some(result) = &response.result {
-                                match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
+                                match serde_json::from_str::<DeribitAuthResult>(result.get()) {
                                     Ok(auth_result) => {
                                         self.auth_tracker.succeed();
                                         log::debug!(
@@ -1146,7 +1146,7 @@ impl DeribitWsFeedHandler {
                             instrument_id,
                         } => {
                             if let Some(result) = &response.result {
-                                match serde_json::from_value::<DeribitOrderMsg>(result.clone()) {
+                                match serde_json::from_str::<DeribitOrderMsg>(result.get()) {
                                     Ok(order_msg) => {
                                         let venue_order_id =
                                             VenueOrderId::new(order_msg.order_id.as_str());
@@ -1256,7 +1256,7 @@ impl DeribitWsFeedHandler {
                         }
                         PendingRequestType::CancelAllByInstrument { instrument_id } => {
                             if let Some(result) = &response.result {
-                                match serde_json::from_value::<u64>(result.clone()) {
+                                match serde_json::from_str::<u64>(result.get()) {
                                     Ok(count) => {
                                         log::debug!(
                                             "Cancelled {count} orders for instrument {instrument_id}"
@@ -1293,8 +1293,7 @@ impl DeribitWsFeedHandler {
                             order_type,
                         } => {
                             if let Some(result) = &response.result {
-                                match serde_json::from_value::<DeribitOrderResponse>(result.clone())
-                                {
+                                match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
                                     Ok(order_response) => {
                                         let venue_order_id_str = &order_response.order.order_id;
                                         let venue_order_id =
@@ -1420,8 +1419,7 @@ impl DeribitWsFeedHandler {
                             instrument_id,
                         } => {
                             if let Some(result) = &response.result {
-                                match serde_json::from_value::<DeribitOrderResponse>(result.clone())
-                                {
+                                match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
                                     Ok(order_response) => {
                                         let venue_order_id =
                                             VenueOrderId::new(&order_response.order.order_id);
@@ -1558,7 +1556,7 @@ impl DeribitWsFeedHandler {
                             instrument_id: _,
                         } => {
                             if let Some(result) = &response.result {
-                                match serde_json::from_value::<DeribitOrderMsg>(result.clone()) {
+                                match serde_json::from_str::<DeribitOrderMsg>(result.get()) {
                                     Ok(order_msg) => {
                                         log::debug!(
                                             "Order state received: venue_order_id={}, client_order_id={}, state={}",
@@ -1664,7 +1662,7 @@ impl DeribitWsFeedHandler {
                     match channel_type {
                         DeribitWsChannel::Trades => {
                             // Parse trade messages
-                            match serde_json::from_value::<Vec<DeribitTradeMsg>>(data.clone()) {
+                            match serde_json::from_str::<Vec<DeribitTradeMsg>>(data.get()) {
                                 Ok(trades) => {
                                     log::debug!("Received {} trades", trades.len());
                                     let data_vec = parse_trades_data(
@@ -1707,7 +1705,7 @@ impl DeribitWsFeedHandler {
                         }
                         DeribitWsChannel::Book => {
                             // Parse order book messages
-                            match serde_json::from_value::<DeribitBookMsg>(data.clone()) {
+                            match serde_json::from_str::<DeribitBookMsg>(data.get()) {
                                 Ok(book_msg) => {
                                     if let Some(instrument) =
                                         self.instruments_cache.get(&book_msg.instrument_name)
@@ -1817,7 +1815,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::Ticker => {
-                            match serde_json::from_value::<DeribitTickerMsg>(data.clone()) {
+                            match serde_json::from_str::<DeribitTickerMsg>(data.get()) {
                                 Ok(ticker_msg) => {
                                     if let Some(instrument) =
                                         self.instruments_cache.get(&ticker_msg.instrument_name)
@@ -1893,7 +1891,7 @@ impl DeribitWsFeedHandler {
                             // Parse perpetual channel for funding rate updates
                             // This channel is dedicated to perpetual instruments and provides
                             // the interest (funding) rate
-                            match serde_json::from_value::<DeribitPerpetualMsg>(data.clone()) {
+                            match serde_json::from_str::<DeribitPerpetualMsg>(data.get()) {
                                 Ok(perpetual_msg) => {
                                     // Extract instrument name from channel: perpetual.{instrument}.{interval}
                                     let parts: Vec<&str> = channel.split('.').collect();
@@ -1929,7 +1927,7 @@ impl DeribitWsFeedHandler {
                         }
                         DeribitWsChannel::Quote => {
                             // Parse quote messages
-                            match serde_json::from_value::<DeribitQuoteMsg>(data.clone()) {
+                            match serde_json::from_str::<DeribitQuoteMsg>(data.get()) {
                                 Ok(quote_msg) => {
                                     if let Some(instrument) =
                                         self.instruments_cache.get(&quote_msg.instrument_name)
@@ -1960,8 +1958,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::VolatilityIndex => {
-                            match serde_json::from_value::<DeribitVolatilityIndexMsg>(data.clone())
-                            {
+                            match serde_json::from_str::<DeribitVolatilityIndexMsg>(data.get()) {
                                 Ok(msg) => {
                                     let ts_event = UnixNanos::from(msg.timestamp * 1_000_000);
                                     let mut metadata = nautilus_core::Params::new();
@@ -1992,8 +1989,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::InstrumentState => {
-                            match serde_json::from_value::<DeribitInstrumentStateMsg>(data.clone())
-                            {
+                            match serde_json::from_str::<DeribitInstrumentStateMsg>(data.get()) {
                                 Ok(state_msg) => {
                                     log::debug!(
                                         "Instrument state change: {} -> {} (timestamp: {})",
@@ -2045,7 +2041,7 @@ impl DeribitWsFeedHandler {
                             // a bar when we receive a bar with a different timestamp, confirming
                             // the previous bar is closed.
                             if let Ok(chart_msg) =
-                                serde_json::from_value::<DeribitChartMsg>(data.clone())
+                                serde_json::from_str::<DeribitChartMsg>(data.get())
                             {
                                 // Extract instrument and resolution from channel
                                 // Channel format: chart.trades.{instrument}.{resolution}
@@ -2130,12 +2126,13 @@ impl DeribitWsFeedHandler {
                         }
                         DeribitWsChannel::UserOrders => {
                             // Handle both array and single object responses
-                            let orders_result =
-                                serde_json::from_value::<Vec<DeribitOrderMsg>>(data.clone())
-                                    .or_else(|_| {
-                                        serde_json::from_value::<DeribitOrderMsg>(data.clone())
-                                            .map(|order| vec![order])
-                                    });
+                            let orders_result = serde_json::from_str::<Vec<DeribitOrderMsg>>(
+                                data.get(),
+                            )
+                            .or_else(|_| {
+                                serde_json::from_str::<DeribitOrderMsg>(data.get())
+                                    .map(|order| vec![order])
+                            });
 
                             match orders_result {
                                 Ok(orders) => {
@@ -2422,9 +2419,9 @@ impl DeribitWsFeedHandler {
                         DeribitWsChannel::UserTrades => {
                             // Handle both array and single object responses
                             let trades_result =
-                                serde_json::from_value::<Vec<DeribitUserTradeMsg>>(data.clone())
+                                serde_json::from_str::<Vec<DeribitUserTradeMsg>>(data.get())
                                     .or_else(|_| {
-                                        serde_json::from_value::<DeribitUserTradeMsg>(data.clone())
+                                        serde_json::from_str::<DeribitUserTradeMsg>(data.get())
                                             .map(|trade| vec![trade])
                                     });
 
@@ -2446,7 +2443,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::UserPortfolio => {
-                            match serde_json::from_value::<DeribitPortfolioMsg>(data.clone()) {
+                            match serde_json::from_str::<DeribitPortfolioMsg>(data.get()) {
                                 Ok(portfolio) => {
                                     // Skip zero-balance currencies (common with cross-collateral)
                                     // Only check equity and balance - initial_margin can be non-zero
