@@ -920,8 +920,13 @@ mod tests {
         value_columns[column] = Arc::new(decimals);
         let values = StructArray::try_new(value_fields.clone(), value_columns, None).unwrap();
         let item = Arc::new(Field::new("item", DataType::Struct(value_fields), false));
-        let list = ListArray::try_new(item.clone(), list.offsets().clone(), Arc::new(values), None)
-            .unwrap();
+        let list = ListArray::try_new(
+            Arc::clone(&item),
+            list.offsets().clone(),
+            Arc::new(values),
+            None,
+        )
+        .unwrap();
         let mut fields = batch.schema().fields().to_vec();
         fields[side_index] = Arc::new(Field::new(side, DataType::List(item), false));
         let mut columns = batch.columns().to_vec();

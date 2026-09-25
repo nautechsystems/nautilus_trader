@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 // Links the workspace core from one shared library to collapse the binary's link time.
 use std::sync::Arc;
 

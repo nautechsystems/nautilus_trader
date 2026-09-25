@@ -402,7 +402,7 @@ fn source_status_column(
     file_path: &str,
 ) -> Result<ArrayRef, LegacyArrowError> {
     if field.name() == KEY_IDENTIFIER {
-        return Ok(instrument_id.clone());
+        return Ok(Arc::clone(instrument_id));
     }
 
     let Some(column) = batch.column_by_name(field.name()) else {
@@ -422,7 +422,7 @@ fn source_status_column(
             .map_err(|e| transcode_error("instrument_status", file_path, e.to_string()));
     }
 
-    Ok(column.clone())
+    Ok(Arc::clone(column))
 }
 
 fn transcode_funding_rate(
@@ -824,14 +824,14 @@ pub fn normalize_legacy_fixed_columns(batch: &RecordBatch) -> Result<RecordBatch
         }
 
         let DataType::FixedSizeBinary(width @ (8 | 16)) = field.data_type() else {
-            fields.push(field.clone());
-            columns.push(column.clone());
+            fields.push(Arc::clone(field));
+            columns.push(Arc::clone(column));
             continue;
         };
 
         if !normalize_named_fields {
-            fields.push(field.clone());
-            columns.push(column.clone());
+            fields.push(Arc::clone(field));
+            columns.push(Arc::clone(column));
             continue;
         }
         let values = column
@@ -1658,23 +1658,23 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new(
                 "bid_price",
-                DataType::FixedSizeList(fixed.clone(), 10),
+                DataType::FixedSizeList(Arc::clone(&fixed), 10),
                 false,
             ),
             Field::new(
                 "ask_price",
-                DataType::FixedSizeList(fixed.clone(), 10),
+                DataType::FixedSizeList(Arc::clone(&fixed), 10),
                 false,
             ),
             Field::new(
                 "bid_size",
-                DataType::FixedSizeList(fixed.clone(), 10),
+                DataType::FixedSizeList(Arc::clone(&fixed), 10),
                 false,
             ),
             Field::new("ask_size", DataType::FixedSizeList(fixed, 10), false),
             Field::new(
                 "bid_count",
-                DataType::FixedSizeList(count.clone(), 10),
+                DataType::FixedSizeList(Arc::clone(&count), 10),
                 false,
             ),
             Field::new("ask_count", DataType::FixedSizeList(count, 10), false),
