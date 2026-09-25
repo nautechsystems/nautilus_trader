@@ -114,22 +114,20 @@ impl RelativeVolatilityIndex {
             "period {period} exceeds maximum capacity of price deque"
         );
 
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
+
         Self {
             period,
             scalar: scalar.unwrap_or(100.0),
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type,
             value: 0.0,
             initialized: false,
             prices: ArrayDeque::new(),
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            pos_ma: MovingAverageFactory::create(
-                ma_type.unwrap_or(MovingAverageType::Simple),
-                period,
-            ),
-            neg_ma: MovingAverageFactory::create(
-                ma_type.unwrap_or(MovingAverageType::Simple),
-                period,
-            ),
+            // The standard deviation is taken about the simple mean of the window;
+            // `ma_type` only smooths the upward and downward volatility.
+            ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
+            pos_ma: MovingAverageFactory::create(ma_type, period),
+            neg_ma: MovingAverageFactory::create(ma_type, period),
             previous_close: 0.0,
             std: 0.0,
             has_inputs: false,
@@ -199,7 +197,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::rvi_10;
+    use crate::{stubs::rvi_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(rvi_10: RelativeVolatilityIndex) {
@@ -284,5 +282,24 @@ mod tests {
         assert_eq!(rvi_10.ma.value(), 0.0);
         assert_eq!(rvi_10.pos_ma.value(), 0.0);
         assert_eq!(rvi_10.neg_ma.value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_new_defaults_to_exponential_smoothing_about_simple_mean() {
+        // Only the directional volatility is smoothed with `ma_type`; the standard
+        // deviation stays about the simple mean of the window
+        let mut rvi = RelativeVolatilityIndex::new(10, None, None);
+        let close_values = [
+            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
+            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
+        ];
+
+        for close in close_values {
+            rvi.update_raw(close);
+        }
+
+        assert_eq!(rvi.ma_type, MovingAverageType::Exponential);
+        assert!(rvi.initialized());
+        assert_approx_equal(rvi.value, 41.605274235);
     }
 }

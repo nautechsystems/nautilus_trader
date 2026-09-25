@@ -97,7 +97,7 @@ impl KeltnerPosition {
         Self {
             period,
             k_multiplier,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
             ma_type_atr: ma_type_atr.unwrap_or(MovingAverageType::Simple),
             use_previous: use_previous.unwrap_or(true),
             atr_floor: atr_floor.unwrap_or(0.0),
@@ -204,5 +204,31 @@ mod tests {
         assert_eq!(kp_10.kc.upper, 0.0);
         assert_eq!(kp_10.kc.middle, 0.0);
         assert_eq!(kp_10.kc.lower, 0.0);
+    }
+
+    #[rstest]
+    fn test_new_defaults_to_exponential_moving_average() {
+        let mut kp = KeltnerPosition::new(10, 2.0, None, None, None, None);
+        let high_values = [
+            100.75, 102.5, 102.0, 103.0, 104.0, 102.25, 101.25, 103.0, 105.75, 104.5, 106.0, 105.5,
+            107.25, 106.5, 108.25, 107.0, 109.0, 108.75, 110.0, 109.5,
+        ];
+        let low_values = [
+            99.5, 100.75, 100.25, 101.5, 102.5, 100.25, 100.0, 101.25, 104.0, 103.0, 104.5, 103.5,
+            106.0, 104.75, 106.5, 105.5, 107.5, 106.75, 108.75, 107.75,
+        ];
+        let close_values = [
+            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
+            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
+        ];
+
+        for i in 0..20 {
+            kp.update_raw(high_values[i], low_values[i], close_values[i]);
+        }
+
+        assert_eq!(kp.ma_type, MovingAverageType::Exponential);
+        assert_eq!(kp.ma_type_atr, MovingAverageType::Simple);
+        assert!(kp.initialized());
+        assert_approx_equal(kp.value, 0.358717256402);
     }
 }
