@@ -227,6 +227,8 @@ Released on TBD (UTC).
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
+- Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
+- Optimized OKX WebSocket frame decoding and per-message handler overhead
 - Upgraded `cargo-codspeed` tool to v5.0.2
 - Upgraded `cargo-nextest` tool to v0.9.146
 - Upgraded `markdownlint-cli2` tool and pre-commit hook to v0.23.3
@@ -272,6 +274,7 @@ Released on TBD (UTC).
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
 - Updated Databento and Tardis integration guides with new URL overrides
+- Updated OKX Rust exec tester example to use cross margin
 
 ---
 
