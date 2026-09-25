@@ -1590,7 +1590,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission.currency, Currency::BTC());
-        assert_eq!(commission.as_decimal(), dec!(0.10));
+        assert_eq!(commission.as_decimal(), dec!(0.00001));
     }
 
     #[rstest]

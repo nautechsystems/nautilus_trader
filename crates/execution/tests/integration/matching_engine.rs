@@ -13833,6 +13833,21 @@ fn underlying_index(venue: &str) -> IndexInstrument {
         .unwrap()
 }
 
+fn underlying_index_btc(venue: &str) -> IndexInstrument {
+    IndexInstrument::builder()
+        .instrument_id(InstrumentId::from(format!("BTC.{venue}").as_str()))
+        .raw_symbol(Symbol::from("BTC"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
+}
+
 fn underlying_equity(venue: &str) -> Equity {
     Equity::builder()
         .instrument_id(InstrumentId::from(format!("AAPL.{venue}").as_str()))
@@ -16379,21 +16394,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let strike = Price::from("50000.00");
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(venue, expiration_ns, strike));
-
-    let underlying = InstrumentAny::IndexInstrument(
-        IndexInstrument::builder()
-            .instrument_id(InstrumentId::from(format!("BTC.{venue}").as_str()))
-            .raw_symbol(Symbol::from("BTC"))
-            .currency(Currency::USD())
-            .price_precision(2)
-            .size_precision(0)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from(1))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap(),
-    );
+    let underlying = InstrumentAny::IndexInstrument(underlying_index_btc(venue));
 
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
     cache
@@ -16450,6 +16451,187 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     assert_eq!(settlement_fill.order_side, OrderSide::Sell);
     assert_eq!(settlement_fill.last_qty, position.quantity);
     assert_eq!(settlement_fill.last_px, Price::from("1000.00"));
+    assert_eq!(settlement_fill.position_id, Some(position.id));
+}
+
+#[rstest]
+#[case::call(OptionKind::Call, "51000.00", "0.0196")]
+#[case::put(OptionKind::Put, "49000.00", "0.0204")]
+fn test_inverse_crypto_option_cash_settlement_in_premium_units(
+    account_id: AccountId,
+    #[case] option_kind: OptionKind,
+    #[case] spot: &str,
+    #[case] expected_px: &str,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let venue = "DERIBIT";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let mut option = crypto_option_call_btc(venue, expiration_ns, Price::from("50000.00"));
+    option.option_kind = option_kind;
+    option.is_inverse = true;
+    option.price_precision = 4;
+    option.price_increment = Price::from("0.0001");
+    let option = InstrumentAny::CryptoOption(option);
+    let underlying = InstrumentAny::IndexInstrument(underlying_index_btc(venue));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
+
+    // Payout of 1000 USD points converts at spot: 1000 / 51000 (call) and 1000 / 49000 (put)
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            underlying.id(),
+            Price::from(spot),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from("1"),
+        Price::from("0.0100"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
+
+    let settlement_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) if f.client_order_id == client_order_id => Some(f),
+            _ => None,
+        })
+        .expect("Expected inverse CryptoOption cash settlement fill");
+
+    assert_eq!(settlement_fill.instrument_id, option.id());
+    assert_eq!(settlement_fill.order_side, OrderSide::Sell);
+    assert_eq!(settlement_fill.last_qty, position.quantity);
+    assert_eq!(settlement_fill.last_px, Price::from(expected_px));
+    assert_eq!(settlement_fill.last_px.precision, 4);
+    assert_eq!(settlement_fill.position_id, Some(position.id));
+}
+
+#[rstest]
+#[case::zero("0.00")]
+#[case::negative("-1.00")]
+fn test_inverse_crypto_option_settlement_defers_on_non_positive_spot(
+    account_id: AccountId,
+    #[case] invalid_spot: &str,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let venue = "DERIBIT";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let mut option = crypto_option_call_btc(venue, expiration_ns, Price::from("50000.00"));
+    option.option_kind = OptionKind::Put;
+    option.is_inverse = true;
+    option.price_precision = 4;
+    option.price_increment = Price::from("0.0001");
+    let option = InstrumentAny::CryptoOption(option);
+    let underlying = InstrumentAny::IndexInstrument(underlying_index_btc(venue));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            underlying.id(),
+            Price::from(invalid_spot),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from("1"),
+        Price::from("0.0100"),
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    let deferred_fill_count = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .count();
+    let deferred_processed = engine.is_expiration_processed();
+
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            underlying.id(),
+            Price::from("49000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    engine.iterate(
+        UnixNanos::from(expiration_ns.as_u64() + 1),
+        AggressorSide::NoAggressor,
+    );
+
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
+
+    let settlement_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) if f.client_order_id == client_order_id => Some(f),
+            _ => None,
+        })
+        .expect("Expected inverse CryptoOption cash settlement fill");
+
+    assert_eq!(deferred_fill_count, 0);
+    assert!(!deferred_processed);
+    assert!(engine.is_expiration_processed());
+    assert_eq!(settlement_fill.last_px, Price::from("0.0204"));
     assert_eq!(settlement_fill.position_id, Some(position.id));
 }
 

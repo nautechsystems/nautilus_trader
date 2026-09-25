@@ -291,7 +291,9 @@ Commissions in the position's cost currency affect realized PnL as each fill arr
 # SHORT: realized_pnl = closed_quantity * multiplier * (1/exit_price - 1/entry_price)
 ```
 
-The position side selects the formula.
+The position side selects the formula. Premium-based inverse instruments, such as coin-settled
+options, quote the premium in the base currency, so they use the standard formula and report PnL
+and notional value in the base currency.
 
 ### Unrealized PnL
 
@@ -343,7 +345,8 @@ notional = position.notional_value(current_price)
 
 :::warning
 In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
-supplied inverse price is not positive, or the result cannot be represented as `Money`.
+supplied price is not positive for a non-premium inverse position, or the result cannot be
+represented as `Money`.
 Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
 panics if the calculation fails.
 :::
@@ -457,7 +460,8 @@ the values, settlement-currency precision, and sequence of fills.
 
 `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
 rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
-Inverse PnL calculations reject nonpositive open or close prices and positive prices below `1e-15`.
+Inverse PnL calculations for non-premium instruments reject nonpositive open or close prices and
+positive prices below `1e-15`.
 With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
 `f64` panics, so `Position` does not support 17- or 18-decimal fill values.
 

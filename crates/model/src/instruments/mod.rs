@@ -614,10 +614,16 @@ pub trait Instrument: 'static + Send {
 
     /// Calculates the notional value for the given quantity and price.
     ///
+    /// Inverse instruments value notional in the base currency as `quantity * multiplier / price`,
+    /// or as `quantity` in the quote currency when `use_quote_for_inverse` is set. Premium-based
+    /// inverse instruments, such as coin-settled options, quote the premium in the base currency,
+    /// so their base notional is `quantity * multiplier * price`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if base-denominated inverse valuation lacks a base currency or positive
-    /// price, or if the result cannot be represented as [`Money`].
+    /// Returns an error if base-denominated inverse valuation lacks a base currency, if a
+    /// non-premium inverse instrument receives a nonpositive price, or if the result cannot be
+    /// represented as [`Money`].
     #[inline(always)]
     fn try_calculate_notional_value(
         &self,
@@ -644,6 +650,7 @@ pub trait Instrument: 'static + Send {
             quantity,
             price,
             self.multiplier(),
+            self.instrument_class(),
             self.is_inverse(),
             use_quote_inverse,
             currency,
@@ -757,11 +764,14 @@ pub(crate) fn try_notional_value(
     quantity: Quantity,
     price: Price,
     multiplier: Quantity,
+    instrument_class: InstrumentClass,
     is_inverse: bool,
     use_quote_for_inverse: bool,
     currency: Currency,
 ) -> anyhow::Result<Money> {
-    let amount = if is_inverse && !use_quote_for_inverse {
+    let amount = if is_inverse && use_quote_for_inverse {
+        quantity.as_decimal()
+    } else if is_inverse && !instrument_class.is_premium_based() {
         anyhow::ensure!(
             price.is_positive(),
             "price must be positive for inverse notional valuation"
@@ -771,8 +781,6 @@ pub(crate) fn try_notional_value(
             .checked_mul(multiplier.as_decimal())
             .and_then(|value| value.checked_div(price.as_decimal()))
             .ok_or_else(|| anyhow::anyhow!("inverse notional calculation overflow"))?
-    } else if is_inverse {
-        quantity.as_decimal()
     } else {
         quantity
             .as_decimal()
@@ -1724,6 +1732,20 @@ mod tests {
     }
 
     #[rstest]
+    fn notional_inverse_option_values_premium_in_base(mut crypto_option_btc_deribit: CryptoOption) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+
+        let notional = crypto_option_btc_deribit.calculate_notional_value(
+            Quantity::from("10.0"),
+            Price::from("0.020"),
+            None,
+        );
+
+        assert_eq!(notional, Money::from("0.002 BTC"));
+    }
+
+    #[rstest]
     fn try_notional_inverse_zero_price_returns_error(btcusd_inverse_perp: CryptoPerpetual) {
         let result = btcusd_inverse_perp.try_calculate_notional_value(
             btcusd_inverse_perp.make_qty(100.0, None),
@@ -1754,6 +1776,7 @@ mod tests {
             Quantity::from("9000000000"),
             Price::from("9000000000"),
             Quantity::from("9000000000"),
+            InstrumentClass::Spot,
             false,
             false,
             Currency::USD(),

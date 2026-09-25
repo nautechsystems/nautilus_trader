@@ -1235,7 +1235,8 @@ impl Position {
         quantity: f64,
     ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
-        let result = if self.is_inverse {
+
+        let result = if self.is_inverse && !self.instrument_class.is_premium_based() {
             anyhow::ensure!(
                 self.base_currency.is_some(),
                 "inverse position {} has no base currency",
@@ -1415,7 +1416,8 @@ impl Position {
     /// # Errors
     ///
     /// Returns an error if this is an inverse position without a base currency, the price is not
-    /// positive for inverse valuation, or the result cannot be represented as [`Money`].
+    /// positive for a non-premium inverse position, or the result cannot be represented as
+    /// [`Money`].
     pub fn try_notional_value(&self, last: Price) -> anyhow::Result<Money> {
         let currency = if self.is_inverse {
             self.base_currency.ok_or_else(|| {
@@ -1432,6 +1434,7 @@ impl Position {
             self.quantity,
             last,
             self.multiplier,
+            self.instrument_class,
             self.is_inverse,
             false,
             currency,
@@ -1602,7 +1605,8 @@ mod tests {
             stubs::uuid4,
         },
         instruments::{
-            CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
+            CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+            stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::{Position, PositionFillVoid, fold_net_position},
@@ -3973,6 +3977,67 @@ mod tests {
         assert_eq!(
             position.notional_value(Price::from("11000.0")),
             Money::from("9.09090909 BTC")
+        );
+    }
+
+    #[rstest]
+    #[case("0.030", "0.001 BTC", "0.003 BTC", "0.00098 BTC")]
+    #[case("0.000", "-0.002 BTC", "0 BTC", "-0.00202 BTC")]
+    fn test_calculate_pnl_for_inverse_option_values_premium_in_base(
+        mut crypto_option_btc_deribit: CryptoOption,
+        #[case] close_px: &str,
+        #[case] expected_unrealized_pnl: &str,
+        #[case] expected_notional: &str,
+        #[case] expected_realized_pnl: &str,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+        let option = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let open_fill = TestOrderEventStubs::filled(
+            &open_order,
+            &option,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("0.020")),
+            None,
+            None,
+            Some(Money::from("0.00001 BTC")),
+            None,
+            None,
+        );
+        let close_fill = TestOrderEventStubs::filled(
+            &close_order,
+            &option,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from(close_px)),
+            None,
+            None,
+            Some(Money::from("0.00001 BTC")),
+            None,
+            None,
+        );
+        let mut position = Position::new(&option, open_fill.into());
+        let unrealized_pnl = position.unrealized_pnl(Price::from(close_px));
+        let notional = position.notional_value(Price::from(close_px));
+
+        position.apply(&close_fill.into());
+
+        assert_eq!(unrealized_pnl, Money::from(expected_unrealized_pnl));
+        assert_eq!(notional, Money::from(expected_notional));
+        assert_eq!(
+            position.realized_pnl,
+            Some(Money::from(expected_realized_pnl))
         );
     }
 

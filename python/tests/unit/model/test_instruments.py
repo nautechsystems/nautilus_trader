@@ -1223,6 +1223,10 @@ def test_derivative_notional_value_contract(
     quantity = Quantity.from_int(2)
     price = Price.from_str("100.00")
 
+    # Inverse option premiums are already in the base currency, so they value linearly
+    if is_inverse and instrument_type is CryptoOption:
+        expected_amount = Decimal(2000)
+
     notional = instrument.notional_value(quantity, price)
 
     assert instrument.is_quanto is is_quanto

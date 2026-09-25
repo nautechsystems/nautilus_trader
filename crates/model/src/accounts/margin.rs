@@ -45,7 +45,7 @@ use crate::{
         base::BaseAccount,
         margin_model::{MarginModel, MarginModelHandle},
     },
-    enums::{AccountType, InstrumentClass, OrderSide},
+    enums::{AccountType, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -596,15 +596,7 @@ impl Account for MarginAccount {
         let mut pnls: Vec<Money> = Vec::new();
 
         // For premium-based instruments, realize the notional value as a cash flow on every fill
-        let instrument_class = instrument.instrument_class();
-
-        if matches!(
-            instrument_class,
-            InstrumentClass::Option
-                | InstrumentClass::OptionSpread
-                | InstrumentClass::BinaryOption
-                | InstrumentClass::Warrant
-        ) {
+        if instrument.instrument_class().is_premium_based() {
             let notional =
                 instrument.try_calculate_notional_value(fill.last_qty, fill.last_px, None)?;
             let pnl = if fill.order_side == OrderSide::Buy {
@@ -685,7 +677,7 @@ mod tests {
             stubs::{uuid4, *},
         },
         instruments::{
-            CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+            CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
             stubs::{binary_option, option_contract_appl, *},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1902,6 +1894,43 @@ mod tests {
         // 10 contracts * $5.50 = $55.00 premium received
         assert_eq!(pnls.len(), 1);
         assert_eq!(pnls[0], Money::from("55 USD"));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "-0.002 BTC")]
+    #[case(OrderSide::Sell, "0.002 BTC")]
+    fn test_calculate_pnls_for_inverse_option_realizes_premium_in_base(
+        margin_account: MarginAccount,
+        mut crypto_option_btc_deribit: CryptoOption,
+        #[case] side: OrderSide,
+        #[case] expected: &str,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+        let option = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(side)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &option,
+            None,
+            Some(PositionId::new("P-OPT-003")),
+            Some(Price::from("0.020")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let pnls = margin_account
+            .calculate_pnls(&option, &fill.into(), None)
+            .unwrap();
+
+        assert_eq!(pnls, vec![Money::from(expected)]);
     }
 
     #[rstest]
