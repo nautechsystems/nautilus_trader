@@ -103,11 +103,14 @@ pub fn precision_from_increment(increment: &str) -> u8 {
     }
 }
 
-/// Converts a Coinbase order side to a Nautilus aggressor side.
+/// Converts a Coinbase market trade side to a Nautilus aggressor side.
+///
+/// Coinbase reports the maker side for public market trades, on both the REST ticker endpoint and
+/// the `market_trades` WebSocket channel, so the aggressor is the opposite side.
 pub fn coinbase_side_to_aggressor(side: &CoinbaseOrderSide) -> AggressorSide {
     match side {
-        CoinbaseOrderSide::Buy => AggressorSide::Buy,
-        CoinbaseOrderSide::Sell => AggressorSide::Sell,
+        CoinbaseOrderSide::Buy => AggressorSide::Sell,
+        CoinbaseOrderSide::Sell => AggressorSide::Buy,
         CoinbaseOrderSide::Unknown => AggressorSide::NoAggressor,
     }
 }
@@ -1470,24 +1473,37 @@ mod tests {
     }
 
     #[rstest]
+    #[case(CoinbaseOrderSide::Buy, AggressorSide::Sell)]
+    #[case(CoinbaseOrderSide::Sell, AggressorSide::Buy)]
+    #[case(CoinbaseOrderSide::Unknown, AggressorSide::NoAggressor)]
+    fn test_coinbase_side_to_aggressor_inverts_maker_side(
+        #[case] maker_side: CoinbaseOrderSide,
+        #[case] expected: AggressorSide,
+    ) {
+        assert_eq!(coinbase_side_to_aggressor(&maker_side), expected);
+    }
+
+    #[rstest]
     fn test_parse_trade_tick_aggressor_side() {
         let json = load_test_fixture("http_ticker.json");
         let response: crate::http::models::TickerResponse = serde_json::from_str(&json).unwrap();
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), coinbase_venue());
         let ts_init = UnixNanos::default();
 
-        for trade_data in &response.trades {
-            let trade = parse_trade_tick(trade_data, instrument_id, 2, 8, ts_init).unwrap();
-            match trade_data.side {
-                CoinbaseOrderSide::Buy => {
-                    assert_eq!(trade.aggressor_side, AggressorSide::Buy);
-                }
-                CoinbaseOrderSide::Sell => {
-                    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
-                }
-                _ => {}
-            }
-        }
+        let trades: Vec<TradeTick> = response
+            .trades
+            .iter()
+            .map(|t| parse_trade_tick(t, instrument_id, 2, 8, ts_init).unwrap())
+            .collect();
+
+        // Fixture trades at the best ask report the resting SELL maker, so a buyer aggressed
+        assert_eq!(response.trades[0].side, CoinbaseOrderSide::Sell);
+        assert_eq!(trades[0].price, Price::from(response.best_ask.as_str()));
+        assert_eq!(trades[0].aggressor_side, AggressorSide::Buy);
+        assert_eq!(response.trades[1].side, CoinbaseOrderSide::Sell);
+        assert_eq!(trades[1].aggressor_side, AggressorSide::Buy);
+        assert_eq!(response.trades[2].side, CoinbaseOrderSide::Buy);
+        assert_eq!(trades[2].aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]

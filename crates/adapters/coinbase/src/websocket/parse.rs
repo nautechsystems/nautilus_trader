@@ -422,7 +422,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{consts::COINBASE_VENUE, testing::load_test_fixture},
+        common::{consts::COINBASE_VENUE, enums::CoinbaseOrderSide, testing::load_test_fixture},
         websocket::messages::{CoinbaseWsMessage, WsEventType},
     };
 
@@ -462,10 +462,12 @@ mod tests {
                 let trade_data = &events[0].trades[0];
                 let tick = parse_ws_trade(trade_data, &instrument, ts_init).unwrap();
 
+                // Coinbase reports the maker side, so a BUY maker means a seller aggressed
+                assert_eq!(trade_data.side, CoinbaseOrderSide::Buy);
                 assert_eq!(tick.instrument_id, instrument.id());
                 assert_eq!(tick.price, Price::from("68900.50"));
                 assert_eq!(tick.size, Quantity::from("0.00150000"));
-                assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+                assert_eq!(tick.aggressor_side, AggressorSide::Sell);
                 assert_eq!(tick.trade_id.as_str(), "995098700");
                 assert!(tick.ts_event.as_u64() > 0);
             }
@@ -485,7 +487,8 @@ mod tests {
                 let trade_data = &events[0].trades[1];
                 let tick = parse_ws_trade(trade_data, &instrument, ts_init).unwrap();
 
-                assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+                assert_eq!(trade_data.side, CoinbaseOrderSide::Sell);
+                assert_eq!(tick.aggressor_side, AggressorSide::Buy);
                 assert_eq!(tick.price, Price::from("68900.00"));
                 assert_eq!(tick.size, Quantity::from("0.05000000"));
             }
