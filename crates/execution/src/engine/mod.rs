@@ -33,6 +33,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
@@ -48,7 +49,8 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            QUERY_INCLUDE_FILLS, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            TradingCommand,
         },
     },
     msgbus::{
@@ -62,7 +64,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    DurationNanos, UUID4, UnixNanos, WeakCell,
+    DurationNanos, Params, UUID4, UnixNanos, WeakCell,
     datetime::{mins_to_secs, secs_to_nanos},
 };
 use nautilus_model::{
@@ -81,7 +83,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
-    orders::{Order, OrderAny, OrderError},
+    orders::{DUPLICATE_ORDER_PARENT_TAG, Order, OrderAny, OrderError},
     position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
@@ -89,12 +91,14 @@ use nautilus_model::{
 use position::CorrectedPosition;
 pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, generate_external_order_status_events,
-        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
+        RECONCILIATION_ORDER_TAG, check_position_reconciliation,
+        generate_external_order_status_events, generate_reconciliation_order_events,
+        generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
     },
 };
@@ -126,6 +130,9 @@ pub struct ExecutionEngine {
     default_client_id: Option<ClientId>,
     routing_map: AHashMap<Venue, ClientId>,
     instrument_venues: AHashSet<Venue>,
+    pending_order_fills: HashMap<(AccountId, VenueOrderId), Vec<FillReport>>,
+    staged_order_reports: HashMap<(AccountId, VenueOrderId), OrderStatusReport>,
+    pending_order_queries: HashMap<(AccountId, VenueOrderId), u64>,
     oms_overrides: AHashMap<StrategyId, OmsType>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
@@ -146,6 +153,18 @@ impl Debug for ExecutionEngine {
     }
 }
 
+#[derive(Clone, Copy)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "identity fields are all identifiers by definition"
+)]
+struct DuplicateOrderIdentity {
+    parent_id: ClientOrderId,
+    client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
+    source_client_id: ClientId,
+}
+
 impl ExecutionEngine {
     /// Creates a new [`ExecutionEngine`] instance.
     pub fn new(
@@ -161,6 +180,9 @@ impl ExecutionEngine {
             default_client_id: None,
             routing_map: AHashMap::new(),
             instrument_venues: AHashSet::new(),
+            pending_order_fills: HashMap::new(),
+            staged_order_reports: HashMap::new(),
+            pending_order_queries: HashMap::new(),
             oms_overrides: AHashMap::new(),
             external_clients: config
                 .as_ref()
@@ -381,6 +403,9 @@ impl ExecutionEngine {
         }
 
         let adapter = ExecutionClientAdapter::new(client);
+        self.cache
+            .borrow_mut()
+            .add_client_account(client_id, adapter.account_id);
 
         log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
@@ -391,6 +416,9 @@ impl ExecutionEngine {
     pub fn register_default_client(&mut self, client: Box<dyn ExecutionClient>) {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
+        self.cache
+            .borrow_mut()
+            .add_client_account(client_id, adapter.account_id);
 
         self.clients.insert(client_id, adapter);
         self.default_client_id = Some(client_id);
@@ -629,6 +657,8 @@ impl ExecutionEngine {
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
         if self.clients.shift_remove(&client_id).is_some() {
+            self.cache.borrow_mut().remove_client_account(&client_id);
+
             if self.default_client_id == Some(client_id) {
                 self.default_client_id = None;
             }
@@ -1044,6 +1074,359 @@ impl ExecutionEngine {
         }
     }
 
+    fn duplicate_order_identity(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<Option<DuplicateOrderIdentity>> {
+        let Some(parent_id) = client_order_id else {
+            return Ok(None);
+        };
+        let cache = self.cache.borrow();
+        let Some(parent) = cache.order(&parent_id) else {
+            return Ok(None);
+        };
+        let Some(previous) = parent.venue_order_id() else {
+            return Ok(None);
+        };
+        let source_client_id = cache
+            .client_id(&parent_id)
+            .copied()
+            .or_else(|| self.source_client_id_for_account(account_id, &instrument_id));
+        let Some(source_client_id) = source_client_id else {
+            return Ok(None);
+        };
+        let Some(client) = self.clients.get(&source_client_id) else {
+            return Ok(None);
+        };
+
+        if !client.has_distinct_order_identity(previous, venue_order_id) {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            parent.instrument_id() == instrument_id
+                && parent.account_id().is_none_or(|id| id == account_id)
+                && client.account_id == account_id,
+            "reported broker incarnation conflicts with its original order account or instrument"
+        );
+
+        if let Some(owner_id) = cache.client_order_id(&venue_order_id) {
+            let owner = cache
+                .order(owner_id)
+                .context("broker order mapping has no cached owner")?;
+            anyhow::ensure!(
+                owner.instrument_id() == instrument_id
+                    && owner.account_id() == Some(account_id)
+                    && owner.venue_order_id() == Some(venue_order_id)
+                    && cache
+                        .client_id(owner_id)
+                        .is_none_or(|id| *id == source_client_id),
+                "broker order {venue_order_id} conflicts with its existing owner"
+            );
+            return Ok(Some(DuplicateOrderIdentity {
+                parent_id,
+                client_order_id: *owner_id,
+                strategy_id: owner.strategy_id(),
+                source_client_id,
+            }));
+        }
+        let child_id = ClientOrderId::for_duplicate_order(account_id, venue_order_id)?;
+        if let Some(existing) = cache.order(&child_id) {
+            let parent_tag = format!("{DUPLICATE_ORDER_PARENT_TAG}{parent_id}");
+            anyhow::ensure!(
+                existing.trader_id() == parent.trader_id()
+                    && existing.strategy_id() == parent.strategy_id()
+                    && existing.instrument_id() == instrument_id
+                    && existing.account_id().is_none_or(|id| id == account_id)
+                    && existing
+                        .venue_order_id()
+                        .is_none_or(|id| id == venue_order_id)
+                    && cache.client_id(&child_id) == Some(&source_client_id)
+                    && existing
+                        .tags()
+                        .is_some_and(|tags| tags.iter().any(|tag| tag.as_str() == parent_tag)),
+                "duplicate order ID {child_id} conflicts with a cached order"
+            );
+        }
+        Ok(Some(DuplicateOrderIdentity {
+            parent_id,
+            client_order_id: child_id,
+            strategy_id: parent.strategy_id(),
+            source_client_id,
+        }))
+    }
+
+    fn buffer_order_fill(
+        &mut self,
+        report: &FillReport,
+        identity: Option<DuplicateOrderIdentity>,
+    ) -> bool {
+        let cache = self.cache.borrow();
+        let exists = report
+            .client_order_id
+            .is_some_and(|id| cache.order_exists(&id))
+            || cache
+                .client_order_id(&report.venue_order_id)
+                .is_some_and(|id| cache.order_exists(id));
+        if exists {
+            return false;
+        }
+        let source = identity
+            .map(|identity| identity.source_client_id)
+            .or_else(|| {
+                self.source_client_id_for_account(report.account_id, &report.instrument_id)
+            });
+        drop(cache);
+        let Some(source) = source else {
+            return false;
+        };
+
+        if !self
+            .clients
+            .get(&source)
+            .is_some_and(|client| client.requires_order_status_for_fill())
+        {
+            return false;
+        }
+        let key = (report.account_id, report.venue_order_id);
+        let fills = self.pending_order_fills.entry(key).or_default();
+        if !fills.iter().any(|fill| fill.trade_id == report.trade_id) {
+            fills.push(report.clone());
+        }
+        let strategy = identity.map_or_else(
+            || self.resolve_external_strategy(&report.instrument_id),
+            |identity| identity.strategy_id,
+        );
+        let client_order_id = report
+            .client_order_id
+            .unwrap_or_else(|| ClientOrderId::from(report.venue_order_id.as_str()));
+        self.query_order_details(key, report.instrument_id, client_order_id, strategy, source);
+        true
+    }
+
+    fn query_order_details(
+        &mut self,
+        key: (AccountId, VenueOrderId),
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        source: ClientId,
+    ) {
+        let now = self.clock.borrow().timestamp_ns().as_u64();
+
+        if self
+            .pending_order_queries
+            .get(&key)
+            .is_some_and(|deadline| now < *deadline)
+        {
+            return;
+        }
+        let Some(client) = self.clients.get(&source) else {
+            return;
+        };
+        let deadline = now.saturating_add(client.order_status_query_timeout().as_u64());
+        self.pending_order_queries.insert(key, deadline);
+        let mut params = Params::new();
+        params.insert(QUERY_INCLUDE_FILLS.to_string(), true.into());
+        let command = QueryOrder::new(
+            get_message_bus().borrow().trader_id,
+            Some(source),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Some(key.1),
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+            Some(params),
+            None,
+        );
+
+        if let Some(client) = self.clients.get(&source) {
+            if let Err(e) = client.query_order(command) {
+                self.pending_order_queries.remove(&key);
+                log::error!(
+                    "Cannot request authoritative order details for {}: {e}",
+                    key.1
+                );
+            } else {
+                log::warn!(
+                    "Waiting for authoritative order details and executions for {} before applying fills",
+                    key.1
+                );
+            }
+        }
+    }
+
+    fn stage_order_report(
+        &mut self,
+        report: &OrderStatusReport,
+        supplied_fills: &[FillReport],
+    ) -> bool {
+        let identity = match self.duplicate_order_identity(
+            report.account_id,
+            report.instrument_id,
+            report.client_order_id,
+            report.venue_order_id,
+        ) {
+            Ok(identity) => identity,
+            Err(e) => {
+                log::error!("Cannot reconcile order identity: {e}");
+                return true;
+            }
+        };
+        let key = (report.account_id, report.venue_order_id);
+        let source = identity
+            .map(|identity| identity.source_client_id)
+            .or_else(|| {
+                let cache = self.cache.borrow();
+                cache
+                    .client_order_id(&report.venue_order_id)
+                    .or(report.client_order_id.as_ref())
+                    .and_then(|id| cache.client_id(id).copied())
+                    .or_else(|| {
+                        self.source_client_id_for_account(report.account_id, &report.instrument_id)
+                    })
+            });
+        let managed = identity.is_some()
+            || source
+                .and_then(|id| self.clients.get(&id))
+                .is_some_and(|client| client.requires_order_status_for_fill());
+        if !managed
+            && !self.pending_order_fills.contains_key(&key)
+            && !self.staged_order_reports.contains_key(&key)
+        {
+            return false;
+        }
+        let mut report = report.clone();
+        if let Some(identity) = identity {
+            report.client_order_id = Some(identity.client_order_id);
+        }
+        let existing = {
+            let cache = self.cache.borrow();
+            report
+                .client_order_id
+                .and_then(|id| cache.order(&id).map(|order| order.clone()))
+                .or_else(|| {
+                    cache
+                        .client_order_id(&report.venue_order_id)
+                        .and_then(|id| cache.order(id).map(|order| order.clone()))
+                })
+        };
+        let order = match existing {
+            Some(order) => order,
+            None => {
+                let created = if let Some(identity) = identity {
+                    self.materialize_external_order_from_status_with_strategy(
+                        &report,
+                        identity.strategy_id,
+                        Some(identity.source_client_id),
+                        Some(vec![Ustr::from(&format!(
+                            "{DUPLICATE_ORDER_PARENT_TAG}{}",
+                            identity.parent_id
+                        ))]),
+                    )
+                } else {
+                    self.materialize_external_order_from_status(&report)
+                };
+                let Some(order) = created else {
+                    return true;
+                };
+                let accepted = OrderAccepted::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    report.venue_order_id,
+                    report.account_id,
+                    UUID4::new(),
+                    report.ts_accepted,
+                    self.clock.borrow().timestamp_ns(),
+                    true,
+                );
+                self.handle_event(&OrderEventAny::Accepted(accepted));
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .map(|order| order.clone())
+                    .unwrap_or(order)
+            }
+        };
+        let client_order_id = order.client_order_id();
+        report.client_order_id = Some(client_order_id);
+        let mut visible = report.clone();
+        visible.client_order_id = Some(client_order_id);
+        visible.filled_qty = order.filled_qty();
+        if report.filled_qty > order.filled_qty() {
+            visible.order_status = if order.filled_qty().is_zero() {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::PartiallyFilled
+            };
+            self.staged_order_reports.insert(key, report.clone());
+        }
+        self.apply_order_status_report(&visible, false);
+        let mut fills = self.pending_order_fills.remove(&key).unwrap_or_default();
+        fills.extend_from_slice(supplied_fills);
+        for mut fill in fills {
+            if fill.account_id != report.account_id
+                || fill.instrument_id != report.instrument_id
+                || fill.venue_order_id != report.venue_order_id
+            {
+                log::error!("Ignoring fill with conflicting order identity during reconciliation");
+                continue;
+            }
+            fill.client_order_id = Some(client_order_id);
+            self.apply_fill_report(&fill);
+        }
+        self.flush_staged_order_report(key);
+        if self.staged_order_reports.contains_key(&key) {
+            let source = self
+                .cache
+                .borrow()
+                .client_id(&client_order_id)
+                .copied()
+                .or_else(|| {
+                    self.source_client_id_for_account(report.account_id, &report.instrument_id)
+                });
+
+            if let Some(source) = source {
+                self.query_order_details(
+                    key,
+                    report.instrument_id,
+                    client_order_id,
+                    order.strategy_id(),
+                    source,
+                );
+            }
+        }
+        true
+    }
+
+    fn flush_staged_order_report(&mut self, key: (AccountId, VenueOrderId)) {
+        let Some(report) = self.staged_order_reports.get(&key) else {
+            return;
+        };
+        let order = report
+            .client_order_id
+            .and_then(|id| self.cache.borrow().order(&id).map(|order| order.clone()));
+        let Some(order) = order else {
+            return;
+        };
+
+        if order.filled_qty() < report.filled_qty {
+            return;
+        }
+        let mut report = self
+            .staged_order_reports
+            .remove(&key)
+            .expect("staged report exists");
+        report.filled_qty = order.filled_qty();
+        self.pending_order_queries.remove(&key);
+        self.apply_order_status_report(&report, false);
+    }
+
     /// Reconciles an order status report received at runtime.
     ///
     /// Handles order status transitions by generating appropriate events when the venue
@@ -1063,6 +1446,13 @@ impl ExecutionEngine {
             report,
         );
 
+        if self.stage_order_report(report, &[]) {
+            return;
+        }
+        self.apply_order_status_report(report, is_snapshot);
+    }
+
+    fn apply_order_status_report(&mut self, report: &OrderStatusReport, is_snapshot: bool) {
         let cache = self.cache.borrow();
 
         let order = report
@@ -1167,13 +1557,20 @@ impl ExecutionEngine {
             return None;
         }
 
-        self.materialize_external_order_from_status_with_strategy(report, strategy_id)
+        self.materialize_external_order_from_status_with_strategy(
+            report,
+            strategy_id,
+            self.source_client_id_for_account(report.account_id, &report.instrument_id),
+            None,
+        )
     }
 
     fn materialize_external_order_from_status_with_strategy(
         &self,
         report: &OrderStatusReport,
         strategy_id: StrategyId,
+        source_client_id: Option<ClientId>,
+        tags: Option<Vec<Ustr>>,
     ) -> Option<OrderAny> {
         let client_order_id = report
             .client_order_id
@@ -1225,7 +1622,7 @@ impl ExecutionEngine {
             None, // exec_algorithm_id
             None, // exec_algorithm_params
             None, // exec_spawn_id
-            None, // tags
+            tags,
         ) {
             Ok(initialized) => initialized,
             Err(e) => {
@@ -1242,7 +1639,7 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             Some(report.order_status),
-            self.source_client_id_for_account(report.account_id, &report.instrument_id),
+            source_client_id,
         )
     }
 
@@ -1444,6 +1841,32 @@ impl ExecutionEngine {
             report,
         );
 
+        let mut report = report.clone();
+        let identity = match self.duplicate_order_identity(
+            report.account_id,
+            report.instrument_id,
+            report.client_order_id,
+            report.venue_order_id,
+        ) {
+            Ok(identity) => identity,
+            Err(e) => {
+                log::error!("Cannot reconcile fill identity: {e}");
+                return;
+            }
+        };
+
+        if let Some(identity) = identity {
+            report.client_order_id = Some(identity.client_order_id);
+        }
+
+        if self.buffer_order_fill(&report, identity) {
+            return;
+        }
+        self.apply_fill_report(&report);
+        self.flush_staged_order_report((report.account_id, report.venue_order_id));
+    }
+
+    fn apply_fill_report(&mut self, report: &FillReport) {
         if report.last_qty.is_zero() {
             log::warn!("Skipping zero-quantity fill report: {report}");
             return;
@@ -1510,8 +1933,40 @@ impl ExecutionEngine {
             ts_now,
             self.config.allow_overfills,
         ) {
-            self.handle_event(&event);
+            // A position reconciled from an authoritative venue position report already
+            // accounts for executions that predate it. Replaying such a fill (for example a
+            // venue execution stream resending it after startup reconciliation) must update
+            // the order without reopening the position, or the position doubles.
+            let apply_position = !self.fill_precedes_snapshot_reconciled_position(report);
+            self.handle_event_with_position_application(&event, apply_position);
         }
+    }
+
+    /// Returns whether `report` predates an open position that was reconciled from a venue
+    /// position report and does not already contain the fill's trade.
+    fn fill_precedes_snapshot_reconciled_position(&self, report: &FillReport) -> bool {
+        let cache = self.cache.borrow();
+        cache
+            .positions_open(
+                None,
+                Some(&report.instrument_id),
+                None,
+                Some(&report.account_id),
+                None,
+            )
+            .into_iter()
+            .any(|position| {
+                report.ts_event < position.ts_opened
+                    && !position.trade_ids.contains(&report.trade_id)
+                    && cache
+                        .order(&position.opening_order_id)
+                        .is_some_and(|order| {
+                            order.tags().is_some_and(|tags| {
+                                tags.iter()
+                                    .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+                            })
+                        })
+            })
     }
 
     /// Reconciles an [`OrderStatusReport`] paired with companion [`FillReport`]s
@@ -1533,6 +1988,15 @@ impl ExecutionEngine {
             msgbus::publish_any(fill_report_topic, fill);
         }
 
+        self.pending_order_queries
+            .remove(&(report.account_id, report.venue_order_id));
+        if self.stage_order_report(report, fills) {
+            return;
+        }
+        self.apply_order_with_fills(report, fills);
+    }
+
+    fn apply_order_with_fills(&mut self, report: &OrderStatusReport, fills: &[FillReport]) {
         let cache = self.cache.borrow();
         let order = report
             .client_order_id
@@ -1947,7 +2411,18 @@ impl ExecutionEngine {
             }
         }
 
-        self.cache.borrow_mut().reset();
+        {
+            let mut cache = self.cache.borrow_mut();
+            cache.reset();
+
+            for adapter in self.clients.values() {
+                cache.add_client_account(adapter.client_id, adapter.account_id);
+            }
+        }
+
+        self.pending_order_fills.clear();
+        self.staged_order_reports.clear();
+        self.pending_order_queries.clear();
         self.pos_id_generator.reset();
         self.orders_dispatched.borrow_mut().clear();
 

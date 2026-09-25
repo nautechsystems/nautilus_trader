@@ -21,14 +21,14 @@ use std::{
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{DEFAULT_ORDER_STATUS_QUERY_TIMEOUT, ExecutionClient},
     clock::{Clock, VirtualClock},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
@@ -62,8 +62,11 @@ pub struct StubExecutionClient {
     modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     cancel_all_commands: Rc<RefCell<Vec<CancelAllOrders>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
+    queried_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
+    distinct_order_identity: bool,
+    order_status_query_timeout: Option<DurationNanos>,
     submit_order_error: Option<String>,
     submit_order_list_error: Option<String>,
 }
@@ -95,11 +98,28 @@ impl StubExecutionClient {
             modified_order_ids: Rc::new(RefCell::new(Vec::new())),
             cancel_all_commands: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
+            queried_order_ids: Rc::new(RefCell::new(Vec::new())),
             registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
+            distinct_order_identity: false,
+            order_status_query_timeout: None,
             submit_order_error: None,
             submit_order_list_error: None,
         }
+    }
+
+    /// Configures distinct physical orders and authoritative fill reconciliation.
+    #[must_use]
+    pub fn with_distinct_order_identity(mut self) -> Self {
+        self.distinct_order_identity = true;
+        self
+    }
+
+    /// Configures the maximum time before an authoritative order-details query is retried.
+    #[must_use]
+    pub const fn with_order_status_query_timeout(mut self, timeout: DurationNanos) -> Self {
+        self.order_status_query_timeout = Some(timeout);
+        self
     }
 
     /// Configures this stub to accept orders for any instrument venue.
@@ -154,6 +174,12 @@ impl StubExecutionClient {
         self.cancel_all_commands.clone()
     }
 
+    /// Returns a shared handle to the queried order IDs.
+    #[must_use]
+    pub fn queried_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.queried_order_ids.clone()
+    }
+
     /// Returns a shared handle to the queried account IDs.
     #[must_use]
     pub fn queried_account_ids(&self) -> Rc<RefCell<Vec<AccountId>>> {
@@ -201,6 +227,19 @@ impl ExecutionClient for StubExecutionClient {
 
     fn venue(&self) -> Venue {
         self.venue
+    }
+
+    fn has_distinct_order_identity(&self, previous: VenueOrderId, reported: VenueOrderId) -> bool {
+        self.distinct_order_identity && previous != reported
+    }
+
+    fn requires_order_status_for_fill(&self) -> bool {
+        self.distinct_order_identity
+    }
+
+    fn order_status_query_timeout(&self) -> DurationNanos {
+        self.order_status_query_timeout
+            .unwrap_or(DEFAULT_ORDER_STATUS_QUERY_TIMEOUT)
     }
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
@@ -309,7 +348,11 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+        self.queried_order_ids
+            .borrow_mut()
+            .push(cmd.client_order_id);
+
         Ok(()) // Stub implementation always succeeds
     }
 

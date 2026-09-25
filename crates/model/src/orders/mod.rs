@@ -126,6 +126,9 @@ pub const LOCAL_ACTIVE_ORDER_STATUSES: &[OrderStatus] = &[
     OrderStatus::Released,
 ];
 
+/// Marks the original client order associated with a separately represented broker incarnation.
+pub const DUPLICATE_ORDER_PARENT_TAG: &str = "DUPLICATE_ORDER_OF:";
+
 #[derive(thiserror::Error, Debug)]
 pub enum OrderError {
     #[error("Order not found: {0}")]

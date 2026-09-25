@@ -628,36 +628,53 @@ impl<'a> PortfolioApi<'a> {
         self.portfolio.borrow().is_initialized()
     }
 
-    /// Returns the locked balances for the given venue.
+    /// Returns the locked balances for the `account_id`, or for the account issued under `venue`
+    /// when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow().balances_locked(venue)
+    pub fn balances_locked(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<Currency, Money> {
+        self.portfolio.borrow().balances_locked(venue, account_id)
     }
 
-    /// Returns the initial margin requirements for the given venue.
+    /// Returns the initial margin requirements for the `account_id`, or for the account issued
+    /// under `venue` when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn instrument_initial_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().instrument_initial_margins(venue)
-    }
-
-    /// Returns the maintenance margin requirements for the given venue.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the portfolio is already mutably borrowed.
-    #[must_use]
-    pub fn instrument_maintenance_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
+    pub fn instrument_initial_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
         self.portfolio
             .borrow()
-            .instrument_maintenance_margins(venue)
+            .instrument_initial_margins(venue, account_id)
+    }
+
+    /// Returns the maintenance margin requirements for the `account_id`, or for the account
+    /// issued under `venue` when no account ID is given.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the portfolio is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_maintenance_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        self.portfolio
+            .borrow()
+            .instrument_maintenance_margins(venue, account_id)
     }
 
     /// Returns the unrealized PnLs for all positions at the given venue.
@@ -1066,9 +1083,9 @@ mod tests {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
 
         assert!(!api.is_initialized());
-        assert!(api.balances_locked(&venue).is_empty());
-        assert!(api.instrument_initial_margins(&venue).is_empty());
-        assert!(api.instrument_maintenance_margins(&venue).is_empty());
+        assert!(api.balances_locked(&venue, None).is_empty());
+        assert!(api.instrument_initial_margins(&venue, None).is_empty());
+        assert!(api.instrument_maintenance_margins(&venue, None).is_empty());
         assert_eq!(api.unrealized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.realized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.net_exposures(&venue, None), None);

@@ -501,6 +501,24 @@ impl PyCache {
         self.0.borrow().account_id(&venue).copied()
     }
 
+    #[pyo3(name = "account_for_client")]
+    fn py_account_for_client(
+        &self,
+        py: Python,
+        client_id: ClientId,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let cache = self.0.borrow();
+        match cache.account_for_client(&client_id) {
+            Some(account) => Ok(Some(account_any_to_pyobject(py, account.clone())?)),
+            None => Ok(None),
+        }
+    }
+
+    #[pyo3(name = "account_id_for_client")]
+    fn py_account_id_for_client(&self, client_id: ClientId) -> Option<AccountId> {
+        self.0.borrow().account_id_for_client(&client_id).copied()
+    }
+
     #[pyo3(name = "client_order_ids", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None))]
     fn py_client_order_ids(
         &self,
@@ -2998,6 +3016,25 @@ impl Cache {
     #[pyo3(name = "account_id")]
     fn py_account_id(&self, venue: Venue) -> Option<AccountId> {
         self.account_id(&venue).copied()
+    }
+
+    /// Returns a borrow of the account of execution client `client_id` (if found).
+    #[pyo3(name = "account_for_client")]
+    fn py_account_for_client(
+        &self,
+        py: Python,
+        client_id: ClientId,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        match self.account_for_client(&client_id) {
+            Some(account) => Ok(Some(account_any_to_pyobject(py, account.clone())?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns a reference to the account ID of execution client `client_id` (if indexed).
+    #[pyo3(name = "account_id_for_client")]
+    fn py_account_id_for_client(&self, client_id: ClientId) -> Option<AccountId> {
+        self.account_id_for_client(&client_id).copied()
     }
 
     /// Gets a reference to the general value for the `key` (if found).

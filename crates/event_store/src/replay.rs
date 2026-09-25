@@ -2483,6 +2483,17 @@ mod tests {
             &[PAYLOAD_TYPE_ACCOUNT_STATE],
         ),
         cache_mutation(
+            // Rebuilt from execution client registration on every node start.
+            "add_client_account",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "remove_client_account",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "add_venue_order_id",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_UPDATED],

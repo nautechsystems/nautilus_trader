@@ -7,69 +7,60 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers execution command handling.
+
 use nautilus_common::live::sender::EventSender;
 
-use super::*;
+use super::core::*;
 
-#[allow(dead_code)]
 impl InteractiveBrokersExecutionClient {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // Command execution uses explicit client state.
     pub(super) async fn handle_submit_order_async(
         cmd: &SubmitOrder,
         client: &Arc<Client>,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
-        trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
-        strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
-        active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
-        terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
+        orders: &OrderTracker,
         next_order_id: &Arc<Mutex<i32>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
+        ib_account: Ustr,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
-            let event = OrderDenied::new(
+            let detail = "`post_only` not supported by Interactive Brokers";
+            let reason = coded_denial_reason(DENIAL_POST_ONLY_UNSUPPORTED, detail);
+            Self::send_order_denied_to(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                Ustr::from("`post_only` not supported by Interactive Brokers"),
-                UUID4::new(),
+                &reason,
+                exec_sender,
                 ts_event,
-                ts_event,
-            );
-            exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
-            anyhow::bail!("`post_only` not supported by Interactive Brokers");
+            )?;
+            anyhow::bail!(reason);
         }
 
         let is_inverse = instrument_provider
             .find(&cmd.instrument_id)
-            .map(|instrument| instrument.is_inverse())
-            .unwrap_or(false);
+            .is_some_and(|instrument| instrument.is_inverse());
 
         if cmd.order_init.quote_quantity && !is_inverse {
             let ts_event = clock.get_time_ns();
-            let event = OrderDenied::new(
+            let detail = "Quote quantity requires an inverse instrument";
+            let reason = coded_denial_reason(DENIAL_QUOTE_QUANTITY_UNSUPPORTED, detail);
+            Self::send_order_denied_to(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                Ustr::from("UNSUPPORTED_QUOTE_QUANTITY"),
-                UUID4::new(),
+                &reason,
+                exec_sender,
                 ts_event,
-                ts_event,
-            );
-            exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
-            anyhow::bail!("UNSUPPORTED_QUOTE_QUANTITY");
+            )?;
+            anyhow::bail!(reason);
         }
 
         if matches!(
@@ -79,24 +70,20 @@ impl InteractiveBrokersExecutionClient {
             && trailing_offset_type != TrailingOffsetType::Price
         {
             let ts_event = clock.get_time_ns();
-            let reason = format!(
-                "`TrailingOffsetType` {:?} is not supported (only PRICE is supported)",
-                trailing_offset_type
+            let detail = format!(
+                "`TrailingOffsetType` {trailing_offset_type:?} is not supported (only PRICE is supported)"
             );
-            let event = OrderDenied::new(
+            let reason = coded_denial_reason(DENIAL_TRAILING_OFFSET_TYPE_UNSUPPORTED, &detail);
+            Self::send_order_denied_to(
                 cmd.order_init.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.order_init.client_order_id,
-                Ustr::from(&reason),
-                UUID4::new(),
+                &reason,
+                exec_sender,
                 ts_event,
-                ts_event,
-            );
-            exec_sender
-                .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
-                .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))?;
-            anyhow::bail!("{}", reason);
+            )?;
+            anyhow::bail!("{reason}");
         }
 
         let contract =
@@ -108,20 +95,10 @@ impl InteractiveBrokersExecutionClient {
         let order_ref = cmd.order_init.client_order_id.to_string();
         let _submit_guard = order_submit_lock.lock().await;
         let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
-        let mut ib_order = nautilus_order_to_ib_order(
-            &order_any,
-            &contract,
-            instrument_provider,
-            ib_order_id,
-            &order_ref,
-        )
-        .context("Failed to transform order")?;
-        let ib_account = account_id
-            .to_string()
-            .split_once('-')
-            .map_or_else(|| account_id.to_string(), |(_, value)| value.to_string());
-        ib_order.account = ib_account.clone();
-        ib_order.clearing_account = ib_account;
+        let mut ib_order =
+            nautilus_order_to_ib_order(&order_any, instrument_provider, ib_order_id, &order_ref)
+                .context("Failed to transform order")?;
+        Self::assign_ib_account(&mut ib_order, ib_account);
 
         Self::cache_order_tracking(
             ib_order_id,
@@ -131,14 +108,8 @@ impl InteractiveBrokersExecutionClient {
             cmd.strategy_id,
             cmd.order_init.order_side,
             cmd.order_init.order_type,
-            order_id_map,
-            venue_order_id_map,
-            instrument_id_map,
-            trader_id_map,
-            strategy_id_map,
-            active_order_contexts,
-            terminal_order_contexts,
-        );
+            orders,
+        )?;
 
         let ts_event = clock.get_time_ns();
         let event = OrderSubmitted::new(
@@ -163,26 +134,11 @@ impl InteractiveBrokersExecutionClient {
                 ib_order_id,
                 account_id,
                 ts_event,
-                order_id_map,
-                venue_order_id_map,
-                instrument_id_map,
-                trader_id_map,
-                strategy_id_map,
-                active_order_contexts,
-                terminal_order_contexts,
+                orders,
                 exec_sender,
                 clock,
             );
         }
-
-        Self::emit_order_accepted_if_needed(
-            ib_order_id,
-            VenueOrderId::from(ib_order_id.to_string()),
-            account_id,
-            ts_event,
-            active_order_contexts,
-            exec_sender,
-        )?;
 
         tracing::debug!(
             "Submitted order {} as IB order ID {}",
@@ -193,74 +149,31 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    // Modifies from IB's current copy of the open order so attributes Nautilus orders cannot
+    // carry (goodAfterTime, OCA group, outsideRth, conditions) survive, including for orders
+    // restored from a previous session.
     pub(super) async fn handle_modify_order_async(
         cmd: &ModifyOrder,
         client: &Arc<Client>,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+        orders: &OrderTracker,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        _exec_sender: &EventSender<ExecutionEvent>,
-        _clock: &'static AtomicTime,
-        account_id: AccountId,
-        original_order: Option<&Arc<OrderAny>>,
+        ib_account: Ustr,
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         let target_ib_order_id = Self::target_ib_order_id_for_modify(
             cmd,
             client,
-            order_id_map,
-            account_id,
+            orders,
+            ib_account,
             request_timeout_secs,
         )
         .await?;
-
-        if let Some(original_order) = original_order {
-            let ib_order_id = target_ib_order_id.context("Order ID not found in mapping")?;
-            let contract =
-                Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
-            let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
-
-            let order_ref = original_order.client_order_id().to_string();
-            let mut ib_order = nautilus_order_to_ib_order(
-                original_order,
-                &contract,
-                instrument_provider,
-                ib_order_id,
-                &order_ref,
-            )
-            .context("Failed to transform order to IB order")?;
-
-            Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
-
-            if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
-                if Self::is_definitive_order_submit_error(&e) {
-                    return Err(e).context("IB rejected the modified order before sending it");
-                }
-                tracing::error!(
-                    "Modify outcome is unknown after attempting to send order {} to IB: {e}",
-                    cmd.client_order_id
-                );
-                return Ok(());
-            }
-
-            tracing::debug!(
-                "Modified order {} (IB order ID: {})",
-                cmd.client_order_id,
-                ib_order_id
-            );
-
-            return Ok(());
-        }
 
         Self::handle_modify_open_order_async(
             cmd,
             client,
             target_ib_order_id,
-            order_id_map,
-            venue_order_id_map,
-            instrument_id_map,
+            orders,
             instrument_provider,
             request_timeout_secs,
         )
@@ -270,23 +183,26 @@ impl InteractiveBrokersExecutionClient {
     async fn target_ib_order_id_for_modify(
         cmd: &ModifyOrder,
         client: &Arc<Client>,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        account_id: AccountId,
+        orders: &OrderTracker,
+        ib_account: Ustr,
         request_timeout_secs: u64,
     ) -> anyhow::Result<Option<i32>> {
         if let Some(venue_order_id) = &cmd.venue_order_id {
             let order_selector = IbOrderSelector::from_venue_order_id(venue_order_id)?;
             let order_id =
-                Self::resolve_ib_order_id(client, order_selector, account_id, request_timeout_secs)
+                Self::resolve_ib_order_id(client, order_selector, ib_account, request_timeout_secs)
                     .await?;
             return Ok(Some(order_id));
         }
 
-        let map = order_id_map.lock();
-        Ok(map.get(&cmd.client_order_id).copied())
+        Ok(orders
+            .lock()?
+            .order_id_map
+            .get(&cmd.client_order_id)
+            .copied())
     }
 
-    fn apply_modify_fields_to_ib_order(
+    pub(super) fn apply_modify_fields_to_ib_order(
         cmd: &ModifyOrder,
         ib_order: &mut ibapi::orders::Order,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
@@ -311,14 +227,11 @@ impl InteractiveBrokersExecutionClient {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_modify_open_order_async(
         cmd: &ModifyOrder,
         client: &Arc<Client>,
         target_ib_order_id: Option<i32>,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+        orders: &OrderTracker,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
@@ -339,7 +252,8 @@ impl InteractiveBrokersExecutionClient {
 
                     let matches_order_id =
                         target_ib_order_id.is_some_and(|order_id| data.order_id == order_id);
-                    let matches_order_ref = data.order.order_ref == client_order_id;
+                    let matches_order_ref = parse::normalized_order_ref(&data.order.order_ref)
+                        == Some(client_order_id.as_str());
 
                     if !matches_order_id && !matches_order_ref {
                         continue;
@@ -354,20 +268,20 @@ impl InteractiveBrokersExecutionClient {
                     Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
 
                     {
-                        let mut map = order_id_map.lock();
-                        map.insert(cmd.client_order_id, ib_order_id);
+                        let mut state = orders.lock()?;
+                        state.order_id_map.insert(cmd.client_order_id, ib_order_id);
+                        state
+                            .venue_order_id_map
+                            .insert(ib_order_id, cmd.client_order_id);
+                        if let Some(order) = state.active_orders.get_mut(&ib_order_id) {
+                            order.instrument_id = cmd.instrument_id;
+                        }
                     }
-                    {
-                        let mut map = venue_order_id_map.lock();
-                        map.insert(ib_order_id, cmd.client_order_id);
-                    }
-                    {
-                        let mut map = instrument_id_map.lock();
-                        map.insert(ib_order_id, cmd.instrument_id);
-                    }
+                    Self::mark_pending_modify(cmd, ib_order_id, orders, &ib_order)?;
 
                     if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
                         if Self::is_definitive_order_submit_error(&e) {
+                            Self::clear_pending_modify(ib_order_id, orders);
                             return Err(e)
                                 .context("IB rejected the modified open order before sending it");
                         }
@@ -400,23 +314,63 @@ impl InteractiveBrokersExecutionClient {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub(super) fn mark_pending_modify(
+        cmd: &ModifyOrder,
+        ib_order_id: i32,
+        orders: &OrderTracker,
+        ib_order: &ibapi::orders::Order,
+    ) -> anyhow::Result<()> {
+        let mut state = orders.lock()?;
+        let order = state
+            .active_orders
+            .get_mut(&ib_order_id)
+            .ok_or_else(|| anyhow::anyhow!("IB order {ib_order_id} is not tracked for modify"))?;
+        anyhow::ensure!(
+            order.client_order_id == cmd.client_order_id,
+            "IB order {ib_order_id} is tracked as {}, not {}",
+            order.client_order_id,
+            cmd.client_order_id,
+        );
+        anyhow::ensure!(
+            order.instrument_id == cmd.instrument_id,
+            "IB order {ib_order_id} is tracked for {}, not {}",
+            order.instrument_id,
+            cmd.instrument_id,
+        );
+        anyhow::ensure!(
+            order.pending_modify.is_none(),
+            "IB order {ib_order_id} already has a pending modify",
+        );
+        order.pending_modify = Some(PendingModifyValues {
+            total_quantity: ib_order.total_quantity,
+            limit_price: ib_order.limit_price,
+            aux_price: ib_order.aux_price,
+            // IB moves a trailing stop's trigger with the market, so only a requested one is checked
+            trail_stop_price: cmd.trigger_price.and(ib_order.trail_stop_price),
+        });
+        Ok(())
+    }
+
+    fn clear_pending_modify(ib_order_id: i32, orders: &OrderTracker) {
+        if let Ok(mut state) = orders.lock()
+            && let Some(order) = state.active_orders.get_mut(&ib_order_id)
+        {
+            order.pending_modify = None;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)] // Order-list submission shares explicit client state.
     pub(super) async fn handle_submit_order_list_async(
         cmd: &SubmitOrderList,
         orders: &[OrderAny],
         client: &Arc<Client>,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
-        trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
-        strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
-        active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
-        terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
+        order_tracker: &OrderTracker,
         next_order_id: &Arc<Mutex<i32>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
+        ib_account: Ustr,
         strategy_id: StrategyId,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
@@ -424,10 +378,6 @@ impl InteractiveBrokersExecutionClient {
         anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
 
         let _submit_guard = order_submit_lock.lock().await;
-        let ib_account = account_id
-            .to_string()
-            .split_once('-')
-            .map_or_else(|| account_id.to_string(), |(_, value)| value.to_string());
         let mut ib_order_ids = AHashMap::with_capacity(num_orders);
 
         for order in orders {
@@ -435,51 +385,33 @@ impl InteractiveBrokersExecutionClient {
             ib_order_ids.insert(order.client_order_id(), ib_order_id);
         }
 
-        for order in orders {
-            if let Some(parent_order_id) = order.parent_order_id()
-                && !ib_order_ids.contains_key(&parent_order_id)
-            {
-                let map = order_id_map.lock();
-                anyhow::ensure!(
-                    map.contains_key(&parent_order_id),
-                    "Parent order ID {parent_order_id} not found for order {}",
-                    order.client_order_id(),
-                );
+        // Every order is prepared before the first reaches IB, so a list that cannot be
+        // prepared leaves nothing parked at the venue and is denied as a whole
+        let prepared = match Self::prepare_order_list(
+            cmd,
+            orders,
+            &ib_order_ids,
+            order_tracker,
+            instrument_provider,
+            ib_account,
+        ) {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));
+                Self::deny_unsubmitted_order_list(
+                    orders,
+                    &reason,
+                    strategy_id,
+                    exec_sender,
+                    clock,
+                )?;
+                return Err(e);
             }
-        }
+        };
 
-        for (index, order) in orders.iter().enumerate() {
-            let is_last = index == num_orders - 1;
+        for (index, (order, (order_contract, ib_order))) in orders.iter().zip(prepared).enumerate()
+        {
             let ib_order_id = ib_order_ids[&order.client_order_id()];
-
-            let order_contract =
-                Self::resolve_contract_for_instrument(order.instrument_id(), instrument_provider)?;
-            let order_contract =
-                Self::contract_with_order_exchange_param(order_contract, cmd.params.as_ref())?;
-
-            let order_ref = order.client_order_id().to_string();
-            let mut ib_order = nautilus_order_to_ib_order(
-                order,
-                &order_contract,
-                instrument_provider,
-                ib_order_id,
-                &order_ref,
-            )
-            .context("Failed to transform order")?;
-            ib_order.account = ib_account.clone();
-            ib_order.clearing_account = ib_account.clone();
-            ib_order.transmit = is_last;
-
-            if let Some(parent_order_id) = order.parent_order_id() {
-                let parent_ib_order_id = ib_order_ids
-                    .get(&parent_order_id)
-                    .copied()
-                    .or_else(|| order_id_map.lock().get(&parent_order_id).copied());
-
-                if let Some(parent_ib_order_id) = parent_ib_order_id {
-                    ib_order.parent_id = parent_ib_order_id;
-                }
-            }
 
             Self::cache_order_tracking(
                 ib_order_id,
@@ -489,14 +421,8 @@ impl InteractiveBrokersExecutionClient {
                 strategy_id,
                 order.order_side(),
                 order.order_type(),
-                order_id_map,
-                venue_order_id_map,
-                instrument_id_map,
-                trader_id_map,
-                strategy_id_map,
-                active_order_contexts,
-                terminal_order_contexts,
-            );
+                order_tracker,
+            )?;
 
             let ts_event = clock.get_time_ns();
             let event = OrderSubmitted::new(
@@ -518,32 +444,40 @@ impl InteractiveBrokersExecutionClient {
                 .submit_order(ib_order_id, &order_contract, &ib_order)
                 .await
             {
+                if let Err(denial_error) = Self::deny_unsubmitted_order_list(
+                    &orders[index + 1..],
+                    DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED,
+                    strategy_id,
+                    exec_sender,
+                    clock,
+                ) {
+                    tracing::error!(
+                        "Failed to deny unsubmitted order-list siblings after order {} failed: {denial_error}",
+                        order.client_order_id()
+                    );
+                }
+                Self::cancel_untransmitted_order_list_predecessors(
+                    &orders[..index],
+                    &ib_order_ids,
+                    client,
+                    order_tracker,
+                    strategy_id,
+                    account_id,
+                    exec_sender,
+                    clock,
+                )
+                .await;
                 return Self::handle_order_submit_failure(
                     &e,
                     "Failed to submit order from list",
                     ib_order_id,
                     account_id,
                     ts_event,
-                    order_id_map,
-                    venue_order_id_map,
-                    instrument_id_map,
-                    trader_id_map,
-                    strategy_id_map,
-                    active_order_contexts,
-                    terminal_order_contexts,
+                    order_tracker,
                     exec_sender,
                     clock,
                 );
             }
-
-            Self::emit_order_accepted_if_needed(
-                ib_order_id,
-                VenueOrderId::from(ib_order_id.to_string()),
-                account_id,
-                ts_event,
-                active_order_contexts,
-                exec_sender,
-            )?;
 
             tracing::debug!(
                 "Submitted order {} from list as IB order ID {}",
@@ -555,20 +489,200 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub(super) fn prepare_order_list(
+        cmd: &SubmitOrderList,
+        orders: &[OrderAny],
+        ib_order_ids: &AHashMap<ClientOrderId, i32>,
+        order_tracker: &OrderTracker,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        ib_account: Ustr,
+    ) -> anyhow::Result<Vec<(ibapi::contracts::Contract, ibapi::orders::Order)>> {
+        let num_orders = orders.len();
+        let mut prepared = Vec::with_capacity(num_orders);
+
+        for (index, order) in orders.iter().enumerate() {
+            let ib_order_id = ib_order_ids[&order.client_order_id()];
+
+            let order_contract =
+                Self::resolve_contract_for_instrument(order.instrument_id(), instrument_provider)?;
+            let order_contract =
+                Self::contract_with_order_exchange_param(order_contract, cmd.params.as_ref())?;
+
+            let order_ref = order.client_order_id().to_string();
+            let mut ib_order =
+                nautilus_order_to_ib_order(order, instrument_provider, ib_order_id, &order_ref)
+                    .context("Failed to transform order")?;
+            Self::assign_ib_account(&mut ib_order, ib_account);
+            ib_order.transmit = index == num_orders - 1;
+
+            if let Some(parent_order_id) = order.parent_order_id() {
+                let parent_ib_order_id = match ib_order_ids.get(&parent_order_id) {
+                    Some(parent_ib_order_id) => *parent_ib_order_id,
+                    None => *order_tracker
+                        .lock()?
+                        .order_id_map
+                        .get(&parent_order_id)
+                        .with_context(|| {
+                            format!(
+                                "Parent order ID {parent_order_id} not found for order {}",
+                                order.client_order_id()
+                            )
+                        })?,
+                };
+                ib_order.parent_id = parent_ib_order_id;
+            }
+
+            prepared.push((order_contract, ib_order));
+        }
+
+        Ok(prepared)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Failure resolution shares the submit context.
+    async fn cancel_untransmitted_order_list_predecessors(
+        predecessors: &[OrderAny],
+        ib_order_ids: &AHashMap<ClientOrderId, i32>,
+        client: &Arc<Client>,
+        order_tracker: &OrderTracker,
+        strategy_id: StrategyId,
+        account_id: AccountId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) {
+        // Predecessors were parked at IB with `transmit=false` and can no longer be
+        // activated once a later sibling failed, so cancel them at the venue and give
+        // each a definite terminal state.
+        let mut failed_cancels: AHashSet<ClientOrderId> = AHashSet::new();
+
+        for order in predecessors {
+            let client_order_id = order.client_order_id();
+            let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
+                continue;
+            };
+
+            if let Err(e) = client.cancel_order(ib_order_id, "").await {
+                tracing::error!(
+                    "Failed to cancel untransmitted order-list predecessor {} (IB order ID {}): {e}",
+                    client_order_id,
+                    ib_order_id
+                );
+                failed_cancels.insert(client_order_id);
+            }
+        }
+
+        if let Err(e) = Self::resolve_failed_order_list_predecessors(
+            predecessors,
+            ib_order_ids,
+            &failed_cancels,
+            order_tracker,
+            strategy_id,
+            account_id,
+            exec_sender,
+            clock,
+        ) {
+            tracing::error!(
+                "Failed to resolve untransmitted order-list predecessors after sibling failure: {e}"
+            );
+        }
+    }
+
+    fn assign_ib_account(ib_order: &mut ibapi::orders::Order, ib_account: Ustr) {
+        ib_order.account = ib_account.to_string();
+        ib_order.clearing_account = ib_account.to_string();
+    }
+
+    #[allow(clippy::too_many_arguments)] // Failure resolution shares the submit context.
+    pub(super) fn resolve_failed_order_list_predecessors(
+        predecessors: &[OrderAny],
+        ib_order_ids: &AHashMap<ClientOrderId, i32>,
+        failed_cancels: &AHashSet<ClientOrderId>,
+        order_tracker: &OrderTracker,
+        strategy_id: StrategyId,
+        account_id: AccountId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) -> anyhow::Result<()> {
+        for order in predecessors {
+            let client_order_id = order.client_order_id();
+            let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
+                continue;
+            };
+
+            if failed_cancels.contains(&client_order_id) {
+                // The venue cancel failed, so the order may remain parked at TWS and
+                // manually transmittable; keep tracking instead of claiming terminal.
+                tracing::error!(
+                    "Order-list predecessor {} (IB order ID {}) remains parked at IB after a failed cancel; keeping tracking until venue state resolves",
+                    client_order_id,
+                    ib_order_id
+                );
+                continue;
+            }
+
+            let perm_id = order_tracker.lock().ok().and_then(|state| {
+                state
+                    .active_orders
+                    .get(&ib_order_id)
+                    .map(|tracked| tracked.perm_id)
+            });
+
+            let ts_event = clock.get_time_ns();
+            let event = OrderCanceled::new(
+                order.trader_id(),
+                strategy_id,
+                order.instrument_id(),
+                client_order_id,
+                UUID4::new(),
+                ts_event,
+                ts_event,
+                false,
+                Some(ib_venue_order_id(ib_order_id, perm_id.unwrap_or(0))),
+                Some(account_id),
+                None,
+            );
+            exec_sender
+                .send(ExecutionEvent::Order(OrderEventAny::Canceled(event)))
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to send order-list predecessor canceled event: {e}")
+                })?;
+
+            Self::remove_order_tracking(ib_order_id, client_order_id, order_tracker)?;
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn deny_unsubmitted_order_list(
+        orders: &[OrderAny],
+        reason: &str,
+        strategy_id: StrategyId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) -> anyhow::Result<()> {
+        for order in orders {
+            let ts_event = clock.get_time_ns();
+            Self::send_order_denied_to(
+                order.trader_id(),
+                strategy_id,
+                order.instrument_id(),
+                order.client_order_id(),
+                reason,
+                exec_sender,
+                ts_event,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)] // Failure emission preserves the submit context.
     pub(super) fn handle_order_submit_failure(
         error: &ibapi::Error,
         failure_prefix: &str,
         ib_order_id: i32,
         account_id: AccountId,
         ts_event: UnixNanos,
-        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
-        trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
-        strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
-        active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
-        terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
+        orders: &OrderTracker,
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<()> {
@@ -579,24 +693,12 @@ impl InteractiveBrokersExecutionClient {
                 );
             }
             CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
-                let context = Self::get_tracked_order_context(
-                    ib_order_id,
-                    active_order_contexts,
-                    terminal_order_contexts,
-                )
-                .with_context(|| format!("Tracked order context not found for {ib_order_id}"))?;
+                let context =
+                    Self::get_tracked_order_context(ib_order_id, orders)?.with_context(|| {
+                        format!("Tracked order context not found for {ib_order_id}")
+                    })?;
 
-                Self::remove_order_tracking(
-                    ib_order_id,
-                    context.client_order_id,
-                    order_id_map,
-                    venue_order_id_map,
-                    instrument_id_map,
-                    trader_id_map,
-                    strategy_id_map,
-                    active_order_contexts,
-                    terminal_order_contexts,
-                );
+                Self::remove_order_tracking(ib_order_id, context.client_order_id, orders)?;
 
                 let reason = format!("{failure_prefix}: {reason}");
                 let event = OrderRejected::new(
@@ -626,6 +728,7 @@ mod tests {
     use nautilus_model::identifiers::Symbol;
 
     use super::*;
+    use crate::config::InteractiveBrokersInstrumentProviderConfig;
 
     fn modify_trigger_cmd() -> ModifyOrder {
         ModifyOrder::new(
@@ -647,7 +750,7 @@ mod tests {
 
     fn instrument_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
         Arc::new(InteractiveBrokersInstrumentProvider::new(
-            crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
+            InteractiveBrokersInstrumentProviderConfig::default(),
         ))
     }
 

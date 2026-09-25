@@ -30,16 +30,16 @@ use crate::common::{
 /// Convert a Python object to a JSON value.
 pub fn py_to_json_value(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     // Try to call .json() first (NautilusConfig)
-    if let Ok(json_bytes) = obj.call_method0("json") {
-        if let Ok(bytes) = json_bytes.clone().cast_into::<PyBytes>() {
-            let json_str = std::str::from_utf8(bytes.as_bytes())
-                .map_err(|e| to_pyvalue_err(format!("Invalid UTF-8 in json output: {e}")))?;
+    if let Ok(json_bytes) = obj.call_method0("json")
+        && let Ok(bytes) = json_bytes.clone().cast_into::<PyBytes>()
+    {
+        let json_str = std::str::from_utf8(bytes.as_bytes())
+            .map_err(|e| to_pyvalue_err(format!("Invalid UTF-8 in json output: {e}")))?;
 
-            let value: serde_json::Value = serde_json::from_str(json_str)
-                .map_err(|e| to_pyvalue_err(format!("Invalid JSON: {e}")))?;
+        let value: serde_json::Value = serde_json::from_str(json_str)
+            .map_err(|e| to_pyvalue_err(format!("Invalid JSON: {e}")))?;
 
-            return Ok(value);
-        }
+        return Ok(value);
     }
 
     // Try to treat as dict
@@ -217,11 +217,23 @@ pub fn contract_details_to_pyobject(
     details_dict.set_item("nextOptionType", &details.next_option_type)?;
     details_dict.set_item("nextOptionPartial", details.next_option_partial)?;
     details_dict.set_item("notes", &details.notes)?;
-    details_dict.set_item("minSize", details.min_size.to_string())?;
-    details_dict.set_item("sizeIncrement", details.size_increment.to_string())?;
+    details_dict.set_item(
+        "minSize",
+        details
+            .min_size
+            .map_or_else(String::new, |value| value.to_string()),
+    )?;
+    details_dict.set_item(
+        "sizeIncrement",
+        details
+            .size_increment
+            .map_or_else(String::new, |value| value.to_string()),
+    )?;
     details_dict.set_item(
         "suggestedSizeIncrement",
-        details.suggested_size_increment.to_string(),
+        details
+            .suggested_size_increment
+            .map_or_else(String::new, |value| value.to_string()),
     )?;
     details_dict.set_item("fundName", &details.fund_name)?;
     details_dict.set_item("fundFamily", &details.fund_family)?;

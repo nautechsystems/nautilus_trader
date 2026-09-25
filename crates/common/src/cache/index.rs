@@ -26,6 +26,7 @@ use nautilus_model::{
 #[derive(Debug)]
 pub(super) struct CacheIndex {
     pub(crate) venue_account: AHashMap<Venue, AccountId>,
+    pub(crate) client_account: AHashMap<ClientId, AccountId>,
     pub(crate) venue_orders: AHashMap<Venue, AHashSet<ClientOrderId>>,
     pub(crate) venue_positions: AHashMap<Venue, AHashSet<PositionId>>,
     pub(crate) venue_order_ids: AHashMap<VenueOrderId, ClientOrderId>,
@@ -63,6 +64,7 @@ impl Default for CacheIndex {
     fn default() -> Self {
         Self {
             venue_account: AHashMap::new(),
+            client_account: AHashMap::new(),
             venue_orders: AHashMap::new(),
             venue_positions: AHashMap::new(),
             venue_order_ids: AHashMap::new(),
@@ -101,6 +103,7 @@ impl CacheIndex {
     /// Clears the index which will clear/reset all internal state.
     pub(super) fn clear(&mut self) {
         self.venue_account.clear();
+        self.client_account.clear();
         self.venue_orders.clear();
         self.venue_positions.clear();
         self.venue_order_ids.clear();

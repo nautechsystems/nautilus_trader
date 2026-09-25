@@ -25,6 +25,7 @@ use ibapi::{
     subscriptions::SubscriptionItem,
 };
 use jiff::{Span, Timestamp, tz::Offset};
+use nautilus_common::cache::Cache;
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -33,17 +34,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
-        contracts::parse_contract_from_json,
-        enums::IbAction,
-        parse::{
-            create_spread_instrument_id, determine_venue_from_contract, exchange_to_mic_venue,
-            ib_contract_to_instrument_id_raw, ib_contract_to_instrument_id_simplified,
-            instrument_id_to_ib_contract, is_spread_instrument_id,
-            parse_spread_instrument_id_to_legs, possible_exchanges_for_venue,
+        Symbology,
+        contracts::{
+            ConfiguredContract, KEY_BUILD_FUTURES_CHAIN, KEY_BUILD_OPTIONS_CHAIN,
+            KEY_MAX_EXPIRY_DAYS, KEY_MIN_EXPIRY_DAYS, KEY_OPTIONS_CHAIN_EXCHANGE,
+            KEY_OPTIONS_CHAIN_EXCHANGE_ALT, parse_contract_from_json,
+        },
+        enums::{IbAction, IbSecurityType},
+        spreads::{
+            create_spread_instrument_id, is_spread_instrument_id,
+            parse_spread_instrument_id_to_legs,
+        },
+        symbology::{
+            determine_venue_from_contract, exchange_to_mic_venue, possible_exchanges_for_venue,
         },
     },
     config::{InteractiveBrokersInstrumentProviderConfig, SymbologyMethod},
-    providers::parse::{parse_ib_contract_to_instrument, parse_spread_instrument_any},
+    providers::parse::{
+        expiry_timestring_to_unix_nanos, parse_ib_contract_to_instrument,
+        parse_spread_instrument_any,
+    },
 };
 
 /// Cache structure for persistent instrument caching.
@@ -87,6 +97,8 @@ struct InstrumentCache {
 pub struct InteractiveBrokersInstrumentProvider {
     /// Configuration for the provider.
     config: InteractiveBrokersInstrumentProviderConfig,
+    /// Contract and instrument ID mapping policy.
+    symbology: Symbology,
     /// Cache mapping contract IDs to instrument IDs.
     contract_id_to_instrument_id: Arc<DashMap<i32, InstrumentId>>,
     /// Cache mapping instrument IDs to instruments.
@@ -109,7 +121,7 @@ trait StartupInstrumentLoader {
 
     async fn load_contract(
         &self,
-        contract_spec: &serde_json::Value,
+        configured: &ConfiguredContract,
     ) -> anyhow::Result<Vec<InstrumentId>>;
 }
 
@@ -130,25 +142,22 @@ impl StartupInstrumentLoader for IbStartupInstrumentLoader<'_> {
 
     async fn load_contract(
         &self,
-        contract_spec: &serde_json::Value,
+        configured: &ConfiguredContract,
     ) -> anyhow::Result<Vec<InstrumentId>> {
-        let contract = parse_contract_from_json(contract_spec)
-            .context("Failed to parse configured IB contract")?;
+        let spec = configured.chain_spec_json();
         self.provider
-            .load_contract_spec(self.client, &contract, Some(contract_spec))
+            .load_contract_spec(self.client, &configured.contract, spec.as_ref())
             .await
     }
 }
 
 impl InteractiveBrokersInstrumentProvider {
     /// Create a new `InteractiveBrokersInstrumentProvider`.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Configuration for the provider
     pub fn new(config: InteractiveBrokersInstrumentProviderConfig) -> Self {
+        let symbology = Symbology::new(config.symbology_method);
         Self {
             config,
+            symbology,
             contract_id_to_instrument_id: Arc::new(DashMap::new()),
             instruments: Arc::new(DashMap::new()),
             contract_details: Arc::new(DashMap::new()),
@@ -274,16 +283,14 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        for (index, contract_spec) in self.config.load_contracts.iter().enumerate() {
-            let mut contract_ids =
-                loader.load_contract(contract_spec).await.with_context(|| {
-                    format!(
-                        "Failed to load configured IB contract at index {index}: {contract_spec}"
-                    )
-                })?;
+        for (index, configured) in self.config.load_contracts.iter().enumerate() {
+            let contract = &configured.contract;
+            let mut contract_ids = loader.load_contract(configured).await.with_context(|| {
+                format!("Failed to load configured IB contract at index {index}: {contract:?}")
+            })?;
 
             if contract_ids.is_empty() {
-                unresolved.push(format!("contract at index {index}: {contract_spec}"));
+                unresolved.push(format!("contract at index {index}: {contract:?}"));
             } else {
                 loaded_ids.append(&mut contract_ids);
             }
@@ -301,6 +308,18 @@ impl InteractiveBrokersInstrumentProvider {
         Ok(loaded_ids)
     }
 
+    pub(crate) fn seed_from_cache(&self, cache: &Cache) -> usize {
+        let instruments = cache
+            .instrument_ids(None)
+            .into_iter()
+            .filter_map(|instrument_id| cache.instrument(instrument_id).cloned());
+        let count = self.add_cached_instruments(instruments);
+        if count > 0 {
+            tracing::debug!("Seeded IB instrument provider with {count} cached instruments");
+        }
+        count
+    }
+
     /// Adds instruments already held by the Nautilus cache into the provider cache.
     ///
     /// This mirrors the Python provider's use of `client._cache` for venue resolution and for
@@ -316,14 +335,18 @@ impl InteractiveBrokersInstrumentProvider {
             let Some(contract) = contract_from_instrument_info(&instrument) else {
                 continue;
             };
-            let price_magnifier = price_magnifier_from_instrument_info(&instrument);
+            let Some(price_magnifier) =
+                price_magnifier_from_instrument_info(&instrument).filter(|value| *value >= 0)
+            else {
+                continue;
+            };
 
             if self.cache_instrument(
                 instrument_id,
                 instrument,
                 None,
                 Some(contract),
-                price_magnifier,
+                Some(price_magnifier),
                 false,
             ) {
                 added += 1;
@@ -336,10 +359,6 @@ impl InteractiveBrokersInstrumentProvider {
     ///
     /// This is equivalent to Python's `determine_venue_from_contract` method.
     /// It uses the config's symbol-to-venue mapping and exchange-to-venue conversion settings.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract` - The IB contract
     ///
     /// # Returns
     ///
@@ -415,15 +434,11 @@ impl InteractiveBrokersInstrumentProvider {
     }
 
     /// Get the symbology method from the provider configuration.
-    pub fn symbology_method(&self) -> crate::config::SymbologyMethod {
-        self.config.symbology_method
+    pub fn symbology_method(&self) -> SymbologyMethod {
+        self.symbology.method()
     }
 
     /// Get an instrument by its ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `instrument_id` - The instrument ID to look up
     ///
     /// # Returns
     ///
@@ -445,25 +460,16 @@ impl InteractiveBrokersInstrumentProvider {
 
     /// Get an instrument by contract ID.
     ///
-    /// # Arguments
-    ///
-    /// * `contract_id` - The IB contract ID to look up
-    ///
     /// # Returns
     ///
     /// Returns the instrument if found, `None` otherwise.
     #[must_use]
     pub fn find_by_contract_id(&self, contract_id: i32) -> Option<InstrumentAny> {
-        self.contract_id_to_instrument_id
-            .get(&contract_id)
-            .and_then(|entry| self.find(entry.value()))
+        self.get_instrument_id_by_contract_id(contract_id)
+            .and_then(|instrument_id| self.find(&instrument_id))
     }
 
     /// Get an instrument ID by contract ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_id` - The IB contract ID to look up
     ///
     /// # Returns
     ///
@@ -499,12 +505,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         let venue = self.determine_venue(contract, None);
 
-        match self.config.symbology_method {
-            SymbologyMethod::Simplified => {
-                ib_contract_to_instrument_id_simplified(contract, Some(venue))
-            }
-            SymbologyMethod::Raw => ib_contract_to_instrument_id_raw(contract, Some(venue)),
-        }
+        self.symbology.instrument_id(contract, Some(venue))
     }
 
     fn resolve_spread_instrument_id_for_contract(
@@ -546,19 +547,13 @@ impl InteractiveBrokersInstrumentProvider {
 
     /// Check if a security type should be filtered.
     ///
-    /// # Arguments
-    ///
-    /// * `sec_type` - The security type to check
-    ///
     /// # Returns
     ///
     /// Returns `true` if the security type should be filtered.
     #[must_use]
     pub fn is_filtered_sec_type(&self, sec_type: &str) -> bool {
-        self.config
-            .filter_sec_types
-            .iter()
-            .any(|filtered| filtered.eq_ignore_ascii_case(sec_type))
+        IbSecurityType::from_str(sec_type)
+            .is_ok_and(|sec_type| self.config.filter_sec_types.contains(&sec_type))
     }
 
     /// Get all cached instruments.
@@ -592,10 +587,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// This method first checks the dedicated price magnifier cache for fast lookup.
     /// If not found, it falls back to checking contract details. If still not found,
     /// it returns the default value of 1 and logs a warning if the instrument exists.
-    ///
-    /// # Arguments
-    ///
-    /// * `instrument_id` - The instrument ID to look up
     ///
     /// # Returns
     ///
@@ -637,11 +628,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// This is equivalent to Python's `get_instrument` method.
     /// Supports BAG contracts by auto-loading legs.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `contract` - The IB contract to get instrument for
-    ///
     /// # Returns
     ///
     /// Returns the instrument if found, `None` otherwise.
@@ -664,7 +650,7 @@ impl InteractiveBrokersInstrumentProvider {
             contract.last_trade_date_or_contract_month.as_str()
         );
         // Check if security type is filtered
-        let sec_type_str = security_type_code(&contract.security_type);
+        let sec_type_str = contract.security_type.to_string();
         if self.is_filtered_sec_type(&sec_type_str) {
             tracing::warn!(
                 "Skipping filtered security type {} for contract",
@@ -745,22 +731,23 @@ impl InteractiveBrokersInstrumentProvider {
         spec: Option<&serde_json::Value>,
     ) -> anyhow::Result<Vec<InstrumentId>> {
         let mut loaded_ids = Vec::new();
-        let build_futures_chain = json_bool(spec, "build_futures_chain")
-            || self.config.build_futures_chain.unwrap_or(false);
-        let build_options_chain = json_bool(spec, "build_options_chain")
-            || self.config.build_options_chain.unwrap_or(false);
-        let min_expiry_days = json_u32(spec, "min_expiry_days").or(self.config.min_expiry_days);
-        let max_expiry_days = json_u32(spec, "max_expiry_days").or(self.config.max_expiry_days);
-        let options_chain_exchange = json_string(spec, "options_chain_exchange")
-            .or_else(|| json_string(spec, "optionsChainExchange"));
+        let build_futures_chain = json_opt_bool(spec, KEY_BUILD_FUTURES_CHAIN)
+            .or(self.config.build_futures_chain)
+            .unwrap_or(false);
+        let build_options_chain = json_opt_bool(spec, KEY_BUILD_OPTIONS_CHAIN)
+            .or(self.config.build_options_chain)
+            .unwrap_or(false);
+        let min_expiry_days = json_u32(spec, KEY_MIN_EXPIRY_DAYS).or(self.config.min_expiry_days);
+        let max_expiry_days = json_u32(spec, KEY_MAX_EXPIRY_DAYS).or(self.config.max_expiry_days);
+        let options_chain_exchange = json_string(spec, KEY_OPTIONS_CHAIN_EXCHANGE)
+            .or_else(|| json_string(spec, KEY_OPTIONS_CHAIN_EXCHANGE_ALT));
         let chain_contract = if contract.security_type == SecurityType::ContinuousFuture
             && (build_futures_chain || build_options_chain)
         {
             match client.contract_details(contract).await {
                 Ok(details_vec) => details_vec
                     .into_iter()
-                    .next()
-                    .map(|details| {
+                    .next().map_or_else(|| contract.clone(), |details| {
                         tracing::debug!(
                             "Qualified continuous future contract {}.{} as local_symbol={} trading_class={} con_id={}",
                             contract.symbol.as_str(),
@@ -770,8 +757,7 @@ impl InteractiveBrokersInstrumentProvider {
                             details.contract.contract_id,
                         );
                         details.contract
-                    })
-                    .unwrap_or_else(|| contract.clone()),
+                    }),
                 Err(e) if e.is_connection_lost() => {
                     return Err(e).context("Failed to qualify continuous future contract");
                 }
@@ -935,10 +921,6 @@ impl InteractiveBrokersInstrumentProvider {
     ///
     /// This is equivalent to Python's `instrument_id_to_ib_contract_details` method.
     ///
-    /// # Arguments
-    ///
-    /// * `instrument_id` - The instrument ID to convert
-    ///
     /// # Returns
     ///
     /// Returns the contract details if found, `None` otherwise.
@@ -978,7 +960,12 @@ impl InteractiveBrokersInstrumentProvider {
             return Ok(contract);
         }
 
-        instrument_id_to_ib_contract(instrument_id, None)
+        let currency = self
+            .instruments
+            .get(&instrument_id)
+            .map(|instrument| instrument.quote_currency().code.to_string());
+        self.symbology
+            .contract_with_currency(instrument_id, None, currency.as_deref())
     }
 
     pub async fn resolve_contract_for_instrument_async(
@@ -1003,45 +990,9 @@ impl InteractiveBrokersInstrumentProvider {
         self.resolve_contract_for_instrument(instrument_id)
     }
 
-    /// Load a single instrument (does not return loaded IDs).
-    ///
-    /// This is equivalent to Python's `load_async` method.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_id` - The instrument ID to load
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if loading fails.
-    pub async fn load_async(
-        &self,
-        client: &ibapi::Client,
-        instrument_id: InstrumentId,
-        filters: Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()> {
-        let filters: Option<HashMap<String, String>> = filters;
-        let force_instrument_update = filters
-            .as_ref()
-            .and_then(|f| f.get("force_instrument_update"))
-            .map(|v| v == "true")
-            .unwrap_or(false);
-
-        self.fetch_contract_details(client, instrument_id, force_instrument_update, filters)
-            .await
-    }
-
     /// Load a single instrument and return the loaded instrument ID.
     ///
     /// This is equivalent to Python's `load_with_return_async` method.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_id` - The instrument ID to load
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
     ///
     /// # Returns
     ///
@@ -1060,8 +1011,7 @@ impl InteractiveBrokersInstrumentProvider {
         let force_instrument_update = filters
             .as_ref()
             .and_then(|f| f.get("force_instrument_update"))
-            .map(|v| v == "true")
-            .unwrap_or(false);
+            .is_some_and(|v| v == "true");
 
         if is_spread_instrument_id(&instrument_id) {
             self.fetch_spread_instrument(client, instrument_id, force_instrument_update, filters)
@@ -1078,77 +1028,9 @@ impl InteractiveBrokersInstrumentProvider {
         }
     }
 
-    pub async fn load_contract_with_return_async(
-        &self,
-        client: &ibapi::Client,
-        contract: &Contract,
-        spec: Option<&serde_json::Value>,
-    ) -> anyhow::Result<Vec<InstrumentId>> {
-        self.load_contract_spec(client, contract, spec).await
-    }
-
-    /// Load multiple instruments (does not return loaded IDs).
-    ///
-    /// This is equivalent to Python's `load_ids_async` method.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_ids` - Vector of instrument IDs to load
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if loading fails.
-    pub async fn load_ids_async(
-        &self,
-        client: &ibapi::Client,
-        instrument_ids: Vec<InstrumentId>,
-        filters: Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()> {
-        let filters: Option<HashMap<String, String>> = filters;
-        let force_instrument_update = filters
-            .as_ref()
-            .and_then(|f| f.get("force_instrument_update"))
-            .map(|v| v == "true")
-            .unwrap_or(false);
-
-        for instrument_id in instrument_ids {
-            let load_result = if is_spread_instrument_id(&instrument_id) {
-                self.fetch_spread_instrument(
-                    client,
-                    instrument_id,
-                    force_instrument_update,
-                    filters.clone(),
-                )
-                .await
-                .map(|_| ())
-            } else {
-                self.fetch_contract_details(
-                    client,
-                    instrument_id,
-                    force_instrument_update,
-                    filters.clone(),
-                )
-                .await
-            };
-
-            if let Err(e) = load_result {
-                tracing::warn!("Failed to load instrument {}: {}", instrument_id, e);
-            }
-        }
-        Ok(())
-    }
-
     /// Load multiple instruments and return the loaded instrument IDs.
     ///
     /// This is equivalent to Python's `load_ids_with_return_async` method.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_ids` - Vector of instrument IDs to load
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
     ///
     /// # Returns
     ///
@@ -1214,15 +1096,15 @@ impl InteractiveBrokersInstrumentProvider {
             .collect();
 
         Ok(Contract {
-            contract_id: 0,
             symbol: first_details.contract.symbol.clone(),
             security_type: SecurityType::Spread,
             exchange: Exchange::from("SMART"),
             currency: first_details.contract.currency.clone(),
             local_symbol: instrument_id.map_or_else(String::new, |id| id.symbol.to_string()),
-            combo_legs_description: instrument_id
-                .map(|id| format!("Spread: {}", id.symbol))
-                .unwrap_or_else(|| "Spread".to_string()),
+            combo_legs_description: instrument_id.map_or_else(
+                || "Spread".to_string(),
+                |id| format!("Spread: {}", id.symbol),
+            ),
             combo_legs,
             ..Default::default()
         })
@@ -1233,12 +1115,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// This is equivalent to Python's `_fetch_spread_instrument` method.
     /// It parses the spread instrument ID to extract leg tuples, loads each leg,
     /// and then creates the spread instrument.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `spread_instrument_id` - The spread instrument ID to fetch
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
     ///
     /// # Returns
     ///
@@ -1293,7 +1169,7 @@ impl InteractiveBrokersInstrumentProvider {
                 filters.clone(),
             )
             .await
-            .with_context(|| format!("Failed to load leg instrument: {}", leg_instrument_id))?;
+            .with_context(|| format!("Failed to load leg instrument: {leg_instrument_id}"))?;
 
             // Get the contract details for this leg
             let leg_details = self
@@ -1302,8 +1178,7 @@ impl InteractiveBrokersInstrumentProvider {
                 .map(|entry| entry.value().clone())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Leg instrument {} not found in contract details after loading",
-                        leg_instrument_id
+                        "Leg instrument {leg_instrument_id} not found in contract details after loading"
                     )
                 })?;
 
@@ -1351,13 +1226,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// Python version loads from config's `_load_ids_on_start` and `_load_contracts_on_start`.
     /// Rust version accepts these as parameters for flexibility.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_ids` - Optional vector of instrument IDs to load
-    /// * `contracts` - Optional vector of IB contracts to load
-    /// * `force_instrument_update` - If true, force re-fetch even if already cached
-    ///
     /// # Errors
     ///
     /// Returns an error if loading fails.
@@ -1372,7 +1240,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Load from instrument IDs
         let ids_to_load =
-            instrument_ids.unwrap_or_else(|| self.config.load_ids.iter().cloned().collect());
+            instrument_ids.unwrap_or_else(|| self.config.load_ids.iter().copied().collect());
 
         if !ids_to_load.is_empty() {
             let mut filters = std::collections::HashMap::new();
@@ -1410,29 +1278,19 @@ impl InteractiveBrokersInstrumentProvider {
                 }
             }
         } else {
-            for contract_json in &self.config.load_contracts {
-                match crate::common::contracts::parse_contract_from_json(contract_json)
-                    .context("Failed to parse contract from config JSON")
+            for configured in &self.config.load_contracts {
+                let spec = configured.chain_spec_json();
+                match self
+                    .load_contract_spec(client, &configured.contract, spec.as_ref())
+                    .await
                 {
-                    Ok(contract) => match self
-                        .load_contract_spec(client, &contract, Some(contract_json))
-                        .await
-                    {
-                        Ok(mut instrument_ids) => {
-                            loaded_ids.append(&mut instrument_ids);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Error loading instrument from contract {:?}: {}",
-                                contract,
-                                e
-                            );
-                        }
-                    },
+                    Ok(mut instrument_ids) => {
+                        loaded_ids.append(&mut instrument_ids);
+                    }
                     Err(e) => {
                         tracing::warn!(
-                            "Error parsing load contract spec {:?}: {}",
-                            contract_json,
+                            "Error loading instrument from contract {:?}: {}",
+                            configured.contract,
                             e
                         );
                     }
@@ -1458,14 +1316,9 @@ fn normalize_price_magnifier(price_magnifier: i32) -> i32 {
     }
 }
 
-fn security_type_code(security_type: &SecurityType) -> String {
-    security_type.to_string()
-}
-
-fn json_bool(spec: Option<&serde_json::Value>, key: &str) -> bool {
+fn json_opt_bool(spec: Option<&serde_json::Value>, key: &str) -> Option<bool> {
     spec.and_then(|value| value.get(key))
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
 }
 
 fn json_u32(spec: Option<&serde_json::Value>, key: &str) -> Option<u32> {
@@ -1543,11 +1396,6 @@ fn expiry_bound_from_days(days: Option<u32>) -> Option<String> {
 impl InteractiveBrokersInstrumentProvider {
     /// Fetch and cache contract details for an instrument ID using the provided IB client.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_id` - The instrument ID to fetch
-    ///
     /// # Errors
     ///
     /// Returns an error if fetching fails.
@@ -1558,17 +1406,16 @@ impl InteractiveBrokersInstrumentProvider {
         force_instrument_update: bool,
         filters: Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
-        if !force_instrument_update {
-            if self.instruments.contains_key(&instrument_id)
-                && (self.contract_details.contains_key(&instrument_id)
-                    || self.contracts.contains_key(&instrument_id))
-            {
-                tracing::debug!(
-                    "Instrument {} already cached, skipping fetch",
-                    instrument_id
-                );
-                return Ok(());
-            }
+        if !force_instrument_update
+            && self.instruments.contains_key(&instrument_id)
+            && (self.contract_details.contains_key(&instrument_id)
+                || self.contracts.contains_key(&instrument_id))
+        {
+            tracing::debug!(
+                "Instrument {} already cached, skipping fetch",
+                instrument_id
+            );
+            return Ok(());
         }
         // Convert instrument ID to IB contract
         let exchange = filters
@@ -1586,8 +1433,10 @@ impl InteractiveBrokersInstrumentProvider {
         let mut last_error = None;
 
         for candidate_exchange in exchanges_to_try {
-            let contract = instrument_id_to_ib_contract(instrument_id, Some(candidate_exchange.as_str()))
-                .with_context(|| format!("Failed to convert instrument_id {} to IB contract. Check that the instrument ID format is correct and the venue/symbol are valid.", instrument_id))?;
+            let contract = self
+                .symbology
+                .contract(instrument_id, Some(candidate_exchange.as_str()))
+                .with_context(|| format!("Failed to convert instrument_id {instrument_id} to IB contract. Check that the instrument ID format is correct and the venue/symbol are valid."))?;
 
             match client.contract_details(&contract).await {
                 Ok(result) if !result.is_empty() => {
@@ -1651,7 +1500,7 @@ impl InteractiveBrokersInstrumentProvider {
                     tracing::warn!(
                         "Failed to process IB contract details con_id={} sec_type={}: {}",
                         details.contract.contract_id,
-                        security_type_code(&details.contract.security_type),
+                        details.contract.security_type,
                         e
                     );
                 }
@@ -1667,7 +1516,7 @@ impl InteractiveBrokersInstrumentProvider {
         venue: Option<Venue>,
         force_instrument_update: bool,
     ) -> anyhow::Result<Option<InstrumentId>> {
-        let sec_type = security_type_code(&details.contract.security_type);
+        let sec_type = details.contract.security_type.to_string();
         if self.is_filtered_sec_type(&sec_type) {
             tracing::warn!(
                 "Skipping filtered security type {} for contract {:?}",
@@ -1710,17 +1559,12 @@ impl InteractiveBrokersInstrumentProvider {
         Ok(Some(instrument_id))
     }
 
-    fn instrument_id_from_contract(
+    pub(crate) fn instrument_id_from_contract(
         &self,
         contract: &Contract,
         venue: Venue,
     ) -> anyhow::Result<InstrumentId> {
-        match self.config.symbology_method {
-            SymbologyMethod::Simplified => {
-                ib_contract_to_instrument_id_simplified(contract, Some(venue))
-            }
-            SymbologyMethod::Raw => ib_contract_to_instrument_id_raw(contract, Some(venue)),
-        }
+        self.symbology.instrument_id(contract, Some(venue))
     }
 
     fn cache_instrument(
@@ -1812,12 +1656,6 @@ impl InteractiveBrokersInstrumentProvider {
     ///
     /// This method fetches and caches contract details for multiple instrument IDs in parallel.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `instrument_ids` - Vector of instrument IDs to load
-    /// * `filters` - Optional filters to apply (not yet implemented, reserved for future use)
-    ///
     /// # Returns
     ///
     /// Returns a vector of successfully loaded instrument IDs.
@@ -1862,8 +1700,7 @@ impl InteractiveBrokersInstrumentProvider {
 
                         // Check security type (try to infer from instrument)
                         if let Some(contract_details) = self.contract_details.get(instrument_id) {
-                            let sec_type_str =
-                                security_type_code(&contract_details.contract.security_type);
+                            let sec_type_str = contract_details.contract.security_type.to_string();
 
                             if sec_type_str.to_uppercase().contains(&filter.to_uppercase()) {
                                 return true;
@@ -1914,13 +1751,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// It uses `contract_details` to fetch options with precise expiry filtering,
     /// which is more flexible than the basic `option_chain` API.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `underlying` - The underlying contract
-    /// * `expiry_min` - Minimum expiry date string (YYYYMMDD format, can be None for no min)
-    /// * `expiry_max` - Maximum expiry date string (YYYYMMDD format, can be None for no max)
-    ///
     /// # Returns
     ///
     /// Returns the number of option instruments loaded.
@@ -1954,10 +1784,11 @@ impl InteractiveBrokersInstrumentProvider {
         let mut option_chain_stream = client
             .option_chain(
                 symbol,
-                exchange,
                 underlying.security_type.clone(),
                 underlying.contract_id,
             )
+            .exchange(exchange)
+            .subscribe()
             .await
             .context("Failed to request option chain from IB")?;
 
@@ -1994,11 +1825,8 @@ impl InteractiveBrokersInstrumentProvider {
                         // Filter by expiry days from config if specified
                         let days_filter_pass = {
                             let expiry_ns =
-                                crate::providers::parse::expiry_timestring_to_unix_nanos(
-                                    expiration.as_str(),
-                                    None,
-                                )
-                                .unwrap_or(now);
+                                expiry_timestring_to_unix_nanos(expiration.as_str(), None)
+                                    .unwrap_or(now);
                             let days_until_expiry =
                                 (expiry_ns.as_u64().saturating_sub(now.as_u64()))
                                     / (24 * 60 * 60 * 1_000_000_000);
@@ -2144,13 +1972,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// This method fetches all futures contracts for a given underlying symbol
     /// and populates the cache with all individual futures instruments.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `symbol` - The underlying symbol
-    /// * `exchange` - The exchange (use "" for all exchanges)
-    /// * `currency` - The currency (use USD as default)
-    ///
     /// # Returns
     ///
     /// Returns the number of futures instruments loaded.
@@ -2158,6 +1979,7 @@ impl InteractiveBrokersInstrumentProvider {
     /// # Errors
     ///
     /// Returns an error if fetching fails.
+    #[allow(clippy::too_many_arguments)] // Public query options map directly to IB filters.
     pub async fn fetch_futures_chain(
         &self,
         client: &ibapi::Client,
@@ -2184,7 +2006,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Build futures contract for lookup
         let futures_contract = Contract {
-            contract_id: 0, // 0 for lookup by specification
+            contract_id: 0,
             symbol: Symbol::from(symbol.to_string()),
             security_type: SecurityType::Future,
             last_trade_date_or_contract_month: String::new(),
@@ -2232,7 +2054,7 @@ impl InteractiveBrokersInstrumentProvider {
             }
 
             // Check if security type is filtered
-            let sec_type_str = security_type_code(&details.contract.security_type);
+            let sec_type_str = details.contract.security_type.to_string();
             if self.is_filtered_sec_type(&sec_type_str) {
                 continue;
             }
@@ -2242,7 +2064,7 @@ impl InteractiveBrokersInstrumentProvider {
                 .contract
                 .last_trade_date_or_contract_month
                 .is_empty()
-                && let Ok(expiry_ns) = crate::providers::parse::expiry_timestring_to_unix_nanos(
+                && let Ok(expiry_ns) = expiry_timestring_to_unix_nanos(
                     &details.contract.last_trade_date_or_contract_month,
                     Some(&details),
                 )
@@ -2294,11 +2116,6 @@ impl InteractiveBrokersInstrumentProvider {
     /// This method fetches contract details for a spread contract by requesting
     /// contract details with a BAG contract. The BAG contract should have its
     /// combo_legs populated with the individual leg contract IDs.
-    ///
-    /// # Arguments
-    ///
-    /// * `client` - The IB API client
-    /// * `bag_contract` - The BAG contract with populated combo_legs
     ///
     /// # Returns
     ///
@@ -2390,21 +2207,10 @@ impl InteractiveBrokersInstrumentProvider {
                 } else {
                     // Load the leg instrument
                     let leg_venue = self.determine_venue(&leg_details.contract, Some(leg_details));
-                    let leg_instrument_id = match self.config.symbology_method {
-                        crate::config::SymbologyMethod::Simplified => {
-                            crate::common::parse::ib_contract_to_instrument_id_simplified(
-                                &leg_details.contract,
-                                Some(leg_venue),
-                            )
-                        }
-                        crate::config::SymbologyMethod::Raw => {
-                            crate::common::parse::ib_contract_to_instrument_id_raw(
-                                &leg_details.contract,
-                                Some(leg_venue),
-                            )
-                        }
-                    }
-                    .context("Failed to convert leg contract to instrument ID")?;
+                    let leg_instrument_id = self
+                        .symbology
+                        .instrument_id(&leg_details.contract, Some(leg_venue))
+                        .context("Failed to convert leg contract to instrument ID")?;
 
                     // Parse and cache the leg instrument
                     let leg_instrument =
@@ -2437,8 +2243,7 @@ impl InteractiveBrokersInstrumentProvider {
                 .map(|entry| entry.value().clone())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Contract details not found for leg {} after loading",
-                        leg_instrument_id
+                        "Contract details not found for leg {leg_instrument_id} after loading"
                     )
                 })?;
 
@@ -2534,10 +2339,6 @@ impl InteractiveBrokersInstrumentProvider {
 
     /// Save the current instrument cache to disk.
     ///
-    /// # Arguments
-    ///
-    /// * `cache_path` - Path to the cache file
-    ///
     /// # Errors
     ///
     /// Returns an error if serialization or file I/O fails.
@@ -2593,10 +2394,6 @@ impl InteractiveBrokersInstrumentProvider {
     }
 
     /// Load instrument cache from disk if valid.
-    ///
-    /// # Arguments
-    ///
-    /// * `cache_path` - Path to the cache file
     ///
     /// # Returns
     ///
@@ -2777,7 +2574,7 @@ mod tests {
 
         async fn load_contract(
             &self,
-            _contract_spec: &serde_json::Value,
+            _configured: &ConfiguredContract,
         ) -> anyhow::Result<Vec<InstrumentId>> {
             self.contract_calls.fetch_add(1, Ordering::SeqCst);
 
@@ -2843,7 +2640,9 @@ mod tests {
     fn test_qualified_opra_details_preserve_canonical_instrument_identity() {
         let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
         let requested_id = InstrumentId::from("AAPL  270115P00155000.OPRA");
-        let request = instrument_id_to_ib_contract(requested_id, None).unwrap();
+        let request = provider
+            .resolve_contract_for_instrument(requested_id)
+            .unwrap();
 
         assert_eq!(request.security_type, SecurityType::Option);
         assert_eq!(request.exchange.as_str(), "SMART");
@@ -2943,14 +2742,15 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_loads_all_configured_inputs_once() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
-        let contract_spec = serde_json::json!({
-            "secType": "STK",
-            "symbol": "MSFT",
-            "exchange": "NASDAQ",
-        });
+        let contract_spec = Contract {
+            security_type: SecurityType::Stock,
+            symbol: ibapi::contracts::Symbol::from("MSFT"),
+            exchange: Exchange::from("NASDAQ"),
+            ..Default::default()
+        };
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
-            load_contracts: vec![contract_spec],
+            load_contracts: vec![ConfiguredContract::from(contract_spec)],
             ..Default::default()
         };
         let provider = InteractiveBrokersInstrumentProvider::new(config);
@@ -2975,14 +2775,15 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_fails_closed_and_retries_unresolved_input() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
-        let contract_spec = serde_json::json!({
-            "secType": "STK",
-            "symbol": "MSFT",
-            "exchange": "NASDAQ",
-        });
+        let contract_spec = Contract {
+            security_type: SecurityType::Stock,
+            symbol: ibapi::contracts::Symbol::from("MSFT"),
+            exchange: Exchange::from("NASDAQ"),
+            ..Default::default()
+        };
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
-            load_contracts: vec![contract_spec],
+            load_contracts: vec![ConfiguredContract::from(contract_spec)],
             ..Default::default()
         };
         let provider = InteractiveBrokersInstrumentProvider::new(config);
@@ -3200,15 +3001,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_filter_sec_types_uses_ib_codes_case_insensitive() {
+    fn test_filter_sec_types_uses_typed_ib_codes() {
         let config = InteractiveBrokersInstrumentProviderConfig {
-            filter_sec_types: [String::from("opt")].into_iter().collect(),
+            filter_sec_types: [IbSecurityType::Option].into_iter().collect(),
             ..Default::default()
         };
         let provider = InteractiveBrokersInstrumentProvider::new(config);
 
-        assert!(provider.is_filtered_sec_type(&security_type_code(&SecurityType::Option)));
-        assert!(!provider.is_filtered_sec_type(&security_type_code(&SecurityType::Stock)));
+        assert!(provider.is_filtered_sec_type(&SecurityType::Option.to_string()));
+        assert!(!provider.is_filtered_sec_type(&SecurityType::Stock.to_string()));
     }
 
     #[rstest]
@@ -3293,5 +3094,55 @@ mod tests {
             !result.unwrap(),
             "load_cache should return false for expired cache"
         );
+    }
+    #[rstest]
+    fn restored_cache_seeds_provider_with_price_magnifier() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let mut cache = Cache::default();
+        assert_eq!(provider.seed_from_cache(&cache), 0);
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let contract = Contract {
+            contract_id: 265598,
+            symbol: ibapi::contracts::Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: ibapi::contracts::Currency::from("USD"),
+            ..Default::default()
+        };
+        let instrument = create_test_instrument_with_info(
+            instrument_id,
+            Some(create_contract_info(&contract, Some(100))),
+        );
+        cache.add_instrument(instrument.clone()).unwrap();
+        let seeded = provider.seed_from_cache(&cache);
+        assert_eq!(seeded, 1);
+        assert_eq!(provider.find(&instrument_id), Some(instrument));
+        assert_eq!(provider.get_price_magnifier(&instrument_id), 100);
+        assert_eq!(
+            provider
+                .resolve_contract_for_instrument(instrument_id)
+                .unwrap(),
+            contract
+        );
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(-1))]
+    fn cached_instrument_without_valid_magnifier_requires_qualification(
+        #[case] magnifier: Option<i32>,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let contract = Contract {
+            contract_id: 265598,
+            ..Default::default()
+        };
+        let instrument = create_test_instrument_with_info(
+            instrument_id,
+            Some(create_contract_info(&contract, magnifier)),
+        );
+        assert_eq!(provider.add_cached_instruments([instrument]), 0);
+        assert_eq!(provider.find(&instrument_id), None);
     }
 }

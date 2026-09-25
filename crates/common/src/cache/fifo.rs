@@ -250,6 +250,11 @@ where
         self.index.get(key)
     }
 
+    /// Iterates over cached key-value pairs without changing their eviction order.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.index.iter()
+    }
+
     /// Returns a mutable reference to the value for the given key (O(1) lookup).
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         self.index.get_mut(key)
@@ -290,6 +295,15 @@ where
         self.order.clear();
         self.index.clear();
     }
+
+    /// Removes and returns all entries in FIFO order.
+    pub fn drain(&mut self) -> Vec<(K, V)> {
+        self.order
+            .drain(..)
+            .rev()
+            .filter_map(|key| self.index.remove_entry(&key))
+            .collect()
+    }
 }
 
 impl<K, V, const N: usize> Default for FifoCacheMap<K, V, N>
@@ -306,6 +320,17 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn map_drain_returns_oldest_first_and_clears_cache() {
+        let mut cache = FifoCacheMap::<u32, &'static str, 3>::new();
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+
+        assert_eq!(cache.drain(), vec![(1, "one"), (2, "two"), (3, "three")],);
+        assert!(cache.is_empty());
+    }
 
     #[rstest]
     fn test_add_and_contains() {

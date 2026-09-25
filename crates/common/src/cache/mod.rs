@@ -6348,6 +6348,34 @@ impl Cache {
         self.index.venue_account.get(venue)
     }
 
+    /// Indexes the account of execution client `client_id`, so callers holding only a client ID
+    /// can reach its account.
+    pub fn add_client_account(&mut self, client_id: ClientId, account_id: AccountId) {
+        log::debug!("Indexing account {account_id} for client {client_id}");
+        self.index.client_account.insert(client_id, account_id);
+    }
+
+    /// Removes the account index of execution client `client_id`.
+    pub fn remove_client_account(&mut self, client_id: &ClientId) {
+        self.index.client_account.remove(client_id);
+    }
+
+    /// Returns a reference to the account ID of execution client `client_id` (if indexed).
+    #[must_use]
+    pub fn account_id_for_client(&self, client_id: &ClientId) -> Option<&AccountId> {
+        self.index.client_account.get(client_id)
+    }
+
+    /// Returns a borrow of the account of execution client `client_id` (if found).
+    #[must_use]
+    pub fn account_for_client(&self, client_id: &ClientId) -> Option<AccountRef<'_>> {
+        self.index
+            .client_account
+            .get(client_id)
+            .and_then(|account_id| self.accounts.get(account_id))
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+    }
+
     /// Returns borrows of all accounts for the `account_id`.
     ///
     /// Each [`AccountRef`] in the returned vector borrows its underlying cell; mutating any of

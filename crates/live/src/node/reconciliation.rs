@@ -344,6 +344,16 @@ impl LiveNode {
                     continue;
                 }
 
+                if self.exec_manager.is_unapplied_fill_report_expired(&report) {
+                    log::warn!(
+                        "Ignoring fill {} for {}/{}: not applied within the position check threshold",
+                        report.trade_id,
+                        key.0,
+                        key.1,
+                    );
+                    continue;
+                }
+
                 if dispatches >= POSITION_FILLS_PER_CYCLE {
                     log::warn!(
                         "Deferring remaining authoritative fills after reaching the per-cycle dispatch limit"
@@ -382,6 +392,7 @@ impl LiveNode {
                             key.0,
                             key.1,
                         );
+                        self.exec_manager.record_unapplied_fill_report(&report);
                         blocked = true;
                         break;
                     }
@@ -406,6 +417,7 @@ impl LiveNode {
                         key.1,
                         report.trade_id,
                     );
+                    self.exec_manager.record_unapplied_fill_report(&report);
                     blocked = true;
                     break;
                 }

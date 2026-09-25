@@ -16,8 +16,13 @@
 use nautilus_common::{clock::VirtualClock, msgbus::stubs::get_typed_into_message_saving_handler};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    accounts::CashAccount, identifiers::ClientOrderId, instruments::stubs::audusd_sim,
-    orders::OrderTestBuilder, types::money::MONEY_RAW_MAX,
+    accounts::CashAccount,
+    enums::AccountType,
+    events::account::state::AccountState,
+    identifiers::ClientOrderId,
+    instruments::stubs::audusd_sim,
+    orders::OrderTestBuilder,
+    types::{AccountBalance, money::MONEY_RAW_MAX},
 };
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
@@ -194,6 +199,104 @@ fn test_cash_sell_accumulation_rejects_overflow(engine: RiskEngine) {
     );
 }
 
+fn cash_account_million_usd(account_id: AccountId) -> AccountAny {
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("0 USD"),
+            Money::from("1000000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    AccountAny::Cash(CashAccount::new(state, false, false))
+}
+
+#[rstest]
+#[case::client(Some("IB_PAPER"), None, false, true)]
+#[case::venue_route(None, Some("SIM"), false, true)]
+#[case::default(None, None, true, true)]
+#[case::unrouted(None, None, false, false)]
+fn test_submit_orders_resolve_account_through_client_routing(
+    mut engine: RiskEngine,
+    #[case] client: Option<&str>,
+    #[case] venue_route: Option<&str>,
+    #[case] default: bool,
+    #[case] accepted: bool,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let account_id = AccountId::from("IB_PAPER-DU123456");
+    engine
+        .cache
+        .borrow_mut()
+        .add_account(cash_account_million_usd(account_id))
+        .unwrap();
+    let client_id = client.map(ClientId::from);
+
+    if let Some(client_id) = client_id {
+        engine
+            .cache
+            .borrow_mut()
+            .add_client_account(client_id, account_id);
+    }
+
+    if let Some(venue) = venue_route {
+        engine.register_venue_account(Venue::from(venue), account_id);
+    }
+
+    if default {
+        engine.set_default_account(account_id);
+    }
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("1.00000"))
+        .build();
+    let (handler, saved) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+    let result = engine.check_orders_risk(
+        &instrument,
+        std::slice::from_ref(&order),
+        false,
+        RiskCheck::Submit,
+        client_id,
+    );
+
+    let events = saved.get_messages();
+    assert_eq!(result, accepted);
+
+    if accepted {
+        assert!(events.is_empty());
+    } else {
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(event) = &events[0] else {
+            panic!("Expected OrderDenied")
+        };
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(
+            event.reason,
+            Ustr::from(
+                &OrderDeniedReason::ValidationFailed {
+                    detail: format!(
+                        "No account available for risk checks: instrument_id={}, account_id=None",
+                        instrument.id()
+                    ),
+                }
+                .to_string()
+            )
+        );
+    }
+}
+
 #[rstest]
 fn test_submit_orders_reject_invalid_notional_limit(mut engine: RiskEngine) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -215,7 +318,7 @@ fn test_submit_orders_reject_invalid_notional_limit(mut engine: RiskEngine) {
     let (handler, saved) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
     msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
 
-    let accepted = engine.check_orders_risk(&instrument, &orders, false, RiskCheck::Submit);
+    let accepted = engine.check_orders_risk(&instrument, &orders, false, RiskCheck::Submit, None);
 
     let events = saved.get_messages();
     assert!(!accepted);

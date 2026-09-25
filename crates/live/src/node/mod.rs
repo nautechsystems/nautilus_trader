@@ -5353,6 +5353,42 @@ mod tests {
     }
 
     #[rstest]
+    fn test_position_fill_report_result_falls_back_after_unapplied_fill_expires() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("UnappliedPositionFillNode", Quantity::from("100.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let mut quantities = Vec::new();
+
+        for _ in 0..2 {
+            let position_result = position_report_result(&node, venue_report.clone());
+            node.handle_position_fill_report_result(PositionFillReportResult {
+                position_result,
+                reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+                successful_keys: IndexSet::from([key]),
+            });
+            quantities.push(
+                node.kernel
+                    .cache
+                    .borrow()
+                    .positions_open(None, Some(&key.0), None, Some(&key.1), None)
+                    .iter()
+                    .map(|position| position.quantity)
+                    .sum::<Quantity>(),
+            );
+        }
+
+        assert_eq!(
+            quantities,
+            vec![Quantity::from("1.0"), Quantity::from("2.0")]
+        );
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
     #[case::client_order(0)]
     #[case::venue_order(1)]
     #[case::side(2)]

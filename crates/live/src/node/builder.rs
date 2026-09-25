@@ -689,6 +689,7 @@ impl LiveNodeBuilder {
         let mut exec_clients = Vec::new();
         let mut venue_candidates = AHashMap::<Venue, Vec<_>>::new();
         let mut venues_explicit = AHashSet::new();
+        let mut client_accounts = AHashMap::new();
         let mut has_default_client = false;
         let mut instrument_venues = AHashSet::new();
 
@@ -711,8 +712,10 @@ impl LiveNodeBuilder {
 
                 let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
+                let account_id = client.account_id();
                 let venue = client.venue();
                 socket_registry.register_client(client_id);
+                client_accounts.insert(client_id, account_id);
 
                 let routing = self
                     .exec_client_routing
@@ -722,10 +725,12 @@ impl LiveNodeBuilder {
 
                 {
                     let mut exec_engine = kernel.exec_engine.borrow_mut();
+                    let mut risk_engine = kernel.risk_engine.borrow_mut();
                     exec_engine.register_client(Box::new(client.clone()))?;
 
                     if routing.default {
                         exec_engine.set_default_client(client_id)?;
+                        risk_engine.set_default_account(account_id);
                         has_default_client = true;
                     }
 
@@ -733,6 +738,7 @@ impl LiveNodeBuilder {
                         for venue_str in venues {
                             let route_venue = Venue::new(venue_str.as_str());
                             exec_engine.register_venue_routing(client_id, route_venue)?;
+                            risk_engine.register_venue_account(route_venue, account_id);
                             venues_explicit.insert(route_venue);
                             instrument_venues.insert(route_venue);
                         }
@@ -751,6 +757,7 @@ impl LiveNodeBuilder {
 
         {
             let mut exec_engine = kernel.exec_engine.borrow_mut();
+            let mut risk_engine = kernel.risk_engine.borrow_mut();
 
             for (venue, candidates) in venue_candidates {
                 if venues_explicit.contains(&venue) {
@@ -759,6 +766,7 @@ impl LiveNodeBuilder {
 
                 if let [client_id] = candidates.as_slice() {
                     exec_engine.register_venue_routing(*client_id, venue)?;
+                    risk_engine.register_venue_account(venue, client_accounts[client_id]);
                 } else if !has_default_client {
                     anyhow::bail!(
                         "Multiple execution clients for venue {venue}: configure an explicit venue route or default client"
@@ -871,20 +879,25 @@ mod tests {
         enums::Environment,
         factories::{ClientConfig, ExecutionClientFactory},
         messages::execution::{SubmitOrder, TradingCommand},
-        msgbus::{self, switchboard},
+        msgbus::{
+            self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler, switchboard,
+        },
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
-        enums::{OmsType, OrderType},
+        accounts::{AccountAny, CashAccount},
+        enums::{AccountType, OmsType, OrderSide, OrderType},
+        events::{OrderDeniedReason, OrderEventAny, account::state::AccountState},
         identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{Order, OrderTestBuilder},
         stubs::TestDefault,
-        types::Quantity,
+        types::{AccountBalance, Money, Price, Quantity},
     };
     use nautilus_trading::ImportableControllerConfig;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::LiveNodeBuilder;
     use crate::node::config::RoutingConfig;
@@ -1030,6 +1043,142 @@ mod tests {
                 vec![instrument.clone()]
             );
         }
+    }
+
+    fn cash_account(account_id: AccountId, free: &str) -> AccountAny {
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from(free),
+                Money::from("0 USD"),
+                Money::from(free),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        AccountAny::Cash(CashAccount::new(state, false, false))
+    }
+
+    #[rstest]
+    fn test_execution_client_accounts_route_risk_checks() {
+        let clients: Vec<_> = (0..2)
+            .map(|i| {
+                StubExecutionClient::new(
+                    ClientId::new(format!("CLIENT-{i}")),
+                    AccountId::new(format!("ACCOUNT-{i}")),
+                    Venue::from("SIM"),
+                    OmsType::Netting,
+                    None,
+                )
+            })
+            .collect();
+        let mut builder =
+            LiveNodeBuilder::new(TraderId::test_default(), Environment::Live).unwrap();
+
+        for (i, client) in clients.iter().enumerate() {
+            builder = builder
+                .add_exec_client_with_routing(
+                    Some(format!("client-{i}")),
+                    Box::new(RoutingClientFactory(client.clone())),
+                    Box::new(RoutingClientConfig),
+                    RoutingConfig {
+                        default: i == 0,
+                        venues: None,
+                    },
+                )
+                .unwrap();
+        }
+
+        let node = builder.build().unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .price(Price::from("1.00000"))
+            .build();
+        let explicit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-EXPLICIT"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(200))
+            .price(Price::from("1.00000"))
+            .build();
+        {
+            let mut cache = node.kernel().cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache
+                .add_account(cash_account(clients[0].account_id(), "1000000 USD"))
+                .unwrap();
+            cache
+                .add_account(cash_account(clients[1].account_id(), "150 USD"))
+                .unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+            cache
+                .add_order(explicit_order.clone(), None, None, false)
+                .unwrap();
+        }
+        let (command_handler, commands) =
+            get_typed_into_message_saving_handler::<TradingCommand>(None);
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            command_handler,
+        );
+        let (event_handler, events) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            event_handler,
+        );
+
+        let mut risk_engine = node.kernel().risk_engine.borrow_mut();
+        risk_engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &order,
+            TraderId::test_default(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+        risk_engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &explicit_order,
+            TraderId::test_default(),
+            Some(clients[1].client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+
+        let forwarded: Vec<_> = commands
+            .get_messages()
+            .iter()
+            .map(|command| match command {
+                TradingCommand::SubmitOrder(cmd) => (cmd.client_order_id, cmd.client_id),
+                other => panic!("unexpected command {other:?}"),
+            })
+            .collect();
+        let events = events.get_messages();
+        assert_eq!(forwarded, vec![(order.client_order_id(), None)]);
+        assert_eq!(events.len(), 1);
+
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("Expected OrderDenied")
+        };
+        assert_eq!(denied.client_order_id, explicit_order.client_order_id());
+        assert_eq!(
+            denied.reason,
+            Ustr::from(
+                &OrderDeniedReason::NotionalExceedsFreeBalance {
+                    free_balance: Money::from("150 USD"),
+                    notional: Money::from("200 USD"),
+                }
+                .to_string()
+            )
+        );
     }
 
     #[rstest]

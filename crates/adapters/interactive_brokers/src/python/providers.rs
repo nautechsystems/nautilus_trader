@@ -20,6 +20,7 @@ use nautilus_model::{identifiers::InstrumentId, python::instruments::instrument_
 use pyo3::{prelude::*, types::PyList};
 
 use crate::{
+    config::InteractiveBrokersInstrumentProviderConfig,
     providers::instruments::InteractiveBrokersInstrumentProvider,
     python::conversion::{contract_details_to_pyobject, py_to_contract},
 };
@@ -29,7 +30,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersInstrumentProvider {
     #[new]
-    fn py_new(config: crate::config::InteractiveBrokersInstrumentProviderConfig) -> Self {
+    fn py_new(config: InteractiveBrokersInstrumentProviderConfig) -> Self {
         Self::new(config)
     }
 
@@ -108,10 +109,6 @@ impl InteractiveBrokersInstrumentProvider {
 
     /// Save the current instrument cache to disk.
     ///
-    /// # Arguments
-    ///
-    /// * `cache_path` - Path to the cache file
-    ///
     /// # Errors
     ///
     /// Returns an error if serialization or file I/O fails.
@@ -131,10 +128,6 @@ impl InteractiveBrokersInstrumentProvider {
     }
 
     /// Load instrument cache from disk if valid.
-    ///
-    /// # Arguments
-    ///
-    /// * `cache_path` - Path to the cache file
     ///
     /// # Returns
     ///

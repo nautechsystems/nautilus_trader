@@ -43,6 +43,9 @@ use crate::messages::execution::{
 pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
     Decimal::from_parts(1, 0, 0, false, 8);
 
+/// Default maximum time to wait before retrying an authoritative order-details query.
+pub const DEFAULT_ORDER_STATUS_QUERY_TIMEOUT: DurationNanos = DurationNanos::from_secs(30);
+
 /// Defines the interface for an execution client managing order operations.
 ///
 /// # Thread Safety
@@ -70,6 +73,25 @@ pub trait ExecutionClient {
     /// the instrument's exchange venue.
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.venue() == venue
+    }
+
+    /// Returns whether two venue IDs represent distinct physical orders despite a shared reference.
+    fn has_distinct_order_identity(
+        &self,
+        _previous: VenueOrderId,
+        _reported: VenueOrderId,
+    ) -> bool {
+        false
+    }
+
+    /// Returns whether an unknown fill requires an authoritative order quantity before materialization.
+    fn requires_order_status_for_fill(&self) -> bool {
+        false
+    }
+
+    /// Maximum time to wait before retrying an authoritative order-details query.
+    fn order_status_query_timeout(&self) -> DurationNanos {
+        DEFAULT_ORDER_STATUS_QUERY_TIMEOUT
     }
 
     /// Returns whether a bulk position status report request provides complete coverage for the
