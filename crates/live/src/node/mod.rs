@@ -2030,7 +2030,10 @@ impl LiveNode {
             .as_ref()
             .is_some_and(|config| config.flush_on_start)
         {
-            cache.borrow_mut().flush_db();
+            cache
+                .borrow_mut()
+                .flush_db()
+                .context("Failed to flush persistent cache")?;
             return Ok(());
         }
 

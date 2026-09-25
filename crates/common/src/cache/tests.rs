@@ -1692,7 +1692,16 @@ fn test_dispose_when_empty(mut cache: Cache) {
 
 #[rstest]
 fn test_flush_db_when_empty(mut cache: Cache) {
-    cache.flush_db();
+    cache.flush_db().unwrap();
+}
+
+#[rstest]
+fn test_flush_db_returns_database_error() {
+    let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::fail_flush())));
+
+    let error = cache.flush_db().unwrap_err();
+
+    assert_eq!(error.to_string(), "flush failed");
 }
 
 #[rstest]
@@ -8889,6 +8898,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_flush: bool,
     fail_add_instrument_close: bool,
     fail_add_order: bool,
     fail_add_position: bool,
@@ -8983,6 +8993,13 @@ impl SnapshotBlobTestDatabase {
         )
     }
 
+    fn fail_flush() -> Self {
+        Self {
+            fail_flush: true,
+            ..Default::default()
+        }
+    }
+
     fn fail_persistence_io() -> Self {
         Self {
             fail_persistence_io: true,
@@ -9012,6 +9029,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
+        if self.fail_flush {
+            anyhow::bail!("flush failed");
+        }
         Ok(())
     }
 

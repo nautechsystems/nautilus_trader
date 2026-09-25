@@ -631,6 +631,14 @@ nautilus database init --schema "$PWD/schema/sql"
 Use a CLI built from the same checkout as these schema files. The initialization is designed to be
 re-run, including after an earlier run stopped partway through.
 
+`nautilus database assign-account` assigns account events persisted before trader-scoped caching to
+a trader. A Postgres cache refuses to connect while such events exist, so run it for each account
+listed in that error:
+
+```bash
+nautilus database assign-account --account-id SIM-001 --trader-id TRADER-001
+```
+
 :::danger
 `nautilus database drop` removes the target schema, privileges, role, and stored data. Use it only
 for a disposable database or after confirming that the data can be deleted.

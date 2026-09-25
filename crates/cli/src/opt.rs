@@ -72,6 +72,25 @@ pub enum DatabaseCommand {
     Init(DatabaseConfig),
     /// Drops roles, privileges and deletes all data from the database.
     Drop(DatabaseConfig),
+    /// Assigns an account's events that have no trader to a trader.
+    AssignAccount(AssignAccountConfig),
+}
+
+/// Configuration for assigning an account's events that have no trader.
+///
+/// Account events written before trader-scoped persistence carry no trader, and no trader-scoped
+/// cache loads them until they are assigned.
+#[derive(Parser, Debug, Clone)]
+pub struct AssignAccountConfig {
+    /// Account ID whose events to assign.
+    #[arg(long)]
+    pub(crate) account_id: String,
+    /// Trader ID to assign the events to.
+    #[arg(long)]
+    pub(crate) trader_id: String,
+    /// Database configuration options.
+    #[clap(flatten)]
+    pub(crate) database: DatabaseConfig,
 }
 
 #[cfg(feature = "defi")]
@@ -401,4 +420,55 @@ pub struct CatalogMigrationOpt {
     /// Destination object-store option in key=value form. Can be repeated.
     #[arg(long = "target-option", value_parser = parse_storage_option)]
     pub(crate) target_options: Vec<(String, String)>,
+}
+
+#[cfg(test)]
+mod database_tests {
+    use clap::Parser;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn assign_account_cli_parses_ids_and_connection_options() {
+        let cli = NautilusCli::try_parse_from([
+            "nautilus",
+            "database",
+            "assign-account",
+            "--account-id",
+            "HYPERLIQUID-001",
+            "--trader-id",
+            "TRADER-001",
+            "--host",
+            "localhost",
+            "--port",
+            "5433",
+        ])
+        .unwrap();
+
+        let Commands::Database(DatabaseOpt {
+            command: DatabaseCommand::AssignAccount(config),
+        }) = cli.command
+        else {
+            panic!("Expected assign-account database command");
+        };
+
+        assert_eq!(config.account_id, "HYPERLIQUID-001");
+        assert_eq!(config.trader_id, "TRADER-001");
+        assert_eq!(config.database.host.as_deref(), Some("localhost"));
+        assert_eq!(config.database.port, Some(5433));
+    }
+
+    #[rstest]
+    fn assign_account_cli_requires_account_and_trader() {
+        let result = NautilusCli::try_parse_from([
+            "nautilus",
+            "database",
+            "assign-account",
+            "--trader-id",
+            "T-1",
+        ]);
+
+        assert!(result.is_err());
+    }
 }

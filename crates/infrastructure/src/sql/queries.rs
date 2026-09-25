@@ -22,7 +22,7 @@ use nautilus_model::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
     instruments::{Instrument, InstrumentAny},
     orders::OrderAny,
     position::Position,
@@ -59,6 +59,40 @@ impl DatabaseQueries {
             .await
             .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to truncate tables: {e}"))
+    }
+
+    /// Deletes the order, position and account rows of `trader_id` via the provided `pool`.
+    ///
+    /// Shared reference data (currencies, instruments, instrument closes), market data, the
+    /// general key-value table, signals, custom data and blockchain tables are left untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any DELETE operation fails. Any error rolls back the complete flush.
+    pub async fn delete_trader(pool: &PgPool, trader_id: &TraderId) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        let statements = [
+            r#"DELETE FROM "order_position_index" WHERE trader_id = $1"#,
+            r#"DELETE FROM "order_event" WHERE trader_id = $1"#,
+            r#"DELETE FROM "order" WHERE trader_id = $1"#,
+            r#"DELETE FROM "position_event" WHERE trader_id = $1"#,
+            r#"DELETE FROM "position" WHERE trader_id = $1"#,
+            r#"DELETE FROM "account_event" WHERE trader_id = $1"#,
+        ];
+
+        for statement in statements {
+            sqlx::query(statement)
+                .bind(trader_id.to_string())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to delete rows for {trader_id}: {e}"))?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit delete for {trader_id}: {e}"))
     }
 
     /// Inserts or replaces a raw key-value entry in the `general` table via the provided `pool`.
@@ -347,9 +381,8 @@ impl DatabaseQueries {
                 $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            ON CONFLICT (id)
+            ON CONFLICT (trader_id, id)
             DO UPDATE SET
-                trader_id = $2,
                 strategy_id = $3,
                 instrument_id = $4,
                 venue_order_id = $5,
@@ -466,13 +499,17 @@ impl DatabaseQueries {
     pub async fn load_order_snapshot(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Option<OrderSnapshot>> {
-        sqlx::query_as::<_, OrderSnapshotRow>(r#"SELECT * FROM "order" WHERE client_order_id = $1"#)
-            .bind(client_order_id.to_string())
-            .fetch_optional(pool)
-            .await
-            .map(|row| row.map(|row| row.0))
-            .map_err(|e| anyhow::anyhow!("Failed to load order snapshot: {e}"))
+        sqlx::query_as::<_, OrderSnapshotRow>(
+            r#"SELECT * FROM "order" WHERE client_order_id = $1 AND trader_id = $2"#,
+        )
+        .bind(client_order_id.to_string())
+        .bind(trader_id.to_string())
+        .fetch_optional(pool)
+        .await
+        .map(|row| row.map(|row| row.0))
+        .map_err(|e| anyhow::anyhow!("Failed to load order snapshot: {e}"))
     }
 
     /// Inserts or updates a `PositionSnapshot` entry via the provided `pool`.
@@ -508,10 +545,10 @@ impl DatabaseQueries {
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            ON CONFLICT (id)
+            ON CONFLICT (trader_id, id)
             DO UPDATE
             SET
-                trader_id = $2, strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
+                strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
                 peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
                 commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_init = $25, ts_last = $26,
                 replay_state = $27, updated_at = CURRENT_TIMESTAMP
@@ -561,13 +598,17 @@ impl DatabaseQueries {
     pub async fn load_position_snapshot(
         pool: &PgPool,
         position_id: &PositionId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Option<PositionSnapshot>> {
-        sqlx::query_as::<_, PositionSnapshotRow>(r#"SELECT * FROM "position" WHERE id = $1"#)
-            .bind(position_id.to_string())
-            .fetch_optional(pool)
-            .await
-            .map(|row| row.map(|row| row.0))
-            .map_err(|e| anyhow::anyhow!("Failed to load position snapshot: {e}"))
+        sqlx::query_as::<_, PositionSnapshotRow>(
+            r#"SELECT * FROM "position" WHERE id = $1 AND trader_id = $2"#,
+        )
+        .bind(position_id.to_string())
+        .bind(trader_id.to_string())
+        .fetch_optional(pool)
+        .await
+        .map(|row| row.map(|row| row.0))
+        .map_err(|e| anyhow::anyhow!("Failed to load position snapshot: {e}"))
     }
 
     /// Checks if an `OrderInitialized` event exists for the given `client_order_id` via the provided `pool`.
@@ -578,15 +619,22 @@ impl DatabaseQueries {
     pub async fn check_if_order_initialized_exists(
         pool: &PgPool,
         client_order_id: ClientOrderId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<bool> {
-        sqlx::query(r#"
-            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE client_order_id = $1 AND kind = 'OrderInitialized')
-        "#)
-            .bind(client_order_id.to_string())
-            .fetch_one(pool)
-            .await
-            .map(|row| row.get(0))
-            .map_err(|e| anyhow::anyhow!("Failed to check if order initialized exists: {e}"))
+        sqlx::query(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM "order_event"
+                WHERE client_order_id = $1 AND trader_id = $2 AND kind = 'OrderInitialized'
+            )
+        "#,
+        )
+        .bind(client_order_id.to_string())
+        .bind(trader_id.to_string())
+        .fetch_one(pool)
+        .await
+        .map(|row| row.get(0))
+        .map_err(|e| anyhow::anyhow!("Failed to check if order initialized exists: {e}"))
     }
 
     /// Checks if any account event exists for the given `account_id` via the provided `pool`.
@@ -597,13 +645,18 @@ impl DatabaseQueries {
     pub async fn check_if_account_event_exists(
         pool: &PgPool,
         account_id: AccountId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<bool> {
         sqlx::query(
             r#"
-            SELECT EXISTS(SELECT 1 FROM "account_event" WHERE account_id = $1)
+            SELECT EXISTS(
+                SELECT 1 FROM "account_event"
+                WHERE account_id = $1 AND trader_id = $2
+            )
         "#,
         )
         .bind(account_id.to_string())
+        .bind(trader_id.to_string())
         .fetch_one(pool)
         .await
         .map(|row| row.get(0))
@@ -612,10 +665,12 @@ impl DatabaseQueries {
 
     /// Inserts or updates an order event entry via the provided `pool`.
     ///
+    /// An event already persisted for another trader is left unchanged.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if
-    /// serialization of `exec_algorithm_params` fails.
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, if serialization of
+    /// `exec_algorithm_params` fails, or if the event is already persisted for another trader.
     #[expect(
         clippy::too_many_lines,
         reason = "order event persistence maps the full database schema in one transaction"
@@ -666,7 +721,7 @@ impl DatabaseQueries {
             .transpose()
             .map_err(|e| anyhow::anyhow!("Failed to serialize order event info: {e}"))?;
 
-        sqlx::query(r#"
+        let inserted = sqlx::query(r#"
             INSERT INTO "order_event" (
                 id, kind, client_order_id, order_type, order_side, trader_id, client_id, reason, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
@@ -683,14 +738,14 @@ impl DatabaseQueries {
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, reason = $8, strategy_id = $9, instrument_id = $10, trade_id = $11, currency = $12,
+                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, client_id = $7, reason = $8, strategy_id = $9, instrument_id = $10, trade_id = $11, currency = $12,
                 quantity = $13, time_in_force = $14, liquidity_side = $15, post_only = $16, reduce_only = $17, quote_quantity = $18, reconciliation = $19, price = $20, last_px = $21,
                 last_qty = $22, trigger_price = $23, trigger_type = $24, limit_offset = $25, trailing_offset = $26, trailing_offset_type = $27, expire_time = $28, display_qty = $29,
                 emulation_trigger = $30, trigger_instrument_id = $31, contingency_type = $32, order_list_id = $33, linked_order_ids = $34, parent_order_id = $35, exec_algorithm_id = $36,
                 exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44,
                 exec_algorithm_params = $45, tags = $46, released_price = $47, protection_price = $48, due_post_only = $49, correction_id = $50,
                 is_reopened = $51, info = $52, causation_id = $53, updated_at = CURRENT_TIMESTAMP
-
+            WHERE "order_event".trader_id = $6
         "#)
             .bind(order_event.id().to_string())
             .bind(order_event.type_name())
@@ -758,8 +813,18 @@ impl DatabaseQueries {
             .bind(order_event.causation_id().map(|x| x.to_string()))
             .execute(&mut *transaction)
             .await
-            .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert into order_event table: {e}"))?;
+
+        // Event IDs are shared when two traders persist the same event, and the existing row
+        // belongs to its first writer
+        if inserted.rows_affected() == 0 {
+            anyhow::bail!(
+                "Order event {} is already persisted for another trader, not {}",
+                order_event.id(),
+                order_event.trader_id()
+            );
+        }
+
         transaction
             .commit()
             .await
@@ -774,9 +839,17 @@ impl DatabaseQueries {
     pub async fn load_order_events(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyRow>(r#"SELECT * FROM "order_event" event WHERE event.client_order_id = $1 ORDER BY created_at ASC"#)
+        sqlx::query_as::<_, OrderEventAnyRow>(
+            r#"
+            SELECT * FROM "order_event" event
+            WHERE event.client_order_id = $1 AND event.trader_id = $2
+            ORDER BY created_at ASC
+        "#,
+        )
         .bind(client_order_id.to_string())
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -791,8 +864,9 @@ impl DatabaseQueries {
     pub async fn load_order(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let order_events = Self::load_order_events(pool, client_order_id).await;
+        let order_events = Self::load_order_events(pool, client_order_id, trader_id).await;
 
         match order_events {
             Ok(order_events) => {
@@ -810,16 +884,20 @@ impl DatabaseQueries {
 
     /// Loads and assembles all `OrderAny` entries via the provided `pool`.
     ///
+    /// Only orders written by `trader_id` are loaded.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
-    pub async fn load_orders(pool: &PgPool) -> anyhow::Result<Vec<OrderAny>> {
+    pub async fn load_orders(pool: &PgPool, trader_id: &TraderId) -> anyhow::Result<Vec<OrderAny>> {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
             r#"
             SELECT DISTINCT client_order_id FROM "order_event"
+            WHERE trader_id = $1
         "#,
         )
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| {
@@ -829,7 +907,7 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
         for id in client_order_ids {
-            let order = Self::load_order(pool, &id).await?;
+            let order = Self::load_order(pool, &id, trader_id).await?;
             if let Some(order) = order {
                 orders.push(order);
             }
@@ -859,8 +937,11 @@ impl DatabaseQueries {
 
         let mut transaction = pool.begin().await?;
 
-        sqlx::query(r#"DELETE FROM "position_event" WHERE position_id = $1"#)
+        // Position IDs are only unique per trader (NETTING IDs are `{instrument_id}-{strategy_id}`),
+        // so the replaced event log is the fill trader's alone
+        sqlx::query(r#"DELETE FROM "position_event" WHERE position_id = $1 AND trader_id = $2"#)
             .bind(position_id.to_string())
+            .bind(event.trader_id.to_string())
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -911,16 +992,18 @@ impl DatabaseQueries {
     pub async fn load_position_events(
         pool: &PgPool,
         position_id: &PositionId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Vec<OrderFilled>> {
         sqlx::query_as::<_, OrderFilledRow>(
             r#"
             SELECT *
             FROM "position_event"
-            WHERE position_id = $1
+            WHERE position_id = $1 AND trader_id = $2
             ORDER BY event_sequence ASC
         "#,
         )
         .bind(position_id.to_string())
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -935,8 +1018,9 @@ impl DatabaseQueries {
     pub async fn load_position(
         pool: &PgPool,
         position_id: &PositionId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Option<Position>> {
-        if let Some(snapshot) = Self::load_position_snapshot(pool, position_id).await?
+        if let Some(snapshot) = Self::load_position_snapshot(pool, position_id, trader_id).await?
             && let Some(replay_state) = snapshot.replay_state
         {
             return serde_json::from_value(replay_state)
@@ -944,7 +1028,7 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"));
         }
 
-        let fills = Self::load_position_events(pool, position_id).await?;
+        let fills = Self::load_position_events(pool, position_id, trader_id).await?;
         let Some((first_fill, remaining_fills)) = fills.split_first() else {
             return Ok(None);
         };
@@ -972,17 +1056,24 @@ impl DatabaseQueries {
 
     /// Loads and replays all `Position` entries via the provided `pool`.
     ///
+    /// Only positions written by `trader_id` are loaded.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading position IDs or replaying any position fails.
-    pub async fn load_positions(pool: &PgPool) -> anyhow::Result<Vec<Position>> {
+    pub async fn load_positions(
+        pool: &PgPool,
+        trader_id: &TraderId,
+    ) -> anyhow::Result<Vec<Position>> {
         let position_ids: Vec<PositionId> = sqlx::query(
             r#"
             SELECT DISTINCT position_id
             FROM "position_event"
+            WHERE trader_id = $1
             ORDER BY position_id ASC
         "#,
         )
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| {
@@ -995,7 +1086,7 @@ impl DatabaseQueries {
         let mut positions = Vec::new();
 
         for id in position_ids {
-            match Self::load_position(pool, &id).await {
+            match Self::load_position(pool, &id, trader_id).await {
                 Ok(Some(position)) => positions.push(position),
                 Ok(None) => log::error!("Position not found: {id}"),
                 Err(e) => log::error!("Failed to load position {id}: {e}"),
@@ -1085,19 +1176,24 @@ impl DatabaseQueries {
         })
     }
 
-    /// Inserts or updates an `AccountState` event via the provided `pool`.
+    /// Inserts or updates an `AccountState` event for `trader_id` via the provided `pool`.
+    ///
+    /// An event already persisted for another trader, or awaiting assignment, is left unchanged.
     ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if the event is already
+    /// persisted for another trader or awaiting assignment.
     pub async fn add_account(
         pool: &PgPool,
         updated: bool,
         account_event: AccountState,
+        trader_id: &TraderId,
     ) -> anyhow::Result<()> {
         if updated {
             let exists =
-                Self::check_if_account_event_exists(pool, account_event.account_id).await?;
+                Self::check_if_account_event_exists(pool, account_event.account_id, trader_id)
+                    .await?;
 
             if !exists {
                 anyhow::bail!(
@@ -1121,6 +1217,17 @@ impl DatabaseQueries {
 
         sqlx::query(
             r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        sqlx::query(
+            r#"
             INSERT INTO "account" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
         "#,
         )
@@ -1130,17 +1237,19 @@ impl DatabaseQueries {
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into account table: {e}"))?;
 
-        sqlx::query(r#"
+        let inserted = sqlx::query(r#"
             INSERT INTO "account_event" (
-                id, kind, account_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
+                id, kind, account_id, trader_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $1, $2, $3, $10, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, account_id = $3, base_currency = $4, balances = $5, margins = $6, is_reported = $7,
+                kind = $2, account_id = $3,
+                base_currency = $4, balances = $5, margins = $6, is_reported = $7,
                 ts_event = $8, ts_init = $9, updated_at = CURRENT_TIMESTAMP
+            WHERE "account_event".trader_id = $10
         "#)
             .bind(account_event.event_id.to_string())
             .bind(account_event.account_type.to_string())
@@ -1151,10 +1260,21 @@ impl DatabaseQueries {
             .bind(account_event.is_reported)
             .bind(account_event.ts_event.to_string())
             .bind(account_event.ts_init.to_string())
+            .bind(trader_id.to_string())
             .execute(&mut *transaction)
             .await
-            .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert into account_event table: {e}"))?;
+
+        // Event IDs are shared when two traders persist the same account state, and the existing
+        // row belongs to its first writer (or awaits assignment if it has no trader)
+        if inserted.rows_affected() == 0 {
+            anyhow::bail!(
+                "Account event {} for {} is already persisted for another trader, not {trader_id}",
+                account_event.event_id,
+                account_event.account_id
+            );
+        }
+
         transaction
             .commit()
             .await
@@ -1169,11 +1289,17 @@ impl DatabaseQueries {
     pub async fn load_account_events(
         pool: &PgPool,
         account_id: &AccountId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Vec<AccountState>> {
         sqlx::query_as::<_, AccountEventRow>(
-            r#"SELECT * FROM "account_event" WHERE account_id = $1 ORDER BY created_at ASC"#,
+            r#"
+            SELECT * FROM "account_event"
+            WHERE account_id = $1 AND trader_id = $2
+            ORDER BY created_at ASC
+        "#,
         )
         .bind(account_id.to_string())
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -1188,8 +1314,9 @@ impl DatabaseQueries {
     pub async fn load_account(
         pool: &PgPool,
         account_id: &AccountId,
+        trader_id: &TraderId,
     ) -> anyhow::Result<Option<AccountAny>> {
-        let account_events = Self::load_account_events(pool, account_id).await;
+        let account_events = Self::load_account_events(pool, account_id, trader_id).await;
         match account_events {
             Ok(account_events) => {
                 if account_events.is_empty() {
@@ -1206,16 +1333,23 @@ impl DatabaseQueries {
 
     /// Loads and assembles all `AccountAny` entries via the provided `pool`.
     ///
+    /// Only accounts with events written by `trader_id` are loaded.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
-    pub async fn load_accounts(pool: &PgPool) -> anyhow::Result<Vec<AccountAny>> {
+    pub async fn load_accounts(
+        pool: &PgPool,
+        trader_id: &TraderId,
+    ) -> anyhow::Result<Vec<AccountAny>> {
         let mut accounts: Vec<AccountAny> = Vec::new();
         let account_ids: Vec<AccountId> = sqlx::query(
             r#"
             SELECT DISTINCT account_id FROM "account_event"
+            WHERE trader_id = $1
         "#,
         )
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| {
@@ -1225,12 +1359,94 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in account_ids {
-            let account = Self::load_account(pool, &id).await?;
+            let account = Self::load_account(pool, &id, trader_id).await?;
             if let Some(account) = account {
                 accounts.push(account);
             }
         }
         Ok(accounts)
+    }
+
+    /// Loads the IDs of accounts that have events with no trader via the provided `pool`.
+    ///
+    /// These events predate trader-scoped account persistence, so no trader-scoped cache loads
+    /// them until they are assigned with [`Self::assign_account_trader`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT operation fails.
+    pub async fn load_unassigned_account_ids(pool: &PgPool) -> anyhow::Result<Vec<AccountId>> {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT DISTINCT account_id FROM "account_event"
+            WHERE trader_id IS NULL AND account_id IS NOT NULL
+            ORDER BY account_id
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map(|ids| ids.iter().map(|id| AccountId::from(id.as_str())).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load unassigned account ids: {e}"))
+    }
+
+    /// Assigns the account events of `account_id` that have no trader to `trader_id` via the
+    /// provided `pool`, returning the number of events assigned.
+    ///
+    /// Events already stamped with a trader are left unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account has no events, or if any SQL operation fails.
+    pub async fn assign_account_trader(
+        pool: &PgPool,
+        account_id: &AccountId,
+        trader_id: &TraderId,
+    ) -> anyhow::Result<u64> {
+        let mut transaction = pool.begin().await?;
+
+        let has_events: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS(SELECT 1 FROM "account_event" WHERE account_id = $1)"#,
+        )
+        .bind(account_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to check account events for {account_id}: {e}"))?;
+
+        if !has_events {
+            anyhow::bail!("No account events found for {account_id}");
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        let assigned = sqlx::query(
+            r#"
+            UPDATE "account_event"
+            SET trader_id = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE account_id = $1 AND trader_id IS NULL
+        "#,
+        )
+        .bind(account_id.to_string())
+        .bind(trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to assign {account_id} to {trader_id}: {e}"))?
+        .rows_affected();
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit account assignment: {e}"))?;
+
+        Ok(assigned)
     }
 
     /// Inserts a `TradeTick` entry via the provided `pool`.
@@ -1402,11 +1618,14 @@ impl DatabaseQueries {
 
     /// Loads all distinct client order IDs from order events via the provided `pool`.
     ///
+    /// Only order events written by `trader_id` are read.
+    ///
     /// # Errors
     ///
     /// Returns an error if the SQL SELECT or iteration fails.
     pub async fn load_distinct_order_event_client_ids(
         pool: &PgPool,
+        trader_id: &TraderId,
     ) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
         let mut map: AHashMap<ClientOrderId, ClientId> = AHashMap::new();
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
@@ -1415,10 +1634,11 @@ impl DatabaseQueries {
                 client_order_id AS "client_order_id",
                 client_id AS "client_id"
             FROM "order_event"
-            WHERE client_id IS NOT NULL
+            WHERE client_id IS NOT NULL AND trader_id = $1
             ORDER BY client_order_id, created_at DESC
         "#,
         )
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
@@ -1437,6 +1657,7 @@ impl DatabaseQueries {
     /// different client, or any SQL operation fails. Any error rolls back the complete batch.
     pub async fn index_order_clients(
         pool: &PgPool,
+        trader_id: &TraderId,
         claims: &[(ClientOrderId, ClientId)],
     ) -> anyhow::Result<()> {
         if claims.is_empty() {
@@ -1451,6 +1672,7 @@ impl DatabaseQueries {
                 SELECT client_id
                 FROM "order_event"
                 WHERE client_order_id = $1
+                  AND trader_id = $3
                   AND client_id IS NOT NULL
                   AND client_id <> $2
                 LIMIT 1
@@ -1458,6 +1680,7 @@ impl DatabaseQueries {
             )
             .bind(client_order_id.to_string())
             .bind(client_id.to_string())
+            .bind(trader_id.to_string())
             .fetch_optional(&mut *transaction)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to validate order client origin: {e}"))?;
@@ -1486,11 +1709,13 @@ impl DatabaseQueries {
                 UPDATE "order_event"
                 SET client_id = $2
                 WHERE client_order_id = $1
+                  AND trader_id = $3
                   AND (client_id IS NULL OR client_id = $2)
             "#,
             )
             .bind(client_order_id.to_string())
             .bind(client_id.to_string())
+            .bind(trader_id.to_string())
             .execute(&mut *transaction)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to index order client origin: {e}"))?;
@@ -1513,37 +1738,60 @@ impl DatabaseQueries {
     /// Returns an error if the SQL INSERT or UPDATE operation fails.
     pub async fn index_order_position(
         pool: &PgPool,
+        trader_id: &TraderId,
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
         sqlx::query(
             r#"
             INSERT INTO "order_position_index" (
-                client_order_id, position_id, created_at, updated_at
+                trader_id, client_order_id, position_id, created_at, updated_at
             ) VALUES (
-                $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            ON CONFLICT (client_order_id)
+            ON CONFLICT (trader_id, client_order_id)
             DO UPDATE
             SET
-                position_id = $2, updated_at = CURRENT_TIMESTAMP
+                position_id = $3, updated_at = CURRENT_TIMESTAMP
         "#,
         )
+        .bind(trader_id.to_string())
         .bind(client_order_id.to_string())
         .bind(position_id.to_string())
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to insert into order_position_index table: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to insert into order_position_index table: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit order position index: {e}"))
     }
 
     /// Loads the order ID to position ID index via the provided `pool`.
+    ///
+    /// Only entries written by `trader_id` are loaded.
     ///
     /// # Errors
     ///
     /// Returns an error if the SQL SELECT or iteration fails.
     pub async fn load_index_order_position(
         pool: &PgPool,
+        trader_id: &TraderId,
     ) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
         let mut map: AHashMap<ClientOrderId, PositionId> = AHashMap::new();
         let result = sqlx::query_as::<_, OrderPositionIndexRow>(
@@ -1552,8 +1800,10 @@ impl DatabaseQueries {
                 client_order_id AS "client_order_id",
                 position_id AS "position_id"
             FROM "order_position_index"
+            WHERE trader_id = $1
         "#,
         )
+        .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load order position index: {e}"))?;
