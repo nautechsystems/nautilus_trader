@@ -4079,6 +4079,55 @@ mod tests {
     }
 
     #[rstest]
+    fn duplicate_orderless_reducing_fill_is_not_replayed_as_flip() {
+        // A replayed duplicate of an earlier reducing fill can exceed the remaining
+        // quantity; its trade ID is already in the open episode, so it must be the
+        // idempotent no-op rather than a flip.
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-ORDERLESS-DUPLICATE");
+        let opening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("SPREAD-LEG-DUPLICATE"))
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-DUPLICATE-1"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-DUPLICATE-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(3))
+            .position_id(position_id)
+            .build();
+        let reducing_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(opening_fill.client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-DUPLICATE-2"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-DUPLICATE-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(2))
+            .position_id(position_id)
+            .build();
+        let mut original = Position::new(&instrument, opening_fill);
+        original.apply(&reducing_fill);
+        let entry = append_order_event(1, &OrderEventAny::Filled(reducing_fill)).entry;
+        let mut cache = Cache::default();
+        cache
+            .add_instrument(instrument)
+            .expect("add replay instrument");
+        cache
+            .add_position_without_order(&original, OmsType::Hedging)
+            .expect("seed orderless position");
+
+        let applied = apply_cache_replay_entry(&mut cache, &entry)
+            .expect("duplicate reducing fill is the idempotent no-op");
+        let after = cache
+            .position_owned(&position_id)
+            .expect("position retained");
+
+        assert!(applied);
+        assert_eq!(after.side, PositionSide::Long);
+        assert_eq!(after.quantity, original.quantity);
+        assert_eq!(after.event_count(), original.event_count());
+        assert_eq!(after.trade_ids(), original.trade_ids());
+    }
+
+    #[rstest]
     fn order_fill_replay_without_instrument_counts_fill_as_ignored() {
         // The position side cannot open without the instrument; the fill must count
         // as ignored rather than claim a full apply.
