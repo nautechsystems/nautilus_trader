@@ -34,6 +34,8 @@ use super::types::FillSnapshot;
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
+const DETERMINISTIC_UUID_VERSION: u8 = 5;
+
 /// Create a synthetic `VenueOrderId` for a derived fill.
 ///
 /// The suffix is hashed from the fill fields and instrument so distinct fills never collide,
@@ -98,6 +100,16 @@ pub fn create_inferred_reconciliation_trade_id(
     append_seed_part(&mut seed, &ts_last.as_u64().to_string());
 
     TradeId::new(deterministic_uuid_from_seed("reconciliation-fill", &seed))
+}
+
+/// Checks whether `trade_id` has the format of an inferred reconciliation `TradeId`.
+///
+/// A mismatch proves [`create_inferred_reconciliation_trade_id`] did not produce the ID, so callers
+/// can skip regenerating it; a match does not prove the ID was inferred.
+#[must_use]
+pub fn is_inferred_reconciliation_trade_id_format(trade_id: &TradeId) -> bool {
+    Uuid::parse_str(trade_id.as_str())
+        .is_ok_and(|uuid| uuid.get_version_num() == usize::from(DETERMINISTIC_UUID_VERSION))
 }
 
 /// The `account_id` scopes the ID to the venue account, preventing cross-account
@@ -167,7 +179,7 @@ fn deterministic_uuid_from_seed(namespace: &str, seed: &str) -> String {
     let mut bytes = [0_u8; 16];
     bytes[..8].copy_from_slice(&primary.to_be_bytes());
     bytes[8..].copy_from_slice(&secondary.to_be_bytes());
-    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[6] = (bytes[6] & 0x0f) | (DETERMINISTIC_UUID_VERSION << 4);
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
     Uuid::from_bytes(bytes).to_string()

@@ -214,6 +214,7 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
+- Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Upgraded `cargo-codspeed` tool to v5.0.2

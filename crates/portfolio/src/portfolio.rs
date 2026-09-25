@@ -31,7 +31,7 @@ use nautilus_analysis::{
     snapshot::PortfolioStatistics,
 };
 use nautilus_common::{
-    cache::{AccountLookupError, AccountRef, Cache},
+    cache::{AccountLookupError, AccountRef, Cache, OrderRef},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
@@ -3226,11 +3226,11 @@ fn wallet_order_reserves_balance(order: &OrderAny) -> bool {
     order.is_open() || order.is_inflight()
 }
 
-fn wallet_reservation_orders(
-    cache: &Cache,
+fn wallet_reservation_orders<'a>(
+    cache: &'a Cache,
     instrument_id: &InstrumentId,
     account_id: AccountId,
-) -> Vec<OrderAny> {
+) -> Vec<OrderRef<'a>> {
     let mut client_order_ids = BTreeSet::new();
     client_order_ids.extend(cache.iter_client_order_ids_open(
         None,
@@ -3249,7 +3249,6 @@ fn wallet_reservation_orders(
         .into_iter()
         .filter_map(|client_order_id| cache.order(&client_order_id))
         .filter(|order| wallet_order_reserves_balance(order))
-        .map(|order| (*order).clone())
         .collect()
 }
 
@@ -3417,8 +3416,8 @@ fn update_order(
         }
     };
 
-    // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
-    let (instrument, orders_open, calculate_account_state, is_wallet) = {
+    // Scoped borrow: must drop before taking the account out of the cache
+    let (instrument, calculate_account_state, is_wallet) = {
         let cache_ref = cache.borrow();
 
         let account = match cache_ref.try_account(&account_id) {
@@ -3491,26 +3490,9 @@ fn update_order(
             return;
         };
 
-        let orders_open = if is_wallet {
-            wallet_reservation_orders(&cache_ref, &event.instrument_id(), account_id)
-        } else {
-            cache_ref
-                .orders_open(
-                    None,
-                    Some(&event.instrument_id()),
-                    None,
-                    Some(&account_id),
-                    None,
-                )
-                .into_iter()
-                .map(|order| (*order).clone())
-                .collect()
-        };
-
-        (instrument, orders_open, calculate_account_state, is_wallet)
+        (instrument, calculate_account_state, is_wallet)
     };
 
-    // No cache borrow held: AccountsManager borrows cache internally for xrate lookups.
     let mut working_account = match take_or_clone_account(cache, account_id) {
         Some(account) => account,
         None => {
@@ -3632,13 +3614,31 @@ fn update_order(
         working_account = restored_account;
     }
 
-    let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
-    let account_state = inner.borrow().accounts.update_orders_in_place(
-        &mut working_account,
-        &instrument,
-        &orders_open_refs,
-        clock.borrow().timestamp_ns(),
-    );
+    // AccountsManager only takes shared cache borrows, so orders stay borrowed from the cache
+    let account_state = {
+        let cache_ref = cache.borrow();
+
+        let orders_open = if is_wallet {
+            wallet_reservation_orders(&cache_ref, &event.instrument_id(), account_id)
+        } else {
+            cache_ref.orders_open(
+                None,
+                Some(&event.instrument_id()),
+                None,
+                Some(&account_id),
+                None,
+            )
+        };
+
+        let orders_open_refs: Vec<&OrderAny> = orders_open.iter().map(|order| &**order).collect();
+
+        inner.borrow().accounts.update_orders_in_place(
+            &mut working_account,
+            &instrument,
+            &orders_open_refs,
+            clock.borrow().timestamp_ns(),
+        )
+    };
 
     let is_fill = matches!(event, OrderEventAny::Filled(_));
     let suppress_margin_fill_account_state =

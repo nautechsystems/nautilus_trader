@@ -4699,8 +4699,14 @@ impl ExecutionManager {
             return false;
         }
 
-        self.get_order(fill.client_order_id)
-            .or_else(|| self.get_order_by_venue_order_id(fill.venue_order_id))
+        let cache = self.cache();
+        cache
+            .order(&fill.client_order_id)
+            .or_else(|| {
+                cache
+                    .client_order_id(&fill.venue_order_id)
+                    .and_then(|client_order_id| cache.order(client_order_id))
+            })
             .is_some_and(|order| {
                 order.account_id() == Some(fill_key.0)
                     && order.instrument_id() == fill_key.1

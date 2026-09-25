@@ -53,6 +53,7 @@ mod tests;
 
 pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
+    is_inferred_reconciliation_trade_id_format,
 };
 pub use orders::{
     create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,

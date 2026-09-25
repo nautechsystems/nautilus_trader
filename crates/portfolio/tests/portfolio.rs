@@ -49,7 +49,7 @@ use nautilus_model::{
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
-            audusd_sim, btcusd_bybit, currency_pair_btcusdt, default_fx_ccy, ethusd_bybit,
+            audusd_sim, betting, btcusd_bybit, currency_pair_btcusdt, default_fx_ccy, ethusd_bybit,
             futures_spread_es,
         },
     },
@@ -1955,6 +1955,116 @@ fn test_cash_order_updates_use_event_account_orders(
 
     let balance_locked = cash_account.balance_locked(Some(Currency::USD())).unwrap();
     assert_eq!(balance_locked.as_decimal(), dec!(1.0));
+}
+
+#[rstest]
+fn test_betting_order_updates_lock_back_liability(mut simple_cache: Cache, clock: VirtualClock) {
+    let account_id = AccountId::new("BETTING-001");
+    let gbp = Currency::GBP();
+    let instrument = InstrumentAny::Betting(betting());
+
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    let balance_total = Money::from("1000.00 GBP");
+    let balance_locked = Money::from("0.00 GBP");
+
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Betting,
+        vec![AccountBalance::new(
+            balance_total,
+            balance_locked,
+            balance_total,
+        )],
+        Vec::new(),
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(gbp),
+    );
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new("BETTING-ORDER"))
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.00"))
+        .price(Price::from("1.25"))
+        .build();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+    let accepted = order_accepted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        VenueOrderId::new("BETTING-VO"),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Accepted(accepted));
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+
+    let AccountAny::Betting(betting_account) = account else {
+        panic!("expected betting account");
+    };
+
+    // A back stake of 10.00 at 1.25 locks 10.00 * (1.25 - 1) of liability
+    assert_eq!(
+        betting_account
+            .balance_locked(Some(gbp))
+            .unwrap()
+            .as_decimal(),
+        dec!(2.50)
+    );
+    assert_eq!(
+        betting_account
+            .balance_free(Some(gbp))
+            .unwrap()
+            .as_decimal(),
+        dec!(997.50)
+    );
 }
 
 #[rstest]
