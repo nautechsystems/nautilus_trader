@@ -55,7 +55,8 @@ mod serial_tests {
             TradeId, TraderId, VenueOrderId,
         },
         instruments::{
-            Instrument, InstrumentAny, SyntheticInstrument, stubs::crypto_perpetual_ethusdt,
+            Instrument, InstrumentAny, SyntheticInstrument,
+            stubs::{binary_option, crypto_perpetual_ethusdt},
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -1955,6 +1956,75 @@ mod serial_tests {
         assert_eq!(loaded.quantity, Quantity::from("0.5"));
         assert_eq!(loaded.fill_voids.len(), 2);
         assert_eq!(loaded, position);
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_position_uses_settlement_snapshot() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.00"))
+            .client_order_id(ClientOrderId::new("O-SETTLED-SNAPSHOT"))
+            .build();
+        let position_id = PositionId::new("P-SETTLED-SNAPSHOT");
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("E-SETTLED-SNAPSHOT")),
+            Some(position_id),
+            Some(Price::from("0.400")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        let mut position = Position::new(&instrument, fill);
+
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.add_position(&position).unwrap();
+        position
+            .apply_instrument_close(InstrumentClose::new(
+                instrument.id(),
+                Price::from("1.000"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(300),
+                UnixNanos::from(301),
+            ))
+            .unwrap();
+        adapter.update_position(&position).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_position(&position_id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.is_settled())
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter.load_position(&position_id).await.unwrap().unwrap();
+
+        assert!(loaded.is_closed());
+        assert_eq!(loaded.quantity, Quantity::from("0.00"));
+        assert_eq!(loaded.realized_pnl, position.realized_pnl);
+        assert_eq!(loaded.ts_closed, Some(UnixNanos::from(300)));
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

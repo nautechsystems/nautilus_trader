@@ -685,6 +685,8 @@ pub struct DataApiPosition {
     pub size: Decimal,
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_json")]
     pub avg_price: Option<Decimal>,
+    #[serde(default)]
+    pub redeemable: bool,
 }
 
 /// A trade row from the Polymarket Data API v2 `GET /v2/trades` endpoint.
@@ -1575,10 +1577,12 @@ mod tests {
         );
         assert_eq!(positions[0].size, dec!(150.5));
         assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
+        assert!(!positions[0].redeemable);
 
         // Zero-size position
         assert_eq!(positions[1].size, dec!(0));
         assert_eq!(positions[1].avg_price, Some(dec!(0.45)));
+        assert!(!positions[1].redeemable);
 
         // Third position
         assert_eq!(
@@ -1587,10 +1591,12 @@ mod tests {
         );
         assert_eq!(positions[2].size, dec!(42));
         assert_eq!(positions[2].avg_price, Some(dec!(0.3)));
+        assert!(positions[2].redeemable);
 
         // Dust position (below DUST_POSITION_THRESHOLD)
         assert_eq!(positions[3].size, dec!(0.005));
         assert_eq!(positions[3].avg_price, Some(dec!(0.7)));
+        assert!(!positions[3].redeemable);
     }
 
     #[rstest]

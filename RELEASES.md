@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `events.order_fill_declined.{instrument_id}` topic republishing fills and voids the engine declines
+- Added live binary option position settlement from `InstrumentClose` (#4963), thanks for reporting @seungpyoson
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Kraken bounded mass-status window declaration for reconciliation lookbacks (#5043), thanks @zhaow-de
 - Added Lighter support for 64-bit market IDs at and above 4095
@@ -199,6 +200,7 @@ Released on TBD (UTC).
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
+- Fixed Polymarket reconciliation of resolved, unredeemed balances (#4963), thanks for reporting @seungpyoson
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`

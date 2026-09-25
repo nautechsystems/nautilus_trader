@@ -691,6 +691,7 @@ impl LiveNodeBuilder {
         let mut venues_explicit = AHashSet::new();
         let mut has_default_client = false;
         let mut instrument_venues = AHashSet::new();
+        let mut self_settling_venues = AHashSet::new();
 
         for (name, factory) in &self.exec_client_factories {
             if let Some(config) = self.exec_client_configs.get(name) {
@@ -735,12 +736,21 @@ impl LiveNodeBuilder {
                             exec_engine.register_venue_routing(client_id, route_venue)?;
                             venues_explicit.insert(route_venue);
                             instrument_venues.insert(route_venue);
+
+                            if client.settles_contract_expirations() {
+                                self_settling_venues.insert(route_venue);
+                            }
                         }
                     }
                 }
 
                 venue_candidates.entry(venue).or_default().push(client_id);
                 instrument_venues.insert(venue);
+
+                if client.settles_contract_expirations() {
+                    self_settling_venues.insert(venue);
+                }
+
                 exec_clients.push(client);
 
                 log::info!("Registered ExecutionClient-{client_id}");
@@ -769,6 +779,10 @@ impl LiveNodeBuilder {
 
         for venue in instrument_venues {
             ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
+
+            if !self_settling_venues.contains(&venue) {
+                ExecutionEngine::subscribe_venue_instrument_closes(&kernel.exec_engine, venue);
+            }
         }
 
         let exec_manager_config = ExecutionManagerConfig::from(&self.config.exec_engine)
@@ -879,10 +893,14 @@ mod tests {
     use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
-        enums::{AccountType, OmsType, OrderSide, OrderType},
+        data::InstrumentClose,
+        enums::{AccountType, InstrumentCloseType, OmsType, OrderSide, OrderType},
         events::{AccountState, OrderDeniedReason, OrderEventAny},
         identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
-        instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{audusd_sim, binary_option},
+        },
         orders::{Order, OrderTestBuilder},
         stubs::TestDefault,
         types::{AccountBalance, Money, Price, Quantity},
@@ -1335,6 +1353,66 @@ mod tests {
             None,
         );
         AccountAny::Cash(CashAccount::new(state, false, false))
+    }
+
+    #[rstest]
+    #[case::venue(false, true)]
+    #[case::self_settling_venue(true, false)]
+    fn test_execution_engine_settles_instrument_closes_unless_venue_settles_itself(
+        #[case] self_settling: bool,
+        #[case] expected_settled: bool,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+
+        let mut client = StubExecutionClient::new(
+            ClientId::from("CLIENT"),
+            AccountId::from("CLIENT-001"),
+            instrument.id().venue,
+            OmsType::Netting,
+            None,
+        );
+
+        if self_settling {
+            client = client.with_settles_contract_expirations();
+        }
+
+        let node = LiveNodeBuilder::new(TraderId::test_default(), Environment::Live)
+            .unwrap()
+            .add_exec_client_with_routing(
+                Some("client".to_string()),
+                Box::new(RoutingClientFactory(client)),
+                Box::new(RoutingClientConfig),
+                RoutingConfig::default(),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let close = InstrumentClose::new(
+            instrument.id(),
+            Price::from("1.000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(300),
+            UnixNanos::from(301),
+        );
+
+        msgbus::publish_any(
+            switchboard::get_instrument_close_topic(instrument.id()),
+            &close,
+        );
+
+        assert_eq!(
+            node.kernel()
+                .cache
+                .borrow()
+                .instrument_close(&instrument.id()),
+            expected_settled.then_some(&close)
+        );
     }
 
     #[derive(Debug)]

@@ -593,6 +593,10 @@ impl ExecutionClient for SandboxExecutionClient {
         self.config.oms_type
     }
 
+    fn settles_contract_expirations(&self) -> bool {
+        true
+    }
+
     fn on_instrument(&mut self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         let mut inner = self.inner.borrow_mut();

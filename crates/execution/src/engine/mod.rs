@@ -22,6 +22,7 @@
 
 pub mod config;
 pub mod position;
+pub mod settlement;
 pub mod stubs;
 
 use std::{
@@ -52,8 +53,9 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessagingSwitchboard, TypedHandler, TypedIntoHandler, get_message_bus,
+        self, MStr, MessagingSwitchboard, Pattern, TypedHandler, TypedIntoHandler, get_message_bus,
         switchboard::{self},
+        typed_handler::ShareableMessageHandler,
     },
     runner::{
         TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,
@@ -67,6 +69,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     accounts::Account,
+    data::InstrumentClose,
     enums::{
         AccountType, ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
@@ -126,6 +129,7 @@ pub struct ExecutionEngine {
     default_client_id: Option<ClientId>,
     routing_map: AHashMap<Venue, ClientId>,
     instrument_venues: AHashSet<Venue>,
+    instrument_close_venues: AHashSet<Venue>,
     oms_overrides: AHashMap<StrategyId, OmsType>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
@@ -175,6 +179,7 @@ impl ExecutionEngine {
             default_client_id: None,
             routing_map: AHashMap::new(),
             instrument_venues: AHashSet::new(),
+            instrument_close_venues: AHashSet::new(),
             oms_overrides: AHashMap::new(),
             external_clients,
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
@@ -291,6 +296,31 @@ impl ExecutionEngine {
 
         msgbus::subscribe_instruments(pattern, handler, None);
         log::info!("Subscribed to instrument updates for venue {venue}");
+    }
+
+    /// Subscribes to instrument closes for a venue via the message bus.
+    ///
+    /// A `ContractExpired` close for a binary option settles every open position in that
+    /// instrument at the close price, without an order or fill. The first close applied is
+    /// authoritative. After settlement, fills and fill voids for the instrument still update
+    /// their orders but no longer change positions. Repeated subscriptions for the same venue are
+    /// ignored.
+    pub fn subscribe_venue_instrument_closes(engine: &Rc<RefCell<Self>>, venue: Venue) {
+        if !engine.borrow_mut().instrument_close_venues.insert(venue) {
+            return;
+        }
+
+        let weak = WeakCell::from(Rc::downgrade(engine));
+        let pattern: MStr<Pattern> = format!("data.close.{venue}.*").into();
+
+        let handler = ShareableMessageHandler::from_typed(move |close: &InstrumentClose| {
+            if let Some(rc) = weak.upgrade() {
+                rc.borrow().settle_instrument_close(close);
+            }
+        });
+
+        msgbus::subscribe_instrument_close(pattern, handler, Some(10));
+        log::info!("Subscribed to instrument closes for venue {venue}");
     }
 
     #[must_use]
@@ -3143,7 +3173,11 @@ impl ExecutionEngine {
                     && original_fill
                         .as_ref()
                         .is_some_and(|fill| fill.position_id.is_some())
-                {
+                    && !self.skips_settled_position_change(
+                        "Fill void",
+                        voided.instrument_id,
+                        voided.trade_id,
+                    ) {
                     match self.prepare_order_fill_void_positions(&order_before_void, &voided) {
                         Ok(positions) => positions,
                         Err(e) => {
@@ -3566,6 +3600,11 @@ impl ExecutionEngine {
         let Some(position) = cache.position_ref(&position_id) else {
             return true;
         };
+
+        // A settled position takes no further fills, so only the order applies this one
+        if position.is_settled() {
+            return true;
+        }
 
         if position.strategy_id.is_external()
             && position.strategy_id != fill.strategy_id
@@ -4405,6 +4444,10 @@ impl ExecutionEngine {
             return Vec::new();
         };
 
+        if self.skips_settled_position_change("Fill", fill.instrument_id, fill.trade_id) {
+            return Vec::new();
+        }
+
         let action = {
             let cache = self.cache.borrow();
 
@@ -4683,6 +4726,77 @@ impl ExecutionEngine {
             let event = PositionChanged::create(&position, fill, UUID4::new(), ts_init);
             Some(PositionEvent::PositionChanged(event))
         }
+    }
+
+    fn settle_instrument_close(&self, close: &InstrumentClose) {
+        let instrument_id = close.instrument_id;
+
+        let settled =
+            match settlement::settle_instrument_close(&mut self.cache.borrow_mut(), *close) {
+                Ok(settled) => settled,
+                Err(e) => {
+                    log::error!("Cannot settle {instrument_id}: {e}");
+                    return;
+                }
+            };
+
+        let Some(close) = settlement::settlement_close(&self.cache.borrow(), &instrument_id) else {
+            return;
+        };
+
+        let mut position_events = Vec::with_capacity(settled.len());
+
+        for (position, last_qty) in settled {
+            if self.config.snapshot_positions {
+                let snapshot = self.cache.borrow().position_owned(&position.id);
+                if let Some(snapshot) = snapshot {
+                    self.create_position_state_snapshot(&snapshot, false);
+                }
+            }
+
+            log::info!(
+                "Settled position {} at {} from contract expiration, realized_pnl={:?}",
+                position.id,
+                close.close_price,
+                position.realized_pnl,
+            );
+
+            let ts_init = self.clock.borrow().timestamp_ns();
+            let event = PositionClosed::create_from_instrument_close(
+                &position,
+                &close,
+                last_qty,
+                UUID4::new(),
+                ts_init,
+            );
+            position_events.push(PositionEvent::PositionClosed(event));
+        }
+
+        self.publish_position_events(position_events);
+    }
+
+    // Only venues this engine settles count, so a close cached without that subscription,
+    // such as in a backtest, leaves fills applying to positions.
+    fn skips_settled_position_change(
+        &self,
+        kind: &str,
+        instrument_id: InstrumentId,
+        trade_id: TradeId,
+    ) -> bool {
+        if !self.instrument_close_venues.contains(&instrument_id.venue) {
+            return false;
+        }
+
+        let is_settled =
+            settlement::settlement_close(&self.cache.borrow(), &instrument_id).is_some();
+
+        if is_settled {
+            log::warn!(
+                "{kind} {trade_id} for {instrument_id} arrived after contract settlement; positions unchanged"
+            );
+        }
+
+        is_settled
     }
 
     fn will_flip_position(&self, position: &Position, fill: &OrderFilled) -> bool {

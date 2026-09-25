@@ -34,8 +34,9 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_execution::engine::settlement::{settle_instrument_close, settlement_close};
 use nautilus_model::{
-    data::{Bar, QuoteTick, TradeTick},
+    data::{Bar, InstrumentClose, QuoteTick, TradeTick},
     enums::{OmsType, OrderSide, PositionSide},
     events::{
         AccountState, OrderEventAny, OrderFillVoided, OrderFilled, OrderInitialized,
@@ -70,17 +71,17 @@ use crate::{
     backend::{EventStore, ScanDirection},
     capture::builtins::{
         PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_BARS_RESPONSE,
-        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
-        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE, PAYLOAD_TYPE_ORDER_ACCEPTED,
-        PAYLOAD_TYPE_ORDER_CANCEL_REJECTED, PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED,
-        PAYLOAD_TYPE_ORDER_EMULATED, PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILL_VOIDED,
-        PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_INITIALIZED,
-        PAYLOAD_TYPE_ORDER_MODIFY_REJECTED, PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
-        PAYLOAD_TYPE_ORDER_PENDING_UPDATE, PAYLOAD_TYPE_ORDER_REJECTED,
-        PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED, PAYLOAD_TYPE_ORDER_TRIGGERED,
-        PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED, PAYLOAD_TYPE_POSITION_CHANGED,
-        PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED, PAYLOAD_TYPE_QUOTES_RESPONSE,
-        PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_CLOSE,
+        PAYLOAD_TYPE_INSTRUMENT_RESPONSE, PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+        PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+        PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED, PAYLOAD_TYPE_ORDER_EMULATED,
+        PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILL_VOIDED, PAYLOAD_TYPE_ORDER_FILLED,
+        PAYLOAD_TYPE_ORDER_INITIALIZED, PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+        PAYLOAD_TYPE_ORDER_PENDING_CANCEL, PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+        PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
+        PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
+        PAYLOAD_TYPE_POSITION_CHANGED, PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED,
+        PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
     },
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -119,6 +120,7 @@ pub struct EventStoreReplayReport {
 pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
     PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_INSTRUMENT_CLOSE,
     PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
     PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
     PAYLOAD_TYPE_QUOTES_RESPONSE,
@@ -1263,6 +1265,10 @@ fn apply_cache_replay_entry_with_context(
             let state = decode_payload::<AccountState>(entry)?;
             apply_result(entry, cache.update_account_state(&state))?;
         }
+        PAYLOAD_TYPE_INSTRUMENT_CLOSE => {
+            let close = decode_payload::<InstrumentClose>(entry)?;
+            apply_result(entry, settle_instrument_close(cache, close))?;
+        }
         PAYLOAD_TYPE_ORDER_INITIALIZED => {
             let event = decode_order_event::<OrderInitialized>(entry, OrderEventAny::Initialized)?;
             let order = OrderAny::from_events(vec![event]).map_err(|e| apply_error(entry, e))?;
@@ -1541,6 +1547,11 @@ fn apply_fill_to_position(
         return Ok(true);
     };
 
+    // Live execution applies a fill after settlement to its order only
+    if settlement_close(cache, &fill.instrument_id).is_some() {
+        return Ok(true);
+    }
+
     if let Some(mut position) = cache.position_owned(&position_id) {
         // Mirror live `Position::apply_fill`: a duplicate inside an open episode is
         // the idempotent replay no-op; historical duplicates on a Flat position are
@@ -1617,12 +1628,13 @@ fn apply_fill_void_to_order_and_positions(
     let mut validated_order = order.clone();
     apply_result(entry, validated_order.apply(event.clone()))?;
 
-    let corrected_positions =
-        if let Some(original_fill) = original_fill.filter(|fill| fill.position_id.is_some()) {
+    // Live execution applies a void after settlement to its order only
+    let corrected_positions = match original_fill.filter(|fill| fill.position_id.is_some()) {
+        Some(original_fill) if settlement_close(cache, &fill_voided.instrument_id).is_none() => {
             prepare_fill_void_positions(cache, entry, fill_voided, original_fill.event_id)?
-        } else {
-            Vec::new()
-        };
+        }
+        _ => Vec::new(),
+    };
 
     apply_result(entry, cache.update_order(&event))?;
     for position in corrected_positions {
@@ -2007,10 +2019,13 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         accounts::AccountAny,
-        data::{Bar, BarSpecification, BarType, FundingRateUpdate, QuoteTick, TradeTick},
+        data::{
+            Bar, BarSpecification, BarType, FundingRateUpdate, InstrumentClose, QuoteTick,
+            TradeTick,
+        },
         enums::{
-            AggregationSource, AggressorSide, BarAggregation, OrderSide, OrderStatus,
-            PositionAdjustmentType, PositionSide, PriceType,
+            AggregationSource, AggressorSide, BarAggregation, InstrumentCloseType, OrderSide,
+            OrderStatus, PositionAdjustmentType, PositionSide, PriceType,
         },
         events::{
             PositionEvent,
@@ -2024,7 +2039,10 @@ mod tests {
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
             VenueOrderId,
         },
-        instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{audusd_sim, binary_option},
+        },
         orders::{Order, OrderList},
         types::{Currency, Money, Price, Quantity},
     };
@@ -2038,7 +2056,8 @@ mod tests {
         backend::{AppendEntry, MemoryBackend, RedbBackend},
         capture::{
             builtins::{
-                DEFAULT_CAPTURE_PAYLOAD_TYPES, encode_order_event_any, encode_position_event,
+                DEFAULT_CAPTURE_PAYLOAD_TYPES, encode_instrument_close, encode_order_event_any,
+                encode_position_event,
             },
             encode_account_state,
         },
@@ -2646,6 +2665,11 @@ mod tests {
             "update_position_from_fill",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
+            "update_position_from_instrument_close",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_INSTRUMENT_CLOSE],
         ),
         cache_mutation(
             "snapshot_position",
@@ -4215,6 +4239,130 @@ mod tests {
         assert_eq!(position.commissions(), vec![Money::from("0.60 USD")]);
         assert_eq!(position.fill_voids.len(), 1);
         assert_eq!(position.fill_voids[0].event, fill_voided);
+    }
+
+    fn binary_order_events(
+        instrument: &InstrumentAny,
+        order_id: &str,
+        quantity: &str,
+        price: &str,
+    ) -> [OrderEventAny; 4] {
+        let position_id = PositionId::from("P-SETTLED");
+        let initialized = OrderInitializedSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(order_id))
+            .quantity(Quantity::from(quantity))
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(initialized.client_order_id)
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(initialized.client_order_id)
+            .venue_order_id(VenueOrderId::from(format!("V-{order_id}").as_str()))
+            .account_id(submitted.account_id)
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(initialized.client_order_id)
+            .venue_order_id(accepted.venue_order_id)
+            .account_id(submitted.account_id)
+            .trade_id(TradeId::from(format!("T-{order_id}").as_str()))
+            .last_qty(Quantity::from(quantity))
+            .last_px(Price::from(price))
+            .currency(Currency::USDC())
+            .position_id(position_id)
+            .build();
+
+        [
+            OrderEventAny::Initialized(initialized),
+            OrderEventAny::Submitted(submitted),
+            OrderEventAny::Accepted(accepted),
+            OrderEventAny::Filled(filled),
+        ]
+    }
+
+    #[rstest]
+    fn instrument_close_replay_settles_position_and_keeps_later_changes_off_it() {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+        let opening = binary_order_events(&instrument, "O-OPEN", "10.00", "0.400");
+        let late = binary_order_events(&instrument, "O-LATE", "5.00", "0.500");
+
+        let OrderEventAny::Filled(opening_fill) = &opening[3] else {
+            unreachable!();
+        };
+
+        let close = InstrumentClose::new(
+            instrument.id(),
+            Price::from("1.000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(300),
+            UnixNanos::from(301),
+        );
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trader_id(opening_fill.trader_id)
+            .strategy_id(opening_fill.strategy_id)
+            .instrument_id(opening_fill.instrument_id)
+            .client_order_id(opening_fill.client_order_id)
+            .venue_order_id(opening_fill.venue_order_id)
+            .account_id(opening_fill.account_id)
+            .trade_id(opening_fill.trade_id)
+            .voided_qty(Quantity::from("4.00"))
+            .order_side(opening_fill.order_side)
+            .order_type(opening_fill.order_type)
+            .last_px(opening_fill.last_px)
+            .currency(opening_fill.currency)
+            .liquidity_side(opening_fill.liquidity_side)
+            .position_id(PositionId::from("P-SETTLED"))
+            .build();
+        let encoded_close = encode_instrument_close(&close).expect("encode instrument close");
+        let mut entries: Vec<AppendEntry> = opening
+            .iter()
+            .enumerate()
+            .map(|(index, event)| append_order_event(index as u64 + 1, event))
+            .collect();
+        entries.push(append_payload(
+            5,
+            PAYLOAD_TYPE_INSTRUMENT_CLOSE,
+            encoded_close.payload,
+        ));
+        entries.extend(
+            late.iter()
+                .enumerate()
+                .map(|(index, event)| append_order_event(index as u64 + 6, event)),
+        );
+        entries.push(append_order_event(
+            10,
+            &OrderEventAny::FillVoided(fill_voided),
+        ));
+        let reader = reader_with_entries("run-settlement-replay", &entries);
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+        let position = cache
+            .position_owned(&PositionId::from("P-SETTLED"))
+            .expect("position replayed");
+        let late_order = cache
+            .order_owned(&ClientOrderId::from("O-LATE"))
+            .expect("late order replayed");
+        let opening_order = cache
+            .order_owned(&ClientOrderId::from("O-OPEN"))
+            .expect("opening order replayed");
+
+        assert_eq!(report.applied_entries, 10);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(position.is_settled());
+        assert!(position.is_closed());
+        assert_eq!(position.quantity, Quantity::from("0.00"));
+        assert_eq!(position.buy_qty, Quantity::from("10.00"));
+        assert_eq!(position.realized_pnl, Some(Money::from("6.00 USDC")));
+        assert!(position.fill_voids.is_empty());
+        assert_eq!(late_order.status(), OrderStatus::Filled);
+        assert_eq!(late_order.filled_qty(), Quantity::from("5.00"));
+        assert_eq!(opening_order.voided_qty(), Quantity::from("4.00"));
+        assert_eq!(cache.instrument_close(&close.instrument_id), Some(&close));
     }
 
     #[rstest]

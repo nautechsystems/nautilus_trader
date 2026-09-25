@@ -959,7 +959,7 @@ the report gate, and leaves the order `Submitted`.
 
 | Feature              | Binary Options | Notes                                                                       |
 | -------------------- | -------------- | --------------------------------------------------------------------------- |
-| Query positions      | ✓              | Current user positions from the Polymarket Data API.                        |
+| Query positions      | ✓              | Data API user positions, excluding resolved balances.                       |
 | Split, merge, redeem | ✓              | Deposit Wallet operations; see [Position operations](#position-operations). |
 | Position mode        | -              | Binary outcome positions only.                                              |
 | Leverage control     | -              | No leverage available.                                                      |
@@ -1316,6 +1316,17 @@ is as follows:
 - Compare these reports with Nautilus execution state.
 - Generate missing orders to bring Nautilus execution state in line with positions reported by
   Polymarket.
+
+Position reports omit resolved balances:
+
+- A balance in an instrument that Nautilus settled from an `InstrumentClose` is always omitted, so
+  reconciliation cannot reopen settled exposure.
+- A balance that the Data API marks `redeemable` is omitted when the account has no open Nautilus
+  position in that instrument. While an open position still holds it, the balance stays reported
+  until settlement closes the position, so reconciliation does not infer a flat position first.
+
+The adapter drops these balances before instrument mapping, so an expired instrument that is no
+longer loaded does not fail reconciliation. The outcome tokens stay in the wallet until redeemed.
 
 An individual order lookup can return a live or terminal status. When it instead returns no order,
 the adapter recovers a cached individual order from trade history if its terminal WebSocket update
@@ -1813,9 +1824,14 @@ do not receive a fresh polling window, and missing expiration does not cause ind
 When the client applies a resolution, position-owned legs emit one `InstrumentStatus` close and one
 `InstrumentClose`. Data-only legs emit whichever event types have active subscriptions. The winner
 leg closes at `1`, and the losing leg closes at `0`. The close type is
-`InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
-tokens or claim funds on-chain. Deposit Wallet users can redeem winning tokens with
-[Position operations](#position-operations).
+`InstrumentCloseType.CONTRACT_EXPIRED`. In a live node, the execution engine settles each open
+position in the leg at that price and emits one `PositionClosed` without an order or fill; the
+first close applied is authoritative (see
+[Settlement at contract expiration](../concepts/positions.md#settlement-at-contract-expiration)).
+
+Settlement does not redeem tokens or claim funds on-chain. The pUSD balance includes the payout
+only after redemption, so account balances exclude unredeemed winnings until then. Deposit Wallet
+users can redeem winning tokens with [Position operations](#position-operations).
 
 #### Closure and subscription release
 

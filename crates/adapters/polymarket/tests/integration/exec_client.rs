@@ -41,9 +41,10 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
+    data::InstrumentClose,
     enums::{
-        AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        TimeInForce, TriggerType,
+        AccountType, AssetClass, InstrumentCloseType, LiquiditySide, OmsType, OrderSide,
+        OrderStatus, OrderType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
@@ -1846,6 +1847,113 @@ async fn test_generate_position_status_reports_drops_unmapped_dust_before_mappin
         })
         .await
         .expect("zero and dust positions are discarded before instrument mapping");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[case::redeemable(true, false)]
+#[case::settled(false, true)]
+#[tokio::test]
+async fn test_generate_mass_status_omits_unloaded_resolved_position(
+    #[case] redeemable: bool,
+    #[case] settled: bool,
+) {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let condition_id = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let token_id = "99999999999999999999999999999999999999999999999999999999999999999";
+    *state.positions_response_override.lock().await = Some(json!([{
+        "token_id": token_id,
+        "condition_id": condition_id,
+        "current_size": "5.952300",
+        "avg_price": "0.4200",
+        "redeemable": redeemable,
+    }]));
+    let addr = start_mock_server(state).await;
+    let (client, _rx, cache) = create_test_execution_client(addr);
+
+    if settled {
+        let instrument_id =
+            InstrumentId::from(format!("{condition_id}-{token_id}.POLYMARKET").as_str());
+        cache
+            .borrow_mut()
+            .add_instrument_close(InstrumentClose::new(
+                instrument_id,
+                Price::from("1.0000"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            ))
+            .unwrap();
+    }
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("a resolved balance is omitted before instrument mapping")
+        .expect("mass status available");
+
+    assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+#[case::redeemable(true, false)]
+#[case::settled(false, true)]
+#[tokio::test]
+async fn test_generate_position_status_reports_omit_unloaded_resolved_position(
+    #[case] redeemable: bool,
+    #[case] settled: bool,
+) {
+    let state = TestServerState::default();
+    let condition_id = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let token_id = "99999999999999999999999999999999999999999999999999999999999999999";
+    *state.positions_response_override.lock().await = Some(json!([{
+        "token_id": token_id,
+        "condition_id": condition_id,
+        "current_size": "5.952300",
+        "avg_price": "0.4200",
+        "redeemable": redeemable,
+    }]));
+    let addr = start_mock_server(state).await;
+    let (client, _rx, cache) = create_test_execution_client(addr);
+
+    if settled {
+        let instrument_id =
+            InstrumentId::from(format!("{condition_id}-{token_id}.POLYMARKET").as_str());
+        cache
+            .borrow_mut()
+            .add_instrument_close(InstrumentClose::new(
+                instrument_id,
+                Price::from("1.0000"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            ))
+            .unwrap();
+    }
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("a resolved balance is omitted before instrument mapping");
 
     assert!(reports.is_empty());
 }

@@ -2037,6 +2037,7 @@ fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Ve
     assert!(!execution_client.is_connected());
     assert_eq!(execution_client.venue(), venue);
     assert_eq!(execution_client.oms_type(), OmsType::Netting);
+    assert!(execution_client.settles_contract_expirations());
     assert_eq!(execution_client.matching_engine_count(), 0);
 }
 

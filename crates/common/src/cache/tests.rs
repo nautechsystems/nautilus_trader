@@ -10249,6 +10249,41 @@ fn test_update_position_commits_canonical_state_when_database_update_fails() {
 }
 
 #[rstest]
+fn test_update_position_from_instrument_close_returns_position_when_database_update_fails() {
+    let database = SnapshotBlobTestDatabase::fail_update_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache.add_instrument(instrument.clone()).unwrap();
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .trade_id(TradeId::new("T-SETTLE"))
+        .last_qty(Quantity::from("10.00"))
+        .last_px(Price::from("0.400"))
+        .currency(Currency::USDC())
+        .position_id(PositionId::new("P-SETTLE"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+
+    let settled = cache
+        .update_position_from_instrument_close(position.id, close)
+        .unwrap();
+
+    assert_eq!(settled.id, position.id);
+    assert_eq!(settled.realized_pnl, Some(Money::from("6.00 USDC")));
+    assert!(cache.position(&position.id).unwrap().is_settled());
+    assert!(cache.is_position_closed(&position.id));
+}
+
+#[rstest]
 fn test_update_position_from_fill_commits_canonical_state_when_database_update_fails() {
     let database = SnapshotBlobTestDatabase::fail_update_position();
     let mut cache = Cache::new(None, Some(Box::new(database)));

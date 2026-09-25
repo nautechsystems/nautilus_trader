@@ -59,10 +59,10 @@ use nautilus_execution::engine::{
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
-    data::QuoteTick,
+    data::{InstrumentClose, QuoteTick},
     enums::{
-        AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
-        OrderType, PositionSide, TimeInForce, TriggerType,
+        AccountType, AssetClass, ContingencyType, InstrumentCloseType, LiquiditySide, OmsType,
+        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEventAny, OrderExpired,
@@ -80,7 +80,7 @@ use nautilus_model::{
     },
     instruments::{
         CurrencyPair, FuturesContract, Instrument, InstrumentAny,
-        stubs::{audusd_sim, gbpusd_sim},
+        stubs::{audusd_sim, binary_option, gbpusd_sim},
     },
     orders::{
         Order, OrderAny, OrderList,
@@ -537,6 +537,699 @@ fn test_same_venue_clients_receive_instruments_once(
     };
 
     assert_eq!(*clients[2].received_instruments().borrow(), expected_other);
+}
+
+fn binary_settlement_engine(subscribe: bool) -> (Rc<RefCell<ExecutionEngine>>, InstrumentAny) {
+    binary_settlement_engine_from(subscribe, None, Cache::default())
+}
+
+fn binary_settlement_engine_from(
+    subscribe: bool,
+    config: Option<ExecutionEngineConfig>,
+    cache: Cache,
+) -> (Rc<RefCell<ExecutionEngine>>, InstrumentAny) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(cache));
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+    let engine = Rc::new(RefCell::new(ExecutionEngine::new(clock, cache, config)));
+
+    if subscribe {
+        ExecutionEngine::subscribe_venue_instrument_closes(&engine, instrument.id().venue);
+    }
+
+    (engine, instrument)
+}
+
+#[expect(clippy::too_many_arguments)]
+fn fill_binary_order(
+    engine: &Rc<RefCell<ExecutionEngine>>,
+    instrument: &InstrumentAny,
+    strategy_id: &str,
+    order_id: &str,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+    ts_event: u64,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(StrategyId::from(strategy_id))
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(order_id))
+        .side(side)
+        .quantity(Quantity::from(quantity))
+        .build();
+    let venue_order_id = VenueOrderId::from(format!("V-{order_id}").as_str());
+    engine
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let mut fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        venue_order_id,
+        AccountId::test_default(),
+        TradeId::from(format!("T-{order_id}").as_str()),
+        side,
+        OrderType::Market,
+        Quantity::from(quantity),
+        Price::from(price),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        Some(Money::from_decimal(dec!(0.10), instrument.quote_currency()).unwrap()),
+    );
+    fill.ts_event = UnixNanos::from(ts_event);
+
+    let mut engine = engine.borrow_mut();
+    engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        venue_order_id,
+    ));
+    engine.process(&OrderEventAny::Filled(fill));
+
+    order
+}
+
+fn publish_contract_expired(instrument: &InstrumentAny, close_price: &str) -> InstrumentClose {
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from(close_price),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+    msgbus::publish_any(
+        switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+    close
+}
+
+fn capture_position_events() -> (Rc<RefCell<Vec<PositionEvent>>>, TypedHandler<PositionEvent>) {
+    let received = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+
+    let handler = TypedHandler::from({
+        let received = received.clone();
+        move |event: &PositionEvent| received.borrow_mut().push(event.clone())
+    });
+
+    msgbus::subscribe_position_events("events.position.*".into(), handler.clone(), None);
+    (received, handler)
+}
+
+fn netting_position(
+    engine: &Rc<RefCell<ExecutionEngine>>,
+    instrument: &InstrumentAny,
+    strategy_id: &str,
+) -> Option<Position> {
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+    cache
+        .positions(
+            None,
+            Some(&instrument.id()),
+            Some(&StrategyId::from(strategy_id)),
+            None,
+            None,
+        )
+        .first()
+        .map(|position| position.cloned())
+}
+
+#[rstest]
+#[case::winner("1.000", dec!(5.90), dec!(1.50))]
+#[case::loser("0.000", dec!(-4.10), dec!(-2.50))]
+fn test_instrument_close_settles_open_binary_positions(
+    #[case] close_price: &str,
+    #[case] expected_pnl_first: Decimal,
+    #[case] expected_pnl_second: Decimal,
+) {
+    let (engine, instrument) = binary_settlement_engine(true);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-002",
+        "O-002",
+        OrderSide::Buy,
+        "4.00",
+        "0.600",
+        200,
+    );
+    let (received, handler) = capture_position_events();
+
+    let close = publish_contract_expired(&instrument, close_price);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let first = netting_position(&engine, &instrument, "S-001").unwrap();
+    let second = netting_position(&engine, &instrument, "S-002").unwrap();
+
+    let mut closed_events: Vec<_> = received
+        .borrow()
+        .iter()
+        .map(|event| match event {
+            PositionEvent::PositionClosed(closed) => closed.clone(),
+            other => panic!("expected position closed event, was {other:?}"),
+        })
+        .collect();
+
+    closed_events.sort_by_key(|closed| closed.strategy_id);
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+
+    assert_eq!(closed_events.len(), 2);
+
+    for (closed, position, last_qty, avg_px_open, duration) in [
+        (&closed_events[0], &first, "10.00", 0.4, 200),
+        (&closed_events[1], &second, "4.00", 0.6, 100),
+    ] {
+        assert_eq!(closed.trader_id, position.trader_id);
+        assert_eq!(closed.strategy_id, position.strategy_id);
+        assert_eq!(closed.instrument_id, instrument.id());
+        assert_eq!(closed.position_id, position.id);
+        assert_eq!(closed.account_id, AccountId::test_default());
+        assert_eq!(closed.opening_order_id, position.opening_order_id);
+        assert_eq!(closed.closing_order_id, None);
+        assert_eq!(closed.entry, OrderSide::Buy);
+        assert_eq!(closed.side, PositionSide::Flat);
+        assert_eq!(closed.signed_qty, 0.0);
+        assert_eq!(closed.quantity, Quantity::from("0.00"));
+        assert_eq!(closed.peak_quantity, Quantity::from(last_qty));
+        assert_eq!(closed.last_qty, Quantity::from(last_qty));
+        assert_eq!(closed.last_px, close.close_price);
+        assert_eq!(closed.currency, Currency::USDC());
+        assert_eq!(closed.avg_px_open, avg_px_open);
+        assert_eq!(closed.avg_px_close, Some(close.close_price.as_f64()));
+        assert_eq!(closed.realized_return, position.realized_return);
+        assert_eq!(closed.realized_pnl, position.realized_pnl);
+        assert_eq!(closed.duration, DurationNanos::new(duration));
+        assert_eq!(closed.unrealized_pnl, Money::from("0 USDC"));
+        assert_eq!(closed.ts_opened, position.ts_opened);
+        assert_eq!(closed.ts_closed, Some(close.ts_event));
+        assert_eq!(closed.ts_event, close.ts_event);
+        assert!(position.is_closed());
+        assert!(position.is_settled());
+        assert!(cache.is_position_closed(&position.id));
+    }
+
+    assert_eq!(first.realized_pnl.unwrap().as_decimal(), expected_pnl_first);
+    assert_eq!(
+        second.realized_pnl.unwrap().as_decimal(),
+        expected_pnl_second
+    );
+    assert_eq!(cache.instrument_close(&instrument.id()), Some(&close));
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 2);
+}
+
+#[rstest]
+fn test_instrument_close_repeats_keep_first_settlement() {
+    let (engine, instrument) = binary_settlement_engine(true);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    let first_close = publish_contract_expired(&instrument, "1.000");
+    let settled = netting_position(&engine, &instrument, "S-001").unwrap();
+    let (received, handler) = capture_position_events();
+
+    publish_contract_expired(&instrument, "1.000");
+    publish_contract_expired(&instrument, "0.000");
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+
+    assert!(received.borrow().is_empty());
+    assert_eq!(cache.instrument_close(&instrument.id()), Some(&first_close));
+    assert!(position.is_settled());
+    assert_eq!(position.realized_pnl, settled.realized_pnl);
+    assert_eq!(position.realized_pnl, Some(Money::from("5.90 USDC")));
+    assert_eq!(position.ts_closed, settled.ts_closed);
+}
+
+#[rstest]
+fn test_instrument_close_settles_open_position_at_cached_close() {
+    let (engine, instrument) = binary_settlement_engine(true);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+
+    let first_close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(250),
+        UnixNanos::from(251),
+    );
+    engine
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_instrument_close(first_close)
+        .unwrap();
+    let (received, handler) = capture_position_events();
+
+    publish_contract_expired(&instrument, "0.000");
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let received = received.borrow();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+
+    assert_eq!(received.len(), 1);
+
+    let PositionEvent::PositionClosed(closed) = &received[0] else {
+        panic!("expected position closed event, was {:?}", received[0]);
+    };
+
+    assert_eq!(closed.last_px, first_close.close_price);
+    assert_eq!(closed.ts_event, first_close.ts_event);
+    assert!(position.is_settled());
+    assert_eq!(position.realized_pnl, Some(Money::from("5.90 USDC")));
+    assert_eq!(position.ts_closed, Some(first_close.ts_event));
+    assert_eq!(cache.instrument_close(&instrument.id()), Some(&first_close));
+}
+
+#[rstest]
+fn test_instrument_close_publishes_settled_position_snapshot() {
+    let config = ExecutionEngineConfig {
+        snapshot_positions: true,
+        ..Default::default()
+    };
+
+    let (database, control) = FailNthAddOrderDatabase::create();
+    let (engine, instrument) = binary_settlement_engine_from(
+        true,
+        Some(config),
+        Cache::new(None, Some(Box::new(database))),
+    );
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    let position_id = netting_position(&engine, &instrument, "S-001").unwrap().id;
+    let pattern: msgbus::MStr<msgbus::Pattern> =
+        switchboard::get_snapshot_position_topic(position_id)
+            .as_ref()
+            .into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    publish_contract_expired(&instrument, "1.000");
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let snapshots = saver.get_messages();
+    let persisted = control.position_snapshots();
+
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].position.id, position_id);
+    assert!(snapshots[0].position.is_settled());
+    assert_eq!(
+        snapshots[0].position.realized_pnl,
+        Some(Money::from("5.90 USDC"))
+    );
+    assert_eq!(
+        persisted.last().map(|snapshot| snapshot.position_id),
+        Some(position_id)
+    );
+    assert_eq!(
+        persisted.last().and_then(|snapshot| snapshot.realized_pnl),
+        Some(Money::from("5.90 USDC"))
+    );
+}
+
+#[rstest]
+#[case::settled_position("S-001")]
+#[case::no_position("S-002")]
+fn test_fill_after_settlement_updates_order_without_position_change(#[case] strategy_id: &str) {
+    let (engine, instrument) = binary_settlement_engine(true);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    publish_contract_expired(&instrument, "1.000");
+    let settled = netting_position(&engine, &instrument, "S-001").unwrap();
+    let (received, handler) = capture_position_events();
+
+    let late_order = fill_binary_order(
+        &engine,
+        &instrument,
+        strategy_id,
+        "O-LATE",
+        OrderSide::Buy,
+        "5.00",
+        "0.500",
+        250,
+    );
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let late_position = netting_position(&engine, &instrument, "S-002");
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+    let late_order = cache.order(&late_order.client_order_id()).unwrap();
+
+    assert!(received.borrow().is_empty());
+    assert_eq!(late_order.status(), OrderStatus::Filled);
+    assert_eq!(late_order.filled_qty(), Quantity::from("5.00"));
+    assert!(position.is_settled());
+    assert_eq!(position.quantity, Quantity::from("0.00"));
+    assert_eq!(position.buy_qty, Quantity::from("10.00"));
+    assert_eq!(position.realized_pnl, settled.realized_pnl);
+    assert_eq!(position.ts_closed, settled.ts_closed);
+    assert!(late_position.is_none());
+    assert_eq!(cache.positions(None, None, None, None, None).len(), 1);
+}
+
+#[rstest]
+fn test_reduce_only_fill_after_external_position_settlement_updates_order() {
+    let (engine, instrument) = binary_settlement_engine(true);
+    let account_id = AccountId::test_default();
+    engine
+        .borrow_mut()
+        .register_client(Box::new(StubExecutionClient::new(
+            ClientId::from("STUB"),
+            account_id,
+            instrument.id().venue,
+            OmsType::Netting,
+            None,
+        )))
+        .unwrap();
+    fill_binary_order(
+        &engine,
+        &instrument,
+        StrategyId::external().as_str(),
+        "O-EXTERNAL",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    let reduce_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-REDUCE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("6.00"))
+        .reduce_only(true)
+        .build();
+    engine
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reduce_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+
+    let reduce_fill = |trade_id: &str, quantity: &str| {
+        OrderEventAny::Filled(build_order_filled(
+            reduce_order.trader_id(),
+            reduce_order.strategy_id(),
+            instrument.id(),
+            reduce_order.client_order_id(),
+            VenueOrderId::from("V-O-REDUCE"),
+            account_id,
+            TradeId::from(trade_id),
+            OrderSide::Sell,
+            OrderType::Market,
+            Quantity::from(quantity),
+            Price::from("0.500"),
+            Currency::USDC(),
+            LiquiditySide::Taker,
+            None,
+            None,
+        ))
+    };
+
+    {
+        let mut engine = engine.borrow_mut();
+        engine.process(&TestOrderEventStubs::submitted(&reduce_order, account_id));
+        engine.process(&TestOrderEventStubs::accepted(
+            &reduce_order,
+            account_id,
+            VenueOrderId::from("V-O-REDUCE"),
+        ));
+        engine.process(&reduce_fill("T-REDUCE-1", "2.00"));
+    }
+
+    let external = netting_position(&engine, &instrument, StrategyId::external().as_str()).unwrap();
+    let pre_settlement_qty = external.quantity;
+    publish_contract_expired(&instrument, "1.000");
+    let settled = netting_position(&engine, &instrument, StrategyId::external().as_str()).unwrap();
+    let (received, handler) = capture_position_events();
+
+    engine
+        .borrow_mut()
+        .process(&reduce_fill("T-REDUCE-2", "4.00"));
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, StrategyId::external().as_str()).unwrap();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+    let order = cache.order(&reduce_order.client_order_id()).unwrap();
+
+    assert_eq!(pre_settlement_qty, Quantity::from("8.00"));
+    assert!(received.borrow().is_empty());
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("6.00"));
+    assert!(position.is_settled());
+    assert_eq!(position.quantity, Quantity::from("0.00"));
+    assert_eq!(position.realized_pnl, settled.realized_pnl);
+}
+
+#[rstest]
+fn test_fill_void_after_settlement_updates_order_without_position_change() {
+    let (engine, instrument) = binary_settlement_engine(true);
+    let order = fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    publish_contract_expired(&instrument, "1.000");
+    let settled = netting_position(&engine, &instrument, "S-001").unwrap();
+    let (received, handler) = capture_position_events();
+
+    let voided = OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-O-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(TradeId::from("T-O-001"))
+            .voided_qty(Quantity::from("4.00"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .last_px(Price::from("0.400"))
+            .currency(Currency::USDC())
+            .liquidity_side(LiquiditySide::Taker)
+            .build(),
+    );
+    engine.borrow_mut().process(&voided);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+    let order = cache.order(&order.client_order_id()).unwrap();
+
+    assert!(received.borrow().is_empty());
+    assert_eq!(order.status(), OrderStatus::Voided);
+    assert_eq!(order.voided_qty(), Quantity::from("4.00"));
+    assert_eq!(order.filled_qty(), Quantity::from("6.00"));
+    assert!(position.is_settled());
+    assert!(position.fill_voids.is_empty());
+    assert_eq!(position.buy_qty, Quantity::from("10.00"));
+    assert_eq!(position.realized_pnl, settled.realized_pnl);
+}
+
+#[rstest]
+#[case::end_of_session(InstrumentCloseType::EndOfSession, true)]
+#[case::unsubscribed(InstrumentCloseType::ContractExpired, false)]
+fn test_instrument_close_outside_settlement_scope_leaves_position_open(
+    #[case] close_type: InstrumentCloseType,
+    #[case] subscribe: bool,
+) {
+    let (engine, instrument) = binary_settlement_engine(subscribe);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    let (received, handler) = capture_position_events();
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        close_type,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+    msgbus::publish_any(
+        switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+
+    assert!(received.borrow().is_empty());
+    assert!(position.is_open());
+    assert!(!position.is_settled());
+    assert_eq!(position.quantity, Quantity::from("10.00"));
+    assert_eq!(cache.instrument_close(&instrument.id()), None);
+}
+
+#[rstest]
+fn test_instrument_close_ignores_non_binary_instrument() {
+    let (engine, _) = binary_settlement_engine(false);
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    engine
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    ExecutionEngine::subscribe_venue_instrument_closes(&engine, instrument.id().venue);
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "100000",
+        "1.00000",
+        100,
+    );
+    let (received, handler) = capture_position_events();
+
+    publish_contract_expired(&instrument, "1.00000");
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+    let engine = engine.borrow();
+    let cache = engine.cache().borrow();
+
+    assert!(received.borrow().is_empty());
+    assert!(position.is_open());
+    assert_eq!(position.quantity, Quantity::from("100000"));
+    assert_eq!(cache.instrument_close(&instrument.id()), None);
+}
+
+#[rstest]
+fn test_cached_close_without_settlement_subscription_leaves_fills_applied() {
+    let (engine, instrument) = binary_settlement_engine(false);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+    engine
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_instrument_close(close)
+        .unwrap();
+    let (received, handler) = capture_position_events();
+
+    fill_binary_order(
+        &engine,
+        &instrument,
+        "S-001",
+        "O-001",
+        OrderSide::Buy,
+        "10.00",
+        "0.400",
+        100,
+    );
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+
+    let position = netting_position(&engine, &instrument, "S-001").unwrap();
+
+    assert_eq!(received.borrow().len(), 1);
+    assert!(matches!(
+        received.borrow()[0],
+        PositionEvent::PositionOpened(_)
+    ));
+    assert!(position.is_open());
+    assert_eq!(position.quantity, Quantity::from("10.00"));
 }
 
 #[rstest]

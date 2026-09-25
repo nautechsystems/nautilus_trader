@@ -1403,10 +1403,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        let query = if position.fill_voids.is_empty() {
-            DatabaseQuery::UpdatePosition(position_last_event(position)?)
-        } else {
+        let query = if position.requires_replay_state() {
             DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
+        } else {
+            DatabaseQuery::UpdatePosition(position_last_event(position)?)
         };
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_position to database message handler: {e}")
@@ -1424,10 +1424,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         ts_snapshot: UnixNanos,
         unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
-        let mut snapshot = if position.fill_voids.is_empty() {
-            PositionSnapshot::from(position, unrealized_pnl)
-        } else {
+        let mut snapshot = if position.requires_replay_state() {
             PositionSnapshot::from_replay_state(position, unrealized_pnl)
+        } else {
+            PositionSnapshot::from(position, unrealized_pnl)
         };
         snapshot.ts_init = ts_snapshot;
         self.add_position_snapshot(&snapshot)

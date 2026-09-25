@@ -3525,6 +3525,43 @@ impl Cache {
         Ok(position)
     }
 
+    /// Updates a cached position by applying an authoritative instrument close in place.
+    ///
+    /// Returns a transient copy of the settled state without stored history. The canonical cached
+    /// position retains its complete history, including the close. A failed database update is
+    /// logged rather than returned, because the cached position has already settled and callers
+    /// still need its settled state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache or the close cannot be
+    /// applied. An error leaves the position unchanged.
+    pub fn update_position_from_instrument_close(
+        &mut self,
+        position_id: PositionId,
+        close: InstrumentClose,
+    ) -> anyhow::Result<Position> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        let position = {
+            let mut position = position_cell.borrow_mut();
+            position.apply_instrument_close(close)?;
+            position.clone_without_events()
+        };
+
+        self.refresh_position_indexes(&position);
+
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.update_position(&position_cell.borrow())
+        {
+            log::error!("Failed to persist settled position {position_id}: {e}");
+        }
+
+        Ok(position)
+    }
+
     fn refresh_position_indexes(&mut self, position: &Position) {
         if position.is_open() {
             self.index.positions_open.insert(position.id);

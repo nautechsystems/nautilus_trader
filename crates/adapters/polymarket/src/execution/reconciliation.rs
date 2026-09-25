@@ -17,12 +17,13 @@
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use nautilus_common::cache::Cache;
 use nautilus_core::{
     DurationNanos, UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND,
     time::AtomicTime,
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
+    enums::{InstrumentCloseType, OrderSide, OrderStatus, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -1068,6 +1069,55 @@ fn build_position_report_from_reportable_position(
     ))
 }
 
+/// Cached execution state that decides which resolved Data API balances to omit.
+///
+/// A balance no longer represents open exposure once core settles its instrument, or once the
+/// Data API marks it redeemable and no open position holds it. A redeemable balance that still
+/// backs an open position stays reported until settlement, so its absence cannot be taken as a
+/// flat venue position.
+pub(crate) struct ResolvedBalanceScope {
+    settled_instrument_ids: AHashSet<InstrumentId>,
+    open_instrument_ids: AHashSet<InstrumentId>,
+}
+
+impl ResolvedBalanceScope {
+    pub(crate) fn from_cache(cache: &Cache, venue: Venue, account_id: AccountId) -> Self {
+        let settled_instrument_ids = cache
+            .instrument_close_ids()
+            .into_iter()
+            .filter(|instrument_id| {
+                instrument_id.venue == venue
+                    && cache.instrument_close(instrument_id).is_some_and(|close| {
+                        close.close_type == InstrumentCloseType::ContractExpired
+                    })
+            })
+            .copied()
+            .collect();
+
+        let open_instrument_ids = cache
+            .positions_open(Some(&venue), None, None, Some(&account_id), None)
+            .iter()
+            .map(|position| position.instrument_id)
+            .collect();
+
+        Self {
+            settled_instrument_ids,
+            open_instrument_ids,
+        }
+    }
+
+    fn excludes(&self, position: &DataApiPosition, instrument_id: InstrumentId) -> bool {
+        let contains = |instrument_ids: &AHashSet<InstrumentId>| {
+            instrument_ids
+                .iter()
+                .any(|id| polymarket_instrument_ids_equivalent(*id, instrument_id))
+        };
+
+        contains(&self.settled_instrument_ids)
+            || (position.redeemable && !contains(&self.open_instrument_ids))
+    }
+}
+
 pub(crate) fn build_reconciliation_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
@@ -1075,6 +1125,7 @@ pub(crate) fn build_reconciliation_position_reports(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
     let mut reports = Vec::with_capacity(positions.len());
@@ -1087,6 +1138,7 @@ pub(crate) fn build_reconciliation_position_reports(
             instruments,
             instrument_filter,
             collection_load_ids,
+            resolved_balances,
         )? {
             reports.push(report);
         }
@@ -1102,6 +1154,7 @@ fn build_reconciliation_position_report(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     collection_load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
 ) -> anyhow::Result<Option<PositionStatusReport>> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
 
@@ -1113,6 +1166,11 @@ fn build_reconciliation_position_report(
 
     if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
         log::debug!("Dropping out-of-scope position instrument {instrument_id}");
+        return Ok(None);
+    }
+
+    if resolved_balances.excludes(position, instrument_id) {
+        log::debug!("Dropping resolved position balance for {instrument_id}");
         return Ok(None);
     }
 
@@ -1146,6 +1204,7 @@ pub(crate) async fn generate_mass_status(
     venue: Venue,
     lookback_mins: Option<u64>,
     load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let ts_init = ctx.clock.get_time_ns();
     let lookback_start = lookback_mins
@@ -1204,6 +1263,7 @@ pub(crate) async fn generate_mass_status(
             instruments,
             None,
             load_ids,
+            resolved_balances,
         )?
     };
 
@@ -1457,11 +1517,15 @@ pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusR
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-        identifiers::TradeId,
+        data::InstrumentClose,
+        enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{PositionId, TradeId},
+        position::Position,
         types::{Money, Price},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -1602,6 +1666,191 @@ mod tests {
         .expect("fixture position is reportable");
 
         assert_eq!(report.avg_px_open, None);
+    }
+
+    fn data_api_position(token_id: &str, redeemable: bool) -> DataApiPosition {
+        DataApiPosition {
+            asset: token_id.to_string(),
+            condition_id: TEST_CONDITION_ID.to_string(),
+            size: dec!(10),
+            avg_price: Some(dec!(0.4)),
+            redeemable,
+        }
+    }
+
+    fn resolved_balance_scope(
+        settled: Option<InstrumentId>,
+        open: Option<InstrumentId>,
+    ) -> ResolvedBalanceScope {
+        ResolvedBalanceScope {
+            settled_instrument_ids: settled.into_iter().collect(),
+            open_instrument_ids: open.into_iter().collect(),
+        }
+    }
+
+    #[rstest]
+    #[case::unresolved(false, false, false, true)]
+    #[case::settled(false, true, false, false)]
+    #[case::redeemable(true, false, false, false)]
+    #[case::redeemable_open_position(true, false, true, true)]
+    #[case::settled_open_position(true, true, true, false)]
+    fn test_position_reports_drop_resolved_balances(
+        #[case] redeemable: bool,
+        #[case] settled: bool,
+        #[case] open: bool,
+        #[case] expected_reported: bool,
+    ) {
+        let instrument_id = test_instrument().id();
+        let position = data_api_position(TEST_TOKEN_ID, redeemable);
+        let resolved_balances = resolved_balance_scope(
+            settled.then_some(instrument_id),
+            open.then_some(instrument_id),
+        );
+
+        let reports = build_reconciliation_position_reports(
+            &[position],
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1),
+            &test_instruments(),
+            None,
+            None,
+            &resolved_balances,
+        )
+        .unwrap();
+
+        let reported_ids: Vec<_> = reports.iter().map(|report| report.instrument_id).collect();
+
+        let expected_ids = if expected_reported {
+            vec![instrument_id]
+        } else {
+            vec![]
+        };
+
+        assert_eq!(reported_ids, expected_ids);
+    }
+
+    #[rstest]
+    #[case::settled(false, false, true)]
+    #[case::open_position(true, true, false)]
+    fn test_resolved_balance_scope_matches_condition_ids_ignoring_case(
+        #[case] open: bool,
+        #[case] redeemable: bool,
+        #[case] expected_excluded: bool,
+    ) {
+        let instrument_id = test_instrument().id();
+        let uppercase_id =
+            instrument_id_from_market_token(&TEST_CONDITION_ID.to_uppercase(), TEST_TOKEN_ID);
+
+        let resolved_balances = if open {
+            resolved_balance_scope(None, Some(uppercase_id))
+        } else {
+            resolved_balance_scope(Some(uppercase_id), None)
+        };
+
+        let excluded = resolved_balances
+            .excludes(&data_api_position(TEST_TOKEN_ID, redeemable), instrument_id);
+
+        assert_eq!(excluded, expected_excluded);
+    }
+
+    #[rstest]
+    #[case::settled(false, true, None)]
+    #[case::redeemable(true, false, None)]
+    #[case::unresolved(false, false, Some("unmapped in-scope position instrument"))]
+    fn test_position_reports_drop_unloaded_resolved_balances(
+        #[case] redeemable: bool,
+        #[case] settled: bool,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let unloaded_token_id = "1234567890";
+        let instrument_id = instrument_id_from_market_token(TEST_CONDITION_ID, unloaded_token_id);
+        let position = data_api_position(unloaded_token_id, redeemable);
+        let resolved_balances = resolved_balance_scope(settled.then_some(instrument_id), None);
+
+        let result = build_reconciliation_position_reports(
+            &[position],
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1),
+            &test_instruments(),
+            None,
+            None,
+            &resolved_balances,
+        );
+
+        match expected_error {
+            Some(expected) => {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains(expected), "unexpected error: {error}");
+            }
+            None => assert!(result.unwrap().is_empty()),
+        }
+    }
+
+    #[rstest]
+    fn test_resolved_balance_scope_from_cache_collects_settlements_and_open_positions() {
+        let instrument = test_instrument();
+        let account_id = AccountId::from("POLY-001");
+        let venue = instrument.id().venue;
+        let settled_id = InstrumentId::from("SETTLED-TOKEN.POLYMARKET");
+
+        let close = |instrument_id, close_type| {
+            InstrumentClose::new(
+                instrument_id,
+                Price::from("1.000"),
+                close_type,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            )
+        };
+
+        let position = |account_id: AccountId, position_id: &str| {
+            let fill = OrderFilledSpec::builder()
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(position_id))
+                .account_id(account_id)
+                .trade_id(TradeId::from(position_id))
+                .last_qty(Quantity::from("10.000000"))
+                .last_px(Price::from("0.400"))
+                .currency(Currency::pUSD())
+                .position_id(PositionId::from(position_id))
+                .build();
+            Position::new(&instrument, fill)
+        };
+
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.clone()).unwrap();
+
+        for instrument_close in [
+            close(settled_id, InstrumentCloseType::ContractExpired),
+            close(
+                InstrumentId::from("SESSION-TOKEN.POLYMARKET"),
+                InstrumentCloseType::EndOfSession,
+            ),
+            close(
+                InstrumentId::from("OTHER-TOKEN.OTHER"),
+                InstrumentCloseType::ContractExpired,
+            ),
+        ] {
+            cache.add_instrument_close(instrument_close).unwrap();
+        }
+
+        for position in [
+            position(account_id, "P-OWNED"),
+            position(AccountId::from("POLY-002"), "P-FOREIGN"),
+        ] {
+            cache.add_position(&position, OmsType::Netting).unwrap();
+        }
+
+        let scope = ResolvedBalanceScope::from_cache(&cache, venue, account_id);
+
+        assert_eq!(
+            scope.settled_instrument_ids,
+            AHashSet::from_iter([settled_id])
+        );
+        assert_eq!(
+            scope.open_instrument_ids,
+            AHashSet::from_iter([instrument.id()])
+        );
     }
 
     #[rstest]

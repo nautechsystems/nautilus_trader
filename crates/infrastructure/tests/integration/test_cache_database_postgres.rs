@@ -35,10 +35,10 @@ mod serial_tests {
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
-            CustomData, DataType,
+            CustomData, DataType, InstrumentClose,
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
-        enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
+        enums::{CurrencyType, InstrumentCloseType, OrderSide, OrderStatus, OrderType},
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
@@ -2140,6 +2140,64 @@ mod serial_tests {
         assert!(snapshot.replay_state.is_some());
         assert_eq!(loaded.quantity, Quantity::from("0.6"));
         assert_eq!(loaded.fill_voids.len(), 1);
+        assert_entirely_equal(&loaded, &position);
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_position_survives_restart_with_settlement() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-SETTLED"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.00"))
+            .build();
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-PG-SETTLED")),
+            Some(PositionId::new("P-PG-SETTLED")),
+            Some(Price::from("0.400")),
+            Some(Quantity::from("10.00")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("POLYMARKET-001")),
+        ) else {
+            unreachable!();
+        };
+
+        let mut position = Position::new(&instrument, fill);
+        pg_cache.add_position(&position).unwrap();
+        position
+            .apply_instrument_close(InstrumentClose::new(
+                instrument.id(),
+                Price::from("1.000"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(300),
+                UnixNanos::from(301),
+            ))
+            .unwrap();
+        pg_cache.update_position(&position).unwrap();
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let loaded = restarted
+            .load_position(&position.id)
+            .await
+            .unwrap()
+            .expect("position should load from the settled snapshot");
+
+        assert!(loaded.is_settled());
+        assert!(loaded.is_closed());
         assert_entirely_equal(&loaded, &position);
 
         reset_test_database(&restarted).await;

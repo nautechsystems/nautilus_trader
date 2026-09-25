@@ -78,6 +78,14 @@ pub trait ExecutionClient {
         true
     }
 
+    /// Returns whether this client's venue settles expiring contracts itself, such as a
+    /// simulated venue that closes positions with expiration fills.
+    ///
+    /// The execution engine does not apply `InstrumentClose` settlement for such a venue.
+    fn settles_contract_expirations(&self) -> bool {
+        false
+    }
+
     /// Generates and publishes the account state event.
     ///
     /// Implementations may publish synchronously. Callers must release shared state borrows,
