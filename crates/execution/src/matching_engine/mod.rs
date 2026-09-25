@@ -398,6 +398,58 @@ impl OrderMatchingEngine {
         fills
     }
 
+    /// Captures the liquidity consumption state a FOK fill attempt may change.
+    ///
+    /// Consumption is applied while fills are determined, before FOK completeness
+    /// is known, so a canceled FOK must restore this checkpoint to leave the
+    /// liquidity available for subsequent orders.
+    fn fok_consumption_checkpoint(&self, order: &OrderAny) -> Option<ConsumptionCheckpoint> {
+        if !self.config.liquidity_consumption || order.time_in_force() != TimeInForce::Fok {
+            return None;
+        }
+
+        let levels = match order.order_side() {
+            OrderSide::Buy => self.ask_consumption.clone(),
+            OrderSide::Sell => self.bid_consumption.clone(),
+        };
+
+        Some(ConsumptionCheckpoint {
+            order_side: order.order_side(),
+            trade_consumption: self.trade_consumption,
+            levels,
+        })
+    }
+
+    fn restore_consumption_checkpoint(&mut self, checkpoint: ConsumptionCheckpoint) {
+        self.trade_consumption = checkpoint.trade_consumption;
+
+        match checkpoint.order_side {
+            OrderSide::Buy => self.ask_consumption = checkpoint.levels,
+            OrderSide::Sell => self.bid_consumption = checkpoint.levels,
+        }
+    }
+
+    /// Returns whether `fills` cannot fill a FOK order's entire leaves quantity.
+    fn is_fok_unfillable(&self, order: &OrderAny, fills: &[(Price, Quantity)]) -> bool {
+        if order.time_in_force() != TimeInForce::Fok {
+            return false;
+        }
+
+        let mut total_size = Quantity::zero(order.quantity().precision);
+
+        for &(fill_px, fill_qty) in fills {
+            if self
+                .normalize_price_for_current_instrument(fill_px)
+                .is_some()
+                && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
+            {
+                total_size = total_size.add(fill_qty);
+            }
+        }
+
+        order.leaves_qty() > total_size
+    }
+
     fn seed_trade_consumption(
         &mut self,
         trade_price_raw: PriceRaw,
@@ -4648,12 +4700,20 @@ impl OrderMatchingEngine {
             && order.trigger_price().is_some();
 
         if !from_synthetic && !is_trigger_price_fill {
+            let checkpoint = self.fok_consumption_checkpoint(&order);
+
             fills = self.apply_liquidity_consumption(
                 fills,
                 order.order_side(),
                 order.leaves_qty(),
                 None,
             );
+
+            if let Some(checkpoint) = checkpoint
+                && self.is_fok_unfillable(&order, &fills)
+            {
+                self.restore_consumption_checkpoint(checkpoint);
+            }
         }
 
         if let Err(e) = self.apply_fills(
@@ -4800,6 +4860,7 @@ impl OrderMatchingEngine {
                     return;
                 }
 
+                let checkpoint = self.fok_consumption_checkpoint(&order);
                 let tc_before = self.trade_consumption;
                 let mut fills = match self.determine_limit_fill_model_price_and_volume(&order) {
                     Ok(fills) => fills,
@@ -4835,6 +4896,12 @@ impl OrderMatchingEngine {
                         *excess = excess.saturating_sub(consumed);
                     }
                     self.trade_consumption = tc_before + consumed;
+                }
+
+                if let Some(checkpoint) = checkpoint
+                    && self.is_fok_unfillable(&order, &fills)
+                {
+                    self.restore_consumption_checkpoint(checkpoint);
                 }
 
                 if fills.is_empty() {
@@ -4953,23 +5020,9 @@ impl OrderMatchingEngine {
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
-        if order.time_in_force() == TimeInForce::Fok {
-            let mut total_size = Quantity::zero(order.quantity().precision);
-
-            for &(fill_px, fill_qty) in fills {
-                if self
-                    .normalize_price_for_current_instrument(fill_px)
-                    .is_some()
-                    && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
-                {
-                    total_size = total_size.add(fill_qty);
-                }
-            }
-
-            if order.leaves_qty() > total_size {
-                self.cancel_order(order, None);
-                return Ok(());
-            }
+        if self.is_fok_unfillable(order, fills) {
+            self.cancel_order(order, None);
+            return Ok(());
         }
 
         if fills.is_empty() {
@@ -6901,6 +6954,14 @@ struct PendingFill {
     position_id: Option<PositionId>,
     opening_trade_id: Option<TradeId>,
     quantity_change: Decimal,
+}
+
+/// Liquidity consumption state saved before a FOK fill attempt.
+#[derive(Debug)]
+struct ConsumptionCheckpoint {
+    order_side: OrderSide,
+    trade_consumption: QuantityRaw,
+    levels: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
