@@ -2258,7 +2258,7 @@ impl KrakenSpotHttpClient {
         loop {
             if pages >= MAX_REPORT_PAGES {
                 log::warn!(
-                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; reporting the set as incomplete"
+                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete, which only mass status surfaces"
                 );
                 complete = false;
                 break;
@@ -2351,7 +2351,7 @@ impl KrakenSpotHttpClient {
         loop {
             if pages >= MAX_REPORT_PAGES {
                 log::warn!(
-                    "TradesHistory pagination hit the cap of {MAX_REPORT_PAGES} pages; reporting the set as incomplete"
+                    "TradesHistory pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete, which only mass status surfaces"
                 );
                 complete = false;
                 break;

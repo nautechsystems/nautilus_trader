@@ -518,8 +518,11 @@ instrument could not be resolved, or when a record could not be parsed. Position
 currently contribute, and the futures position read still drops an unresolved symbol silently.
 
 Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
-stop after 500 pages. A read cut short by that cap is reported as incomplete rather than silently
-truncated.
+stop after 500 pages. A read cut short by that cap logs a warning, and how it surfaces depends on
+the caller. Startup mass status carries the completeness of the order and fill reads in its report
+window, so the engine sees the set as incomplete. `generate_order_status_reports` and
+`generate_fill_reports` return the records read up to the cap and do not expose a completeness
+flag.
 
 ### Spot reconciliation
 
