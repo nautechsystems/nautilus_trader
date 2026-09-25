@@ -694,7 +694,8 @@ impl BacktestEngine {
     ///
     /// Returns an error if the backtest encounters an unrecoverable state.
     /// Callback dispatch failures abort the run and stop the trader and engines, including when
-    /// a failure is already latched before entry.
+    /// a failure is already latched before entry. An account rejecting a fill's balance update,
+    /// such as a cash balance going negative without borrowing, also aborts the run.
     pub fn run(
         &mut self,
         start: Option<UnixNanos>,
@@ -1010,9 +1011,10 @@ impl BacktestEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error if callback dispatch or ownership cleanup fails, actor or strategy state
-    /// cannot be saved, or a simulation module cannot produce its diagnostics. Callback errors
-    /// trigger abort cleanup, stopping the trader and engines.
+    /// Returns an error if callback dispatch or ownership cleanup fails, an account rejects a
+    /// fill's balance update, actor or strategy state cannot be saved, or a simulation module
+    /// cannot produce its diagnostics. Callback errors and balance rejections trigger abort
+    /// cleanup, stopping the trader and engines.
     pub fn end(&mut self) -> anyhow::Result<()> {
         let result = self.end_impl();
         if let Err(e) = &result
