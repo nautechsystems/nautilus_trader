@@ -562,6 +562,66 @@ def test_node_rejects_duplicate_configured_catalog_names(tmp_path: Path) -> None
         )
 
 
+@pytest.mark.parametrize("raise_exception", [True, False])
+def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
+    tmp_path: Path,
+    raise_exception: bool,
+) -> None:
+    """
+    Test a fill the cash account cannot pay for fails the run per the error policy.
+    """
+    instrument = TestInstrumentProvider.aapl_equity()
+    catalog = ParquetDataCatalog(str(tmp_path))
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(
+        [
+            TestDataProviderPyo3.quote_tick(
+                instrument_id=instrument.id,
+                bid_price="99.99",
+                ask_price="100.00",
+                bid_size="250",
+                ask_size="250",
+            ),
+        ],
+    )
+    venue = BacktestVenueConfig(
+        name="XNAS",
+        oms_type="NETTING",
+        account_type="CASH",
+        starting_balances=["250_001 USD"],
+        book_type="L1_MBP",
+        fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+    )
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.QuoteTick,
+        catalog_path=str(tmp_path),
+        instrument_id=instrument.id,
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        raise_exception=raise_exception,
+    )
+    node = BacktestNode([config])
+    node.build()
+    node.add_strategy(
+        config.id,
+        StreamingWhipsaw(
+            StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="2500"),
+        ),
+    )
+
+    try:
+        if raise_exception:
+            with pytest.raises(RuntimeError, match=r"balance would become negative: -21\.50 USD"):
+                node.run()
+        else:
+            assert node.run() == []
+    finally:
+        node.dispose()
+
+
 def test_node_exposes_builtin_strategy_registration() -> None:
     """
     Test node exposes builtin strategy registration.

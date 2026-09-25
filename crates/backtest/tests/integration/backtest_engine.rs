@@ -28,6 +28,7 @@ use nautilus_backtest::{
         AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
         SimulationModuleResult,
     },
+    result::CanonicalBacktestResult,
 };
 use nautilus_common::{
     actor::{
@@ -69,7 +70,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny, OptionContract,
-        stubs::{crypto_perpetual_ethusdt, default_fx_ccy},
+        stubs::{betting, crypto_perpetual_ethusdt, default_fx_ccy},
     },
     orders::{Order, OrderAny},
     position::Position,
@@ -2196,6 +2197,312 @@ fn create_inverse_funding_engine() -> (BacktestEngine, InstrumentId) {
         ))
         .unwrap();
     (engine, instrument_id)
+}
+
+fn create_spot_engine(
+    account_type: AccountType,
+    base_currency: Option<Currency>,
+    starting_balance: &str,
+    taker_fee: Decimal,
+    allow_cash_borrowing: bool,
+    latency_model: Option<LatencyModelHandle>,
+) -> (BacktestEngine, InstrumentId) {
+    let instrument = option_underlying_equity(Venue::from("SIM"));
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue = SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(account_type)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from(starting_balance)])
+        .maybe_base_currency(base_currency)
+        .allow_cash_borrowing(allow_cash_borrowing)
+        .maybe_latency_model(latency_model)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::new(taker_fee, taker_fee)).into())
+        .build()
+        .unwrap();
+    engine.add_venue(venue).unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(OpenOnEveryQuote::new(instrument_id, Quantity::from(2500)))
+        .unwrap();
+    (engine, instrument_id)
+}
+
+fn order_fills(engine: &BacktestEngine) -> Vec<(Quantity, Price)> {
+    let cache = engine.kernel().cache.borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    let [order] = orders.as_slice() else {
+        panic!("expected one order");
+    };
+    order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_qty, fill.last_px)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn expected_equity_fills(ask_size: &str) -> Vec<(Quantity, Price)> {
+    if ask_size == "250" {
+        vec![
+            (Quantity::from(250), Price::from("100.00")),
+            (Quantity::from(2250), Price::from("100.01")),
+        ]
+    } else {
+        vec![(Quantity::from(2500), Price::from("100.00"))]
+    }
+}
+
+fn account_total(engine: &BacktestEngine, venue: &str, currency: Currency) -> Option<Money> {
+    engine
+        .kernel()
+        .cache
+        .borrow()
+        .account_for_venue(&Venue::from(venue))
+        .unwrap()
+        .balance_total(Some(currency))
+}
+
+#[rstest]
+#[case::slippage_multi_currency(
+    AccountType::Cash,
+    None,
+    "250_001 USD",
+    Decimal::ZERO,
+    "250",
+    "Cash account balance would become negative: -21.50 USD",
+    "225_001 USD"
+)]
+#[case::slippage_single_currency(
+    AccountType::Cash,
+    Some(Currency::USD()),
+    "250_001 USD",
+    Decimal::ZERO,
+    "250",
+    "Cash account balance would become negative: -21.50 USD",
+    "225_001 USD"
+)]
+#[case::commission_multi_currency(
+    AccountType::Cash,
+    None,
+    "250_001 USD",
+    dec!(0.0001),
+    "2500",
+    "Cash account balance would become negative: -24.00 USD",
+    "250_001 USD"
+)]
+#[case::commission_single_currency(
+    AccountType::Cash,
+    Some(Currency::USD()),
+    "250_001 USD",
+    dec!(0.0001),
+    "2500",
+    "Cash account balance would become negative: -24.00 USD",
+    "250_001 USD"
+)]
+#[case::commission_partial_fill(
+    AccountType::Cash,
+    None,
+    "250_030 USD",
+    dec!(0.0001),
+    "250",
+    "Cash account balance would become negative: -17.50 USD",
+    "225_027.50 USD"
+)]
+#[case::wallet_slippage(
+    AccountType::Wallet,
+    None,
+    "250_001 USD",
+    Decimal::ZERO,
+    "250",
+    "Wallet account balance total was negative",
+    "225_001 USD"
+)]
+fn test_run_fails_when_fill_cost_exceeds_account_balance(
+    #[case] account_type: AccountType,
+    #[case] base_currency: Option<Currency>,
+    #[case] starting_balance: &str,
+    #[case] taker_fee: Decimal,
+    #[case] ask_size: &str,
+    #[case] expected_error: &str,
+    #[case] booked_total: &str,
+) {
+    let (mut engine, instrument_id) = create_spot_engine(
+        account_type,
+        base_currency,
+        starting_balance,
+        taker_fee,
+        false,
+        None,
+    );
+    let data = vec![quote_with_size(
+        instrument_id,
+        "99.99",
+        "100.00",
+        ask_size,
+        1_000_000_000,
+    )];
+    engine.add_data(data, None, true, true).unwrap();
+
+    let error = engine.run(None, None, None, false).unwrap_err();
+    let retry_error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        error.to_string().contains(expected_error),
+        "unexpected error: {error:#}"
+    );
+    assert_eq!(retry_error.to_string(), error.to_string());
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert_eq!(order_fills(&engine), expected_equity_fills(ask_size));
+    assert_eq!(
+        account_total(&engine, "SIM", Currency::USD()),
+        Some(Money::from(booked_total))
+    );
+    let canonical = engine.get_canonical_result().unwrap().to_bytes().unwrap();
+    CanonicalBacktestResult::from_slice(&canonical).unwrap();
+    let canonical: serde_json::Value = serde_json::from_slice(&canonical).unwrap();
+    assert_eq!(canonical["run"]["outcome"], "failed");
+    assert_eq!(
+        canonical["diagnostics"],
+        serde_json::json!([{"code": "account-balance-rejected"}])
+    );
+
+    engine.reset().unwrap();
+
+    assert_eq!(engine.kernel().portfolio.borrow().balance_error(), None);
+}
+
+#[rstest]
+#[case::multi_currency(None)]
+#[case::single_currency(Some(Currency::GBP()))]
+fn test_run_fails_when_betting_fill_cost_exceeds_balance(#[case] base_currency: Option<Currency>) {
+    let instrument = InstrumentAny::Betting(betting());
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BETFAIR"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Betting)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("200.50 GBP")])
+        .maybe_base_currency(base_currency)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    engine.add_venue(venue).unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(OpenOnEveryQuote::new(
+            instrument_id,
+            Quantity::from("100.00"),
+        ))
+        .unwrap();
+    let data = vec![quote_with_size(
+        instrument_id,
+        "1.99",
+        "2.00",
+        "10.00",
+        1_000_000_000,
+    )];
+    engine.add_data(data, None, true, true).unwrap();
+
+    let error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("Betting account balance would become negative: -0.40 GBP"),
+        "unexpected error: {error:#}"
+    );
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert_eq!(
+        order_fills(&engine),
+        vec![
+            (Quantity::from("10.00"), Price::from("2.00")),
+            (Quantity::from("90.00"), Price::from("2.01")),
+        ]
+    );
+    assert_eq!(
+        account_total(&engine, "BETFAIR", Currency::GBP()),
+        Some(Money::from("180.50 GBP"))
+    );
+}
+
+#[rstest]
+fn test_end_fails_when_latent_fill_cost_exceeds_cash_balance() {
+    let latency_model = LatencyModelHandle::new(StaticLatencyModel::new(
+        DurationNanos::default(),
+        DurationNanos::new(1),
+        DurationNanos::default(),
+        DurationNanos::default(),
+    ));
+    let (mut engine, instrument_id) = create_spot_engine(
+        AccountType::Cash,
+        None,
+        "250_001 USD",
+        Decimal::ZERO,
+        false,
+        Some(latency_model),
+    );
+    let data = vec![quote_with_size(
+        instrument_id,
+        "99.99",
+        "100.00",
+        "250",
+        1_000_000_000,
+    )];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, true).unwrap();
+
+    let error = engine.end().unwrap_err();
+    let retry_error = engine.end().unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("balance would become negative: -21.50 USD"),
+        "unexpected error: {error:#}"
+    );
+    assert_eq!(retry_error.to_string(), error.to_string());
+    assert!(engine.kernel().trader.borrow().is_stopped());
+}
+
+#[rstest]
+#[case::affordable(false, "2500", "1.00 USD")]
+#[case::borrowing_enabled(true, "250", "-21.50 USD")]
+fn test_run_books_cash_fill_allowed_by_balance_or_borrowing(
+    #[case] allow_cash_borrowing: bool,
+    #[case] ask_size: &str,
+    #[case] expected_total: &str,
+) {
+    let (mut engine, instrument_id) = create_spot_engine(
+        AccountType::Cash,
+        None,
+        "250_001 USD",
+        Decimal::ZERO,
+        allow_cash_borrowing,
+        None,
+    );
+    let data = vec![quote_with_size(
+        instrument_id,
+        "99.99",
+        "100.00",
+        ask_size,
+        1_000_000_000,
+    )];
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(order_fills(&engine), expected_equity_fills(ask_size));
+    assert_eq!(
+        account_total(&engine, "SIM", Currency::USD()),
+        Some(Money::from(expected_total))
+    );
 }
 
 #[rstest]

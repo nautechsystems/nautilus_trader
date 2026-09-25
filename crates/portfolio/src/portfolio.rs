@@ -87,6 +87,7 @@ struct PortfolioState {
     equity_curve_finalized: bool,
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
     pre_position_fill_events: AHashSet<UUID4>,
+    balance_error: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -147,6 +148,7 @@ impl PortfolioState {
             equity_curve_finalized: false,
             portfolio_snapshots: AHashMap::new(),
             pre_position_fill_events: AHashSet::new(),
+            balance_error: None,
         }
     }
 
@@ -176,6 +178,7 @@ impl PortfolioState {
         self.equity_curve_finalized = false;
         self.portfolio_snapshots.clear();
         self.pre_position_fill_events.clear();
+        self.balance_error = None;
         self.analyzer.reset();
         self.initialized = false;
         log::debug!("READY");
@@ -1073,6 +1076,16 @@ impl Portfolio {
             .get(account_id)
             .map(|ring| ring.iter().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Returns the first error from a cash, betting, or wallet account rejecting a fill's
+    /// balances, such as a balance that would become negative without borrowing.
+    ///
+    /// The fill's balances are not applied. Cleared on [`Portfolio::reset`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn balance_error(&self) -> Option<String> {
+        self.inner.borrow().balance_error.clone()
     }
 
     /// Records one final equity-curve sample for every registered account and stops its timer.
@@ -3508,12 +3521,20 @@ fn update_order(
         && calculate_account_state
     {
         if !instrument.is_spread() {
-            let (post_balance, _state) =
+            let (post_balance, result) =
                 inner
                     .borrow()
                     .accounts
                     .update_balances(working_account, &instrument, order_filled);
             working_account = post_balance;
+
+            if let Err(e) = result {
+                log::error!("{e}");
+                inner
+                    .borrow_mut()
+                    .balance_error
+                    .get_or_insert_with(|| e.to_string());
+            }
         }
 
         cache.borrow_mut().cache_account_owned(working_account);
