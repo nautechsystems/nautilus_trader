@@ -52,7 +52,7 @@ use nautilus_model::{
         OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
         OrderUpdated, PositionEvent,
     },
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
@@ -641,7 +641,13 @@ impl RiskEngine {
             return; // Denied
         }
 
-        if !self.check_orders_risk(&instrument, &[order], full_position_exit, RiskCheck::Submit) {
+        if !self.check_orders_risk(
+            &instrument,
+            &[order],
+            full_position_exit,
+            RiskCheck::Submit,
+            command.client_id,
+        ) {
             return; // Denied
         }
 
@@ -726,19 +732,26 @@ impl RiskEngine {
         order: &OrderAny,
     ) -> Option<(PositionSide, Quantity)> {
         let position_id = command.position_id?;
+        let account_id =
+            self.order_account_id(order, command.client_id, command.instrument_id.venue);
+
         let position = {
             let cache = self.cache.borrow();
             if cache.position_id(&order.client_order_id()).copied() != Some(position_id) {
                 return None;
             }
-            cache.position(&position_id).map(|position| {
-                (
-                    position.is_open(),
-                    position.instrument_id,
-                    position.side,
-                    position.quantity,
-                )
-            })
+
+            cache
+                .position(&position_id)
+                .filter(|position| account_id == Some(position.account_id))
+                .map(|position| {
+                    (
+                        position.is_open(),
+                        position.instrument_id,
+                        position.side,
+                        position.quantity,
+                    )
+                })
         };
         let (is_open, position_instrument_id, position_side, position_quantity) = position?;
 
@@ -824,7 +837,13 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_orders_risk(&representative, &orders, false, RiskCheck::Submit) {
+        if !self.check_orders_risk(
+            &representative,
+            &orders,
+            false,
+            RiskCheck::Submit,
+            command.client_id,
+        ) {
             self.deny_order_list(
                 &orders,
                 &OrderDeniedReason::OrderListDenied {
@@ -845,7 +864,7 @@ impl RiskEngine {
         }
 
         if !self.validate_modify_order(&command)
-            || !self.check_modify_orders_risk(std::slice::from_ref(&command))
+            || !self.check_modify_orders_risk(std::slice::from_ref(&command), command.client_id)
         {
             return;
         }
@@ -868,7 +887,7 @@ impl RiskEngine {
             return;
         }
 
-        if !self.check_modify_orders_risk(&command.modifies) {
+        if !self.check_modify_orders_risk(&command.modifies, command.client_id) {
             return;
         }
 
@@ -1048,7 +1067,11 @@ impl RiskEngine {
         true
     }
 
-    fn check_modify_orders_risk(&self, commands: &[ModifyOrder]) -> bool {
+    fn check_modify_orders_risk(
+        &self,
+        commands: &[ModifyOrder],
+        client_id: Option<ClientId>,
+    ) -> bool {
         let mut originals = Vec::with_capacity(commands.len());
         let mut orders = Vec::with_capacity(commands.len());
         let cache = self.cache.borrow();
@@ -1099,7 +1122,7 @@ impl RiskEngine {
             return false;
         };
 
-        self.check_orders_risk(&instrument, &orders, false, check)
+        self.check_orders_risk(&instrument, &orders, false, check, client_id)
     }
 
     fn check_order(
@@ -1187,11 +1210,13 @@ impl RiskEngine {
         orders: &[OrderAny],
         full_position_exit: bool,
         check: RiskCheck<'_>,
+        client_id: Option<ClientId>,
     ) -> bool {
+        let venue = instrument.id().venue;
         let mut orders_by_account: AHashMap<Option<AccountId>, Vec<&OrderAny>> = AHashMap::new();
         for order in orders {
             orders_by_account
-                .entry(order.account_id())
+                .entry(self.order_account_id(order, client_id, venue))
                 .or_default()
                 .push(order);
         }
@@ -1201,6 +1226,7 @@ impl RiskEngine {
                 instrument,
                 account_orders,
                 *account_id,
+                client_id,
                 full_position_exit,
                 check,
             ) {
@@ -1209,6 +1235,39 @@ impl RiskEngine {
         }
 
         true
+    }
+
+    // An order without an assigned account uses the account of the client that command routing
+    // selects: a registered command client, else the venue route or default client. An external
+    // client, or a command no registered client handles, uses the single account issued under the
+    // venue.
+    fn order_account_id(
+        &self,
+        order: &OrderAny,
+        client_id: Option<ClientId>,
+        venue: Venue,
+    ) -> Option<AccountId> {
+        if let Some(account_id) = order.account_id() {
+            return Some(account_id);
+        }
+
+        let cache = self.cache.borrow();
+
+        let routed_account_id = || {
+            cache
+                .client_id_for_venue(&venue)
+                .and_then(|client_id| cache.account_id_for_client(client_id))
+        };
+
+        let account_id = match client_id {
+            Some(client_id) if cache.is_external_client(&client_id) => None,
+            Some(client_id) => cache
+                .account_id_for_client(&client_id)
+                .or_else(routed_account_id),
+            None => routed_account_id(),
+        };
+
+        account_id.or_else(|| cache.account_id(&venue)).copied()
     }
 
     #[allow(
@@ -1220,6 +1279,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         orders: &[&OrderAny],
         account_id: Option<AccountId>,
+        client_id: Option<ClientId>,
         full_position_exit: bool,
         check: RiskCheck<'_>,
     ) -> bool {
@@ -1244,20 +1304,12 @@ impl RiskEngine {
             market_prices.push(price);
         }
 
-        // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
-        let resolved_account = {
-            let cache = self.cache.borrow();
-
-            if let Some(account_id) = account_id {
-                cache
-                    .account(&account_id)
-                    .map(|account| account.clone_without_events())
-            } else {
-                cache
-                    .account_for_venue(&instrument.id().venue)
-                    .map(|account| account.clone_without_events())
-            }
-        };
+        let resolved_account = account_id.and_then(|account_id| {
+            self.cache
+                .borrow()
+                .account(&account_id)
+                .map(|account| account.clone_without_events())
+        });
 
         let Some(account) = resolved_account else {
             check.reject_orders(
@@ -1265,7 +1317,7 @@ impl RiskEngine {
                 orders,
                 &OrderDeniedReason::ValidationFailed {
                     detail: format!(
-                        "No account available for risk checks: instrument_id={}, account_id={account_id:?}",
+                        "No account available for risk checks: instrument_id={}, client_id={client_id:?}, account_id={account_id:?}",
                         instrument.id()
                     ),
                 }
@@ -1282,6 +1334,7 @@ impl RiskEngine {
 
         let available_long_qty_raw = self.available_position_quantity(
             instrument.id(),
+            account.id(),
             PositionSide::Long,
             OrderSide::Sell,
             check,
@@ -1291,6 +1344,7 @@ impl RiskEngine {
             if matches!(account, AccountAny::Margin(_) | AccountAny::Betting(_)) {
                 self.available_position_quantity(
                     instrument.id(),
+                    account.id(),
                     PositionSide::Short,
                     OrderSide::Buy,
                     check,
@@ -1346,18 +1400,31 @@ impl RiskEngine {
     fn available_position_quantity(
         &self,
         instrument_id: InstrumentId,
+        account_id: AccountId,
         position_side: PositionSide,
         order_side: OrderSide,
         check: RiskCheck<'_>,
     ) -> QuantityRaw {
         let cache = self.cache.borrow();
         let position_quantity: QuantityRaw = cache
-            .positions_open(None, Some(&instrument_id), None, None, Some(position_side))
+            .positions_open(
+                None,
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(position_side),
+            )
             .iter()
             .map(|position| position.quantity.raw())
             .sum();
         let pending_quantity: QuantityRaw = cache
-            .orders_open(None, Some(&instrument_id), None, None, Some(order_side))
+            .orders_open(
+                None,
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(order_side),
+            )
             .iter()
             .filter(|order| check.original(order).is_none())
             .map(|order| order.leaves_qty().raw())

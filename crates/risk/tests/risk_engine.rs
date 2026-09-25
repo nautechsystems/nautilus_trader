@@ -47,7 +47,9 @@ use nautilus_common::{
     throttler::RateLimit,
 };
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
-use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
+use nautilus_execution::engine::{
+    ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
+};
 use nautilus_model::{
     accounts::{
         AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount, stubs::cash_account,
@@ -77,12 +79,12 @@ use nautilus_model::{
         },
     },
     instruments::{
-        Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
+        Commodity, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument, InstrumentAny,
         OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, btcusd_bybit, commodity_gold, crypto_perpetual_ethusdt,
-            currency_pair_btcusdt, default_fx_ccy, futures_spread_es, gbpusd_sim, option_spread,
-            perpetual_contract_eurusd,
+            currency_pair_btcusdt, default_fx_ccy, equity_aapl, futures_spread_es, gbpusd_sim,
+            option_spread, perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -2394,7 +2396,7 @@ fn test_submit_market_order_without_price_then_denies(
         Ustr::from(if with_account {
             expected_reason
         } else {
-            "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, account_id=None"
+            "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=Some(\"BINANCE\"), account_id=None"
         })
     );
     assert_eq!(execute_messages.len(), 0);
@@ -4335,6 +4337,24 @@ fn add_position_for_close_position(
     position_id: PositionId,
     position_side: PositionSide,
 ) {
+    add_position_for_account(
+        cache,
+        instrument,
+        AccountId::from("BINANCE-001"),
+        quantity,
+        position_id,
+        position_side,
+    );
+}
+
+fn add_position_for_account(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    quantity: Quantity,
+    position_id: PositionId,
+    position_side: PositionSide,
+) {
     let entry_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
         .side(match position_side {
@@ -4348,7 +4368,7 @@ fn add_position_for_close_position(
         &entry_order,
         instrument,
         None,
-        Some(AccountId::from("BINANCE-001")),
+        Some(account_id),
         Some(VenueOrderId::from("V-CLOSE-POSITION")),
         None,
         None,
@@ -6695,7 +6715,7 @@ fn test_risk_rejects_when_checks_cannot_complete(
     let reason = match failure {
         "account" => OrderDeniedReason::ValidationFailed {
             detail: format!(
-                "No account available for risk checks: instrument_id={}, account_id={:?}",
+                "No account available for risk checks: instrument_id={}, client_id=None, account_id={:?}",
                 order.instrument_id(),
                 order.account_id()
             ),
@@ -13518,4 +13538,638 @@ fn test_spot_notional_fields_ignore_metadata(
         };
         assert_eq!(command.client_order_id, order.client_order_id());
     }
+}
+
+const SIM_CLIENTS: &[(&str, &str, &str)] = &[
+    ("ALPHA", "SIM-001", "SIM"),
+    ("BRAVO", "SIM-002", "SIM"),
+    ("CHARLIE", "SIM-003", "SIM"),
+];
+const POOR_ACCOUNT_BUY_DENIAL: &str =
+    "NOTIONAL_EXCEEDS_FREE_BALANCE: free=500.00 USD, notional=1000.00 USD";
+const POOR_ACCOUNT_SELL_DENIAL: &str =
+    "CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=500.00 USD, notional=1000.00 USD";
+
+#[rstest]
+#[case::explicit_alpha(Some("ALPHA"), Some("BRAVO"), Some("BRAVO"), None)]
+#[case::explicit_bravo(
+    Some("BRAVO"),
+    Some("ALPHA"),
+    Some("ALPHA"),
+    Some(POOR_ACCOUNT_BUY_DENIAL)
+)]
+#[case::route_alpha(None, Some("ALPHA"), Some("BRAVO"), None)]
+#[case::route_bravo(None, Some("BRAVO"), Some("ALPHA"), Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::default_alpha(None, None, Some("ALPHA"), None)]
+#[case::default_bravo(None, None, Some("BRAVO"), Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::routed_account_not_cached(
+    None,
+    Some("CHARLIE"),
+    Some("ALPHA"),
+    Some(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=None, account_id=Some(\"SIM-003\")"
+    )
+)]
+#[case::explicit_account_not_cached(
+    Some("CHARLIE"),
+    Some("ALPHA"),
+    None,
+    Some(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=Some(\"CHARLIE\"), account_id=Some(\"SIM-003\")"
+    )
+)]
+#[case::unknown_client(
+    Some("UNKNOWN"),
+    Some("BRAVO"),
+    Some("ALPHA"),
+    Some(POOR_ACCOUNT_BUY_DENIAL)
+)]
+#[case::external_client(
+    Some("EXTERNAL"),
+    Some("ALPHA"),
+    Some("ALPHA"),
+    Some(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=Some(\"EXTERNAL\"), account_id=None"
+    )
+)]
+#[case::unresolved(
+    None,
+    None,
+    None,
+    Some(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=None, account_id=None"
+    )
+)]
+fn test_submit_order_checks_account_of_routed_client(
+    #[case] client_id: Option<&str>,
+    #[case] route: Option<&str>,
+    #[case] default: Option<&str>,
+    #[case] denial: Option<&str>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = sim_accounts_cache(&instrument_audusd);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1000))
+        .price(Price::from("1.00000"))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let mut risk_engine = risk_engine_with_clients(
+        cache,
+        SIM_CLIENTS,
+        route.map(|client_id| (client_id, "SIM")),
+        default,
+    );
+    let command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        client_id.map(ClientId::from),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+
+    assert_submit_result(
+        &process_order_event_handler,
+        &execute_order_event_handler,
+        &order,
+        TradingCommand::SubmitOrder(command),
+        denial,
+    );
+}
+
+#[rstest]
+#[case::external_client(Some("EXTERNAL"), None)]
+#[case::unknown_client(Some("UNKNOWN"), Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::default_client(None, Some(POOR_ACCOUNT_BUY_DENIAL))]
+fn test_submit_order_for_external_client_uses_single_venue_account(
+    #[case] client_id: Option<&str>,
+    #[case] denial: Option<&str>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(cash_account_usd("SIM-001", "1000000 USD"))
+        .unwrap();
+    cache
+        .add_account(cash_account_usd("LOCAL-001", "500 USD"))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1000))
+        .price(Price::from("1.00000"))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let mut risk_engine = risk_engine_with_clients(
+        cache,
+        &[("LOCAL", "LOCAL-001", "LOCAL")],
+        None,
+        Some("LOCAL"),
+    );
+    let command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        client_id.map(ClientId::from),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+
+    assert_submit_result(
+        &process_order_event_handler,
+        &execute_order_event_handler,
+        &order,
+        TradingCommand::SubmitOrder(command),
+        denial,
+    );
+}
+
+#[rstest]
+#[case::explicit_within_balance(Some("IB-TEST"), None, None, 4, None)]
+#[case::explicit_over_balance(Some("IB-TEST"), None, None, 10, Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::route_within_balance(None, Some("IB-TEST"), None, 4, None)]
+#[case::route_over_balance(None, Some("IB-TEST"), None, 10, Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::default_within_balance(None, None, Some("IB-TEST"), 4, None)]
+#[case::default_over_balance(None, None, Some("IB-TEST"), 10, Some(POOR_ACCOUNT_BUY_DENIAL))]
+#[case::unresolved(
+    None,
+    None,
+    None,
+    4,
+    Some(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AAPL.XNAS, client_id=None, account_id=None"
+    )
+)]
+fn test_submit_order_for_broker_mic_instrument_checks_broker_account(
+    #[case] client_id: Option<&str>,
+    #[case] route: Option<&str>,
+    #[case] default: Option<&str>,
+    #[case] quantity: u64,
+    #[case] denial: Option<&str>,
+    equity_aapl: Equity,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::Equity(equity_aapl);
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(cash_account_usd("IB-DU123456", "500 USD"))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .price(Price::from("100.00"))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let mut risk_engine = risk_engine_with_clients(
+        cache,
+        &[("IB-TEST", "IB-DU123456", "IB")],
+        route.map(|client_id| (client_id, "XNAS")),
+        default,
+    );
+    let command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        client_id.map(ClientId::from),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+
+    assert_submit_result(
+        &process_order_event_handler,
+        &execute_order_event_handler,
+        &order,
+        TradingCommand::SubmitOrder(command),
+        denial,
+    );
+}
+
+#[rstest]
+#[case::explicit_alpha(Some("ALPHA"), None, None)]
+#[case::explicit_bravo(
+    Some("BRAVO"),
+    None,
+    Some((
+        "O-002",
+        "CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=500.00 USD, notional=800.00 USD"
+    ))
+)]
+#[case::route_bravo(
+    None,
+    Some("BRAVO"),
+    Some((
+        "O-002",
+        "CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=500.00 USD, notional=800.00 USD"
+    ))
+)]
+fn test_submit_order_list_checks_account_of_routed_client(
+    #[case] client_id: Option<&str>,
+    #[case] route: Option<&str>,
+    #[case] denial: Option<(&str, &str)>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let (mut risk_engine, orders, command) = submit_order_list_for_accounts(
+        &instrument_audusd,
+        route.map(|client_id| (client_id, "SIM")),
+        client_id,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(command.clone()));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if let Some((client_order_id, reason)) = denial {
+        let list_denied = Ustr::from("ORDER_LIST_DENIED: OL-1");
+        assert_eq!(
+            order_list_denials(&events),
+            vec![
+                (ClientOrderId::from(client_order_id), Ustr::from(reason)),
+                (orders[0].client_order_id(), list_denied),
+                (orders[1].client_order_id(), list_denied),
+            ]
+        );
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![TradingCommand::SubmitOrderList(command)]);
+    }
+}
+
+#[rstest]
+fn test_submit_order_list_without_routed_account_denies_every_order(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let (mut risk_engine, orders, command) =
+        submit_order_list_for_accounts(&instrument_audusd, None, None);
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(command));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    let reason = Ustr::from(
+        "VALIDATION_FAILED: No account available for risk checks: instrument_id=AUD/USD.SIM, client_id=None, account_id=None",
+    );
+    let list_denied = Ustr::from("ORDER_LIST_DENIED: OL-1");
+    assert_eq!(
+        order_list_denials(&events),
+        vec![
+            (orders[0].client_order_id(), reason),
+            (orders[1].client_order_id(), reason),
+            (orders[0].client_order_id(), list_denied),
+            (orders[1].client_order_id(), list_denied),
+        ]
+    );
+    assert!(commands.is_empty());
+}
+
+#[rstest]
+#[case::long_on_other_account("SIM-001", None, Some(POOR_ACCOUNT_SELL_DENIAL))]
+#[case::long_on_own_account("SIM-002", None, None)]
+#[case::pending_sell_on_other_account("SIM-002", Some("SIM-001"), None)]
+#[case::pending_sell_on_own_account("SIM-002", Some("SIM-002"), Some(POOR_ACCOUNT_SELL_DENIAL))]
+fn test_submit_order_ignores_positions_and_orders_of_other_accounts(
+    #[case] position_account: &str,
+    #[case] pending_account: Option<&str>,
+    #[case] denial: Option<&str>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = sim_accounts_cache(&instrument_audusd);
+    add_position_for_account(
+        &mut cache,
+        &instrument_audusd,
+        AccountId::from(position_account),
+        Quantity::from(1000),
+        PositionId::from("P-001"),
+        PositionSide::Long,
+    );
+
+    if let Some(account_id) = pending_account {
+        let pending = accept_order(
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument_audusd.id())
+                .client_order_id(ClientOrderId::from("O-PENDING"))
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from(1000))
+                .price(Price::from("1.10000"))
+                .build(),
+            AccountId::from(account_id),
+        );
+        cache.add_order(pending, None, None, false).unwrap();
+    }
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-SELL"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(1000))
+        .price(Price::from("1.00000"))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    cache.build_index();
+    let mut risk_engine = risk_engine_with_clients(cache, SIM_CLIENTS, None, None);
+    let command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        Some(ClientId::from("BRAVO")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+
+    assert_submit_result(
+        &process_order_event_handler,
+        &execute_order_event_handler,
+        &order,
+        TradingCommand::SubmitOrder(command),
+        denial,
+    );
+}
+
+#[rstest]
+#[case::long_on_other_account(
+    "SIM-001",
+    Some("CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=500.00 USD, notional=900.00 USD")
+)]
+#[case::long_on_own_account("SIM-002", None)]
+fn test_modify_order_ignores_positions_of_other_accounts(
+    #[case] position_account: &str,
+    #[case] denial: Option<&str>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = sim_accounts_cache(&instrument_audusd);
+    add_position_for_account(
+        &mut cache,
+        &instrument_audusd,
+        AccountId::from(position_account),
+        Quantity::from(1000),
+        PositionId::from("P-001"),
+        PositionSide::Long,
+    );
+    let order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100))
+            .price(Price::from("1.00000"))
+            .build(),
+        AccountId::from("SIM-002"),
+    );
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    cache.build_index();
+    let mut risk_engine = risk_engine_with_clients(cache, SIM_CLIENTS, None, None);
+    let command = TradingCommand::ModifyOrder(modify_command(
+        &order,
+        Some(Quantity::from(1000)),
+        None,
+        None,
+    ));
+
+    risk_engine.execute(command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if let Some(reason) = denial {
+        assert_modify_rejected(&events, &[order], reason);
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+}
+
+#[rstest]
+#[case::position_account_client("ALPHA", None)]
+#[case::other_account_client(
+    "BRAVO",
+    Some("TRADING_STATE_REDUCING: side=SELL, instrument_id=AUD/USD.SIM")
+)]
+fn test_submit_reducing_order_requires_position_on_routed_account(
+    #[case] client_id: &str,
+    #[case] denial: Option<&str>,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let position_id = PositionId::from("P-001");
+    let mut cache = sim_accounts_cache(&instrument_audusd);
+    add_position_for_account(
+        &mut cache,
+        &instrument_audusd,
+        AccountId::from("SIM-001"),
+        Quantity::from(1000),
+        position_id,
+        PositionSide::Long,
+    );
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-REDUCE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(1000))
+        .price(Price::from("1.00000"))
+        .reduce_only(true)
+        .build();
+    cache
+        .add_order(order.clone(), Some(position_id), None, false)
+        .unwrap();
+    let mut risk_engine = risk_engine_with_clients(cache, SIM_CLIENTS, None, None);
+    risk_engine.set_trading_state(TradingState::Reducing);
+    let command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        Some(ClientId::from(client_id)),
+        Some(position_id),
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+
+    assert_submit_result(
+        &process_order_event_handler,
+        &execute_order_event_handler,
+        &order,
+        TradingCommand::SubmitOrder(command),
+        denial,
+    );
+}
+
+fn cash_account_usd(account_id: &str, free: &str) -> AccountAny {
+    let mut state = cash_account_state_million_usd(free, "0 USD", free);
+    state.account_id = AccountId::from(account_id);
+    AccountAny::Cash(cash_account(state))
+}
+
+// Same-issuer SIM accounts with unequal free balances
+fn sim_accounts_cache(instrument: &InstrumentAny) -> Cache {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(cash_account_usd("SIM-001", "1000000 USD"))
+        .unwrap();
+    cache
+        .add_account(cash_account_usd("SIM-002", "500 USD"))
+        .unwrap();
+    cache
+}
+
+// Registers `(client_id, account_id, venue)` execution clients with an execution engine that
+// shares the risk engine's cache and configures `EXTERNAL` as an external client, so risk checks
+// see the engine's client accounts, routes, and external clients.
+fn risk_engine_with_clients(
+    cache: Cache,
+    clients: &[(&str, &str, &str)],
+    route: Option<(&str, &str)>,
+    default: Option<&str>,
+) -> RiskEngine {
+    let cache = Rc::new(RefCell::new(cache));
+
+    let config = ExecutionEngineConfig {
+        external_clients: Some(vec![ClientId::from("EXTERNAL")]),
+        ..Default::default()
+    };
+
+    let mut exec_engine = get_exec_engine(Some(cache.clone()), None, Some(config));
+
+    for (client_id, account_id, venue) in clients {
+        let client = StubExecutionClient::new(
+            ClientId::from(*client_id),
+            AccountId::from(*account_id),
+            Venue::from(*venue),
+            OmsType::Netting,
+            None,
+        );
+        exec_engine.register_client(Box::new(client)).unwrap();
+    }
+
+    if let Some((client_id, venue)) = route {
+        exec_engine
+            .register_venue_routing(ClientId::from(client_id), Venue::from(venue))
+            .unwrap();
+    }
+
+    if let Some(client_id) = default {
+        exec_engine
+            .set_default_client(ClientId::from(client_id))
+            .unwrap();
+    }
+
+    get_risk_engine(Some(cache), None, None, false)
+}
+
+fn assert_submit_result(
+    process_order_event_handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: &TypedIntoMessageSavingHandler<TradingCommand>,
+    order: &OrderAny,
+    command: TradingCommand,
+    denial: Option<&str>,
+) {
+    let events = get_process_order_event_handler_messages(process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(execute_order_event_handler);
+
+    if let Some(reason) = denial {
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type(), OrderEventType::Denied);
+        assert_eq!(events[0].client_order_id(), order.client_order_id());
+        assert_eq!(events[0].message(), Some(Ustr::from(reason)));
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+}
+
+// Two 400 USD buys on AUD/USD.SIM, which fit the rich SIM-001 account but not the 500 USD SIM-002
+fn submit_order_list_for_accounts(
+    instrument: &InstrumentAny,
+    route: Option<(&str, &str)>,
+    client_id: Option<&str>,
+) -> (RiskEngine, Vec<OrderAny>, SubmitOrderList) {
+    let mut cache = sim_accounts_cache(instrument);
+
+    let orders: Vec<OrderAny> = ["O-001", "O-002"]
+        .into_iter()
+        .map(|client_order_id| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(client_order_id))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from(400))
+                .price(Price::from("1.00000"))
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let risk_engine = risk_engine_with_clients(cache, SIM_CLIENTS, route, None);
+
+    let order_list = OrderList::new(
+        OrderListId::from("OL-1"),
+        instrument.id(),
+        orders[0].strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    let command = SubmitOrderList::new(
+        orders[0].trader_id(),
+        client_id.map(ClientId::from),
+        orders[0].strategy_id(),
+        order_list,
+        orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    (risk_engine, orders, command)
+}
+
+fn order_list_denials(events: &[OrderEventAny]) -> Vec<(ClientOrderId, Ustr)> {
+    events
+        .iter()
+        .map(|event| {
+            let OrderEventAny::Denied(denied) = event else {
+                panic!("Expected OrderDenied, received {event:?}")
+            };
+
+            (denied.client_order_id, denied.reason)
+        })
+        .collect()
 }

@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added configurable `writer_capacity` limits for socket and WebSocket clients, defaulting to 1,024 messages
 - Added same-venue execution client registration with explicit venue or default routing
 - Added Rust `Cache::account_id_for_client` to resolve execution client accounts independent of issuers
+- Added Rust `Cache::client_id_for_venue` to resolve the execution client that venue or default routing selects
 - Added Python `Cache.top_of_book()` without cloning the resident book (#5011), thanks @youayouly
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Added aggregate instrument fan-out across class directories to `list_parquet_files`
@@ -116,6 +117,8 @@ Released on TBD (UTC).
 - Fixed fill OMS resolution to use the owning execution client instead of venue or default routes
 - Fixed venue account lookups depending on add order and index rebuilds when accounts share an issuer
 - Fixed Python portfolio queries rejecting an explicit account when another account shares its issuer
+- Fixed `RiskEngine` using the venue account, not the routed client's (#4946), thanks for reporting @Artur-Sulej
+- Fixed `RiskEngine` position-reducing checks counting positions and open orders of other accounts
 - Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`

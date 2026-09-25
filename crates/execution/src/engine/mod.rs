@@ -154,6 +154,20 @@ impl ExecutionEngine {
         config: Option<ExecutionEngineConfig>,
     ) -> Self {
         let trader_id = get_message_bus().borrow().trader_id;
+        let external_clients: HashSet<ClientId> = config
+            .as_ref()
+            .and_then(|c| c.external_clients.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        {
+            let mut cache = cache.borrow_mut();
+
+            for client_id in &external_clients {
+                cache.add_external_client(*client_id);
+            }
+        }
+
         Self {
             clock: clock.clone(),
             cache,
@@ -162,12 +176,7 @@ impl ExecutionEngine {
             routing_map: AHashMap::new(),
             instrument_venues: AHashSet::new(),
             oms_overrides: AHashMap::new(),
-            external_clients: config
-                .as_ref()
-                .and_then(|c| c.external_clients.clone())
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
+            external_clients,
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
             orders_dispatched: RefCell::new(AHashSet::new()),
@@ -394,9 +403,11 @@ impl ExecutionEngine {
     pub fn register_default_client(&mut self, client: Box<dyn ExecutionClient>) {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
-        self.cache
-            .borrow_mut()
-            .add_client_account(client_id, adapter.account_id);
+        {
+            let mut cache = self.cache.borrow_mut();
+            cache.add_client_account(client_id, adapter.account_id);
+            cache.set_default_client(client_id);
+        }
 
         self.clients.insert(client_id, adapter);
         self.default_client_id = Some(client_id);
@@ -417,6 +428,8 @@ impl ExecutionEngine {
         if !self.clients.contains_key(&client_id) {
             anyhow::bail!("No client registered with ID {client_id}");
         }
+
+        self.cache.borrow_mut().set_default_client(client_id);
         self.default_client_id = Some(client_id);
         log::debug!("Set client {client_id} as default");
         Ok(())
@@ -578,6 +591,7 @@ impl ExecutionEngine {
             );
         }
 
+        self.cache.borrow_mut().add_client_route(client_id, venue);
         self.routing_map.insert(venue, client_id);
         log::info!("Set client {client_id} routing for {venue}");
         Ok(())
@@ -635,7 +649,11 @@ impl ExecutionEngine {
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
         if self.clients.shift_remove(&client_id).is_some() {
-            self.cache.borrow_mut().remove_client_account(&client_id);
+            {
+                let mut cache = self.cache.borrow_mut();
+                cache.remove_client_account(&client_id);
+                cache.remove_client_routes(&client_id);
+            }
 
             if self.default_client_id == Some(client_id) {
                 self.default_client_id = None;

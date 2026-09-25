@@ -871,20 +871,25 @@ mod tests {
         enums::Environment,
         factories::{ClientConfig, ExecutionClientFactory},
         messages::execution::{SubmitOrder, TradingCommand},
-        msgbus::{self, switchboard},
+        msgbus::{
+            self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler, switchboard,
+        },
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
-        enums::{OmsType, OrderType},
+        accounts::{AccountAny, CashAccount},
+        enums::{AccountType, OmsType, OrderSide, OrderType},
+        events::{AccountState, OrderDeniedReason, OrderEventAny},
         identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{Order, OrderTestBuilder},
         stubs::TestDefault,
-        types::Quantity,
+        types::{AccountBalance, Money, Price, Quantity},
     };
     use nautilus_trading::ImportableControllerConfig;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::LiveNodeBuilder;
     use crate::node::config::RoutingConfig;
@@ -1030,6 +1035,127 @@ mod tests {
                 vec![instrument.clone()]
             );
         }
+    }
+
+    #[rstest]
+    fn test_execution_client_routing_selects_risk_check_account() {
+        let clients: Vec<_> = (0..2)
+            .map(|i| {
+                StubExecutionClient::new(
+                    ClientId::new(format!("CLIENT-{i}")),
+                    AccountId::new(format!("ACCOUNT-{i}")),
+                    Venue::from("SIM"),
+                    OmsType::Netting,
+                    None,
+                )
+            })
+            .collect();
+
+        let mut builder =
+            LiveNodeBuilder::new(TraderId::test_default(), Environment::Live).unwrap();
+
+        for (i, client) in clients.iter().enumerate() {
+            builder = builder
+                .add_exec_client_with_routing(
+                    Some(format!("client-{i}")),
+                    Box::new(RoutingClientFactory(client.clone())),
+                    Box::new(RoutingClientConfig),
+                    RoutingConfig {
+                        default: i == 0,
+                        venues: None,
+                    },
+                )
+                .unwrap();
+        }
+
+        let node = builder.build().unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .price(Price::from("1.00000"))
+            .build();
+        let explicit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-EXPLICIT"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(200))
+            .price(Price::from("1.00000"))
+            .build();
+        {
+            let mut cache = node.kernel().cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache
+                .add_account(cash_account(clients[0].account_id(), "1000000 USD"))
+                .unwrap();
+            cache
+                .add_account(cash_account(clients[1].account_id(), "150 USD"))
+                .unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+            cache
+                .add_order(explicit_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let (command_handler, commands) =
+            get_typed_into_message_saving_handler::<TradingCommand>(None);
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            command_handler,
+        );
+        let (event_handler, events) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            event_handler,
+        );
+
+        let mut risk_engine = node.kernel().risk_engine.borrow_mut();
+        risk_engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &order,
+            TraderId::test_default(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+        risk_engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &explicit_order,
+            TraderId::test_default(),
+            Some(clients[1].client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+
+        let forwarded: Vec<_> = commands
+            .get_messages()
+            .iter()
+            .map(|command| match command {
+                TradingCommand::SubmitOrder(cmd) => (cmd.client_order_id, cmd.client_id),
+                other => panic!("Unexpected command {other:?}"),
+            })
+            .collect();
+
+        let events = events.get_messages();
+        assert_eq!(forwarded, vec![(order.client_order_id(), None)]);
+        assert_eq!(events.len(), 1);
+
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("Expected OrderDenied")
+        };
+
+        assert_eq!(denied.client_order_id, explicit_order.client_order_id());
+        assert_eq!(
+            denied.reason,
+            Ustr::from(
+                &OrderDeniedReason::NotionalExceedsFreeBalance {
+                    free_balance: Money::from("150 USD"),
+                    notional: Money::from("200 USD"),
+                }
+                .to_string()
+            )
+        );
     }
 
     #[rstest]
@@ -1190,6 +1316,25 @@ mod tests {
 
         let error = builder.build().unwrap_err().to_string();
         assert!(error.contains(expected), "Unexpected error: {error}");
+    }
+
+    fn cash_account(account_id: AccountId, free: &str) -> AccountAny {
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from(free),
+                Money::from("0 USD"),
+                Money::from(free),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        AccountAny::Cash(CashAccount::new(state, false, false))
     }
 
     #[derive(Debug)]

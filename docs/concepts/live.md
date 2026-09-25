@@ -37,8 +37,10 @@ A live node can register independently named execution clients for the same venu
 neither the command's `client_id` nor account-based routing resolves one.
 
 :::warning[Account isolation]
-Registering multiple clients for a venue does not provide end-to-end account isolation for risk,
-positions, and order management across same-venue accounts.
+Registering multiple clients for a venue does not provide end-to-end account isolation for
+positions and order management across same-venue accounts. Pre-trade risk checks use the account of
+the client that will run each command; see
+[Account selection](execution/index.md#account-selection).
 :::
 
 ### Order routing

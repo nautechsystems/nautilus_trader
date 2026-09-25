@@ -5672,6 +5672,45 @@ fn test_cache_client_accounts_survive_index_rebuild_and_reset(
 }
 
 #[rstest]
+fn test_cache_client_routes_survive_index_rebuild_and_reset(mut cache: Cache) {
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let external_id = ClientId::from("EXTERNAL");
+    let sim = Venue::from("SIM");
+    let xnas = Venue::from("XNAS");
+    cache.add_client_route(alpha_id, sim);
+    cache.set_default_client(bravo_id);
+    cache.add_external_client(external_id);
+
+    let resolve = |cache: &Cache| {
+        (
+            cache.client_id_for_venue(&sim).copied(),
+            cache.client_id_for_venue(&xnas).copied(),
+            cache.is_external_client(&external_id),
+            cache.is_external_client(&alpha_id),
+        )
+    };
+
+    cache.clear_index();
+    cache.build_index();
+    let after_rebuild = resolve(&cache);
+    cache.reset();
+    let after_reset = resolve(&cache);
+    cache.remove_client_routes(&alpha_id);
+    let after_remove_route = resolve(&cache);
+    cache.remove_client_routes(&bravo_id);
+    let after_remove_default = resolve(&cache);
+
+    assert_eq!(after_rebuild, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(after_reset, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(
+        after_remove_route,
+        (Some(bravo_id), Some(bravo_id), true, false)
+    );
+    assert_eq!(after_remove_default, (None, None, true, false));
+}
+
+#[rstest]
 fn test_cache_account_mut_returns_none_for_missing_account(mut cache: Cache) {
     assert!(cache.account_mut(&AccountId::test_default()).is_none());
 }

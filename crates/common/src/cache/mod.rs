@@ -129,6 +129,9 @@ pub struct Cache {
     yield_curves: AHashMap<String, YieldCurveData>,
     external_order_claims: AHashMap<InstrumentId, StrategyId>,
     client_accounts: AHashMap<ClientId, AccountId>,
+    client_routes: AHashMap<Venue, ClientId>,
+    default_client_id: Option<ClientId>,
+    external_clients: AHashSet<ClientId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
@@ -164,6 +167,9 @@ impl Debug for Cache {
             .field("yield_curves", &self.yield_curves)
             .field("external_order_claims", &self.external_order_claims)
             .field("client_accounts", &self.client_accounts)
+            .field("client_routes", &self.client_routes)
+            .field("default_client_id", &self.default_client_id)
+            .field("external_clients", &self.external_clients)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
             .field("order_lists", &self.order_lists)
@@ -233,6 +239,9 @@ impl Cache {
             yield_curves: AHashMap::new(),
             external_order_claims: AHashMap::new(),
             client_accounts: AHashMap::new(),
+            client_routes: AHashMap::new(),
+            default_client_id: None,
+            external_clients: AHashSet::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
             order_lists: AHashMap::new(),
@@ -375,6 +384,51 @@ impl Cache {
     /// Removes the account registration of the execution client `client_id`.
     pub fn remove_client_account(&mut self, client_id: &ClientId) {
         self.client_accounts.remove(client_id);
+    }
+
+    /// Returns the execution client registered as the route for `venue`, else the default client.
+    #[must_use]
+    pub fn client_id_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
+        self.client_routes
+            .get(venue)
+            .or(self.default_client_id.as_ref())
+    }
+
+    /// Registers the execution client `client_id` as the route for commands on `venue`, replacing
+    /// any previous route for the venue.
+    ///
+    /// Routes and the default client survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_client_route(&mut self, client_id: ClientId, venue: Venue) {
+        self.client_routes.insert(venue, client_id);
+    }
+
+    /// Registers the execution client `client_id` as the default route for venues without a
+    /// route, replacing any previous default.
+    pub fn set_default_client(&mut self, client_id: ClientId) {
+        self.default_client_id = Some(client_id);
+    }
+
+    /// Removes the venue routes and default route of the execution client `client_id`.
+    pub fn remove_client_routes(&mut self, client_id: &ClientId) {
+        self.client_routes.retain(|_, routed| routed != client_id);
+
+        if self.default_client_id.as_ref() == Some(client_id) {
+            self.default_client_id = None;
+        }
+    }
+
+    /// Returns whether `client_id` is registered as an external execution client, whose commands
+    /// are published for another process to execute.
+    #[must_use]
+    pub fn is_external_client(&self, client_id: &ClientId) -> bool {
+        self.external_clients.contains(client_id)
+    }
+
+    /// Registers `client_id` as an external execution client.
+    ///
+    /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_external_client(&mut self, client_id: ClientId) {
+        self.external_clients.insert(client_id);
     }
 
     /// Sets the cache database adapter for persistence.
@@ -1980,8 +2034,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// and execution client account registrations are retained so registered strategy and client
-    /// routing remain configured across resets.
+    /// and execution client account, route, and external client registrations are retained so
+    /// registered strategy and client routing remain configured across resets.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 

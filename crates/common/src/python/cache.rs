@@ -1693,8 +1693,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// and execution client account registrations are retained so registered strategy and client
-    /// routing remain configured across resets.
+    /// and execution client account, route, and external client registrations are retained so
+    /// registered strategy and client routing remain configured across resets.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();

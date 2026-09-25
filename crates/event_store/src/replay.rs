@@ -2291,6 +2291,28 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Reapplied by execution client routing setup on every node start
+            "add_client_route",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "set_default_client",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "remove_client_routes",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            // Reapplied from execution engine configuration on every node start
+            "add_external_client",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "set_database",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

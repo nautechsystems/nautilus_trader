@@ -701,6 +701,78 @@ fn test_client_accounts_follow_client_registration(
 }
 
 #[rstest]
+fn test_client_routes_follow_client_routing(
+    mut execution_engine: ExecutionEngine,
+    #[values(false, true)] register_default: bool,
+) {
+    let sim = Venue::from("SIM");
+    let xnas = Venue::from("XNAS");
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+
+    let alpha = StubExecutionClient::new(
+        alpha_id,
+        AccountId::from("SIM-001"),
+        sim,
+        OmsType::Netting,
+        None,
+    );
+
+    let bravo = StubExecutionClient::new(
+        bravo_id,
+        AccountId::from("SIM-002"),
+        sim,
+        OmsType::Netting,
+        None,
+    );
+    execution_engine.register_client(Box::new(alpha)).unwrap();
+
+    if register_default {
+        execution_engine.register_default_client(Box::new(bravo));
+    } else {
+        execution_engine.register_client(Box::new(bravo)).unwrap();
+        execution_engine.set_default_client(bravo_id).unwrap();
+    }
+
+    execution_engine
+        .register_venue_routing(alpha_id, sim)
+        .unwrap();
+
+    let resolve = |engine: &ExecutionEngine| {
+        let cache = engine.cache().borrow();
+        (
+            cache.client_id_for_venue(&sim).copied(),
+            cache.client_id_for_venue(&xnas).copied(),
+        )
+    };
+
+    let routed = resolve(&execution_engine);
+    let reroute_result = execution_engine.register_venue_routing(bravo_id, sim);
+    let redefault_result = execution_engine.set_default_client(alpha_id);
+    let after_rejected = resolve(&execution_engine);
+    execution_engine.reset();
+    let after_reset = resolve(&execution_engine);
+    execution_engine.deregister_client(alpha_id).unwrap();
+    let after_route_deregister = resolve(&execution_engine);
+    execution_engine.deregister_client(bravo_id).unwrap();
+    let after_default_deregister = resolve(&execution_engine);
+
+    assert_eq!(routed, (Some(alpha_id), Some(bravo_id)));
+    assert_eq!(
+        reroute_result.unwrap_err().to_string(),
+        "Venue SIM already routed to ALPHA, cannot re-route to BRAVO"
+    );
+    assert_eq!(
+        redefault_result.unwrap_err().to_string(),
+        "default client already registered"
+    );
+    assert_eq!(after_rejected, (Some(alpha_id), Some(bravo_id)));
+    assert_eq!(after_reset, (Some(alpha_id), Some(bravo_id)));
+    assert_eq!(after_route_deregister, (Some(bravo_id), Some(bravo_id)));
+    assert_eq!(after_default_deregister, (None, None));
+}
+
+#[rstest]
 fn test_check_connected_when_client_connected_returns_true(mut execution_engine: ExecutionEngine) {
     let mut stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),

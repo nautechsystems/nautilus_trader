@@ -2547,6 +2547,13 @@ mod serial_tests {
             .unwrap();
         pg_cache_a.add_currency(&Currency::USD()).unwrap();
 
+        // Each cache writes on its own connection, so B's account needs A's currency committed
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "currency").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
         let account_a = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
             false,
