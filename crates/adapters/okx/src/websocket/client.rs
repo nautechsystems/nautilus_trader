@@ -3770,7 +3770,7 @@ mod tests {
             },
         },
         websocket::{
-            handler::is_post_only_auto_cancel,
+            handler::{is_post_only_auto_cancel, is_unfilled_rpi_cancel},
             messages::{OKXOrderMsg, OKXWebSocketError, OKXWsFrame},
         },
     };
@@ -4570,6 +4570,30 @@ mod tests {
         msg.ord_type = OKXOrderType::PostOnly;
 
         assert!(!is_post_only_auto_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_unfilled_rpi_cancel_true_for_unfilled_rpi_order() {
+        let mut msg = sample_canceled_order_msg();
+        msg.ord_type = OKXOrderType::Rpi;
+
+        assert!(is_unfilled_rpi_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_unfilled_rpi_cancel_false_for_non_rpi_order_type() {
+        let msg = sample_canceled_order_msg();
+
+        assert!(!is_unfilled_rpi_cancel(&msg));
+    }
+
+    #[rstest]
+    fn test_is_unfilled_rpi_cancel_false_when_partially_filled() {
+        let mut msg = sample_canceled_order_msg();
+        msg.ord_type = OKXOrderType::Rpi;
+        msg.acc_fill_sz = Some("1".to_string());
+
+        assert!(!is_unfilled_rpi_cancel(&msg));
     }
 
     #[tokio::test]
