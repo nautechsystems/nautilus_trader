@@ -3463,7 +3463,7 @@ mod tests {
 
         let correlation_id = UUID4::new();
         let handler_called = Rc::new(RefCell::new(false));
-        let handler_called_clone = handler_called.clone();
+        let handler_called_clone = Rc::clone(&handler_called);
         msgbus::register_response_handler(
             &correlation_id,
             msgbus::ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {

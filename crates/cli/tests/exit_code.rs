@@ -19,6 +19,7 @@
 //! under `--features defi`.
 
 #![cfg(feature = "defi")]
+#![warn(clippy::clone_on_ref_ptr)]
 
 use std::process::Command;
 

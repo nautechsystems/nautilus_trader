@@ -15,6 +15,8 @@
 
 //! Log file output from the `nautilus` binary.
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{fs, process::Command};
 
 use rstest::rstest;
