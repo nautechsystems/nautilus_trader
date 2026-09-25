@@ -28,7 +28,11 @@ use super::*;
 fn engine() -> RiskEngine {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
-    let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
+    let portfolio = Portfolio::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        None,
+    );
     RiskEngine::new(RiskEngineConfig::default(), portfolio, clock, cache)
 }
 
