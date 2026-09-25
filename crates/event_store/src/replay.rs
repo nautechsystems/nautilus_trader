@@ -1473,7 +1473,7 @@ fn apply_orderless_flip_fill(
         return Ok(false);
     }
 
-    if position.side != PositionSide::Flat && position.trade_ids().contains(&fill.trade_id) {
+    if position.side != PositionSide::Flat && position.trade_ids.contains(&fill.trade_id) {
         return Ok(true);
     }
 
@@ -1545,7 +1545,7 @@ fn apply_fill_to_position(
         // Mirror live `Position::apply_fill`: a duplicate inside an open episode is
         // the idempotent replay no-op; historical duplicates on a Flat position are
         // ignored inside `apply` itself from the carried replay history.
-        if position.side != PositionSide::Flat && position.trade_ids().contains(&fill.trade_id) {
+        if position.side != PositionSide::Flat && position.trade_ids.contains(&fill.trade_id) {
             return Ok(true);
         }
 
