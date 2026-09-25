@@ -486,6 +486,41 @@ where
     deserializer.deserialize_any(DecimalVisitor)
 }
 
+/// Deserializes a `Decimal` through `rust_decimal`'s own `Deserialize` implementation, keeping
+/// its rounding and scale.
+///
+/// When `rust_decimal`'s arbitrary-precision integration is disabled, `serde_json`
+/// arbitrary-precision numbers parse from their text as `rust_decimal` parses a string, which
+/// matches the result with that integration enabled. Unlike [`deserialize_decimal`], null and
+/// empty strings are errors.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The value is null or an empty string.
+/// - The value is a non-numeric type.
+/// - `rust_decimal` rejects the value.
+pub fn deserialize_decimal_native<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Value {
+        Decimal(Decimal),
+        Number(serde_json::Number),
+    }
+
+    match Value::deserialize(deserializer)? {
+        Value::Decimal(value) => Ok(value),
+
+        // Handle serde_json's numeric map when rust_decimal's AP integration is disabled
+        Value::Number(value) => <Decimal as Deserialize>::deserialize(
+            serde::de::value::StringDeserializer::<D::Error>::new(value.to_string()),
+        ),
+    }
+}
+
 /// Deserializes an `Option<Decimal>` from a JSON string, number, or null.
 ///
 /// High-performance implementation using a custom visitor that avoids intermediate
@@ -834,11 +869,12 @@ mod tests {
 
     use super::{
         DecimalVisitor, OptionalDecimalVisitor, Serializable, default_false, default_true,
-        deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_or_zero,
-        deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
-        deserialize_optional_decimal, deserialize_optional_decimal_or_zero,
-        deserialize_optional_decimal_str, deserialize_optional_string_to_u64,
-        deserialize_string_to_u8, deserialize_string_to_u64, deserialize_vec_decimal_from_str,
+        deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_native,
+        deserialize_decimal_or_zero, deserialize_empty_string_as_none,
+        deserialize_empty_ustr_as_none, deserialize_optional_decimal,
+        deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
+        deserialize_optional_string_to_u64, deserialize_string_to_u8, deserialize_string_to_u64,
+        deserialize_vec_decimal_from_str,
         msgpack::{FromMsgPack, ToMsgPack},
         parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
         serialize_optional_decimal, serialize_optional_decimal_as_str,
@@ -859,6 +895,138 @@ mod tests {
     }
 
     impl Serializable for SerializableTestStruct {}
+
+    #[rstest]
+    #[case("0.125", "0.125", 3)]
+    #[case("9007199254740993", "9007199254740993", 0)]
+    #[case("\"1.2500\"", "1.2500", 4)]
+    #[case(
+        "\"0.12345678901234567890123456789\"",
+        "0.1234567890123456789012345679",
+        28
+    )]
+    fn test_native_decimal_preserves_rounding_and_scale(
+        #[case] token: &str,
+        #[case] expected: &str,
+        #[case] scale: u32,
+    ) {
+        let direct =
+            deserialize_decimal_native(&mut serde_json::Deserializer::from_str(token)).unwrap();
+        let buffered =
+            deserialize_decimal_native(serde_json::from_str::<serde_json::Value>(token).unwrap())
+                .unwrap();
+        let expected = Decimal::from_str_exact(expected).unwrap();
+
+        assert_eq!(direct, expected);
+        assert_eq!(direct.scale(), scale);
+        assert_eq!(buffered, expected);
+        assert_eq!(buffered.scale(), scale);
+    }
+
+    #[rstest]
+    #[case("null")]
+    #[case("true")]
+    #[case("\"\"")]
+    #[case("\"NaN\"")]
+    #[case("\"79228162514264337593543950336\"")]
+    fn test_native_decimal_rejects_invalid_values(#[case] token: &str) {
+        let direct = deserialize_decimal_native(&mut serde_json::Deserializer::from_str(token));
+        let buffered =
+            deserialize_decimal_native(serde_json::from_str::<serde_json::Value>(token).unwrap());
+
+        assert!(direct.is_err());
+        assert!(buffered.is_err());
+    }
+
+    #[rstest]
+    #[case("1.25")]
+    #[case("2.0")]
+    #[case("1.2500")]
+    #[case("-0.0")]
+    #[case("1e-7")]
+    #[case("1.5E3")]
+    #[case("1e-30")]
+    #[case("1e30")]
+    #[case("13.223699999999997")]
+    #[case("9007199254740993")]
+    #[case("18446744073709551615")]
+    #[case("-9223372036854775808")]
+    #[case("\"1.2500\"")]
+    #[case("\"1e5\"")]
+    #[case("\"0.12345678901234567890123456789\"")]
+    #[case("\"79228162514264337593543950336\"")]
+    #[case("\"not-a-number\"")]
+    fn test_native_decimal_matches_rust_decimal(#[case] token: &str) {
+        let value = serde_json::from_str::<serde_json::Value>(token).unwrap();
+
+        // Where rust_decimal rejects an arbitrary-precision number map, the token digits must
+        // parse as rust_decimal parses them when its own AP integration is enabled.
+        let fallback = (is_arbitrary_precision() && value.is_number())
+            .then(|| serde_json::from_value::<Decimal>(serde_json::json!(token)).ok())
+            .flatten();
+        let routes = [
+            (
+                serde_json::from_str::<Decimal>(token).ok(),
+                deserialize_decimal_native(&mut serde_json::Deserializer::from_str(token)).ok(),
+            ),
+            (
+                serde_json::from_value::<Decimal>(value.clone()).ok(),
+                deserialize_decimal_native(value).ok(),
+            ),
+        ];
+
+        for (native, consolidated) in routes {
+            let expected = native.or(fallback);
+            assert_eq!(
+                consolidated.map(|value| (value, value.scale())),
+                expected.map(|value| (value, value.scale()))
+            );
+        }
+    }
+
+    #[rstest]
+    #[case("10.0", Decimal::from(10), 0, 1, 0)]
+    #[case("1.2500", Decimal::new(125, 2), 2, 4, 4)]
+    #[case("1.25e1", Decimal::new(125, 1), 1, 1, 1)]
+    fn test_numeric_decimal_preserves_route_scale(
+        #[case] token: &str,
+        #[case] expected: Decimal,
+        #[case] float_scale: u32,
+        #[case] token_scale: u32,
+        #[case] buffered_token_scale: u32,
+    ) {
+        let arbitrary_precision = is_arbitrary_precision();
+
+        let scale = if arbitrary_precision {
+            token_scale
+        } else {
+            float_scale
+        };
+
+        let buffered_scale = if arbitrary_precision {
+            buffered_token_scale
+        } else {
+            float_scale
+        };
+
+        let direct = deserialize_decimal(&mut serde_json::Deserializer::from_str(token)).unwrap();
+        let buffered =
+            deserialize_decimal(serde_json::from_str::<serde_json::Value>(token).unwrap()).unwrap();
+        let quoted = deserialize_decimal(serde_json::Value::String("1.2500".to_string())).unwrap();
+        assert_eq!(direct, expected);
+        assert_eq!(direct.scale(), scale);
+        assert_eq!(buffered, expected);
+        assert_eq!(buffered.scale(), buffered_scale);
+        assert_eq!(quoted, Decimal::new(12500, 4));
+        assert_eq!(quoted.scale(), 4);
+    }
+
+    fn is_arbitrary_precision() -> bool {
+        serde_json::from_str::<serde_json::Number>("1.2500")
+            .unwrap()
+            .to_string()
+            == "1.2500"
+    }
 
     #[rstest]
     fn test_sorted_hashset_serialization_is_deterministic() {

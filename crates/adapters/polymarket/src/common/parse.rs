@@ -15,17 +15,17 @@
 
 //! Parsing utilities for the Polymarket adapter.
 
-use std::str::FromStr;
-
+pub(crate) use nautilus_core::serialization::decimal::parse as parse_decimal_exact;
 pub use nautilus_core::serialization::{
+    decimal::{
+        deserialize_json as deserialize_decimal_from_json,
+        deserialize_optional_json as deserialize_optional_decimal_from_json,
+    },
     serialize_decimal_as_str, serialize_optional_decimal_as_str,
 };
 use nautilus_model::identifiers::TradeId;
 use rust_decimal::Decimal;
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, Error, MapAccess, SeqAccess, Unexpected, Visitor},
-};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use serde_json::{Number, value::RawValue};
 
 use crate::common::enums::PolymarketOrderSide;
@@ -51,98 +51,8 @@ where
         .transpose()
 }
 
-/// Deserializes an exact decimal from a JSON number or numeric string.
-///
-/// # Errors
-///
-/// Returns an error for an unsupported JSON shape or a value that cannot be represented exactly.
-pub fn deserialize_decimal_from_json<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let raw = Box::<RawValue>::deserialize(deserializer)?;
-    decimal_from_json(&raw).map_err(D::Error::custom)
-}
-
-/// Deserializes an optional exact decimal from a JSON number or numeric string.
-///
-/// # Errors
-///
-/// Returns an error for an unsupported JSON shape or a value that cannot be represented exactly.
-pub fn deserialize_optional_decimal_from_json<'de, D>(
-    deserializer: D,
-) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Option::<Box<RawValue>>::deserialize(deserializer)?
-        .map(|raw| decimal_from_json(&raw).map_err(D::Error::custom))
-        .transpose()
-}
-
 pub(crate) fn decimal_from_json(raw: &RawValue) -> anyhow::Result<Decimal> {
-    if raw.get().starts_with('"') {
-        let value: String = serde_json::from_str(raw.get())?;
-        Ok(parse_decimal_exact(&value)?)
-    } else {
-        Ok(parse_decimal_exact(raw.get())?)
-    }
-}
-
-pub(crate) fn parse_decimal_exact(value: &str) -> Result<Decimal, rust_decimal::Error> {
-    if let Some((base, exponent)) = value.split_once(['e', 'E']) {
-        let exponent: i64 = exponent
-            .parse()
-            .map_err(|_| rust_decimal::Error::from("invalid decimal exponent"))?;
-        let negative = base.starts_with('-');
-        let base = base
-            .strip_prefix(['-', '+'])
-            .unwrap_or(base)
-            .replace('_', "");
-        let mut parts = base.split('.');
-        let whole = parts.next().unwrap_or_default();
-
-        let fraction = parts.next().unwrap_or_default();
-        if parts.next().is_some() || whole.is_empty() && fraction.is_empty() {
-            return Err(rust_decimal::Error::from("invalid decimal significand"));
-        }
-
-        let mut digits = format!("{whole}{fraction}");
-        if !digits.bytes().all(|digit| digit.is_ascii_digit()) {
-            return Err(rust_decimal::Error::from("invalid decimal significand"));
-        }
-
-        let mut scale = i64::try_from(fraction.len())
-            .ok()
-            .and_then(|scale| scale.checked_sub(exponent))
-            .ok_or_else(|| rust_decimal::Error::from("decimal scale out of range"))?;
-
-        digits = digits.trim_start_matches('0').to_string();
-        if digits.is_empty() {
-            return Ok(Decimal::ZERO);
-        }
-
-        while scale > 0 && digits.ends_with('0') {
-            digits.pop();
-            scale -= 1;
-        }
-
-        if !(0..=28).contains(&scale) {
-            if (-28..0).contains(&scale) && digits.len() as i64 - scale <= 29 {
-                digits.extend(std::iter::repeat_n('0', (-scale) as usize));
-                scale = 0;
-            } else {
-                return Err(rust_decimal::Error::from("decimal scale out of range"));
-            }
-        }
-
-        let mantissa: i128 = digits
-            .parse()
-            .map_err(|_| rust_decimal::Error::from("decimal mantissa out of range"))?;
-        Decimal::try_from_i128_with_scale(if negative { -mantissa } else { mantissa }, scale as u32)
-    } else {
-        Decimal::from_str_exact(value)
-    }
+    Ok(deserialize_decimal_from_json(raw)?)
 }
 
 /// Deserializes an exact decimal from a numeric string.
@@ -183,82 +93,8 @@ pub(crate) fn deserialize_crypto_twap_value<'de, D>(deserializer: D) -> Result<D
 where
     D: Deserializer<'de>,
 {
-    struct DecimalLikeVisitor;
-
-    impl<'de> Visitor<'de> for DecimalLikeVisitor {
-        type Value = Decimal;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("`value` as a finite decimal JSON number or numeric string")
-        }
-
-        fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
-            Ok(Decimal::from(value))
-        }
-
-        fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
-            Ok(Decimal::from(value))
-        }
-
-        fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
-            Decimal::try_from_i128_with_scale(value, 0)
-                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
-        }
-
-        fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E> {
-            Decimal::from_str(&value.to_string())
-                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
-        }
-
-        fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
-            if !value.is_finite() {
-                return Err(E::invalid_value(Unexpected::Float(value), &self));
-            }
-
-            Decimal::try_from(value)
-                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
-        }
-
-        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-            let result = parse_decimal_exact(value);
-
-            result.map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
-        }
-
-        fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
-            self.visit_str(&value)
-        }
-
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            Err(E::invalid_type(Unexpected::Unit, &self))
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Err(E::invalid_type(Unexpected::Option, &self))
-        }
-
-        fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
-            Err(E::invalid_type(Unexpected::Bool(value), &self))
-        }
-
-        fn visit_seq<A: SeqAccess<'de>>(self, _seq: A) -> Result<Self::Value, A::Error> {
-            Err(A::Error::invalid_type(Unexpected::Seq, &self))
-        }
-
-        fn visit_map<A: MapAccess<'de>>(self, _map: A) -> Result<Self::Value, A::Error> {
-            Err(A::Error::invalid_type(Unexpected::Map, &self))
-        }
-
-        fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
-            Err(E::invalid_type(Unexpected::Bytes(value), &self))
-        }
-
-        fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
-            Err(E::invalid_type(Unexpected::Bytes(&value), &self))
-        }
-    }
-
-    deserializer.deserialize_any(DecimalLikeVisitor)
+    nautilus_core::serialization::decimal::deserialize_json(deserializer)
+        .map_err(|e| D::Error::custom(format!("invalid decimal-like `value`: {e}")))
 }
 
 /// Serializes a decimal as an exact JSON number token.
@@ -371,6 +207,51 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
+
+    #[rstest]
+    fn test_raw_decimal_shapes_and_twap_value() {
+        let tokens: Vec<Box<RawValue>> =
+            serde_json::from_str(include_str!("../../test_data/decimal_tokens.json")).unwrap();
+        let expected = [
+            Decimal::from_str_exact("0.1234567890123456789012345678").unwrap(),
+            Decimal::from_str_exact("123456789.1234567890123456789").unwrap(),
+        ];
+
+        for (token, expected) in tokens.iter().zip(expected) {
+            assert_eq!(
+                deserialize_decimal_from_json(token.as_ref()).unwrap(),
+                expected
+            );
+            assert_eq!(
+                deserialize_crypto_twap_value(token.as_ref()).unwrap(),
+                expected
+            );
+            assert_eq!(
+                deserialize_optional_decimal_from_json(token.as_ref()).unwrap(),
+                Some(expected)
+            );
+        }
+
+        assert_eq!(
+            deserialize_decimal_from_json_number(tokens[0].as_ref()).unwrap(),
+            expected[0]
+        );
+        assert!(deserialize_decimal_from_json_number(tokens[1].as_ref()).is_err());
+        assert_eq!(
+            deserialize_optional_decimal_from_json(tokens[3].as_ref()).unwrap(),
+            None
+        );
+
+        for token in &tokens[2..] {
+            assert!(deserialize_decimal_from_json(token.as_ref()).is_err());
+            assert!(
+                deserialize_crypto_twap_value(token.as_ref())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("`value`")
+            );
+        }
+    }
 
     #[rstest]
     #[case("1e-28", "0.0000000000000000000000000001")]

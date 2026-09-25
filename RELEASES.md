@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed Postgres cache loading and overwriting another trader's orders, positions, and fills (#5070), thanks @utx0
 - Fixed inverse option notional and PnL using `1 / price` valuation (#5053), thanks for reporting @Kilvish25
 - Fixed backtest inverse option cash settlement at quote-point intrinsic value (#5053), thanks for reporting @Kilvish25
+- Fixed adapter JSON decimal and `UnixNanos` parsing with `serde_json/arbitrary_precision`
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Architect AX market data subscriptions not resuming after an explicit reconnect
@@ -192,6 +193,7 @@ Released on TBD (UTC).
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
+- Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`
 
 ### Internal Improvements
 
@@ -202,6 +204,7 @@ Released on TBD (UTC).
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
+- Standardized adapter JSON decimal parsing on shared core parsers
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching

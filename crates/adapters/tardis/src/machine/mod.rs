@@ -29,7 +29,7 @@ use std::{
 
 use async_stream::stream;
 use futures_util::{Sink, SinkExt, Stream, StreamExt, pin_mut};
-use message::WsMessage;
+use message::{WsMessage, decode_ws_message};
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::urlencoding};
 use tokio_tungstenite::{
     connect_async,
@@ -219,7 +219,7 @@ async fn stream_from_websocket(
                         break;
                     }
                     tungstenite::Message::Text(msg) => {
-                        match serde_json::from_str::<WsMessage>(&msg) {
+                        match decode_ws_message(&msg) {
                             Ok(parsed_msg) => yield Ok(parsed_msg),
                             Err(e) => {
                                 log::error!("Failed to deserialize message: {msg}. Error: {e}");

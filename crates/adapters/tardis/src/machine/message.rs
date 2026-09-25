@@ -256,6 +256,43 @@ pub enum WsMessage {
     Disconnect(DisconnectMsg),
 }
 
+// Dispatches on `type` before parsing the message directly: serde's internally tagged enum
+// buffering turns numbers into maps under `serde_json/arbitrary_precision`, which plain
+// numeric fields reject.
+pub(crate) fn decode_ws_message(text: &str) -> serde_json::Result<WsMessage> {
+    let header: WsMessageHeader = serde_json::from_str(text)?;
+
+    match header.kind {
+        WsMessageKind::BookChange => serde_json::from_str(text).map(WsMessage::BookChange),
+        WsMessageKind::BookSnapshot => serde_json::from_str(text).map(WsMessage::BookSnapshot),
+        WsMessageKind::Trade => serde_json::from_str(text).map(WsMessage::Trade),
+        WsMessageKind::TradeBar => serde_json::from_str(text).map(WsMessage::TradeBar),
+        WsMessageKind::DerivativeTicker => {
+            serde_json::from_str(text).map(WsMessage::DerivativeTicker)
+        }
+        WsMessageKind::OptionSummary => serde_json::from_str(text).map(WsMessage::OptionSummary),
+        WsMessageKind::Disconnect => serde_json::from_str(text).map(WsMessage::Disconnect),
+    }
+}
+
+#[derive(Deserialize)]
+struct WsMessageHeader {
+    #[serde(rename = "type")]
+    kind: WsMessageKind,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum WsMessageKind {
+    BookChange,
+    BookSnapshot,
+    Trade,
+    TradeBar,
+    DerivativeTicker,
+    OptionSummary,
+    Disconnect,
+}
+
 #[derive(Debug, Deserialize)]
 struct RawBookLevel {
     price: Option<f64>,
@@ -545,5 +582,47 @@ mod tests {
             message.local_timestamp,
             "2019-10-23T11:34:29.416Z".parse::<Timestamp>().unwrap()
         );
+    }
+
+    #[rstest]
+    #[case("book_change.json", "book_change")]
+    #[case("book_snapshot.json", "book_snapshot")]
+    #[case("trade.json", "trade")]
+    #[case("derivative_ticker.json", "derivative_ticker")]
+    #[case("option_summary.json", "option_summary")]
+    #[case("bar.json", "trade_bar")]
+    #[case("disconnect.json", "disconnect")]
+    fn test_decode_ws_message_matches_tagged_enum(#[case] fixture: &str, #[case] kind: &str) {
+        let json_data = load_test_json(fixture);
+        let message = decode_ws_message(&json_data).unwrap();
+
+        let decoded_kind = match &message {
+            WsMessage::BookChange(_) => "book_change",
+            WsMessage::BookSnapshot(_) => "book_snapshot",
+            WsMessage::Trade(_) => "trade",
+            WsMessage::TradeBar(_) => "trade_bar",
+            WsMessage::DerivativeTicker(_) => "derivative_ticker",
+            WsMessage::OptionSummary(_) => "option_summary",
+            WsMessage::Disconnect(_) => "disconnect",
+        };
+
+        let decoded = serde_json::to_value(message).unwrap();
+
+        assert_eq!(decoded_kind, kind);
+
+        match serde_json::from_str::<WsMessage>(&json_data) {
+            Ok(tagged) => assert_eq!(decoded, serde_json::to_value(tagged).unwrap()),
+            // Tagged enum decoding rejects numbers only under `serde_json/arbitrary_precision`
+            Err(e) => assert!(e.to_string().contains("invalid type: map")),
+        }
+    }
+
+    #[rstest]
+    #[case(r#"{"type":"quote","symbol":"XBTUSD"}"#, "unknown variant `quote`")]
+    #[case(r#"{"symbol":"XBTUSD"}"#, "missing field `type`")]
+    fn test_decode_ws_message_rejects_invalid_type(#[case] text: &str, #[case] expected: &str) {
+        let error = decode_ws_message(text).unwrap_err();
+
+        assert!(error.to_string().contains(expected));
     }
 }

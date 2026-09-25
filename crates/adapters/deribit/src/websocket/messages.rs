@@ -15,10 +15,12 @@
 
 //! Data structures for Deribit WebSocket JSON-RPC messages.
 
-use std::{fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
 use nautilus_core::{
-    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    serialization::{
+        deserialize_decimal, deserialize_decimal_native, deserialize_optional_decimal,
+    },
     string::secret::{REDACTED, SecretString},
 };
 use nautilus_model::{
@@ -555,66 +557,18 @@ fn deserialize_optional_decimal_or_market<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    struct Visitor;
-
-    impl<'de> de::Visitor<'de> for Visitor {
-        type Value = Option<Decimal>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str(
-                "null, a decimal as string/integer/float, or the literal \"market_price\"",
-            )
-        }
-
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            if v.is_empty() || v == "market_price" {
-                return Ok(None);
-            }
-
-            if v.contains('e') || v.contains('E') {
-                Decimal::from_scientific(v).map(Some).map_err(E::custom)
-            } else {
-                Decimal::from_str(v).map(Some).map_err(E::custom)
-            }
-        }
-
-        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
-            self.visit_str(&v)
-        }
-
-        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_i128<E: de::Error>(self, v: i128) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_u128<E: de::Error>(self, v: u128) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            if v.is_nan() || v.is_infinite() {
-                return Err(E::invalid_value(de::Unexpected::Float(v), &self));
-            }
-            Decimal::try_from(v).map(Some).map_err(E::custom)
-        }
-
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OrderPrice {
+        Decimal(#[serde(deserialize_with = "deserialize_optional_decimal")] Option<Decimal>),
+        Sentinel(String),
     }
 
-    deserializer.deserialize_any(Visitor)
+    match OrderPrice::deserialize(deserializer)? {
+        OrderPrice::Decimal(value) => Ok(value),
+        OrderPrice::Sentinel(value) if value == "market_price" => Ok(None),
+        OrderPrice::Sentinel(_) => Err(de::Error::custom("expected a decimal or market_price")),
+    }
 }
 
 /// Order response from buy/sell/edit operations.
@@ -790,22 +744,22 @@ pub struct DeribitPortfolioMsg {
     /// Currency code (e.g., "BTC", "ETH", "USDC", "USDT").
     pub currency: String,
     /// Account equity (balance + unrealized PnL). Used for zero-balance filtering.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub equity: Decimal,
     /// Account balance. Used for zero-balance filtering.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub balance: Decimal,
     /// Available funds for trading. Maps to AccountBalance.free.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub available_funds: Decimal,
     /// Margin balance. Maps to AccountBalance.total.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub margin_balance: Decimal,
     /// Initial margin requirement. Maps to MarginBalance.initial.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub initial_margin: Decimal,
     /// Maintenance margin requirement. Maps to MarginBalance.maintenance.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub maintenance_margin: Decimal,
     /// Margin model (e.g., "segregated_sm", "cross_sm", "cross_pm")
     #[serde(default)]
@@ -983,6 +937,106 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn test_order_price_rejects_non_finite_floats(#[case] value: f64) {
+        let value = serde::de::value::F64Deserializer::<serde::de::value::Error>::new(value);
+        assert!(deserialize_optional_decimal_or_market(value).is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!("market_price"), None)]
+    #[case(serde_json::json!(""), None)]
+    #[case(serde_json::Value::Null, None)]
+    #[case(serde_json::json!("0.1234567890123456789012345678"), Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()))]
+    #[case(serde_json::json!(9007199254740993u64), Some(Decimal::from(9_007_199_254_740_993u64)))]
+    fn test_order_price_routes(
+        #[case] price: serde_json::Value,
+        #[case] expected: Option<Decimal>,
+    ) {
+        let mut response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_stop_market_response.json"
+        ))
+        .unwrap();
+        response["result"]["order"]["price"] = price;
+        let order = response["result"]["order"].clone();
+        let direct: DeribitOrderMsg = serde_json::from_str(&order.to_string()).unwrap();
+        let buffered: DeribitOrderMsg = serde_json::from_value(order).unwrap();
+        assert_eq!(direct.price, expected);
+        assert_eq!(buffered.price, expected);
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("MARKET_PRICE")]
+    fn test_order_price_rejects_invalid_strings(#[case] price: &str) {
+        let mut response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_stop_market_response.json"
+        ))
+        .unwrap();
+        response["result"]["order"]["price"] = serde_json::json!(price);
+        let order = response["result"]["order"].clone();
+        let direct = serde_json::from_str::<DeribitOrderMsg>(&order.to_string()).unwrap_err();
+        let buffered = serde_json::from_value::<DeribitOrderMsg>(order).unwrap_err();
+
+        assert!(
+            direct
+                .to_string()
+                .contains("expected a decimal or market_price")
+        );
+        assert!(
+            buffered
+                .to_string()
+                .contains("expected a decimal or market_price")
+        );
+    }
+
+    #[rstest]
+    #[case(None, "55.00055")]
+    #[case(
+        Some("0.12345678901234567890123456789"),
+        "0.1234567890123456789012345679"
+    )]
+    fn test_portfolio_decimal_routes(#[case] equity: Option<&str>, #[case] expected: &str) {
+        let response: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_portfolio.json")).unwrap();
+        let mut data = response["params"]["data"].clone();
+
+        if let Some(equity) = equity {
+            data["equity"] = serde_json::json!(equity);
+        }
+
+        let direct: DeribitPortfolioMsg = serde_json::from_str(&data.to_string()).unwrap();
+        let buffered: DeribitPortfolioMsg = serde_json::from_value(data.clone()).unwrap();
+        for portfolio in [direct, buffered] {
+            assert_eq!(portfolio.currency, "USDT");
+            assert_eq!(portfolio.equity, Decimal::from_str_exact(expected).unwrap());
+            assert_eq!(portfolio.balance, Decimal::new(5500055, 5));
+            assert_eq!(portfolio.available_funds, Decimal::new(53868247, 6));
+            assert_eq!(portfolio.margin_balance, Decimal::new(54968258, 6));
+            assert_eq!(portfolio.initial_margin, Decimal::new(1100011, 6));
+            assert_eq!(portfolio.maintenance_margin, Decimal::ZERO);
+            assert_eq!(portfolio.margin_model.as_deref(), Some("cross_sm"));
+            assert_eq!(portfolio.cross_collateral_enabled, Some(true));
+            assert_eq!(
+                portfolio.available_withdrawal_funds,
+                Some(Decimal::new(54968257, 6))
+            );
+        }
+
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(""),
+            serde_json::json!(true),
+        ] {
+            let mut data = data.clone();
+            data["equity"] = invalid;
+            assert!(serde_json::from_value::<DeribitPortfolioMsg>(data).is_err());
+        }
+    }
 
     fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 

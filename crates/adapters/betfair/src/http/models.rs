@@ -26,7 +26,9 @@ use std::fmt::Debug;
 
 use ahash::AHashMap;
 use nautilus_core::{
-    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    serialization::{
+        deserialize_decimal, deserialize_decimal_native, deserialize_optional_decimal,
+    },
     string::secret::SecretString,
 };
 use rust_decimal::Decimal;
@@ -44,8 +46,8 @@ use crate::common::{
     },
     types::{
         BetId, CompetitionId, CustomerOrderRef, CustomerStrategyRef, EventId, EventTypeId,
-        Handicap, MarketId, SelectionId, deserialize_optional_string_lenient,
-        deserialize_optional_u32_lenient,
+        Handicap, MarketId, SelectionId, deserialize_optional_decimal_native,
+        deserialize_optional_string_lenient, deserialize_optional_u32_lenient,
     },
 };
 
@@ -171,6 +173,7 @@ pub struct Competition {
 pub struct RunnerId {
     pub market_id: MarketId,
     pub selection_id: SelectionId,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub handicap: Option<Handicap>,
 }
 
@@ -243,6 +246,7 @@ pub struct LineRangeInfo {
 pub struct RunnerCatalog {
     pub selection_id: SelectionId,
     pub runner_name: String,
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub handicap: Handicap,
     pub sort_priority: Option<u32>,
     /// Free-form metadata keyed by SCREAMING_SNAKE_CASE field names.
@@ -293,30 +297,37 @@ pub struct MarketFilter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrder {
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub size: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub price: Decimal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persistence_type: Option<PersistenceType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<BetfairTimeInForce>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub min_fill_size: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bet_target_type: Option<BetTargetType>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub bet_target_size: Option<Decimal>,
 }
 
 /// Limit-on-close order parameters (for BSP markets).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitOnCloseOrder {
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub liability: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub price: Decimal,
 }
 
 /// Market-on-close order parameters (for BSP markets).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketOnCloseOrder {
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub liability: Decimal,
 }
 
@@ -327,6 +338,7 @@ pub struct PlaceInstruction {
     pub order_type: BetfairOrderType,
     pub selection_id: SelectionId,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub handicap: Option<Handicap>,
     pub side: BetfairSide,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -345,6 +357,7 @@ pub struct PlaceInstruction {
 pub struct CancelInstruction {
     pub bet_id: BetId,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub size_reduction: Option<Decimal>,
 }
 
@@ -353,6 +366,7 @@ pub struct CancelInstruction {
 #[serde(rename_all = "camelCase")]
 pub struct ReplaceInstruction {
     pub bet_id: BetId,
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub new_price: Decimal,
 }
 
@@ -554,6 +568,7 @@ pub struct CurrentOrderSummary {
     pub bet_id: BetId,
     pub market_id: MarketId,
     pub selection_id: SelectionId,
+    #[serde(deserialize_with = "deserialize_decimal_native")]
     pub handicap: Handicap,
     pub price_size: PriceSize,
     #[serde(deserialize_with = "deserialize_decimal")]
@@ -613,6 +628,7 @@ pub struct ClearedOrderSummary {
     pub event_id: Option<EventId>,
     pub market_id: Option<MarketId>,
     pub selection_id: Option<SelectionId>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub handicap: Option<Handicap>,
     pub bet_id: Option<BetId>,
     pub placed_date: Option<String>,
@@ -747,6 +763,44 @@ mod tests {
 
     use super::*;
     use crate::common::testing::{load_test_json, parse_jsonrpc};
+
+    #[rstest]
+    #[case("0.1234567890123456789012345678", "0.1234567890123456789012345678")]
+    #[case("0.12345678901234567890123456789", "0.1234567890123456789012345679")]
+    fn test_limit_order_decimal_routes(#[case] size: &str, #[case] expected: &str) {
+        let value = serde_json::json!({
+            "size": size,
+            "price": 9007199254740993u64,
+            "minFillSize": "2.375",
+            "betTargetSize": null
+        });
+        let direct: LimitOrder = serde_json::from_str(&value.to_string()).unwrap();
+        let buffered: LimitOrder = serde_json::from_value(value).unwrap();
+        for order in [direct, buffered] {
+            assert_eq!(order.size, Decimal::from_str_exact(expected).unwrap());
+            assert_eq!(order.price, Decimal::from(9_007_199_254_740_993u64));
+            assert_eq!(order.min_fill_size, Some(Decimal::new(2375, 3)));
+            assert_eq!(order.bet_target_size, None);
+            assert_eq!(order.persistence_type, None);
+            assert_eq!(order.time_in_force, None);
+            assert_eq!(order.bet_target_type, None);
+        }
+
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(""),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<LimitOrder>(
+                    serde_json::json!({"size": invalid, "price": 2})
+                )
+                .is_err()
+            );
+        }
+
+        assert!(serde_json::from_value::<LimitOrder>(serde_json::json!({"price": 2})).is_err());
+    }
 
     fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 

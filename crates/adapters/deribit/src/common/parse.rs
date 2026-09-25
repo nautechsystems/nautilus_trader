@@ -202,8 +202,8 @@ fn parse_spot_instrument(
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
     let currency_pair = CurrencyPair::builder()
         .instrument_id(instrument_id)
@@ -243,8 +243,8 @@ fn parse_perpetual_instrument(
         .is_some_and(|t| t == "reversed");
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment);
@@ -299,8 +299,8 @@ fn parse_future_instrument(
         * 1_000_000; // milliseconds to nanoseconds
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
@@ -371,8 +371,8 @@ fn parse_option_instrument(
     let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     let multiplier = deribit_amount_quantity_multiplier();
-    let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let lot_size = parse_min_trade_amount(instrument)?;
+    let min_trade_amount = parse_min_trade_amount(instrument)?;
 
     let option = CryptoOption::builder()
         .instrument_id(instrument_id)
@@ -510,7 +510,7 @@ fn build_spread_common(
     );
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
     let multiplier = deribit_amount_quantity_multiplier();
 
     Ok(DeribitSpreadCommon {
@@ -530,6 +530,13 @@ fn build_spread_common(
         multiplier,
         lot_size: size_increment,
     })
+}
+
+fn parse_min_trade_amount(instrument: &DeribitInstrument) -> anyhow::Result<Quantity> {
+    // Arbitrary-precision JSON keeps trailing zeros (`10.0`) that the default float route
+    // drops; normalize so size precision does not depend on the JSON feature set.
+    let min_trade_amount = instrument.min_trade_amount.normalize();
+    Ok(Quantity::from_decimal(min_trade_amount)?)
 }
 
 fn deribit_amount_quantity_multiplier() -> Quantity {

@@ -49,8 +49,8 @@ use crate::common::{
         StreamingOrderType, StreamingPersistenceType, StreamingSide,
     },
     types::{
-        Handicap, MarketId, SelectionId, deserialize_optional_string_lenient,
-        deserialize_selection_id,
+        Handicap, JsonDecimal, MarketId, SelectionId, deserialize_optional_decimal_native,
+        deserialize_optional_string_lenient, deserialize_selection_id,
     },
 };
 
@@ -185,6 +185,7 @@ pub struct RunnerChange {
     #[serde(deserialize_with = "deserialize_selection_id")]
     pub id: SelectionId,
     /// Handicap value.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub hc: Option<Handicap>,
     /// Available to back.
     pub atb: Option<Vec<PV>>,
@@ -359,6 +360,7 @@ pub struct MarketDefinition {
 pub struct RunnerDefinition {
     #[serde(deserialize_with = "deserialize_selection_id")]
     pub id: SelectionId,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub hc: Option<Handicap>,
     pub sort_priority: Option<u32>,
     pub name: Option<String>,
@@ -393,15 +395,15 @@ impl<'de> Deserialize<'de> for PV {
         D: serde::Deserializer<'de>,
     {
         // Handles both `[price, volume]` and `[level, price, volume]` (RESUB_DELTA)
-        let arr: Vec<Decimal> = Deserialize::deserialize(deserializer)?;
+        let arr: Vec<JsonDecimal> = Deserialize::deserialize(deserializer)?;
         match arr.len() {
             2 => Ok(Self {
-                price: arr[0],
-                volume: arr[1],
+                price: arr[0].0,
+                volume: arr[1].0,
             }),
             3 => Ok(Self {
-                price: arr[1],
-                volume: arr[2],
+                price: arr[1].0,
+                volume: arr[2].0,
             }),
             n => Err(serde::de::Error::invalid_length(n, &"2 or 3 elements")),
         }
@@ -430,11 +432,11 @@ impl<'de> Deserialize<'de> for LPV {
     where
         D: serde::Deserializer<'de>,
     {
-        let arr: (u32, Decimal, Decimal) = Deserialize::deserialize(deserializer)?;
+        let arr: (u32, JsonDecimal, JsonDecimal) = Deserialize::deserialize(deserializer)?;
         Ok(Self {
             level: arr.0,
-            price: arr.1,
-            volume: arr.2,
+            price: arr.1.0,
+            volume: arr.2.0,
         })
     }
 }
@@ -471,6 +473,7 @@ pub struct OrderRunnerChange {
     #[serde(rename = "fullImage", default)]
     pub full_image: bool,
     /// Handicap.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_native")]
     pub hc: Option<Handicap>,
     /// Matched backs.
     pub mb: Option<Vec<MatchedOrder>>,
@@ -494,10 +497,10 @@ impl<'de> Deserialize<'de> for MatchedOrder {
     where
         D: serde::Deserializer<'de>,
     {
-        let arr: (Decimal, Decimal) = Deserialize::deserialize(deserializer)?;
+        let arr: (JsonDecimal, JsonDecimal) = Deserialize::deserialize(deserializer)?;
         Ok(Self {
-            price: arr.0,
-            size: arr.1,
+            price: arr.0.0,
+            size: arr.1.0,
         })
     }
 }
@@ -942,6 +945,192 @@ mod tests {
 
     use super::*;
     use crate::common::testing::load_test_json;
+
+    #[rstest]
+    fn test_decimal_preserves_rounding() {
+        let text = include_str!("../../test_data/stream/decimal_compatibility.json");
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        let direct: RunnerChange = serde_json::from_str(text).unwrap();
+        let buffered: RunnerChange = serde_json::from_value(value.clone()).unwrap();
+        let tagged =
+            serde_json::json!({"op": "mcm", "pt": 123, "mc": [{"id": "1.2", "rc": [value]}]});
+
+        let StreamMessage::MarketChange(message) =
+            stream_decode(tagged.to_string().as_bytes()).unwrap()
+        else {
+            panic!("expected market change");
+        };
+
+        let tagged = message.mc.unwrap().remove(0).rc.unwrap().remove(0);
+
+        let numeric = if is_arbitrary_precision() {
+            Decimal::from_str_exact("13.223699999999997").unwrap()
+        } else {
+            Decimal::from_str_exact("13.2237").unwrap()
+        };
+
+        let rounded = Decimal::from_str_exact("0.1234567890123456789012345679").unwrap();
+
+        for (runner, expected_numeric) in [
+            (direct, numeric),
+            (buffered, Decimal::from_str_exact("13.2237").unwrap()),
+            (tagged, numeric),
+        ] {
+            assert_eq!(runner.spn, Some(expected_numeric));
+            assert_eq!(runner.spf, Some(rounded));
+            assert_eq!(runner.hc, Some(rounded));
+            assert_eq!(
+                runner.atb,
+                Some(vec![PV {
+                    price: rounded,
+                    volume: Decimal::new(12500, 4)
+                }])
+            );
+            assert_eq!(runner.atb.unwrap()[0].volume.scale(), 4);
+            assert_eq!(
+                runner.batb,
+                Some(vec![LPV {
+                    level: 3,
+                    price: rounded,
+                    volume: Decimal::new(23750, 4)
+                }])
+            );
+            assert_eq!(runner.batb.unwrap()[0].volume.scale(), 4);
+        }
+    }
+
+    #[rstest]
+    fn test_matched_order_preserves_rounding() {
+        let value = serde_json::json!(["0.12345678901234567890123456789", "1.2500"]);
+        let direct: MatchedOrder = serde_json::from_str(&value.to_string()).unwrap();
+        let buffered: MatchedOrder = serde_json::from_value(value).unwrap();
+        let expected = Decimal::from_str_exact("0.1234567890123456789012345679").unwrap();
+
+        for order in [direct, buffered] {
+            assert_eq!(order.price, expected);
+            assert_eq!(order.size, Decimal::new(12500, 4));
+            assert_eq!(order.size.scale(), 4);
+        }
+    }
+
+    #[rstest]
+    fn test_decimal_routes_preserve_available_precision() {
+        let text = include_str!("../../test_data/stream/decimal_routes.json");
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        let expected_price = if is_arbitrary_precision() {
+            Decimal::from_str_exact("123456789.123456789").unwrap()
+        } else {
+            Decimal::from_str_exact("123456789.12345679").unwrap()
+        };
+
+        let direct: MCM = serde_json::from_str(text).unwrap();
+        let buffered: MCM = serde_json::from_value(value.clone()).unwrap();
+
+        let StreamMessage::MarketChange(tagged) = stream_decode(text.as_bytes()).unwrap() else {
+            panic!("expected market change");
+        };
+
+        let StreamMessage::MarketChange(buffered_tagged) = serde_json::from_value(value).unwrap()
+        else {
+            panic!("expected market change");
+        };
+
+        let direct_scale = u32::from(is_arbitrary_precision());
+        let buffered_scale = serde_json::from_value::<Decimal>(serde_json::json!(2.0))
+            .unwrap()
+            .scale();
+
+        for (message, numeric_scale) in [
+            (direct, direct_scale),
+            (buffered, buffered_scale),
+            (tagged, direct_scale),
+            (buffered_tagged, buffered_scale),
+        ] {
+            let markets = message.mc.unwrap();
+            let runner = &markets[0].rc.as_ref().unwrap()[0];
+            assert_eq!(message.pt, 123);
+            assert_eq!(markets[0].id, "1.2");
+            assert_eq!(runner.id, 7);
+            assert_eq!(
+                runner.hc,
+                Some(Decimal::from_str_exact("-0.1234567890123456789012345678").unwrap())
+            );
+            assert_eq!(
+                runner.atb,
+                Some(vec![PV {
+                    price: expected_price,
+                    volume: Decimal::from(9_007_199_254_740_993u64)
+                }])
+            );
+            assert_eq!(
+                runner.atl,
+                Some(vec![PV {
+                    price: Decimal::new(2125, 3),
+                    volume: Decimal::from(17)
+                }])
+            );
+            assert_eq!(
+                runner.batb,
+                Some(vec![LPV {
+                    level: 3,
+                    price: Decimal::new(4875, 3),
+                    volume: Decimal::from(29)
+                }])
+            );
+            assert_eq!(runner.spn, None);
+            assert_eq!(runner.spf, Some(Decimal::new(125, 1)));
+            let other = &markets[0].rc.as_ref().unwrap()[1];
+            assert_eq!(other.id, 8);
+            assert_eq!(other.hc, Some(Decimal::from(2)));
+            assert_eq!(other.hc.unwrap().scale(), numeric_scale);
+            assert_eq!(
+                crate::common::parse::make_symbol(&markets[0].id, other.id, other.hc.unwrap())
+                    .as_str(),
+                if numeric_scale == 0 {
+                    "1.2-8-2"
+                } else {
+                    "1.2-8-2.0"
+                }
+            );
+        }
+    }
+
+    fn is_arbitrary_precision() -> bool {
+        serde_json::from_str::<serde_json::Number>("1.2500")
+            .unwrap()
+            .to_string()
+            == "1.2500"
+    }
+
+    #[rstest]
+    fn test_matched_order_decimal_routes() {
+        let value = serde_json::json!(["0.1234567890123456789012345678", 9007199254740993u64]);
+
+        let expected = MatchedOrder {
+            price: Decimal::from_str_exact("0.1234567890123456789012345678").unwrap(),
+            size: Decimal::from(9_007_199_254_740_993u64),
+        };
+
+        assert_eq!(
+            serde_json::from_str::<MatchedOrder>(&value.to_string()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            serde_json::from_value::<MatchedOrder>(value).unwrap(),
+            expected
+        );
+
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(""),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<MatchedOrder>(serde_json::json!([invalid, 1])).is_err()
+            );
+        }
+    }
 
     #[rstest]
     #[case("1e400")]
