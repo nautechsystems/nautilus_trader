@@ -641,6 +641,66 @@ fn test_deregister_non_default_client_preserves_default(mut execution_engine: Ex
 }
 
 #[rstest]
+#[case::default_first(false)]
+#[case::default_last(true)]
+fn test_client_accounts_follow_client_registration(
+    mut execution_engine: ExecutionEngine,
+    #[case] default_last: bool,
+) {
+    let venue = Venue::from("SIM");
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let alpha_account_id = AccountId::from("SIM-001");
+    let bravo_account_id = AccountId::from("SIM-002");
+    let alpha = StubExecutionClient::new(alpha_id, alpha_account_id, venue, OmsType::Netting, None);
+    let bravo = StubExecutionClient::new(bravo_id, bravo_account_id, venue, OmsType::Netting, None);
+
+    if default_last {
+        execution_engine.register_client(Box::new(alpha)).unwrap();
+        execution_engine.register_default_client(Box::new(bravo));
+    } else {
+        execution_engine.register_default_client(Box::new(bravo));
+        execution_engine.register_client(Box::new(alpha)).unwrap();
+    }
+
+    let duplicate_account_id = AccountId::from("SIM-009");
+
+    let duplicate = StubExecutionClient::new(
+        alpha_id,
+        duplicate_account_id,
+        venue,
+        OmsType::Netting,
+        None,
+    );
+    let duplicate_result = execution_engine.register_client(Box::new(duplicate));
+
+    let resolve = |engine: &ExecutionEngine| {
+        let cache = engine.cache().borrow();
+        (
+            cache.account_id_for_client(&alpha_id).copied(),
+            cache.account_id_for_client(&bravo_id).copied(),
+        )
+    };
+
+    let registered = resolve(&execution_engine);
+    execution_engine.reset();
+    let after_reset = resolve(&execution_engine);
+    execution_engine.deregister_client(alpha_id).unwrap();
+    let after_deregister = resolve(&execution_engine);
+
+    assert_eq!(
+        duplicate_result.unwrap_err().to_string(),
+        "Client already registered with ID ALPHA"
+    );
+    assert_eq!(registered, (Some(alpha_account_id), Some(bravo_account_id)));
+    assert_eq!(
+        after_reset,
+        (Some(alpha_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(after_deregister, (None, Some(bravo_account_id)));
+}
+
+#[rstest]
 fn test_check_connected_when_client_connected_returns_true(mut execution_engine: ExecutionEngine) {
     let mut stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
@@ -20634,6 +20694,55 @@ fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
     let cache = engine.cache().borrow();
     assert!(cache.orders(None, None, None, None, None).is_empty());
     assert!(cache.own_order_book(&instrument.id).is_none());
+}
+
+#[rstest]
+#[case::alpha_first(false)]
+#[case::bravo_first(true)]
+fn test_load_cache_preserves_client_accounts_with_database(#[case] reversed: bool) {
+    let venue = Venue::from("SIM");
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let alpha_account_id = AccountId::from("SIM-001");
+    let bravo_account_id = AccountId::from("SIM-002");
+    let alpha_account = cash_account_for(alpha_account_id);
+    let bravo_account = cash_account_for(bravo_account_id);
+    let (database, control) = FailNthAddOrderDatabase::create();
+    control.set_accounts([
+        AccountAny::Cash(alpha_account),
+        AccountAny::Cash(bravo_account),
+    ]);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut engine = ExecutionEngine::new(clock, cache, None);
+    let mut clients = vec![
+        StubExecutionClient::new(alpha_id, alpha_account_id, venue, OmsType::Netting, None),
+        StubExecutionClient::new(bravo_id, bravo_account_id, venue, OmsType::Netting, None),
+    ];
+
+    if reversed {
+        clients.reverse();
+    }
+
+    for client in clients {
+        engine.register_client(Box::new(client)).unwrap();
+    }
+
+    poll_to_completion(engine.load_cache()).unwrap();
+
+    let cache = engine.cache().borrow();
+
+    let resolve = |client_id: &ClientId| {
+        cache
+            .account_id_for_client(client_id)
+            .and_then(|account_id| cache.account(account_id))
+            .map(|account| account.id())
+    };
+
+    assert_eq!(resolve(&alpha_id), Some(alpha_account_id));
+    assert_eq!(resolve(&bravo_id), Some(bravo_account_id));
+    assert_eq!(cache.account_id(&venue), None);
+    assert!(cache.account_for_venue(&venue).is_none());
 }
 
 // Regression for #3981: a parent OTO fill linking `position_id` to a contingent

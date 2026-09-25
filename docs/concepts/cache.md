@@ -509,6 +509,10 @@ account = self.cache.account_for_venue(venue)  # Retrieve account for a specific
 account_id = self.cache.account_id(venue)  # Retrieve account ID for a venue
 ```
 
+A venue lookup resolves only when exactly one account is issued under the venue (the account ID
+prefix, such as `BINANCE` in `BINANCE-001`). When several accounts share a venue,
+`account_for_venue` and `account_id` return `None`; retrieve those accounts by ID.
+
 #### Instruments
 
 ```python

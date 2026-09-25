@@ -33,7 +33,10 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
-use crate::{config::PortfolioConfig, portfolio::Portfolio};
+use crate::{
+    config::PortfolioConfig,
+    portfolio::{Portfolio, resolve_account},
+};
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
@@ -550,13 +553,7 @@ impl PyPortfolio {
         self.validate_query_scope(venue, account_id)?;
         let portfolio = self.0.borrow();
         let cache = portfolio.cache().borrow();
-        if let Some(account_id) = account_id {
-            Ok(cache.account_owned(account_id))
-        } else if let Some(venue) = venue {
-            Ok(cache.account_for_venue_owned(venue))
-        } else {
-            Ok(None)
-        }
+        Ok(resolve_account(&cache, venue, account_id).map(|account| account.cloned()))
     }
 
     fn validate_query_scope(
@@ -570,13 +567,13 @@ impl PyPortfolio {
 
         let portfolio = self.0.borrow();
         let cache = portfolio.cache().borrow();
-        let venue_account_id = cache.account_id(venue);
         let account_exists = cache.account(account_id).is_some();
+        let account_issued_under_venue = account_id.get_issuer() == *venue;
         let account_has_venue_position = !cache
             .positions(Some(venue), None, None, Some(account_id), None)
             .is_empty();
 
-        if account_exists && (venue_account_id == Some(account_id) || account_has_venue_position) {
+        if account_exists && (account_issued_under_venue || account_has_venue_position) {
             return Ok(());
         }
 
@@ -803,7 +800,7 @@ mod tests {
     };
     use pyo3::{
         Python,
-        exceptions::PyRuntimeError,
+        exceptions::{PyRuntimeError, PyValueError},
         types::{PyAnyMethods, PyDictMethods},
     };
     use rstest::rstest;
@@ -811,17 +808,14 @@ mod tests {
     use super::PyPortfolio;
     use crate::portfolio::Portfolio;
 
-    fn cash_account_state(account_id: AccountId) -> AccountState {
+    fn cash_account_state(account_id: AccountId, locked: Money) -> AccountState {
         let total = Money::from("1000000.00 USD");
+        let balance = AccountBalance::new(total, locked, total - locked);
 
         AccountState::new(
             account_id,
             AccountType::Cash,
-            vec![AccountBalance::new(
-                total,
-                Money::zero(Currency::USD()),
-                total,
-            )],
+            vec![balance],
             vec![],
             true,
             UUID4::new(),
@@ -885,7 +879,10 @@ mod tests {
                 PositionId::from("P-PY-OVERFLOW-OTHER"),
             ),
         ] {
-            portfolio.update_account(&cash_account_state(account_id));
+            portfolio.update_account(&cash_account_state(
+                account_id,
+                Money::zero(Currency::USD()),
+            ));
             portfolio
                 .cache()
                 .borrow_mut()
@@ -928,10 +925,10 @@ mod tests {
             Rc::new(RefCell::new(cache)),
             None,
         );
-        let secondary = AccountId::from("SIM-002");
+        let secondary = AccountId::from("OTHER-002");
         let primary = AccountId::from("SIM-001");
-        portfolio.update_account(&cash_account_state(secondary));
-        portfolio.update_account(&cash_account_state(primary));
+        portfolio.update_account(&cash_account_state(secondary, Money::zero(Currency::USD())));
+        portfolio.update_account(&cash_account_state(primary, Money::zero(Currency::USD())));
         portfolio
             .cache()
             .borrow_mut()
@@ -960,6 +957,65 @@ mod tests {
                 .unwrap();
 
             assert_eq!(money, Money::from("7.00 USD"));
+        });
+    }
+
+    #[rstest]
+    #[case::first_added_first(false)]
+    #[case::second_added_first(true)]
+    fn test_python_balances_locked_selects_same_issuer_accounts_by_account_id(
+        #[case] reversed: bool,
+    ) {
+        Python::initialize();
+        let venue = Venue::from("SIM");
+        let other_venue = Venue::from("OTHER");
+        let account_a = AccountId::from("SIM-001");
+        let account_b = AccountId::from("SIM-002");
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let mut portfolio = Portfolio::new(clock, cache, None);
+        let state_a = cash_account_state(account_a, Money::from("100.00 USD"));
+        let state_b = cash_account_state(account_b, Money::from("250.00 USD"));
+        let mut states = vec![state_a, state_b];
+
+        if reversed {
+            states.reverse();
+        }
+
+        for state in &states {
+            portfolio.update_account(state);
+        }
+
+        let portfolio = PyPortfolio::from_rc(Rc::new(RefCell::new(portfolio)));
+
+        Python::attach(|py| {
+            let locked_usd = |account_id: Option<AccountId>| {
+                portfolio
+                    .py_balances_locked(py, Some(venue), account_id)
+                    .expect("same-issuer account must match its venue scope")
+                    .map(|locked| {
+                        locked
+                            .bind(py)
+                            .get_item(Currency::USD())
+                            .unwrap()
+                            .unwrap()
+                            .extract::<Money>()
+                            .unwrap()
+                    })
+            };
+
+            let mismatch = portfolio
+                .py_balances_locked(py, Some(other_venue), Some(account_a))
+                .expect_err("account issued under another venue must not match the venue scope");
+
+            assert_eq!(locked_usd(Some(account_a)), Some(Money::from("100.00 USD")));
+            assert_eq!(locked_usd(Some(account_b)), Some(Money::from("250.00 USD")));
+            assert_eq!(locked_usd(None), None);
+            assert!(mismatch.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                mismatch.to_string(),
+                "ValueError: venue OTHER and account_id SIM-001 do not resolve to the same account"
+            );
         });
     }
 }

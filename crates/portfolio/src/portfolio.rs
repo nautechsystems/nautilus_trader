@@ -425,29 +425,46 @@ impl Portfolio {
         self.inner.borrow().initialized
     }
 
-    /// Returns the locked balances for the given venue.
+    /// Returns the locked balances for the `account_id`, or for the account issued under `venue`
+    /// when no account ID is given.
     ///
-    /// Locked balances represent funds reserved for open orders.
+    /// Locked balances represent funds reserved for open orders. A venue-only query resolves only
+    /// when exactly one account is issued under the venue; otherwise it returns an empty map.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn balances_locked(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<Currency, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
-                log::error!("Cannot get balances locked: no account generated for {venue}");
+                log::error!(
+                    "Cannot get balances locked: no account resolved for venue={venue}, account_id={account_id:?}"
+                );
                 IndexMap::new()
             },
             |account| account.balances_locked(),
         )
     }
 
-    /// Returns the initial margin requirements for the given venue.
+    /// Returns the initial margin requirements for the `account_id`, or for the account issued
+    /// under `venue` when no account ID is given.
     ///
-    /// Only applicable for margin accounts. Returns empty map for cash accounts.
+    /// Only applicable for margin accounts. Returns empty map for cash accounts. A venue-only
+    /// query resolves only when exactly one account is issued under the venue; otherwise it
+    /// returns an empty map.
     #[must_use]
-    pub fn instrument_initial_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn instrument_initial_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
                 log::error!(
-                    "Cannot get initial (order) margins: no account registered for {venue}"
+                    "Cannot get initial (order) margins: no account resolved for venue={venue}, account_id={account_id:?}"
                 );
                 IndexMap::new()
             },
@@ -461,15 +478,23 @@ impl Portfolio {
         )
     }
 
-    /// Returns the maintenance margin requirements for the given venue.
+    /// Returns the maintenance margin requirements for the `account_id`, or for the account
+    /// issued under `venue` when no account ID is given.
     ///
-    /// Only applicable for margin accounts. Returns empty map for cash accounts.
+    /// Only applicable for margin accounts. Returns empty map for cash accounts. A venue-only
+    /// query resolves only when exactly one account is issued under the venue; otherwise it
+    /// returns an empty map.
     #[must_use]
-    pub fn instrument_maintenance_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn instrument_maintenance_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
                 log::error!(
-                    "Cannot get maintenance (position) margins: no account registered for {venue}"
+                    "Cannot get maintenance (position) margins: no account resolved for venue={venue}, account_id={account_id:?}"
                 );
                 IndexMap::new()
             },
@@ -3213,6 +3238,18 @@ fn update_bar(
         .bar_close_prices
         .insert(instrument_id, bar.close);
     update_instrument_id(cache, clock, inner, config, &instrument_id);
+}
+
+pub(crate) fn resolve_account<'a>(
+    cache: &'a Cache,
+    venue: Option<&Venue>,
+    account_id: Option<&AccountId>,
+) -> Option<AccountRef<'a>> {
+    match (account_id, venue) {
+        (Some(account_id), _) => cache.account(account_id),
+        (None, Some(venue)) => cache.account_for_venue(venue),
+        (None, None) => None,
+    }
 }
 
 /// Account for an instrument. For broker-routed instruments the account lives

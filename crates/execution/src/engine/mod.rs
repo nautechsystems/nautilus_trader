@@ -381,6 +381,9 @@ impl ExecutionEngine {
         }
 
         let adapter = ExecutionClientAdapter::new(client);
+        self.cache
+            .borrow_mut()
+            .add_client_account(client_id, adapter.account_id);
 
         log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
@@ -391,6 +394,9 @@ impl ExecutionEngine {
     pub fn register_default_client(&mut self, client: Box<dyn ExecutionClient>) {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
+        self.cache
+            .borrow_mut()
+            .add_client_account(client_id, adapter.account_id);
 
         self.clients.insert(client_id, adapter);
         self.default_client_id = Some(client_id);
@@ -629,6 +635,8 @@ impl ExecutionEngine {
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
         if self.clients.shift_remove(&client_id).is_some() {
+            self.cache.borrow_mut().remove_client_account(&client_id);
+
             if self.default_client_id == Some(client_id) {
                 self.default_client_id = None;
             }

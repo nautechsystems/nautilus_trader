@@ -1969,6 +1969,8 @@ impl<'a> CacheApi<'a> {
 
     /// Returns an owned copy of the account for the `venue` (if found).
     ///
+    /// Returns `None` when more than one account is issued under the `venue`.
+    ///
     /// # Panics
     ///
     /// Panics if the cache is already mutably borrowed.
@@ -1978,6 +1980,8 @@ impl<'a> CacheApi<'a> {
     }
 
     /// Returns the account ID for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`.
     ///
     /// # Panics
     ///

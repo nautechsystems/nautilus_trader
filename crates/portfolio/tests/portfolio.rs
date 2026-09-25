@@ -481,7 +481,7 @@ fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio
 
 #[rstest]
 fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
-    let result = portfolio.balances_locked(&venue);
+    let result = portfolio.balances_locked(&venue, None);
     assert_eq!(result, IndexMap::new());
 }
 
@@ -490,7 +490,7 @@ fn test_instrument_initial_margins_when_no_account_for_venue_returns_none(
     portfolio: Portfolio,
     venue: Venue,
 ) {
-    let result = portfolio.instrument_initial_margins(&venue);
+    let result = portfolio.instrument_initial_margins(&venue, None);
     assert_eq!(result, IndexMap::new());
 }
 
@@ -499,8 +499,155 @@ fn test_instrument_maintenance_margins_when_no_account_for_venue_returns_none(
     portfolio: Portfolio,
     venue: Venue,
 ) {
-    let result = portfolio.instrument_maintenance_margins(&venue);
+    let result = portfolio.instrument_maintenance_margins(&venue, None);
     assert_eq!(result, IndexMap::new());
+}
+
+fn margin_account_state_with_reservations(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    locked: &str,
+    initial: &str,
+    maintenance: &str,
+) -> AccountState {
+    let total = Money::from("1000 USD");
+    let locked = Money::from(locked);
+    let balance = AccountBalance::new(total, locked, total - locked);
+    let initial = Money::from(initial);
+    let maintenance = Money::from(maintenance);
+    let margin = MarginBalance::new(initial, maintenance, Some(instrument_id));
+    let event_id = uuid4();
+
+    AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![balance],
+        vec![margin],
+        true,
+        event_id,
+        0.into(),
+        0.into(),
+        None,
+    )
+}
+
+type AccountQueryResult = (
+    IndexMap<Currency, Money>,
+    IndexMap<InstrumentId, Money>,
+    IndexMap<InstrumentId, Money>,
+);
+
+fn query_account(
+    portfolio: &Portfolio,
+    venue: &Venue,
+    account_id: Option<&AccountId>,
+) -> AccountQueryResult {
+    (
+        portfolio.balances_locked(venue, account_id),
+        portfolio.instrument_initial_margins(venue, account_id),
+        portfolio.instrument_maintenance_margins(venue, account_id),
+    )
+}
+
+fn expected_account_query(
+    instrument_id: InstrumentId,
+    locked: &str,
+    initial: &str,
+    maintenance: &str,
+) -> AccountQueryResult {
+    let locked = Money::from(locked);
+    let initial = Money::from(initial);
+    let maintenance = Money::from(maintenance);
+
+    (
+        IndexMap::from([(Currency::USD(), locked)]),
+        IndexMap::from([(instrument_id, initial)]),
+        IndexMap::from([(instrument_id, maintenance)]),
+    )
+}
+
+#[rstest]
+#[case::first_added_first(false)]
+#[case::second_added_first(true)]
+fn test_account_queries_select_same_issuer_accounts_by_account_id(
+    mut portfolio: Portfolio,
+    #[case] reversed: bool,
+) {
+    let venue = Venue::from("BINANCE");
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let account_a = AccountId::from("BINANCE-001");
+    let account_b = AccountId::from("BINANCE-002");
+    let state_a = margin_account_state_with_reservations(
+        account_a,
+        instrument_id,
+        "100 USD",
+        "30 USD",
+        "15 USD",
+    );
+    let state_b = margin_account_state_with_reservations(
+        account_b,
+        instrument_id,
+        "250 USD",
+        "70 USD",
+        "35 USD",
+    );
+    let mut states = vec![state_a, state_b];
+
+    if reversed {
+        states.reverse();
+    }
+
+    for state in &states {
+        portfolio.update_account(state);
+    }
+
+    let result_a = query_account(&portfolio, &venue, Some(&account_a));
+    let result_b = query_account(&portfolio, &venue, Some(&account_b));
+    let result_venue_only = query_account(&portfolio, &venue, None);
+
+    assert_eq!(
+        result_a,
+        expected_account_query(instrument_id, "100 USD", "30 USD", "15 USD")
+    );
+    assert_eq!(
+        result_b,
+        expected_account_query(instrument_id, "250 USD", "70 USD", "35 USD")
+    );
+    assert_eq!(
+        result_venue_only,
+        (IndexMap::new(), IndexMap::new(), IndexMap::new())
+    );
+}
+
+#[rstest]
+fn test_account_queries_resolve_broker_account_by_id_not_instrument_venue(
+    mut portfolio: Portfolio,
+) {
+    let broker_venue = Venue::from("IB");
+    let exchange_venue = Venue::from("XCME");
+    let instrument_id = InstrumentId::from("ESZ6.XCME");
+    let account_id = AccountId::from("IB-DU123456");
+    let unknown_account_id = AccountId::from("IB-UNKNOWN");
+    let state = margin_account_state_with_reservations(
+        account_id,
+        instrument_id,
+        "100 USD",
+        "30 USD",
+        "15 USD",
+    );
+    portfolio.update_account(&state);
+
+    let result_by_id = query_account(&portfolio, &exchange_venue, Some(&account_id));
+    let result_broker_venue = query_account(&portfolio, &broker_venue, None);
+    let result_exchange_venue = query_account(&portfolio, &exchange_venue, None);
+    let result_unknown_id = query_account(&portfolio, &broker_venue, Some(&unknown_account_id));
+
+    let expected = expected_account_query(instrument_id, "100 USD", "30 USD", "15 USD");
+    let empty = (IndexMap::new(), IndexMap::new(), IndexMap::new());
+    assert_eq!(result_by_id, expected);
+    assert_eq!(result_broker_venue, expected);
+    assert_eq!(result_exchange_venue, empty);
+    assert_eq!(result_unknown_id, empty);
 }
 
 #[rstest]
@@ -2507,7 +2654,7 @@ fn test_update_orders_open_cash_account(
 
     assert_eq!(
         portfolio
-            .balances_locked(&Venue::test_default())
+            .balances_locked(&Venue::test_default(), None)
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -2933,7 +3080,7 @@ fn test_update_orders_open_margin_account(
     portfolio.update_quote_tick(&last);
     portfolio.initialize_orders();
 
-    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"));
+    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"), None);
     assert_eq!(
         margins,
         IndexMap::from([(instrument_btcusdt.id(), Money::from("3.50000000 USDT"))])
@@ -3001,7 +3148,7 @@ fn test_order_accept_updates_margin_init(
 
     portfolio.initialize_orders();
 
-    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"));
+    let margins = portfolio.instrument_initial_margins(&Venue::from("BINANCE"), None);
     assert_eq!(
         margins,
         IndexMap::from([(instrument_btcusdt.id(), Money::from("0.50000000 USDT"))])
@@ -3724,7 +3871,7 @@ fn test_opening_several_positions_updates_portfolio(
         dec!(-12.2)
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_gbpusd.id(), Money::from("1128000.00 USD"))])
     );
     assert_eq!(
@@ -3891,7 +4038,7 @@ fn test_modifying_position_updates_portfolio(
         dec!(-12.2)
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_audusd.id(), Money::from("1128000.00 USD"))])
     );
     assert_eq!(
@@ -4082,7 +4229,7 @@ fn test_closing_position_updates_portfolio(
     );
 
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::new()
     ); // No maintenance margins
 
@@ -4686,7 +4833,7 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
             .is_zero(),
     );
     assert_eq!(
-        portfolio.instrument_maintenance_margins(&Venue::test_default()),
+        portfolio.instrument_maintenance_margins(&Venue::test_default(), None),
         IndexMap::from([(instrument_audusd.id(), Money::from("6000.00 USD"))])
     );
 }
@@ -7546,7 +7693,7 @@ fn test_unfiltered_equity_does_not_skip_marks_for_non_balance_account(
 ) {
     let aud = Currency::AUD();
     let usd = Currency::USD();
-    let account_a = AccountId::new("SIM-001");
+    let account_a = AccountId::new("OTHER-001");
     let account_b = AccountId::new("SIM-002");
     let state_a = AccountState::new(
         account_a,
@@ -7616,7 +7763,7 @@ fn test_unfiltered_mark_values_preserve_venue_account_conversion(
     instrument_audusd: InstrumentAny,
     instrument_gbpusd: InstrumentAny,
 ) {
-    let account_a = AccountId::new("SIM-001");
+    let account_a = AccountId::new("OTHER-001");
     let account_b = AccountId::new("SIM-002");
     let account_state = |account_id, currency| {
         AccountState::new(

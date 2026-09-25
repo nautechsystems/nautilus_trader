@@ -230,6 +230,10 @@ Margin queries:
 - `portfolio.instrument_initial_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 - `portfolio.instrument_maintenance_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 
+An `account_id` selects that account. A venue-only query resolves only when
+exactly one account is issued under the venue, so pass `account_id` when several
+accounts share a venue.
+
 When a margin account resolves, these return the same per-instrument money
 views as `MarginAccount.initial_margins` and
 `MarginAccount.maintenance_margins`; otherwise, they return `None`. For

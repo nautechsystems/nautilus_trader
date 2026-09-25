@@ -2280,6 +2280,17 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Reapplied by execution client registration on every node start
+            "add_client_account",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "remove_client_account",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "set_database",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
