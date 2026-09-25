@@ -15,8 +15,6 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
-#![warn(clippy::clone_on_ref_ptr)]
-
 use std::{
     cell::RefCell,
     collections::{BTreeSet, VecDeque},

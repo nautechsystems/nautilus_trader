@@ -141,7 +141,7 @@ impl PyPortfolio {
     /// Returns the inner shared [`Portfolio`].
     #[must_use]
     pub fn portfolio_rc(&self) -> Rc<RefCell<Portfolio>> {
-        self.0.clone()
+        Rc::clone(&self.0)
     }
 }
 

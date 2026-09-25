@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use nautilus_analysis::{Returns, analyzer::Statistic, statistic::PortfolioStatistic};
@@ -1621,7 +1623,7 @@ fn test_order_topic_republishes_last_account_state_without_order_update(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -1674,7 +1676,7 @@ fn test_wallet_only_order_topic_does_not_republish_cash_account_state(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -1730,7 +1732,7 @@ fn test_wallet_order_topic_republishes_last_account_state(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -1773,7 +1775,7 @@ fn test_order_endpoint_then_topic_publishes_account_state_once(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -1861,7 +1863,7 @@ fn test_position_update_publishes_margin_account_state(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -1932,7 +1934,7 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -2422,7 +2424,7 @@ fn test_cash_fill_endpoint_then_position_publishes_account_state_once(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -2493,7 +2495,7 @@ fn test_rejected_endpoint_then_topic_republishes_existing_account_state_once(
 
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
-        let captured = captured.clone();
+        let captured = Rc::clone(&captured);
         move |event: &AccountState| {
             captured.borrow_mut().push(event.clone());
         }
@@ -2721,7 +2723,7 @@ fn test_update_order_without_account_state_restores_account(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), Rc::clone(&cache), None);
 
     portfolio.update_order(&OrderEventAny::Accepted(accepted));
 
@@ -2766,7 +2768,7 @@ fn test_update_order_filled_restores_account_before_unrealized_pnl(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), Rc::clone(&cache), None);
     let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
@@ -2818,7 +2820,7 @@ fn test_update_order_filled_without_cached_order_updates_account(
     simple_cache.add_account(account).unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), Rc::clone(&cache), None);
     let filled = build_order_filled(
         TraderId::test_default(),
         StrategyId::test_default(),
@@ -3167,7 +3169,7 @@ fn test_initialize_orders_cash_account_with_base_currency() {
 
     let cache = Rc::new(RefCell::new(cache));
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
-    let mut portfolio = Portfolio::new(clock, cache.clone(), None);
+    let mut portfolio = Portfolio::new(clock, Rc::clone(&cache), None);
 
     // Cash account with base_currency set (like Polymarket with USDC)
     let account_state = AccountState::new(
@@ -8526,7 +8528,7 @@ fn test_default_equity_curve_samples_daily_while_flat(simple_cache: Cache, clock
     use nautilus_core::datetime::NANOSECONDS_IN_DAY;
 
     let test_clock = Rc::new(RefCell::new(clock));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
     let mut portfolio = Portfolio::new(clock, Rc::new(RefCell::new(simple_cache)), None);
     let account_id = AccountId::new("SIM-001");
 
@@ -8572,7 +8574,7 @@ fn test_portfolio_statistics_use_daily_equity_curve(simple_cache: Cache, clock: 
     let start_ns = NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2;
     let _ = clock.advance_time(UnixNanos::from(start_ns), true);
     let test_clock = Rc::new(RefCell::new(clock));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
     let mut portfolio = Portfolio::new(clock, Rc::new(RefCell::new(simple_cache)), None);
     let account_id = AccountId::new("SIM-001");
     let account_state = |total: &str, ts_event: u64| {
@@ -9915,7 +9917,7 @@ fn test_update_position_without_account_state_restores_account(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), Rc::clone(&cache), None);
 
     let opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(opened));
@@ -10090,7 +10092,7 @@ fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: Instrumen
 
     let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(simple_cache));
-    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
 
     let config = PortfolioConfig::builder()
         .equity_curve(false)
@@ -10101,7 +10103,7 @@ fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: Instrumen
 
     // Capture published snapshots
     let captured: Rc<RefCell<Vec<PortfolioSnapshot>>> = Rc::new(RefCell::new(Vec::new()));
-    let captured_ref = captured.clone();
+    let captured_ref = Rc::clone(&captured);
     let handler = TypedHandler::from(move |snap: &PortfolioSnapshot| {
         captured_ref.borrow_mut().push(snap.clone());
     });
