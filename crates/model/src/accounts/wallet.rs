@@ -566,6 +566,7 @@ impl Account for WalletAccount {
             base_currency
         } else {
             match side {
+                OrderSide::Buy if !instrument.is_inverse() => instrument.cost_currency(),
                 OrderSide::Buy => instrument.quote_currency(),
                 OrderSide::Sell => base_currency,
             }
@@ -667,7 +668,7 @@ mod tests {
         events::{AccountState, account::stubs::*},
         fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, stubs::uuid4},
-        instruments::{CryptoPerpetual, CurrencyPair, Instrument, stubs::*},
+        instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{
             AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
@@ -1575,6 +1576,24 @@ mod tests {
             .unwrap();
 
         assert_eq!(balance_locked, Money::from("10 BTC"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_quanto_locks_settlement_currency(
+        ethbtc_quanto: CryptoFuture,
+    ) {
+        let wallet_account = wallet_with_total(Currency::USDT(), Money::from("100 USDT").raw());
+        let balance_locked = wallet_account
+            .calculate_balance_locked(
+                &ethbtc_quanto.into_any(),
+                OrderSide::Buy,
+                Quantity::from("5"),
+                Price::from("0.036"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(balance_locked, Money::from("0.18 USDT"));
     }
 
     #[rstest]

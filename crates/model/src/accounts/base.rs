@@ -309,27 +309,22 @@ impl BaseAccount {
         let base_currency = instrument
             .base_currency()
             .unwrap_or(instrument.quote_currency());
-        let quote_currency = instrument.quote_currency();
-        let amount = match side {
+        let (amount, currency) = match side {
             // A buy at a negative price settles as a credit rather than a debit, so it
             // reserves nothing. Clamping per order rather than after aggregation keeps a
             // negative-price buy from financing a positive-price one before either fills.
-            OrderSide::Buy => instrument
-                .try_calculate_notional_value(quantity, price, use_quote_for_inverse)?
-                .as_decimal()
-                .max(Decimal::ZERO),
-            OrderSide::Sell => quantity.as_decimal(),
+            OrderSide::Buy => {
+                let notional = instrument.try_calculate_notional_value(
+                    quantity,
+                    price,
+                    use_quote_for_inverse,
+                )?;
+                (notional.as_decimal().max(Decimal::ZERO), notional.currency)
+            }
+            OrderSide::Sell => (quantity.as_decimal(), base_currency),
         };
 
-        if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-            Ok(Money::from_decimal(amount, base_currency)?)
-        } else {
-            let currency = match side {
-                OrderSide::Buy => quote_currency,
-                OrderSide::Sell => base_currency,
-            };
-            Ok(Money::from_decimal(amount, currency)?)
-        }
+        Ok(Money::from_decimal(amount, currency)?)
     }
 
     /// Calculates profit and loss amounts for a filled order.
