@@ -21,9 +21,10 @@ use serde::{Deserialize, Serialize};
 
 /// Policy when recovery queries cannot establish a submission's venue outcome.
 ///
-/// Both variants currently use local resolution. Selecting retention enables
-/// submission tracking and exhaustion diagnostics only; retention protection
-/// is not implemented yet.
+/// Local resolution is the default. Retention adds submission tracking, exhaustion diagnostics,
+/// and recovery-budget preservation across partial fills and commands on unacknowledged submissions.
+/// Both variants still resolve locally, but at potentially different times. Retention after
+/// recovery exhaustion is not implemented yet.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(
@@ -45,7 +46,7 @@ pub enum SubmissionRecoveryPolicy {
     /// Selects local resolution using the existing timeout and missing-order policies.
     #[default]
     ResolveLocally,
-    /// Enables recovery diagnostics; retention without further queries is not implemented yet.
+    /// Enables tracking, diagnostics, and recovery-budget preservation before local resolution.
     RetainUnresolved,
 }
 

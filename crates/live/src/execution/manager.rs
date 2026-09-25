@@ -519,7 +519,10 @@ impl ExecutionManager {
     /// An already-dispatched cancel or update keeps its own recovery budget and event boundary
     /// until native evidence completes it, including after submission tracking has retired.
     pub fn confirm_submission_outcome(&mut self, client_order_id: &ClientOrderId) {
-        if self.config.submission_recovery_policy != SubmissionRecoveryPolicy::RetainUnresolved {
+        if self.config.submission_recovery_policy != SubmissionRecoveryPolicy::RetainUnresolved
+            || (!self.submissions.contains_key(client_order_id)
+                && !self.order_inflight_checks.contains_key(client_order_id))
+        {
             return;
         }
 
@@ -6509,6 +6512,57 @@ mod tests {
 
         assert!(manager.order_query_pending.is_empty());
         assert!(manager.order_lookback_warnings.is_empty());
+    }
+
+    #[rstest]
+    fn test_submission_confirmation_skips_untracked_order_cache(
+        #[values(false, true)] previously_registered: bool,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache.clone(),
+            ExecutionManagerConfig {
+                submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("ETHUSDT.BYBIT"))
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let account_id = AccountId::from("TEST-001");
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        if previously_registered {
+            manager.register_submission(order.init_event(), None);
+        }
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let order = cache.borrow_mut().update_order(&submitted).unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-UNTRACKED"));
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        if previously_registered {
+            manager.confirm_submission_outcome(&client_order_id);
+        }
+        assert!(!manager.submissions.contains_key(&client_order_id));
+        assert!(!manager.order_inflight_checks.contains_key(&client_order_id));
+
+        // Any cache access would fail while the mutable borrow is held
+        let cached = cache.borrow_mut();
+        manager.confirm_submission_outcome(&client_order_id);
+
+        assert_eq!(
+            cached.order(&client_order_id).unwrap().status(),
+            OrderStatus::Accepted,
+        );
     }
 
     #[rstest]

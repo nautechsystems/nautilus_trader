@@ -458,7 +458,8 @@ pub struct LiveExecutionEngineConfig {
     #[builder(default = 5)]
     pub inflight_check_retries: u32,
     /// Policy when a submitted order exhausts automatic recovery.
-    /// Retention currently enables tracking and diagnostics only; both variants resolve locally.
+    /// Retention adds tracking and diagnostics and preserves submission and command recovery budgets.
+    /// Both variants still resolve locally, but retention can change when that resolution occurs.
     #[builder(default)]
     pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The interval (seconds) between checks for open orders at the venue.

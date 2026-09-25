@@ -358,8 +358,11 @@ For all live trading options, see the `LiveExecutionEngineConfig`
 ### Submission recovery diagnostics
 
 `submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` currently
-enables submission identity tracking and exhaustion diagnostics only. Both policies still use the
-existing local timeout and missing-order resolution; retention protection is not implemented yet.
+enables submission identity tracking, exhaustion diagnostics, and recovery-budget preservation.
+Both policies still resolve locally, but the opt-in changes when resolution occurs. A partial fill
+report during a pending cancel preserves the command budget and can lead to a synthetic `Canceled`
+where `ResolveLocally` stops the timeout. A cancel on an unconfirmed submission uses the submission's
+remaining budget. Retention after recovery exhaustion is not implemented yet.
 
 With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
 `reconciliation.SubmissionRecoveryExhausted` when an unacknowledged submission reaches an existing
