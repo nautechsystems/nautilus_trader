@@ -491,7 +491,11 @@ fn get_risk_engine(
         full_position_exit_venues: AHashSet::new(),
     });
     let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
-    let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
+    let portfolio = Portfolio::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        None,
+    );
     RiskEngine::new(config, portfolio, clock, cache)
 }
 
@@ -676,13 +680,13 @@ fn test_deferred_risk_denial_does_not_reenter_engine(
         }
 
         let exec_engine = Rc::new(RefCell::new(get_exec_engine(
-            Some(cache.clone()),
-            Some(clock.clone()),
+            Some(Rc::clone(&cache)),
+            Some(Rc::clone(&clock)),
             None,
         )));
         ExecutionEngine::register_msgbus_handlers(&exec_engine);
         let risk_engine = Rc::new(RefCell::new(get_risk_engine(
-            Some(cache.clone()),
+            Some(Rc::clone(&cache)),
             None,
             Some(clock),
             false,
@@ -747,8 +751,8 @@ fn test_deferred_risk_approval_preserves_command_order(
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let exec_engine = Rc::new(RefCell::new(get_exec_engine(
-            Some(cache.clone()),
-            Some(clock.clone()),
+            Some(Rc::clone(&cache)),
+            Some(Rc::clone(&clock)),
             None,
         )));
         ExecutionEngine::register_msgbus_handlers(&exec_engine);
@@ -815,8 +819,8 @@ fn test_register_msgbus_handlers_subscribes_event_topics_at_priority_10(
     let order_observations = Rc::new(RefCell::new(Vec::new()));
     let position_observations = Rc::new(RefCell::new(Vec::new()));
 
-    let high_order_observations = order_observations.clone();
-    let high_order_engine = risk_engine.clone();
+    let high_order_observations = Rc::clone(&order_observations);
+    let high_order_engine = Rc::clone(&risk_engine);
     msgbus::subscribe_order_events(
         "events.order.*".into(),
         TypedHandler::from_with_id("order-high", move |_: &OrderEventAny| {
@@ -827,8 +831,8 @@ fn test_register_msgbus_handlers_subscribes_event_topics_at_priority_10(
         Some(11),
     );
 
-    let high_position_observations = position_observations.clone();
-    let high_position_engine = risk_engine.clone();
+    let high_position_observations = Rc::clone(&position_observations);
+    let high_position_engine = Rc::clone(&risk_engine);
     msgbus::subscribe_position_events(
         "events.position.*".into(),
         TypedHandler::from_with_id("position-high", move |_: &PositionEvent| {
@@ -841,8 +845,8 @@ fn test_register_msgbus_handlers_subscribes_event_topics_at_priority_10(
 
     RiskEngine::register_msgbus_handlers(&risk_engine);
 
-    let low_order_observations = order_observations.clone();
-    let low_order_engine = risk_engine.clone();
+    let low_order_observations = Rc::clone(&order_observations);
+    let low_order_engine = Rc::clone(&risk_engine);
     msgbus::subscribe_order_events(
         "events.order.*".into(),
         TypedHandler::from_with_id("order-low", move |_: &OrderEventAny| {
@@ -853,8 +857,8 @@ fn test_register_msgbus_handlers_subscribes_event_topics_at_priority_10(
         Some(9),
     );
 
-    let low_position_observations = position_observations.clone();
-    let low_position_engine = risk_engine.clone();
+    let low_position_observations = Rc::clone(&position_observations);
+    let low_position_engine = Rc::clone(&risk_engine);
     msgbus::subscribe_position_events(
         "events.position.*".into(),
         TypedHandler::from_with_id("position-low", move |_: &PositionEvent| {
@@ -1245,8 +1249,12 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
     let clock = Rc::new(RefCell::new(clock));
     let simple_cache = Rc::new(RefCell::new(simple_cache));
 
-    let mut risk_engine =
-        get_risk_engine(Some(simple_cache.clone()), None, Some(clock.clone()), true);
+    let mut risk_engine = get_risk_engine(
+        Some(Rc::clone(&simple_cache)),
+        None,
+        Some(Rc::clone(&clock)),
+        true,
+    );
     let mut exec_engine = get_exec_engine(Some(simple_cache), Some(clock), None);
 
     let order1 = OrderTestBuilder::new(OrderType::Market)
@@ -1395,8 +1403,12 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
     let clock = Rc::new(RefCell::new(clock));
     let simple_cache = Rc::new(RefCell::new(simple_cache));
 
-    let mut risk_engine =
-        get_risk_engine(Some(simple_cache.clone()), None, Some(clock.clone()), true);
+    let mut risk_engine = get_risk_engine(
+        Some(Rc::clone(&simple_cache)),
+        None,
+        Some(Rc::clone(&clock)),
+        true,
+    );
     let mut exec_engine = get_exec_engine(Some(simple_cache), Some(clock), None);
 
     let order1 = OrderTestBuilder::new(OrderType::Market)
@@ -9345,8 +9357,8 @@ fn test_batch_modify_rejection_tolerates_cache_reset_in_callback(
 
     let cache = Rc::new(RefCell::new(cache));
     let events = Rc::new(RefCell::new(Vec::new()));
-    let callback_cache = cache.clone();
-    let callback_events = events.clone();
+    let callback_cache = Rc::clone(&cache);
+    let callback_events = Rc::clone(&events);
     msgbus::register_order_event_endpoint(
         MessagingSwitchboard::exec_engine_process(),
         TypedIntoHandler::from(move |event: OrderEventAny| {
@@ -9369,7 +9381,7 @@ fn test_batch_modify_rejection_tolerates_cache_reset_in_callback(
     }
 
     let mut risk = get_risk_engine(
-        Some(cache.clone()),
+        Some(Rc::clone(&cache)),
         Some(RiskEngineConfig {
             max_order_modify: RateLimit::new(1, DurationNanos::new(1000000000)),
             ..RiskEngineConfig::default()
