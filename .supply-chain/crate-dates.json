@@ -382,7 +382,7 @@
     },
     "async-compression@0.4.44": {
       "published": "2026-09-02T16:05:28.674815Z",
-      "verified_at": "2026-09-24T00:28:30Z"
+      "verified_at": "2026-09-25T00:27:49Z"
     },
     "async-lock@3.4.2": {
       "published": "2025-12-21T16:24:46.954239Z",
@@ -530,7 +530,7 @@
     },
     "bon-macros@3.9.3": {
       "published": "2026-06-15T10:06:24.901523Z",
-      "verified_at": "2026-09-24T00:28:30Z"
+      "verified_at": "2026-09-25T00:27:49Z"
     },
     "bon@3.10.1": {
       "published": "2026-09-07T21:19:59.961533Z",
@@ -538,7 +538,7 @@
     },
     "bon@3.9.3": {
       "published": "2026-06-15T10:06:29.221470Z",
-      "verified_at": "2026-09-24T00:28:30Z"
+      "verified_at": "2026-09-25T00:27:49Z"
     },
     "borsh-derive@1.8.1": {
       "published": "2026-08-26T20:58:07.118903Z",
@@ -694,7 +694,7 @@
     },
     "compression-codecs@0.4.39": {
       "published": "2026-09-02T16:05:24.693770Z",
-      "verified_at": "2026-09-24T00:28:30Z"
+      "verified_at": "2026-09-25T00:27:49Z"
     },
     "compression-core@0.4.33": {
       "published": "2026-09-02T16:05:19.162370Z",
@@ -900,9 +900,9 @@
       "published": "2026-08-03T10:39:52.996245Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "databento@0.61.0": {
-      "published": "2026-09-01T20:30:35.978059Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "databento@0.62.0": {
+      "published": "2026-09-22T19:50:41.482589Z",
+      "verified_at": "2026-09-25T00:22:07Z"
     },
     "datafusion-catalog-listing@55.1.0": {
       "published": "2026-09-11T15:02:00.737836Z",
@@ -1028,13 +1028,13 @@
       "published": "2026-09-11T15:03:52.556812Z",
       "verified_at": "2026-09-15T06:28:37Z"
     },
-    "dbn-macros@0.69.0": {
-      "published": "2026-09-01T15:54:14.086166Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "dbn-macros@0.70.0": {
+      "published": "2026-09-18T17:08:13.882643Z",
+      "verified_at": "2026-09-25T00:22:07Z"
     },
-    "dbn@0.69.0": {
-      "published": "2026-09-01T15:54:38.545117Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "dbn@0.70.0": {
+      "published": "2026-09-18T17:08:28.793750Z",
+      "verified_at": "2026-09-25T00:22:07Z"
     },
     "defmt-macros@1.1.1": {
       "published": "2026-07-03T14:14:21.833924Z",

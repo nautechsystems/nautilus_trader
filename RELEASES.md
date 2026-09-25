@@ -65,6 +65,9 @@ Released on TBD (UTC).
 - Changed `RiskEngine` to reject orders when accounts, prices, or required funding cannot be established
 - Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
 - Changed kernel-wired Feather stream files to per-instrument directories
+- Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
+- Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
+- Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 - Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
@@ -77,6 +80,7 @@ Released on TBD (UTC).
 - Renamed live `SubscribeBookDepth10`/`UnsubscribeBookDepth10` commands to `SubscribeBookDepth`/`UnsubscribeBookDepth`, with matching `_subscribe_book_depth`/`_unsubscribe_book_depth` data client hooks
 - Renamed Python persistence `NautilusDataType.OrderBookDepth10` to `NautilusDataType.OrderBookDepth`
 - Renamed Databento `load_order_book_depth10` to `load_order_book_depth` and `get_order_book_depth10` to `get_order_book_depth`
+- Renamed the Databento publisher 142 venue from `DEF` to `CDEF`
 - Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
 - Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
 - Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
@@ -144,6 +148,8 @@ Released on TBD (UTC).
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
 - Fixed `CryptoOption` applying a one-contract minimum when `min_quantity` is unspecified
+- Fixed `VerticalHorizontalFilter` and `RelativeVolatilityIndex` reading NaN on flat prices (#5059), thanks @mkzung
+- Fixed Postgres cache loading and overwriting another trader's orders, positions, and fills (#5070), thanks @utx0
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Architect AX market data subscriptions not resuming after an explicit reconnect
@@ -165,8 +171,11 @@ Released on TBD (UTC).
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Derive rejecting valid sub-minimum taker orders (#5045), thanks for reporting @Aviksaikat
 - Fixed Derive instrument `info` dropping fields from the venue response
+- Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
+- Fixed Kraken spot cancel-all cancelling orders outside the requested instrument (#5044), thanks @zhaow-de
+- Fixed Kraken spot report pagination continuing past 500 pages without reporting incomplete (#5062), thanks @zhaow-de
 - Fixed Lighter cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
@@ -199,6 +208,7 @@ Released on TBD (UTC).
 - Normalized persistence path separators for Windows
 - Refactored `RiskEngine` validation, funding checks, and batch modification rate limiting
 - Refined persistence backend module layout and removed a duplicated Parquet I/O test module
+- Refined `SharedCell` and `WeakCell` clones to use `Rc::clone` and `Weak::clone` (#5066), thanks @mirooon
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
@@ -206,13 +216,16 @@ Released on TBD (UTC).
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
-- Upgraded `cargo-nextest` tool to v0.9.145
+- Upgraded `cargo-codspeed` tool to v5.0.2
+- Upgraded `cargo-nextest` tool to v0.9.146
+- Upgraded `markdownlint-cli2` tool and pre-commit hook to v0.23.3
 - Upgraded `osv-scanner` tool to v2.6.0
 - Upgraded `prek` tool to v0.5.3
-- Upgraded `uv` tool to v0.12.15
+- Upgraded `uv` tool and pre-commit hook to v0.12.17
 - Upgraded `typos` pre-commit hook to v1.50.2
 - Upgraded `clap` crate to v4.6.7
 - Upgraded `codspeed-criterion-compat` crate to v5.0.2
+- Upgraded `databento` crate to v0.62.0
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `hyper-rustls` crate to v0.27.10
 - Upgraded `jiff` crate to v0.2.37
@@ -222,16 +235,19 @@ Released on TBD (UTC).
 - Upgraded `smallvec` crate to v1.16.1
 - Upgraded `sockudo-ws` crate to v2.1.0
 - Upgraded `syn` crate to v3.0.6
-- Upgraded `polars` package (test) to v1.44.2
+- Upgraded `pandas` package to v3.0.6
 - Upgraded `plotly` package to v7.1.0
+- Upgraded `polars` package (test) to v1.44.2
+- Upgraded `pytest-memray` package (test) to v1.11.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.8
-- Upgraded `ty` package (dev) to v0.0.81
+- Upgraded `ty` package (dev) to v0.0.82
 - Upgraded `uvicorn` package (test) to v0.53.0
 
 ### Documentation Updates
 
 - Documented the adapter config field layout convention in the developer guide
 - Documented declined fill notification in the execution concepts guide
+- Documented trader-scoped Postgres cache and the `assign-account` migration (#5070), thanks @utx0
 - Documented shared order book recovery ownership and Lighter recovery limits
 - Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
@@ -242,6 +258,7 @@ Released on TBD (UTC).
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Hyperliquid inferred-fill commissions as unset
+- Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
 - Updated Databento and Tardis integration guides with new URL overrides
 

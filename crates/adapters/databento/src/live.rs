@@ -38,7 +38,7 @@ use std::{
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, Record, SymbolIndex},
+    dbn::{self, PitSymbolMap, SymbolIndex},
     live::Subscription,
 };
 use indexmap::IndexMap;
@@ -1027,7 +1027,7 @@ fn handle_symbol_mapping_msg(
     symbol_map
         .on_symbol_mapping(msg)
         .map_err(|e| anyhow::anyhow!("on_symbol_mapping failed for {msg:?}: {e}"))?;
-    instrument_id_map.remove(&msg.header().instrument_id);
+    instrument_id_map.remove(&msg.hd.instrument_id);
     Ok(())
 }
 
