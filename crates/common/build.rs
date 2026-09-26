@@ -48,11 +48,17 @@ fn main() {
         "cargo:rustc-env=NAUTILUS_BUILD_TARGET={}",
         env::var("TARGET").unwrap_or_default(),
     );
-    println!(
-        "cargo:rustc-env=NAUTILUS_BUILD_PROFILE={}",
-        env::var("PROFILE").unwrap_or_default(),
-    );
-    println!("cargo:rustc-env=NAUTILUS_BUILD_GIT_COMMIT={}", git_commit());
+    let profile = env::var("PROFILE").unwrap_or_default();
+    println!("cargo:rustc-env=NAUTILUS_BUILD_PROFILE={profile}");
+
+    // Tracking HEAD in dev builds would rebuild every dependent crate on each commit
+    let git_commit = if profile == "release" {
+        git_commit()
+    } else {
+        String::new()
+    };
+
+    println!("cargo:rustc-env=NAUTILUS_BUILD_GIT_COMMIT={git_commit}");
 
     let Some(lock_path) = find_ancestor_file("Cargo.lock") else {
         emit_unavailable_lock_metadata();

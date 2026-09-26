@@ -54,26 +54,20 @@ UV_SYNC_FLAGS ?= --inexact
 TARGET_DIR ?= $(CURDIR)/target
 
 # Compiler configuration
-# Uses clang by default (required by ed25519-blake2b and other deps).
-# When sccache is available, wraps the compiler for build caching.
+# CC and CXX are left to the caller's environment: C build scripts rerun when
+# they change, so exporting them here would rebuild most of the workspace
+# whenever a plain cargo command (such as a git hook) runs between make targets.
+# When sccache is available, wraps rustc for build caching.
 # Set CARGO_INCREMENTAL=0 with sccache for better cache hit rates.
 # To disable sccache: make build SCCACHE=
 SCCACHE ?= $(shell command -v sccache 2>/dev/null)
 
-ifeq ($(SCCACHE),)
-CC ?= clang
-CXX ?= clang++
-else
-CC ?= sccache clang
-CXX ?= sccache clang++
+ifneq ($(SCCACHE),)
 RUSTC_WRAPPER ?= sccache
 CARGO_INCREMENTAL ?= 0
 export RUSTC_WRAPPER
 export CARGO_INCREMENTAL
 endif
-
-export CC
-export CXX
 
 # FAIL_FAST controls whether `cargo nextest` should stop after the first test
 # failure. When set to `true` the `--no-fail-fast` flag is omitted so tests
