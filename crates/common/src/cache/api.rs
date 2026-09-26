@@ -1238,8 +1238,7 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the cache is already mutably borrowed, or if `price_type` is [`PriceType::Mid`]
-    /// and the quote price precision is already at the maximum fixed precision.
+    /// Panics if the cache is already mutably borrowed.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         self.cache().price(instrument_id, price_type)

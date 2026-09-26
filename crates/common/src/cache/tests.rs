@@ -28,6 +28,8 @@ use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
+use nautilus_model::defi::WEI_PRECISION;
+#[cfg(feature = "defi")]
 use nautilus_model::defi::{
     AmmType, Dex, DexType, Pool, PoolIdentifier, PoolProfiler, Token, chain::chains,
 };
@@ -69,7 +71,9 @@ use nautilus_model::{
     },
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw,
+    },
 };
 use parking_lot::Mutex;
 use rstest::{fixture, rstest};
@@ -4808,6 +4812,166 @@ fn test_price_mid_uses_exact_decimal_midpoint(mut cache: Cache, audusd_sim: Curr
     assert_eq!(result, Price::from("1.000015"));
     assert_eq!(result.as_decimal(), dec!(1.000015));
     assert_eq!(result.precision, 6);
+}
+
+#[rstest]
+fn test_price_mid_at_precision_ceiling(mut cache: Cache, audusd_sim: CurrencyPair) {
+    #[cfg(feature = "defi")]
+    let ceiling = WEI_PRECISION;
+    #[cfg(not(feature = "defi"))]
+    let ceiling = FIXED_PRECISION;
+
+    for (bid_raw, ask_raw, expected_raw) in [(0, 1, None), (0, 2, Some(1))] {
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            bid_raw,
+            ask_raw,
+            ceiling,
+            expected_raw.map(|raw| (raw, ceiling)),
+        );
+    }
+
+    let max = Price::max(ceiling).raw();
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        max - 2,
+        max,
+        ceiling,
+        Some((max - 1, ceiling)),
+    );
+}
+
+fn assert_mid_raw(
+    cache: &mut Cache,
+    instrument_id: InstrumentId,
+    bid_raw: PriceRaw,
+    ask_raw: PriceRaw,
+    precision: u8,
+    expected: Option<(PriceRaw, u8)>,
+) {
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(bid_raw, precision),
+        Price::from_raw(ask_raw, precision),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_quote(quote).unwrap();
+
+    // `Price` equality is numeric across precisions, so compare raw and precision directly
+    let result = cache.price(&instrument_id, PriceType::Mid);
+    assert_eq!(result.map(|price| (price.raw(), price.precision)), expected);
+}
+
+#[rstest]
+fn test_price_mid_truncates_noncanonical_raw(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let precision = FIXED_PRECISION - 2;
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        101,
+        299,
+        precision,
+        Some((150, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        100,
+        200,
+        precision,
+        Some((150, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        -101,
+        -299,
+        precision,
+        Some((-150, precision + 1)),
+    );
+}
+
+#[rstest]
+fn test_price_mid_rejects_sentinel(mut cache: Cache, audusd_sim: CurrencyPair) {
+    use nautilus_model::types::price::{ERROR_PRICE, PRICE_ERROR, PRICE_UNDEF};
+
+    for (bid, ask) in [
+        (Price::from_raw(PRICE_ERROR, 0), Price::from_raw(0, 0)),
+        (Price::from_raw(PRICE_UNDEF, 0), Price::from_raw(0, 0)),
+        (ERROR_PRICE, ERROR_PRICE),
+    ] {
+        let quote = QuoteTick::new(
+            audusd_sim.id,
+            bid,
+            ask,
+            Quantity::from(1),
+            Quantity::from(1),
+            UnixNanos::from(5),
+            UnixNanos::from(10),
+        );
+        cache.add_quote(quote).unwrap();
+        assert_eq!(cache.price(&audusd_sim.id, PriceType::Mid), None);
+    }
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
+    for precision in [FIXED_PRECISION, FIXED_PRECISION + 1] {
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            0,
+            1,
+            precision,
+            Some((5, precision + 1)),
+        );
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            0,
+            2,
+            precision,
+            Some((10, precision + 1)),
+        );
+
+        let max = Price::max(precision).raw();
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            max - 2,
+            max,
+            precision,
+            Some((max - 1, precision)),
+        );
+        assert_mid_raw(&mut cache, audusd_sim.id, max - 1, max, precision, None);
+    }
+}
+
+#[rstest]
+fn test_price_mid_large_high_precision_raw(mut cache: Cache, audusd_sim: CurrencyPair) {
+    // The midpoint exceeds the `Decimal` mantissa; only a 128-bit `PriceRaw` can hold these
+    #[allow(
+        clippy::useless_conversion,
+        reason = "PriceRaw is i64 or i128 depending on nautilus-model's high-precision feature"
+    )]
+    let Some(raw) = PriceRaw::try_from(80_000_000_000_000_000_000_000_000_000_i128).ok() else {
+        return;
+    };
+    let precision = FIXED_PRECISION - 1;
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        raw,
+        raw + 10,
+        precision,
+        Some((raw + 5, precision + 1)),
+    );
 }
 
 #[rstest]
