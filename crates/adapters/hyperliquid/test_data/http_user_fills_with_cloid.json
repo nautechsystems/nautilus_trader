@@ -1,0 +1,38 @@
+[
+  {
+    "coin": "BTC",
+    "px": "78751.0",
+    "sz": "0.00535",
+    "side": "B",
+    "time": 1789407361368,
+    "startPosition": "4.22618",
+    "dir": "Open Long",
+    "closedPnl": "0.0",
+    "hash": "0x424b0788071d122b43c40444662e5c0205a5006da21030fde613b2dac610ec15",
+    "oid": 544900123760,
+    "crossed": false,
+    "fee": "-0.012639",
+    "tid": 1109765720343214,
+    "cloid": "0x5bdd47600dea461f36c8378cd7b4150c",
+    "feeToken": "USDC",
+    "twapId": null
+  },
+  {
+    "coin": "BTC",
+    "px": "78751.0",
+    "sz": "0.00016",
+    "side": "B",
+    "time": 1789407361023,
+    "startPosition": "4.22602",
+    "dir": "Open Long",
+    "closedPnl": "0.0",
+    "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "oid": 544900123760,
+    "crossed": false,
+    "fee": "-0.000378",
+    "tid": 780373658822388,
+    "cloid": "0x5bdd47600dea461f36c8378cd7b4150c",
+    "feeToken": "USDC",
+    "twapId": null
+  }
+]
