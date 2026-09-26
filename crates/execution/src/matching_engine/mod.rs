@@ -3566,16 +3566,18 @@ impl OrderMatchingEngine {
             // Filling as liquidity taker
             order.set_liquidity_side(LiquiditySide::Taker);
 
-            if self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-                .is_err()
-                && let Err(e) = self.cache.borrow_mut().replace_order(order)
+            let order_exists = self.cache.borrow().order_exists(&order.client_order_id());
+
+            if !order_exists
+                && let Err(e) = self
+                    .cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, false)
             {
-                log::debug!("Failed to update order in cache: {e}");
+                log::debug!("Failed to add order to cache: {e}");
             }
-            self.fill_limit_order(order.client_order_id());
+
+            self.fill_limit_order_with_snapshot(order.clone());
 
             // If fill didn't execute (e.g. all liquidity consumed), revert to
             // maker so the fill model check applies on subsequent iterations
@@ -4702,13 +4704,19 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the order has no price (design error).
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.order_snapshot(client_order_id) {
+        let order = match self.order_snapshot(client_order_id) {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
                 return;
             }
         };
+
+        self.fill_limit_order_with_snapshot(order);
+    }
+
+    fn fill_limit_order_with_snapshot(&mut self, mut order: OrderAny) {
+        let client_order_id = order.client_order_id();
 
         if order.is_closed() {
             self.purge_stale_core_entry(client_order_id);
