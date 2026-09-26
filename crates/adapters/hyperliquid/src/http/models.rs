@@ -162,19 +162,22 @@ pub struct PerpAsset {
     /// Number of decimal places for size.
     pub sz_decimals: u32,
     /// Maximum leverage allowed for this asset.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_leverage: Option<u32>,
+    /// Margin table ID for leverage tiers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin_table_id: Option<u32>,
     /// Whether this asset requires isolated margin only.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub only_isolated: Option<bool>,
     /// Whether this asset is delisted/inactive.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_delisted: Option<bool>,
     /// HIP-3 growth mode status (e.g., "enabled").
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub growth_mode: Option<String>,
     /// Margin mode (e.g., "strictIsolated").
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin_mode: Option<String>,
 }
 
@@ -1072,6 +1075,7 @@ mod tests {
             "name": "xyz:TSLA",
             "szDecimals": 3,
             "maxLeverage": 10,
+            "marginTableId": 10,
             "onlyIsolated": true,
             "growthMode": "enabled",
             "marginMode": "strictIsolated"
@@ -1082,6 +1086,7 @@ mod tests {
         assert_eq!(asset.name, "xyz:TSLA");
         assert_eq!(asset.sz_decimals, 3);
         assert_eq!(asset.max_leverage, Some(10));
+        assert_eq!(asset.margin_table_id, Some(10));
         assert_eq!(asset.only_isolated, Some(true));
         assert_eq!(asset.growth_mode.as_deref(), Some("enabled"));
         assert_eq!(asset.margin_mode.as_deref(), Some("strictIsolated"));
@@ -1093,6 +1098,7 @@ mod tests {
 
         let asset: PerpAsset = serde_json::from_str(json).unwrap();
 
+        assert_eq!(asset.margin_table_id, None);
         assert_eq!(asset.growth_mode, None);
         assert_eq!(asset.margin_mode, None);
     }

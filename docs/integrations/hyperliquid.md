@@ -255,6 +255,22 @@ InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
 InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID")
 ```
 
+Perpetual instruments, including HIP-3 markets, preserve venue asset metadata in
+`CryptoPerpetual.info`:
+
+| Field                                                    | Value                                                |
+| -------------------------------------------------------- | ---------------------------------------------------- |
+| `name`                                                   | Raw venue asset name                                 |
+| `szDecimals`                                             | Size decimals                                        |
+| `maxLeverage`                                            | Maximum leverage at the base margin tier             |
+| `marginTableId`                                          | Margin table in the `meta` response's `marginTables` |
+| `onlyIsolated`, `isDelisted`, `growthMode`, `marginMode` | Present when the venue sets them                     |
+
+`margin_init` is `1 / maxLeverage` and `margin_maint` is half of `margin_init`, following
+Hyperliquid's [margining rules](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining)
+at the base margin tier. Higher tiers from `marginTables` are not applied. An asset without
+`maxLeverage` keeps zero margin rates.
+
 ### HIP-3 perpetuals
 
 Format: `{dex}:{Asset}-USD-PERP`

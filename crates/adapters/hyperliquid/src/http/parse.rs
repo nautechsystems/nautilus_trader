@@ -864,6 +864,17 @@ pub fn create_instrument_from_def(
                 get_currency(settlement_code)
             };
             let min_notional = Some(min_order_notional(quote_currency)?);
+            let info = serde_json::from_str::<Params>(&def.raw_data).ok();
+            let info = info_with_asset_index(info, def.asset_index);
+
+            // Initial margin is `1 / max_leverage` at the base margin tier and maintenance
+            // margin is half of it; rates stay zero without a positive max leverage.
+            // https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining
+            let margin_init = def
+                .max_leverage
+                .filter(|&leverage| leverage > 0)
+                .map(|leverage| Decimal::ONE / Decimal::from(leverage));
+            let margin_maint = margin_init.map(|margin| margin / Decimal::TWO);
 
             Some(InstrumentAny::CryptoPerpetual(
                 CryptoPerpetual::builder()
@@ -878,7 +889,9 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
-                    .info(info_with_asset_index(None, def.asset_index))
+                    .maybe_margin_init(margin_init)
+                    .maybe_margin_maint(margin_maint)
+                    .info(info)
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -1488,6 +1501,11 @@ mod tests {
         assert_eq!(atom.base, "ATOM");
         assert_eq!(atom.size_decimals, 2);
         assert_eq!(atom.max_leverage, Some(5));
+
+        assert_eq!(meta.universe[0].margin_table_id, Some(56));
+        assert_eq!(meta.margin_tables.len(), 2);
+        assert_eq!(meta.margin_tables[1].0, 56);
+        assert_eq!(meta.margin_tables[1].1.margin_tiers[0].max_leverage, 40);
     }
 
     #[rstest]
@@ -1544,6 +1562,80 @@ mod tests {
                 assert_eq!(min_notional.currency, Currency::USD());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
                 assert_eq!(perp.settlement_currency.code, "USDC");
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(0, "BTC", 5, 40, 56, dec!(0.025), dec!(0.0125))]
+    #[case(1, "ETH", 4, 25, 55, dec!(0.04), dec!(0.02))]
+    #[case(2, "ATOM", 2, 5, 5, dec!(0.2), dec!(0.1))]
+    fn test_create_instrument_from_def_perp_sets_margin_and_info(
+        #[case] index: usize,
+        #[case] name: &str,
+        #[case] sz_decimals: u64,
+        #[case] max_leverage: u64,
+        #[case] margin_table_id: u64,
+        #[case] margin_init: Decimal,
+        #[case] margin_maint: Decimal,
+    ) {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        let instrument = create_instrument_from_def(&defs[index], UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.margin_init, margin_init);
+                assert_eq!(perp.margin_maint, margin_maint);
+
+                let info = perp.info.unwrap();
+                assert_eq!(info.len(), 5);
+                assert_eq!(info.get_str("name"), Some(name));
+                assert_eq!(info.get_u64("szDecimals"), Some(sz_decimals));
+                assert_eq!(info.get_u64("maxLeverage"), Some(max_leverage));
+                assert_eq!(info.get_u64("marginTableId"), Some(margin_table_id));
+                assert_eq!(info.get_u64(ASSET_INDEX_INFO_KEY), Some(index as u64));
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(None, dec!(0), dec!(0))]
+    #[case(Some(0), dec!(0), dec!(0))]
+    #[case(Some(3), dec!(0.333333), dec!(0.166667))]
+    fn test_create_instrument_from_def_perp_margin_edge_cases(
+        #[case] max_leverage: Option<u32>,
+        #[case] margin_init: Decimal,
+        #[case] margin_maint: Decimal,
+    ) {
+        let meta = PerpMeta {
+            universe: vec![PerpAsset {
+                name: "LOOM".to_string(),
+                sz_decimals: 1,
+                max_leverage,
+                only_isolated: Some(true),
+                is_delisted: Some(true),
+                ..Default::default()
+            }],
+            margin_tables: vec![],
+            collateral_token: None,
+        };
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.margin_init.round_dp(6), margin_init);
+                assert_eq!(perp.margin_maint.round_dp(6), margin_maint);
+
+                let info = perp.info.unwrap();
+                assert_eq!(info.get_u64("maxLeverage"), max_leverage.map(u64::from));
+                assert_eq!(info.get_bool("onlyIsolated"), Some(true));
+                assert_eq!(info.get_bool("isDelisted"), Some(true));
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1623,6 +1715,8 @@ mod tests {
                 assert_eq!(perp.quote_currency.code, "USD");
                 assert_eq!(perp.settlement_currency.code, "USDH");
                 assert_eq!(perp.settlement_currency.name, "Hyperliquid USD");
+                assert_eq!(perp.margin_init, dec!(0.05));
+                assert_eq!(perp.margin_maint, dec!(0.025));
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1936,6 +2030,7 @@ mod tests {
                     name: "xyz:TSLA".to_string(),
                     sz_decimals: 3,
                     max_leverage: Some(10),
+                    margin_table_id: None,
                     only_isolated: None,
                     is_delisted: None,
                     growth_mode: Some("enabled".to_string()),
@@ -1945,6 +2040,7 @@ mod tests {
                     name: "xyz:NVDA".to_string(),
                     sz_decimals: 3,
                     max_leverage: Some(20),
+                    margin_table_id: None,
                     only_isolated: None,
                     is_delisted: None,
                     growth_mode: None,
@@ -2036,6 +2132,7 @@ mod tests {
                 name: "dex:STREAMABCD****".to_string(),
                 sz_decimals: 3,
                 max_leverage: Some(10),
+                margin_table_id: None,
                 only_isolated: None,
                 is_delisted: None,
                 growth_mode: None,

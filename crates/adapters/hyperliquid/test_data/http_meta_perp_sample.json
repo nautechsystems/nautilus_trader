@@ -1,7 +1,42 @@
 {
+  "marginTables": [
+    [
+      55,
+      {
+        "description": "tiered 25x",
+        "marginTiers": [
+          {
+            "lowerBound": "0.0",
+            "maxLeverage": 25
+          },
+          {
+            "lowerBound": "100000000.0",
+            "maxLeverage": 15
+          }
+        ]
+      }
+    ],
+    [
+      56,
+      {
+        "description": "tiered 40x",
+        "marginTiers": [
+          {
+            "lowerBound": "0.0",
+            "maxLeverage": 40
+          },
+          {
+            "lowerBound": "150000000.0",
+            "maxLeverage": 20
+          }
+        ]
+      }
+    ]
+  ],
   "universe": [
     {
       "isDelisted": null,
+      "marginTableId": 56,
       "maxLeverage": 40,
       "name": "BTC",
       "onlyIsolated": null,
@@ -9,6 +44,7 @@
     },
     {
       "isDelisted": null,
+      "marginTableId": 55,
       "maxLeverage": 25,
       "name": "ETH",
       "onlyIsolated": null,
@@ -16,6 +52,7 @@
     },
     {
       "isDelisted": null,
+      "marginTableId": 5,
       "maxLeverage": 5,
       "name": "ATOM",
       "onlyIsolated": null,
