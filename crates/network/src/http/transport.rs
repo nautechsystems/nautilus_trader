@@ -83,6 +83,9 @@ impl Client {
             .pool_idle_timeout(settings.pool_idle_timeout)
             .http2_keep_alive_interval(settings.keep_alive_interval)
             .http2_keep_alive_while_idle(settings.keep_alive_interval.is_some())
+            .http2_initial_stream_window_size(settings.stream_window)
+            .http2_initial_connection_window_size(settings.connection_window)
+            // Keep after the window sizes: setting a window size turns adaptive windows off
             .http2_adaptive_window(settings.adaptive_window)
             .build(connector);
         Ok(Self { client, proxies })
@@ -145,6 +148,8 @@ pub(super) struct Settings {
     pub(super) pool_max_idle_per_host: usize,
     pub(super) pool_idle_timeout: Duration,
     pub(super) keep_alive_interval: Option<Duration>,
+    pub(super) stream_window: Option<u32>,
+    pub(super) connection_window: Option<u32>,
     pub(super) adaptive_window: bool,
 }
 
@@ -154,6 +159,8 @@ impl Default for Settings {
             pool_max_idle_per_host: usize::MAX,
             pool_idle_timeout: Duration::from_secs(90),
             keep_alive_interval: None,
+            stream_window: None,
+            connection_window: None,
             adaptive_window: false,
         }
     }

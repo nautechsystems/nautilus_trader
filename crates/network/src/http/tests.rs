@@ -605,63 +605,16 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
     peer.await.unwrap();
 }
 
-// SSL_CERT_FILE supplies isolated trust on the Unix verifier, not native Apple/Windows stores
 #[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
 #[rstest]
 fn platform_tls_http2_and_protocol_retries() {
-    use std::{
-        process::Command,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-
     use http::StatusCode;
 
-    const MARKER: &str = "NAUTILUS_HTTP_TLS_PARITY_CHILD";
-    if std::env::var_os(MARKER).is_none() {
-        let directory = tempfile::tempdir().unwrap();
-        let key = rcgen::KeyPair::generate().unwrap();
-        let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
-            .unwrap()
-            .self_signed(&key)
-            .unwrap();
-        std::fs::write(directory.path().join("cert.pem"), cert.pem()).unwrap();
-        std::fs::write(directory.path().join("cert.der"), cert.der()).unwrap();
-        std::fs::write(directory.path().join("key.der"), key.serialize_der()).unwrap();
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "http::tests::platform_tls_http2_and_protocol_retries",
-                "--nocapture",
-            ])
-            .env(MARKER, directory.path())
-            .env("SSL_CERT_FILE", directory.path().join("cert.pem"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    let Some(config) = tls_server_config() else {
+        run_tls_child("http::tests::platform_tls_http2_and_protocol_retries", &[]);
         return;
-    }
-    nautilus_cryptography::providers::install_cryptographic_provider();
-    let directory = std::path::PathBuf::from(std::env::var_os(MARKER).unwrap());
-    let cert =
-        rustls::pki_types::CertificateDer::from(std::fs::read(directory.join("cert.der")).unwrap());
-    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(
-        std::fs::read(directory.join("key.der")).unwrap(),
-    );
-    let mut config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key.into())
-        .unwrap();
-    config.alpn_protocols = vec![b"h2".to_vec()];
-    let config = Arc::new(config);
+    };
+
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -738,6 +691,155 @@ fn platform_tls_http2_and_protocol_retries() {
                 }
             }
         });
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
+fn http2_initial_window_follows_environment() {
+    let Some(config) = tls_server_config() else {
+        for (value, expected) in [
+            (None, "windows=16777216/33554432"),
+            (Some("false"), "windows=16777216/33554432"),
+            (Some("true"), "windows=65535/65535"),
+            (
+                Some("1"),
+                "error=Failed to build HTTP client: NAUTILUS_HTTP2_ADAPTIVE_WINDOW must be 'true' or 'false', was '1'",
+            ),
+        ] {
+            let stdout = run_tls_child(
+                "http::tests::http2_initial_window_follows_environment",
+                &[("NAUTILUS_HTTP2_ADAPTIVE_WINDOW", value)],
+            );
+            assert!(stdout.contains(expected), "{value:?}: {stdout}");
+        }
+
+        return;
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let client = match HttpClient::builder()
+                .use_system_proxy(false)
+                .timeout_secs(3)
+                .build()
+            {
+                Ok(client) => client,
+                Err(e) => {
+                    println!("error={e}");
+                    return;
+                }
+            };
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let url = format!("https://localhost:{port}/");
+
+            let mut task = tokio::spawn(async move { send(&client, Method::GET, url, None).await });
+
+            let (stream, _) = tokio::select! {
+                accepted = listener.accept() => accepted.unwrap(),
+                result = &mut task => panic!("request ended before connecting: {result:?}"),
+            };
+            let mut stream = tokio_rustls::TlsAcceptor::from(config)
+                .accept(stream)
+                .await
+                .unwrap();
+
+            let mut preface = [0; 24];
+            stream.read_exact(&mut preface).await.unwrap();
+            assert_eq!(&preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+
+            // Both windows start at 65,535 bytes until SETTINGS or WINDOW_UPDATE frames change them
+            let mut stream_window = 65_535;
+            let mut connection_window = 65_535;
+
+            loop {
+                let mut header = [0; 9];
+                stream.read_exact(&mut header).await.unwrap();
+                let length = u32::from_be_bytes([0, header[0], header[1], header[2]]);
+                let id = u32::from_be_bytes([header[5], header[6], header[7], header[8]]);
+                let mut payload = vec![0; length as usize];
+                stream.read_exact(&mut payload).await.unwrap();
+
+                match header[3] {
+                    0x1 => break,
+                    0x4 => {
+                        for setting in payload.as_chunks::<6>().0 {
+                            if let [0, 0x4, a, b, c, d] = *setting {
+                                stream_window = u32::from_be_bytes([a, b, c, d]);
+                            }
+                        }
+                    }
+                    0x8 if id == 0 => {
+                        connection_window +=
+                            u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    }
+                    _ => {}
+                }
+            }
+
+            println!("windows={stream_window}/{connection_window}");
+            task.abort();
+        });
+}
+
+// SSL_CERT_FILE supplies isolated trust on the Unix verifier, not native Apple/Windows stores
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+const TLS_CHILD: &str = "NAUTILUS_HTTP_TLS_PARITY_CHILD";
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+fn run_tls_child(test: &str, envs: &[(&str, Option<&str>)]) -> String {
+    let directory = tempfile::tempdir().unwrap();
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    std::fs::write(directory.path().join("cert.pem"), cert.pem()).unwrap();
+    std::fs::write(directory.path().join("cert.der"), cert.der()).unwrap();
+    std::fs::write(directory.path().join("key.der"), key.serialize_der()).unwrap();
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env(TLS_CHILD, directory.path())
+        .env("SSL_CERT_FILE", directory.path().join("cert.pem"));
+
+    for (key, value) in envs {
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
+
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("1 passed"));
+    stdout
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+fn tls_server_config() -> Option<Arc<rustls::ServerConfig>> {
+    let directory = std::path::PathBuf::from(std::env::var_os(TLS_CHILD)?);
+    nautilus_cryptography::providers::install_cryptographic_provider();
+    let cert =
+        rustls::pki_types::CertificateDer::from(std::fs::read(directory.join("cert.der")).unwrap());
+    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(
+        std::fs::read(directory.join("key.der")).unwrap(),
+    );
+    let mut config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key.into())
+        .unwrap();
+    config.alpn_protocols = vec![b"h2".to_vec()];
+    Some(Arc::new(config))
 }
 
 async fn send(
