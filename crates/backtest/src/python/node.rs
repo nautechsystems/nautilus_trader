@@ -68,11 +68,13 @@ impl BacktestNode {
     /// instruments from the catalog. If building a config fails with
     /// `BacktestRunConfig.raise_exception` disabled, logs the error and skips that config;
     /// successful return does not guarantee an engine for every config.
+    /// A disposed node cannot be built again; create a new node instead.
     ///
     /// # Errors
     ///
     /// Returns an error if building an engine from a config fails and
     /// `BacktestRunConfig.raise_exception` is enabled for that config.
+    /// Returns an error if this node has been disposed.
     #[pyo3(name = "build")]
     fn py_build(&mut self) -> PyResult<()> {
         self.build().map_err(to_pyruntime_err)
@@ -86,17 +88,22 @@ impl BacktestNode {
     /// Configs without a built engine are skipped. If a run fails with
     /// `BacktestRunConfig.raise_exception` disabled, logs the error, clears its loaded data,
     /// leaves the engine undisposed, and omits its result.
+    /// A node disposed by a completed run or by `dispose()`
+    /// cannot run again; create a new node instead.
     ///
     /// # Errors
     ///
     /// Returns an error if building, data loading, or engine execution fails and
     /// `BacktestRunConfig.raise_exception` is enabled for the run config.
+    /// Returns an error if this node has been disposed.
     #[pyo3(name = "run")]
     fn py_run(&mut self) -> PyResult<Vec<BacktestResult>> {
         self.run().map_err(to_pyruntime_err)
     }
 
     /// Disposes all engines and releases resources.
+    /// Subsequent calls to `run()` or `build()`
+    /// return an error; create a new node to run again.
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();
