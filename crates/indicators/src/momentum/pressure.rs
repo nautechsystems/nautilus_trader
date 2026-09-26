@@ -99,7 +99,7 @@ impl Pressure {
             atr_floor: atr_floor.unwrap_or(0.0),
             value: 0.0,
             value_cumulative: 0.0,
-            atr: AverageTrueRange::new(period, Some(ma_type), Some(false), atr_floor),
+            atr: AverageTrueRange::new(period, Some(ma_type), Some(true), atr_floor),
             average_volume: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
@@ -273,5 +273,40 @@ mod tests {
         pressure.update_raw(1.5, 1.0, 1.2, 100.0);
         assert!((pressure.value + 0.2).abs() < 1e-6);
         assert!(!pressure.value_cumulative.is_nan());
+    }
+
+    #[rstest]
+    fn test_new_defaults_match_cython() {
+        let mut pressure = Pressure::new(10, None, None);
+        let high_values = [
+            100.75, 102.5, 102.0, 103.0, 104.0, 102.25, 101.25, 103.0, 105.75, 104.5, 106.0, 105.5,
+            107.25, 106.5, 108.25, 107.0, 109.0, 108.75, 110.0, 109.5,
+        ];
+        let low_values = [
+            99.5, 100.75, 100.25, 101.5, 102.5, 100.25, 100.0, 101.25, 104.0, 103.0, 104.5, 103.5,
+            106.0, 104.75, 106.5, 105.5, 107.5, 106.75, 108.75, 107.75,
+        ];
+        let close_values = [
+            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
+            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
+        ];
+        let volume_values = [
+            1200.0, 1500.0, 900.0, 1800.0, 2100.0, 1300.0, 1100.0, 1600.0, 2500.0, 1700.0, 2000.0,
+            1400.0, 2300.0, 1500.0, 2200.0, 1600.0, 2400.0, 1800.0, 2600.0, 1900.0,
+        ];
+
+        for i in 0..20 {
+            pressure.update_raw(
+                high_values[i],
+                low_values[i],
+                close_values[i],
+                volume_values[i],
+            );
+        }
+
+        assert!(pressure.atr.use_previous);
+        assert!(pressure.initialized());
+        assert_approx_equal(pressure.value, -0.110801189707);
+        assert_approx_equal(pressure.value_cumulative, -4.12922120583);
     }
 }

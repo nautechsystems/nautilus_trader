@@ -116,7 +116,10 @@ impl VariableIndexDynamicAverage {
             has_inputs: false,
             initialized: false,
             alpha: 2.0 / (period as f64 + 1.0),
-            cmo: ChandeMomentumOscillator::new(period, cmo_ma_type),
+            cmo: ChandeMomentumOscillator::new(
+                period,
+                Some(cmo_ma_type.unwrap_or(MovingAverageType::Simple)),
+            ),
             cmo_pct: 0.0,
         }
     }
@@ -154,7 +157,9 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        average::{sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage},
+        average::{
+            MovingAverageType, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        },
         indicator::{Indicator, MovingAverage},
         stubs::*,
         testing::assert_approx_equal,
@@ -348,5 +353,22 @@ mod tests {
         }
 
         assert!(vidya.value < 0.0);
+    }
+
+    #[rstest]
+    fn test_new_defaults_to_simple_cmo_moving_average() {
+        let mut vidya = VariableIndexDynamicAverage::new(10, None, None);
+        let prices = [
+            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
+            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
+        ];
+
+        for price in prices {
+            vidya.update_raw(price);
+        }
+
+        assert_eq!(vidya.cmo.ma_type, MovingAverageType::Simple);
+        assert!(vidya.initialized());
+        assert_approx_equal(vidya.value, 53.9213044896);
     }
 }
