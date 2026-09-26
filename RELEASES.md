@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 - Added `WebSocketConfig.max_message_size_bytes` and `max_frame_size_bytes` configurable inbound size limits
 - Added configurable `writer_capacity` limits for socket and WebSocket clients, defaulting to 1,024 messages
+- Added `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` env var to restore adaptive HTTP/2 flow-control windows
 - Added same-venue execution client registration with explicit venue or default routing
 - Added Rust `Cache::account_id_for_client` to resolve execution client accounts independent of issuers
 - Added Rust `Cache::client_id_for_venue` to resolve the execution client that venue or default routing selects
@@ -139,11 +140,13 @@ Released on TBD (UTC).
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions
 - Fixed replayed fills doubling positions reconciled from venue position reports (#5041), thanks @faysou
+- Fixed startup reconciliation dropping fills that precede order acceptance (#5041), thanks @faysou
 - Fixed duplicate `LiveNode` builds replacing thread-local messaging (#5049), thanks for reporting @logeid
 - Fixed unqueryable Python custom-data writes (#4984), thanks for reporting @shanezilla
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
 - Fixed catalog interval-filename validation renaming files before rejecting them (#4647)
 - Fixed HTTP client omitting configured `User-Agent` from proxy `CONNECT` requests for HTTPS URLs
+- Fixed HTTP client adaptive HTTP/2 flow control triggering Cloudflare resets of large response bodies
 - Fixed TLS client config panicking on first use when ring is also enabled
 - Fixed Sockudo handshake retries logged as errors, hiding reconnect recovery
 - Fixed dropping unfilled working orders when replacing a reconciliation lifecycle (#5003), thanks @abhijeetvichare76
@@ -196,6 +199,7 @@ Released on TBD (UTC).
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Coinbase trade aggressor side inverted by using the reported maker side
+- Fixed Databento live MBO subscriptions never emitting trades (#5095), thanks for reporting @invisiblebackhand
 - Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
 - Fixed Deribit order and edit amounts and prices losing digits through `f64` serialization
 - Fixed Deribit and Tardis Machine book parsing panicking on out-of-range prices

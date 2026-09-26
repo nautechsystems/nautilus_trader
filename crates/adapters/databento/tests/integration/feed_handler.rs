@@ -30,7 +30,8 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_databento::live::{DatabentoMessage, HandlerCommand};
 use nautilus_model::{
     data::Data,
-    identifiers::Symbol,
+    enums::{AggressorSide, BookAction},
+    identifiers::{Symbol, TradeId},
     instruments::Instrument,
     types::{Price, Quantity},
 };
@@ -1008,6 +1009,102 @@ async fn test_mbo_buffering_waits_for_f_last() {
 
 #[rstest]
 #[tokio::test]
+async fn test_mbo_trade_emitted_once_book_initialized() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+
+    // Dropped: no delta has initialized the book yet
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        98_000_000_000,
+        100_000_000_000,
+    ));
+
+    // Initializes the book and stays buffered until the trade's F_LAST closes the event
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'A',
+        b'B',
+        0,
+        100_000_000_000,
+        101_000_000_000,
+    ));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        99_000_000_000,
+        102_000_000_000,
+    ));
+
+    // Must arrive directly after the trade, proving the trade is sent once
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'C',
+        b'B',
+        128,
+        100_000_000_000,
+        103_000_000_000,
+    ));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbo)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas.len(), 1);
+            assert_eq!(deltas.deltas[0].action, BookAction::Add);
+            assert_eq!(deltas.deltas[0].order.price, Price::from("100.00"));
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.instrument_id.symbol.as_str(), RAW_SYMBOL);
+            assert_eq!(trade.price, Price::from("99.00"));
+            assert_eq!(trade.size, Quantity::from(10));
+            assert_eq!(trade.aggressor_side, AggressorSide::Sell);
+            assert_eq!(trade.trade_id, TradeId::new("1"));
+            assert_eq!(trade.ts_event, 102_000_000_000u64);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas.len(), 1);
+            assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+            assert_eq!(deltas.deltas[0].ts_event, 103_000_000_000u64);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_mbo_snapshot_buffered_until_delta() {
     let server = MockLsgServer::new(TEST_DATASET).await;
     let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
@@ -1301,6 +1398,160 @@ async fn test_replay_subscription_buffers_until_past_start() {
                 "expected 3 deltas (2 replay + 1 live), was {}",
                 deltas.deltas.len()
             );
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_replay_mbo_trades_dropped_until_past_start() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+
+    // Replayed: the snapshot initializes the book, and the trade precedes the session start
+    server.send_record(mbo_msg(
+        INSTRUMENT_ID,
+        b'A',
+        b'A',
+        128 | 32,
+        100_000_000_000,
+    ));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        98_000_000_000,
+        2_000_000_000,
+    ));
+
+    // Live: the trade lacks F_LAST, so it arrives before the Cancel's F_LAST ends the replay
+    let far_future_ts = 9_000_000_000_000_000_000u64;
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'B',
+        0,
+        100_000_000_000,
+        far_future_ts,
+    ));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'C',
+        b'A',
+        128,
+        100_000_000_000,
+        far_future_ts + 1,
+    ));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    let sub = Subscription::builder()
+        .symbols(RAW_SYMBOL)
+        .schema(dbn::Schema::Mbo)
+        .stype_in(dbn::SType::RawSymbol)
+        .start(time::OffsetDateTime::from_unix_timestamp(0).unwrap())
+        .build();
+    cmd_tx.send(HandlerCommand::Subscribe(sub)).unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.price, Price::from("100.00"));
+            assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+            assert_eq!(trade.ts_event, far_future_ts);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas.len(), 2);
+            assert_eq!(deltas.deltas[0].action, BookAction::Add);
+            assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+            assert_eq!(deltas.deltas[1].ts_event, far_future_ts + 1);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_replay_after_failed_connect_drops_replayed_trades() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    // The rejected first connection buffers the replay subscription and start for the retry
+    server.authenticate_reject("test rejection");
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+
+    // Replayed: the snapshot initializes the book, and the trade precedes the session start
+    server.send_record(mbo_msg(
+        INSTRUMENT_ID,
+        b'A',
+        b'A',
+        128 | 32,
+        100_000_000_000,
+    ));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        98_000_000_000,
+        2_000_000_000,
+    ));
+
+    // Live: a far-future timestamp passes the session start
+    let far_future_ts = 9_000_000_000_000_000_000u64;
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'C',
+        b'A',
+        128,
+        100_000_000_000,
+        far_future_ts,
+    ));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    let sub = Subscription::builder()
+        .symbols(RAW_SYMBOL)
+        .schema(dbn::Schema::Mbo)
+        .stype_in(dbn::SType::RawSymbol)
+        .start(time::OffsetDateTime::from_unix_timestamp(0).unwrap())
+        .build();
+    cmd_tx.send(HandlerCommand::Subscribe(sub)).unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas.len(), 2);
+            assert_eq!(deltas.deltas[0].action, BookAction::Add);
+            assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+            assert_eq!(deltas.deltas[1].ts_event, far_future_ts);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
     }

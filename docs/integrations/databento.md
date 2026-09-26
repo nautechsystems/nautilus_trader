@@ -81,7 +81,7 @@ The following Databento schemas are supported by NautilusTrader:
 
 | Databento schema                                                             | Nautilus data type               | Description                     |
 | :--------------------------------------------------------------------------- | :------------------------------- | :------------------------------ |
-| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)               | `OrderBookDelta`                 | Market by order (L3).           |
+| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)               | `OrderBookDelta \| TradeTick`    | Market by order (L3).           |
 | [MBP_1](https://databento.com/docs/schemas-and-data-formats/mbp-1)           | `(QuoteTick, TradeTick \| None)` | Market by price (L1).           |
 | [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)         | `OrderBookDepth`                 | Market depth (L2).              |
 | [BBO_1S](https://databento.com/docs/schemas-and-data-formats/bbo-1s)         | `QuoteTick`                      | 1-second best bid/offer.        |
@@ -573,20 +573,22 @@ symbol. `InstrumentStatus` carries no prices and needs no precision.
 
 MBO is the highest granularity data from Databento, representing full order book
 depth. Some messages include trade data. The decoder produces an `OrderBookDelta`
-and optionally a `TradeTick`.
+and optionally a `TradeTick`. The live client emits a `TradeTick` only after the
+instrument has received its first delta.
 
 The live client buffers MBO messages until a record carries the `F_LAST` flag
 closing the match event, then passes one `OrderBookDeltas` container to the
-handler. Records that decode to no delta (a fill attribution or a status action)
-can still carry `F_LAST`, so the client honors the raw flag independently of the
-decoded payload; otherwise a partial event would be stranded and merged into the
-next event.
+handler. Records that decode to no delta (a fill attribution, a status action, or
+a trade) can still carry `F_LAST`, so the client honors the raw flag independently
+of the decoded payload; otherwise a partial event would be stranded and merged into
+the next event. A trade that closes the event follows the flushed container.
 
 Snapshot records (`F_SNAPSHOT`) accumulate into the same buffer and flush with the
 first non-snapshot event boundary, so a snapshot reaches the handler as one
 `OrderBookDeltas` container rather than as individual deltas. When a subscription
-carries a replay `start` anchor, the client suppresses emission until an event
-timestamp passes that anchor, which keeps replayed history out of the live stream.
+carries a replay `start` anchor, the client keeps replayed history out of the live
+stream until an event timestamp passes the session start time. It holds replayed
+deltas and flushes them with that first live event, and drops replayed trades.
 
 ### MBP-1 (market by price, top-of-book)
 

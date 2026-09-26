@@ -47,6 +47,18 @@ const DEFAULT_POOL_IDLE_TIMEOUT_SECS: u64 = 60;
 #[cfg(not(all(feature = "simulation", madsim)))]
 const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 
+/// Default HTTP/2 stream flow-control window in bytes (16 MiB).
+#[cfg(not(all(feature = "simulation", madsim)))]
+const DEFAULT_HTTP2_STREAM_WINDOW_BYTES: u32 = 16 * 1024 * 1024;
+
+/// Default HTTP/2 connection flow-control window in bytes (32 MiB).
+#[cfg(not(all(feature = "simulation", madsim)))]
+const DEFAULT_HTTP2_CONNECTION_WINDOW_BYTES: u32 = 32 * 1024 * 1024;
+
+/// Environment variable that enables adaptive HTTP/2 flow-control windows when set to `true`.
+#[cfg(not(all(feature = "simulation", madsim)))]
+const NAUTILUS_HTTP2_ADAPTIVE_WINDOW: &str = "NAUTILUS_HTTP2_ADAPTIVE_WINDOW";
+
 /// Default maximum HTTP response body size in bytes (100 MiB).
 ///
 /// Bounds peak memory per response so a hostile or malfunctioning endpoint
@@ -100,6 +112,7 @@ impl HttpClient {
     /// Returns an error if:
     /// - Shared rate limiters are combined with quota configuration.
     /// - The proxy URL is malformed.
+    /// - `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` is set to a value other than `true` or `false`.
     /// - Building the underlying HTTP transport fails.
     #[allow(
         clippy::needless_pass_by_value,
@@ -182,7 +195,9 @@ impl HttpClient {
                 pool_max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,
                 pool_idle_timeout: Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS),
                 keep_alive_interval: Some(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS)),
-                adaptive_window: true,
+                stream_window: Some(DEFAULT_HTTP2_STREAM_WINDOW_BYTES),
+                connection_window: Some(DEFAULT_HTTP2_CONNECTION_WINDOW_BYTES),
+                adaptive_window: http2_adaptive_window()?,
             },
         )?;
         #[cfg(all(feature = "simulation", madsim))]
@@ -910,6 +925,20 @@ impl Default for InnerHttpClient {
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         }
     }
+}
+
+#[cfg(not(all(feature = "simulation", madsim)))]
+fn http2_adaptive_window() -> Result<bool, HttpClientError> {
+    let Some(value) = std::env::var_os(NAUTILUS_HTTP2_ADAPTIVE_WINDOW) else {
+        return Ok(false);
+    };
+
+    value.to_str().and_then(|v| v.parse().ok()).ok_or_else(|| {
+        HttpClientError::ClientBuildError(format!(
+            "{NAUTILUS_HTTP2_ADAPTIVE_WINDOW} must be 'true' or 'false', was '{}'",
+            value.display()
+        ))
+    })
 }
 
 /// Encodes URL parameters into the query string.

@@ -1054,6 +1054,26 @@ A failed lookup returned as `Ok(None)` can therefore reject or cancel an order t
 venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
 implement this method before an open-order check runs in full-history mode.
 
+##### Shared reconciliation changes
+
+The execution engine and the live `ExecutionManager` apply every adapter's reports through the
+same code, so a change to shared execution or reconciliation logic changes behavior for every venue
+at once. Assess such a change against every adapter with an execution client, not only the venue
+that motivated it. For each adapter, check the report fields the change relies on, for example:
+
+- The time `OrderStatusReport.ts_accepted` carries: the venue's acceptance time, its last update
+  time, or a local timestamp. A last update or local time can place an order's acceptance after its
+  own fills.
+- The time `OrderStatusReport.ts_last` carries for a closed order: when it closed, or an earlier
+  time such as its creation, which can place a cancellation before the order's own fills.
+- Whether fill reports carry the same `venue_order_id` as the order report for the same order.
+- Whether one client order can carry more than one venue order ID in a single mass status, for
+  example after a price replacement.
+- Whether mass status includes closed orders or only open ones.
+
+Classify each adapter as helped, unaffected, or at risk, cite the code that decides it, and include
+the result in the pull request description.
+
 #### Commission failure handling
 
 Commission is part of a fill's economic record. Calculate it with exact decimal arithmetic, then

@@ -83,8 +83,15 @@ which venue errors and operations are safe to retry.
 
 Each production `HttpClient` enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and
 retains an idle connection for up to 60 seconds. HTTP/2 connections send keepalive probes every 30 seconds even
-while idle and use adaptive flow-control windows. Reusing a client preserves the pool and avoids a
-new TCP and TLS handshake for each request.
+while idle. Reusing a client preserves the pool and avoids a new TCP and TLS handshake for each
+request.
+
+HTTP/2 connections use fixed flow-control windows of 16 MiB per stream and 32 MiB per connection,
+so a server can send up to 16 MiB of a response before the client acknowledges any of it. Setting
+`NAUTILUS_HTTP2_ADAPTIVE_WINDOW=true` before building a client selects Hyper's adaptive windows
+instead. The value `false` or an unset variable keeps the fixed windows, and any other value makes
+the client build fail. [Flow-control windows](#flow-control-windows) explains how these sizes were
+chosen.
 
 Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
@@ -130,6 +137,56 @@ results support a modest serial improvement, with regressions in some concurrent
 The benchmark exercises complete requests and validates response bodies, status, headers, and
 connection reuse over loopback HTTP/1.1. It excludes TLS, HTTP/2, proxies, WAN latency, and adapter
 parsing, so the results do not establish a production-wide speedup.
+
+### Flow-control windows
+
+HTTP/2 flow control limits how much response data a server can send before the client acknowledges
+it. Each round trip delivers at most one window, so on a long path the window rather than the link
+can set download speed. Hyper offers two modes:
+
+- Adaptive windows start at 65,535 bytes and grow toward 16 MiB as PING probes measure the
+  bandwidth-delay product, with SETTINGS frames raising the window.
+- Fixed windows stay constant; Hyper's defaults are 2 MiB per stream and 5 MiB per connection.
+
+`HttpClient` uses fixed windows of 16 MiB per stream and 32 MiB per connection. Adaptive windows
+caused two problems:
+
+- Cloudflare resets: downloads of the 284 MB uncompressed Deribit instrument list from
+  `api.tardis.dev`, which Cloudflare fronts, reset mid-body in 13 of 21 runs with adaptive windows,
+  while all 49 downloads with fixed windows of 2, 8, or 16 MiB completed. The evidence points to the
+  probe and SETTINGS traffic of adaptive growth as the trigger, not the window size.
+- Slow new connections: every body larger than 65,535 bytes needs extra round trips while the
+  window grows. At 100 ms RTT, a 1 MiB response on a new connection took 616 ms with adaptive windows
+  and 207 ms with fixed windows.
+
+Hyper's fixed default avoids both problems but delivers at most 2 MiB per round trip, so large
+bodies slow down. A local benchmark compared the settings over TLS on loopback, with a relay adding
+round-trip delay. The following cases at 100 ms RTT show the pattern, as median milliseconds:
+
+| Body   | Connection | Adaptive | Fixed 2 MiB | Fixed 8 MiB | Fixed 16 MiB |
+| ------ | ---------- | -------- | ----------- | ----------- | ------------ |
+| 64 KiB | New        | 308      | 206         | 206         | 206          |
+| 1 MiB  | New        | 616      | 207         | 207         | 207          |
+| 4 MiB  | New        | 875      | 413         | 209         | 208          |
+| 16 MiB | New        | 1,185    | 1,037       | 416         | 211          |
+| 1 MiB  | Warm       | 154      | 103         | 104         | 103          |
+| 4 MiB  | Warm       | 105      | 310         | 105         | 105          |
+| 16 MiB | Warm       | 212      | 935         | 315         | 108          |
+
+Warm connections had already served three requests of the same size, which gives adaptive windows
+time to grow. The 16 MiB stream window equals the adaptive ceiling, so a response gets that
+capacity from its first round trip without the probe traffic. Across 20, 100, and 250 ms RTT and
+bodies from 32 KiB to 16 MiB, on new and warm connections, fixed 16 MiB matched the faster of
+adaptive and Hyper's default within 1 ms or beat it. Fixed 8 MiB took two to three times as long
+for 16 MiB bodies. The 32 MiB connection window lets two large responses on one connection each
+use a full stream window.
+
+A slow reader can receive up to 16 MiB per stream and 32 MiB per connection before flow control
+pushes back, against at most 16 MiB for each under adaptive windows. Loopback bandwidth is effectively unlimited, so
+the benchmark overstates large-body gains. On a real link, the window limits throughput only when
+it is smaller than bandwidth times RTT: at 100 ms RTT, 2 MiB allows about 20 MiB/s and 16 MiB
+about 160 MiB/s. The [HTTP/2 flow-control benchmark](../../crates/network/benches/BENCHMARKS.md#http2-flow-control-windows)
+has the full tables, the method, and the Cloudflare runs.
 
 ## WebSocket client
 

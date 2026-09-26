@@ -108,7 +108,8 @@ use super::{
         PositionReconciliationState, PositionReportShape, ReconciliationFillQueue,
         RetainedFillState, create_cross_zero_leg_report, create_orphan_fill_order_report,
         has_active_inferred_fill, is_exact_order_match, position_avg_px, position_qty_aggregates,
-        resolve_inferred_fill_commission, should_project_fill, terminal_report_has_missing_fills,
+        resolve_inferred_fill_commission, should_project_fill, sort_reconciliation_events,
+        terminal_report_has_missing_fills,
     },
     submission::{SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource},
 };
@@ -1430,7 +1431,7 @@ impl ExecutionManager {
             }
         }
 
-        events.sort_by_key(OrderEventAny::ts_event);
+        sort_reconciliation_events(&mut events);
 
         let mut unapplied_fill_position_ids = IndexSet::new();
 

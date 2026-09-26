@@ -52,12 +52,20 @@
 //! # Connection and response policy
 //!
 //! Production clients built through [`HttpClient::builder`] enable `TCP_NODELAY`, pooled idle
-//! connections, HTTP/2 keepalive while idle, and adaptive HTTP/2 flow control. Buffered responses
-//! retain only configured header fields and reject bodies larger than 100 MiB, including chunked
-//! bodies without a declared length. [`HttpClient::get_stream`] consumes bodies incrementally
-//! without a total size limit. Transport error messages carry the request URL without its query
-//! string or fragment, and the `_url_redacted` request methods omit the URL entirely; the client
-//! itself logs request metadata only, never URLs.
+//! connections, and HTTP/2 keepalive while idle.
+//!
+//! HTTP/2 connections use fixed flow-control windows of 16 MiB per stream and 32 MiB per
+//! connection, larger than Hyper's fixed defaults of 2 MiB and 5 MiB. Setting
+//! `NAUTILUS_HTTP2_ADAPTIVE_WINDOW=true` before building a client enables Hyper's adaptive windows
+//! instead, which start at 65,535 bytes and grow toward 16 MiB through PING probes and SETTINGS
+//! updates. Cloudflare-fronted endpoints can reset large response bodies mid-transfer under
+//! adaptive windows. The value `false` keeps fixed windows, and any other value fails the build.
+//!
+//! Buffered responses retain only configured header fields and reject bodies larger than 100 MiB,
+//! including chunked bodies without a declared length. [`HttpClient::get_stream`] consumes bodies
+//! incrementally without a total size limit. Transport error messages carry the request URL
+//! without its query string or fragment, and the `_url_redacted` request methods omit the URL
+//! entirely; the client itself logs request metadata only, never URLs.
 //!
 //! Hyper owns the lifecycle of individual pooled connections, so this client exposes no socket
 //! state sink or explicit reconnect operation. Callers observe connection failure through each

@@ -1737,6 +1737,148 @@ async fn test_external_order_filled_uses_real_fills() {
 }
 
 #[tokio::test]
+async fn test_external_order_filled_with_acceptance_after_fills() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-EXT-LATE-ACCEPT");
+    let venue_order_id = VenueOrderId::from("V-EXT-LATE-ACCEPT");
+
+    ctx.add_instrument(test_instrument());
+
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("2.000"),
+        Quantity::from("2.000"),
+    )
+    .with_avg_px(dec!(3000.00));
+
+    // Venues without an acceptance time report the reconciliation time instead
+    report.ts_accepted = UnixNanos::from(3_000_000);
+    report.ts_last = UnixNanos::from(3_000_000);
+
+    let fill1 = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        TradeId::from("T-LATE-001"),
+        "1.000",
+    );
+    let mut fill2 = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        TradeId::from("T-LATE-002"),
+        "1.000",
+    );
+    fill2.ts_event = UnixNanos::from(2_000_000);
+    let mass_status = create_mass_status(vec![report], vec![fill1, fill2]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let sequence: Vec<(&str, Option<TradeId>, UnixNanos)> = result
+        .events
+        .iter()
+        .map(|event| match event {
+            OrderEventAny::Accepted(accepted) => ("accepted", None, accepted.ts_event),
+            OrderEventAny::Filled(filled) => ("filled", Some(filled.trade_id), filled.ts_event),
+            _ => ("other", None, event.ts_event()),
+        })
+        .collect();
+
+    assert_eq!(
+        sequence,
+        vec![
+            ("accepted", None, UnixNanos::from(3_000_000)),
+            (
+                "filled",
+                Some(TradeId::from("T-LATE-001")),
+                UnixNanos::from(1_000_000),
+            ),
+            (
+                "filled",
+                Some(TradeId::from("T-LATE-002")),
+                UnixNanos::from(2_000_000),
+            ),
+        ]
+    );
+
+    let cache = ctx.cache.borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    assert_eq!(orders.len(), 1);
+    let order = &orders[0];
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(!order.is_open());
+    assert_eq!(order.filled_qty(), Quantity::from("2.000"));
+    assert_eq!(
+        order.trade_ids(),
+        vec![&TradeId::from("T-LATE-001"), &TradeId::from("T-LATE-002")]
+    );
+    assert!(cache.orders_open(None, None, None, None, None).is_empty());
+    let positions = cache.positions_open(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("2.000"));
+}
+
+#[tokio::test]
+async fn test_external_order_replaced_leg_fills_do_not_double_count() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-EXT-REPLACED");
+    let old_venue_order_id = VenueOrderId::from("V-EXT-OLD");
+    let new_venue_order_id = VenueOrderId::from("V-EXT-NEW");
+
+    ctx.add_instrument(test_instrument());
+
+    // The successor's report carries the replaced leg's filled quantity
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        new_venue_order_id,
+        instrument_id,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("10.000"),
+        Quantity::from("5.000"),
+    );
+    report.ts_accepted = UnixNanos::from(2_000_000);
+    report.ts_last = UnixNanos::from(3_000_000);
+
+    let old_fill = create_fill_report(
+        client_order_id,
+        old_venue_order_id,
+        instrument_id,
+        TradeId::from("T-OLD"),
+        "2.000",
+    );
+    let mut new_fill = create_fill_report(
+        client_order_id,
+        new_venue_order_id,
+        instrument_id,
+        TradeId::from("T-NEW"),
+        "3.000",
+    );
+    new_fill.ts_event = UnixNanos::from(3_000_000);
+    let mass_status = create_mass_status(vec![report], vec![old_fill, new_fill]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let cache = ctx.cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("5.000"));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert_eq!(order.trade_ids()[0], &TradeId::from("T-NEW"));
+    assert!(!order.trade_ids().contains(&&TradeId::from("T-OLD")));
+    let positions = cache.positions_open(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("5.000"));
+}
+
+#[tokio::test]
 async fn test_external_order_filled_with_partial_fills_generates_inferred() {
     // Test that external filled orders with incomplete fill reports
     // still get an inferred fill for the remaining quantity

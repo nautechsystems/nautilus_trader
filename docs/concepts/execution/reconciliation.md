@@ -483,6 +483,21 @@ does not prevent recovery from an explicit position report.
 - Infers `OrderFilled` events for missing trade reports.
 - Verifies fill report data consistency with tolerance-based price and commission comparisons.
 
+### Event ordering
+
+Startup reconciliation applies the order and fill events it generates in time order:
+
+- Fills apply in order of their event time: the venue execution time from `FillReport.ts_event`,
+  or the report's `ts_last` for an inferred fill.
+- Each venue order's other events, such as its acceptance, apply no later than the earliest fill
+  that follows them for that venue order. An order whose reported acceptance time follows its own
+  fills, because the venue reports a last update time or the adapter uses the local time, is still
+  accepted before its fills apply.
+- Events of different venue orders keep their own times, including a replaced order that shares
+  its client order ID with the order that replaced it.
+
+Ordering changes only when events apply. Every event keeps its reported timestamp.
+
 ### Position reconciliation
 
 - Matches the net position per account and instrument against venue position reports using
