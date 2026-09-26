@@ -528,6 +528,9 @@ truncated.
 - Open orders: Fetches all currently active orders.
 - Closed orders: Fetches historical orders with pagination support.
 - Time-bounded queries: Supports filtering by start/end timestamps.
+- Startup mass status reads closed orders alongside open ones, so an order that reached a terminal
+  state while the node was down is reconciled. The reconciliation lookback bounds the read, and a
+  closed-order read cut short by the page cap leaves the mass status incomplete.
 
 **Fill reports:**
 
