@@ -2452,7 +2452,7 @@ impl KrakenSpotHttpClient {
         // instrument when opposing lots exist on the same pair. Aggregation uses `Decimal`
         // so opposing lots cancel exactly and partial-close noise does not leave residual
         // float dust in the reported quantity.
-        let mut agg: IndexMap<String, (Decimal, InstrumentId)> = IndexMap::new();
+        let mut agg: IndexMap<String, OpenPositionAggregate> = IndexMap::new();
 
         let target_pair: Option<Ustr> = match &instrument_id {
             Some(target_id) => match self.get_cached_instrument(&target_id.symbol.inner()) {
@@ -2500,15 +2500,38 @@ impl KrakenSpotHttpClient {
                 KrakenOrderSide::Sell => -lot_net,
             };
 
+            // `cost` is the quote volume for the whole `vol`, so the lot's entry price is their
+            // ratio. Accumulate each side separately: a blended average across opposing lots
+            // would not describe the surviving exposure.
+            let cost = Decimal::from_str_exact(&pos.cost)
+                .with_context(|| format!("OpenPositions: failed to parse cost for {}", pos.pair))?;
+
             let entry = agg
                 .entry(pos.pair.clone())
-                .or_insert((Decimal::ZERO, instrument.id()));
-            entry.0 += signed_lot;
+                .or_insert_with(|| OpenPositionAggregate::new(instrument.id()));
+            entry.signed_qty += signed_lot;
+
+            if !vol.is_zero() {
+                let entry_px = cost / vol;
+
+                match pos.side {
+                    KrakenOrderSide::Buy => {
+                        entry.long_qty += lot_net;
+                        entry.long_notional += lot_net * entry_px;
+                    }
+                    KrakenOrderSide::Sell => {
+                        entry.short_qty += lot_net;
+                        entry.short_notional += lot_net * entry_px;
+                    }
+                }
+            }
         }
 
         let mut reports = Vec::new();
 
-        for (_, (signed_qty, inst_id)) in agg {
+        for (_, aggregate) in agg {
+            let signed_qty = aggregate.signed_qty;
+            let inst_id = aggregate.instrument_id;
             let instrument = self
                 .get_cached_instrument(&inst_id.symbol.inner())
                 .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
@@ -2524,8 +2547,17 @@ impl KrakenSpotHttpClient {
                 .map_err(|e| {
                     anyhow::anyhow!("OpenPositions: failed to build Quantity for {inst_id}: {e:?}")
                 })?;
+            let avg_px_open = aggregate.avg_px_open(side);
             let report = PositionStatusReport::new(
-                account_id, inst_id, side, quantity, ts_init, ts_init, None, None, None,
+                account_id,
+                inst_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                avg_px_open,
             );
             reports.push(report);
         }
@@ -3284,6 +3316,45 @@ fn collect_spot_statuses(
 
 /// Maps raw symbol (altname, e.g. "XBTUSD") to leverage tiers.
 type LeverageTiersCache = Arc<AtomicMap<Ustr, (Vec<i32>, Vec<i32>)>>;
+
+/// Accumulates `OpenPositions` lots for one pair.
+///
+/// Each side is tracked separately, so the entry average describes the side that survives netting
+/// rather than blending opposing lots.
+struct OpenPositionAggregate {
+    instrument_id: InstrumentId,
+    signed_qty: Decimal,
+    long_qty: Decimal,
+    long_notional: Decimal,
+    short_qty: Decimal,
+    short_notional: Decimal,
+}
+
+impl OpenPositionAggregate {
+    fn new(instrument_id: InstrumentId) -> Self {
+        Self {
+            instrument_id,
+            signed_qty: Decimal::ZERO,
+            long_qty: Decimal::ZERO,
+            long_notional: Decimal::ZERO,
+            short_qty: Decimal::ZERO,
+            short_notional: Decimal::ZERO,
+        }
+    }
+
+    /// Returns the entry average for the netted side, or `None` when it cannot be derived.
+    fn avg_px_open(&self, side: PositionSide) -> Option<Decimal> {
+        match side {
+            PositionSide::Long if !self.long_qty.is_zero() => {
+                Some(self.long_notional / self.long_qty)
+            }
+            PositionSide::Short if !self.short_qty.is_zero() => {
+                Some(self.short_notional / self.short_qty)
+            }
+            _ => None,
+        }
+    }
+}
 
 struct TradeBalanceSnapshot {
     margins: Vec<MarginBalance>,

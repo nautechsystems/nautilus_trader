@@ -558,7 +558,13 @@ truncated.
 **Margin position reports** (when `spot_account_type=Margin`):
 
 - Open positions: Fetched from `POST /0/private/OpenPositions` and aggregated
-  by (pair, side) into `PositionStatusReport` entries.
+  by pair into `PositionStatusReport` entries. Kraken returns one entry per lot,
+  so opposing lots for the same pair net into a single report.
+- Entry average: Each report carries `avg_px_open`, derived from the lot `cost`
+  and `vol` fields and weighted by the volume still open. Long and short lots are
+  averaged separately, so the reported average describes the side that survives
+  netting. Reconciliation needs this value to open a position from a report when
+  the cache holds no order or fill history for it.
 - Synthetic FLAT cleanup: If the local cache has an open spot margin position
   that no longer appears on the venue (Kraken omits closed positions from
   `OpenPositions`), the adapter emits a synthetic FLAT report on the next
