@@ -18810,3 +18810,50 @@ impl FillModel for SyntheticLimitFillModel {
         Ok(Some(self.book.clone()))
     }
 }
+
+#[rstest]
+fn test_process_order_shorting_binary_option_on_cash_account_fills(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    // The CASH short-selling guard only covers Equity: a BinaryOption SELL with no position
+    // passes validation and fills against the bid, opening a short in the simulated venue.
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    let mut engine = get_order_matching_engine(instrument.clone(), None, None, None, None);
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.490"),
+        Price::from("0.510"),
+        Quantity::from("100.00"),
+        Quantity::from("100.00"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut market_order_sell = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.00"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order_sell, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    for m in &saved_messages {
+        println!("event: {:?} {:?}", m.event_type(), m.message());
+    }
+    assert!(
+        saved_messages
+            .iter()
+            .all(|e| e.event_type() != OrderEventType::Rejected),
+        "expected no rejection for a BinaryOption short on a CASH account"
+    );
+    assert!(
+        saved_messages
+            .iter()
+            .any(|e| e.event_type() == OrderEventType::Filled),
+        "expected the short SELL to fill"
+    );
+}

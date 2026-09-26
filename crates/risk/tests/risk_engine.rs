@@ -82,9 +82,9 @@ use nautilus_model::{
         Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument,
         InstrumentAny, OptionSpread, PerpetualContract,
         stubs::{
-            audusd_sim, betting, btcusd_bybit, commodity_gold, crypto_perpetual_ethusdt,
-            currency_pair_btcusdt, default_fx_ccy, equity_aapl, ethbtc_quanto, futures_spread_es,
-            gbpusd_sim, option_spread, perpetual_contract_eurusd,
+            audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
+            crypto_perpetual_ethusdt, currency_pair_btcusdt, default_fx_ccy, equity_aapl,
+            ethbtc_quanto, futures_spread_es, gbpusd_sim, option_spread, perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -14316,4 +14316,88 @@ fn order_list_denials(events: &[OrderEventAny]) -> Vec<(ClientOrderId, Ustr)> {
             (denied.client_order_id, denied.reason)
         })
         .collect()
+}
+
+#[rstest]
+fn test_submit_sell_binary_option_no_position_not_denied_for_collateral(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    // CASH account with a base currency (Polymarket shape): free = 2.00 USDC, no position.
+    // SELL 5 @ 0.50 credits 2.50 USDC of proceeds. Inventory is venue-enforced, so the
+    // sale must not be denied against free collateral.
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    let usdc = Currency::USDC();
+    let account_state = AccountState::new(
+        AccountId::from("POLYMARKET-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from_decimal(dec!(2), usdc).unwrap(),
+            Money::zero(usdc),
+            Money::from_decimal(dec!(2), usdc).unwrap(),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(usdc),
+    );
+    simple_cache
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            false,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let client_id = ClientId::from("POLYMARKET");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.00"))
+        .price(Price::from("0.500"))
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::from(0),
+        None,
+    );
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    for m in &process_messages {
+        println!("process event: {:?} {:?}", m.event_type(), m.message());
+    }
+    println!("execute commands: {}", execute_messages.len());
+
+    assert!(
+        process_messages.is_empty(),
+        "SELL denied: {:?}",
+        process_messages[0].message()
+    );
+    assert_eq!(execute_messages.len(), 1);
+    assert_eq!(execute_messages[0].instrument_id(), instrument.id());
 }
