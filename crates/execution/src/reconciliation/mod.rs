@@ -66,8 +66,12 @@ pub use orders::{
     should_reconciliation_update,
 };
 pub use positions::{
-    calculate_reconciliation_price, check_position_reconciliation, position_prices_match,
+    calculate_reconciliation_price, check_position_reconciliation,
+    fill_precedes_snapshot_reconciled_position, position_prices_match,
     process_mass_status_for_reconciliation,
     process_mass_status_for_reconciliation_without_synthetic_reports,
 };
 pub use types::ReconciliationResult;
+
+/// Order tag marking a synthetic order that reconciliation creates to align a position.
+pub const RECONCILIATION_ORDER_TAG: &str = "RECONCILIATION";

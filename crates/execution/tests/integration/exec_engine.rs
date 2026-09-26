@@ -53,9 +53,12 @@ use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND},
 };
-use nautilus_execution::engine::{
-    ExecutionEngine, PositionStateSnapshot, config::ExecutionEngineConfig,
-    stubs::StubExecutionClient,
+use nautilus_execution::{
+    engine::{
+        ExecutionEngine, PositionStateSnapshot, config::ExecutionEngineConfig,
+        stubs::StubExecutionClient,
+    },
+    reconciliation::RECONCILIATION_ORDER_TAG,
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
@@ -17333,6 +17336,202 @@ fn test_reconcile_position_report_netting_mode(mut execution_engine: ExecutionEn
     );
 
     execution_engine.reconcile_position_report(&report);
+}
+
+fn open_external_audusd_position(
+    execution_engine: &mut ExecutionEngine,
+    tags: Option<Vec<Ustr>>,
+) -> ClientOrderId {
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let client_order_id = ClientOrderId::from("O-OPENING-1");
+    let venue_order_id = VenueOrderId::from("PERM-1");
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+        cache
+            .add_account(cash_account_for(account_id).into())
+            .unwrap();
+    }
+
+    execution_engine.register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let mut builder = OrderTestBuilder::new(OrderType::Market);
+    builder
+        .trader_id(TraderId::test_default())
+        .strategy_id(StrategyId::external())
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000));
+
+    if let Some(tags) = tags {
+        builder.tags(tags);
+    }
+
+    let order = builder.build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    execution_engine.process(&submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    execution_engine.process(&accepted);
+
+    let mut fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        account_id,
+        TradeId::from("T-OPENING"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    );
+    fill.ts_event = UnixNanos::from(9_000_000);
+    execution_engine.process(&OrderEventAny::Filled(fill));
+
+    client_order_id
+}
+
+#[rstest]
+#[case::reconciliation_opened_earlier_fill(true, 1_000_000, dec!(100_000), false)]
+#[case::fill_opened_earlier_fill(false, 1_000_000, dec!(200_000), true)]
+#[case::reconciliation_opened_same_ts_fill(true, 9_000_000, dec!(200_000), true)]
+#[case::reconciliation_opened_later_fill(true, 10_000_000, dec!(200_000), true)]
+fn test_reconcile_fill_report_does_not_reopen_snapshot_reconciled_position(
+    mut execution_engine: ExecutionEngine,
+    #[case] reconciliation_opened: bool,
+    #[case] replay_ts_event: u64,
+    #[case] expected_qty: Decimal,
+    #[case] expected_replay_on_position: bool,
+) {
+    let instrument = audusd_sim();
+    let replay_venue_order_id = VenueOrderId::from("PERM-2");
+    let replay_trade_id = TradeId::from("T-REPLAY");
+    let tags = reconciliation_opened.then(|| vec![Ustr::from(RECONCILIATION_ORDER_TAG)]);
+    let opening_client_order_id = open_external_audusd_position(&mut execution_engine, tags);
+
+    let mut replayed = create_fill_report(
+        instrument.id(),
+        None,
+        replay_venue_order_id,
+        replay_trade_id,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    replayed.ts_event = UnixNanos::from(replay_ts_event);
+    execution_engine.reconcile_fill_report(&replayed);
+
+    let cache = execution_engine.cache().borrow();
+    let replay_client_order_id = cache
+        .client_order_id(&replay_venue_order_id)
+        .copied()
+        .unwrap();
+    let replay_order = cache.order(&replay_client_order_id).unwrap();
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+
+    assert_eq!(replay_order.status(), OrderStatus::Filled);
+    assert_eq!(replay_order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].opening_order_id, opening_client_order_id);
+    assert_eq!(positions[0].signed_decimal_qty(), expected_qty);
+    assert_eq!(
+        positions[0].trade_ids.contains(&replay_trade_id),
+        expected_replay_on_position
+    );
+}
+
+#[rstest]
+#[case::other_instrument(gbpusd_sim(), AccountId::test_default())]
+#[case::other_account(audusd_sim(), AccountId::from("SIM-002"))]
+fn test_reconcile_fill_report_applies_earlier_fill_outside_reconciled_position(
+    mut execution_engine: ExecutionEngine,
+    #[case] instrument: CurrencyPair,
+    #[case] account_id: AccountId,
+) {
+    let reconciled_client_order_id = open_external_audusd_position(
+        &mut execution_engine,
+        Some(vec![Ustr::from(RECONCILIATION_ORDER_TAG)]),
+    );
+    let strategy_id = StrategyId::from("S-002");
+    let client_order_id = ClientOrderId::from("O-OTHER-1");
+    let venue_order_id = VenueOrderId::from("PERM-3");
+    let trade_id = TradeId::from("T-OTHER");
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+        cache
+            .add_account(cash_account_for(account_id).into())
+            .unwrap();
+    }
+
+    execution_engine.register_oms_type(strategy_id, OmsType::Netting);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    execution_engine.process(&submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    execution_engine.process(&accepted);
+
+    // Predates the reconciled AUD/USD position opened at 9_000_000
+    let report = create_fill_report_with_account(
+        account_id,
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        trade_id,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    let positions = cache.positions_open(None, None, None, None, None);
+    let reconciled = positions
+        .iter()
+        .find(|position| position.opening_order_id == reconciled_client_order_id)
+        .unwrap();
+    let applied = positions
+        .iter()
+        .find(|position| position.opening_order_id == client_order_id)
+        .unwrap();
+
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(positions.len(), 2);
+    assert_eq!(reconciled.signed_decimal_qty(), dec!(100_000));
+    assert_eq!(applied.instrument_id, instrument.id());
+    assert_eq!(applied.account_id, account_id);
+    assert_eq!(applied.signed_decimal_qty(), dec!(100_000));
+    assert!(applied.trade_ids.contains(&trade_id));
 }
 
 #[rstest]

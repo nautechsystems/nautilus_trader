@@ -1978,6 +1978,7 @@ async fn test_reconcile_mass_status_uses_claimed_strategy(
     assert_eq!(order.strategy_id(), strategy_id);
     assert_eq!(order.status(), OrderStatus::Accepted);
     assert_eq!(order.quantity(), Quantity::from("1.0"));
+    assert_eq!(order.tags(), None);
 }
 
 #[rstest]
@@ -9488,6 +9489,104 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
     } else {
         panic!("Expected Accepted event, was {:?}", result.events[0]);
     }
+}
+
+#[rstest]
+#[case::unclaimed(None)]
+#[case::claimed(Some(StrategyId::from("CLAIMER-001")))]
+#[tokio::test]
+async fn test_replayed_fill_does_not_reopen_reconciled_position(
+    #[case] claimed_strategy: Option<StrategyId>,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let strategy_id = claimed_strategy.unwrap_or_else(StrategyId::external);
+    let replay_venue_order_id = VenueOrderId::from("V-REPLAY-001");
+    let replay_trade_id = TradeId::from("T-REPLAY-001");
+    ctx.add_instrument(test_instrument());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    if claimed_strategy.is_some() {
+        ctx.manager
+            .claim_external_orders(instrument_id, strategy_id)
+            .unwrap();
+    }
+
+    ctx.advance_time(10_000_000);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.50)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let synthetic_client_order_id = result.events[0].client_order_id();
+
+    // The venue resends the execution the position report already covers
+    let replayed = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        replay_venue_order_id,
+        replay_trade_id,
+        OrderSide::Buy,
+        Quantity::from("5.0"),
+        Price::from("3000.50"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        None,
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .reconcile_fill_report(&replayed);
+
+    let synthetic_order = ctx.get_order(&synthetic_client_order_id).unwrap();
+    let cache = ctx.cache.borrow();
+    let replay_client_order_id = cache
+        .client_order_id(&replay_venue_order_id)
+        .copied()
+        .unwrap();
+    let replay_order = cache.order(&replay_client_order_id).unwrap();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert_eq!(synthetic_order.strategy_id(), strategy_id);
+    assert_eq!(
+        synthetic_order.tags(),
+        Some(&[ustr::Ustr::from("RECONCILIATION")][..])
+    );
+    assert_eq!(replay_order.status(), OrderStatus::Filled);
+    assert_eq!(replay_order.filled_qty(), Quantity::from("5.0"));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].opening_order_id, synthetic_client_order_id);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(5.0));
+    assert!(!positions[0].trade_ids.contains(&replay_trade_id));
 }
 
 #[tokio::test]

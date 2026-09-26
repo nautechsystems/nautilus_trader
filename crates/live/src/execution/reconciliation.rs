@@ -185,13 +185,15 @@ pub struct PositionFillReportPlan {
     pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
 }
 
-/// Whether a fill is attributable and free of active inferred-fill overlap.
+/// Whether a fill is attributable and free of inferred-fill or reconciled-position overlap.
 #[derive(Debug)]
 pub enum PositionFillReportPreparation {
     /// The report can be applied to the cached execution state.
     Ready,
     /// An active inferred fill prevents authoritative replay.
     InferredOverlap,
+    /// A position reconciled from a venue position report already includes the fill.
+    SnapshotOverlap,
     /// A hedge fill cannot be assigned to an unambiguous position.
     Unattributed,
 }

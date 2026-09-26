@@ -96,8 +96,9 @@ use rust_decimal::Decimal;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, generate_external_order_status_events,
-        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
+        check_position_reconciliation, fill_precedes_snapshot_reconciled_position,
+        generate_external_order_status_events, generate_reconciliation_order_events,
+        generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
     },
 };
@@ -1494,6 +1495,17 @@ impl ExecutionEngine {
     /// in cache, an external order is bootstrapped from the fill so that venue-initiated
     /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
     /// status report still update the local position.
+    ///
+    /// # Replayed Fills
+    ///
+    /// A fill updates its order but no position when an open position for its instrument and
+    /// account:
+    /// - Was opened by a synthetic reconciliation order.
+    /// - Has a `ts_opened` later than the fill's `ts_event`.
+    /// - Does not hold the fill's trade.
+    ///
+    /// The venue position report behind that position already includes the fill, so this stops
+    /// a venue that replays executions after a restart from doubling the position.
     pub fn reconcile_fill_report(&mut self, report: &FillReport) {
         msgbus::publish_any(
             MessagingSwitchboard::reconciliation_raw_fill_report_topic(),
@@ -1566,7 +1578,9 @@ impl ExecutionEngine {
             ts_now,
             self.config.allow_overfills,
         ) {
-            self.handle_event(&event);
+            let apply_position =
+                !fill_precedes_snapshot_reconciled_position(&self.cache.borrow(), report);
+            self.handle_event_with_position_application(&event, apply_position);
         }
     }
 
