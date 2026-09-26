@@ -77,6 +77,7 @@ Released on TBD (UTC).
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
+- Changed Betfair, Binance, and Tardis crates to gate Arrow support behind an opt-in `arrow` feature
 - Changed Deribit `DeribitWebSocketClient::modify_order` to take `DeribitEditParams`
 - Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
@@ -86,6 +87,7 @@ Released on TBD (UTC).
 - Changed Polymarket reconciliation reports to fail while trade settlement evidence is unresolved
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
 - Changed Tardis derived trade IDs to hash decimal values, changing IDs for trades without venue IDs
+- Changed Tardis `replay` feature to opt-in (no longer a default); it now enables `arrow`
 - Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
 - Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
 - Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
@@ -196,6 +198,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures panic on depth updates without price levels
 - Fixed Binance depth snapshot bursts exceeding the venue request-weight limit
 - Fixed Binance Spot book unsubscribe and resubscribe commands reaching the stream pool out of order
+- Fixed Binance Rust data clients not registering `BinanceBar` custom data for persistence
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Coinbase trade aggressor side inverted by using the reported maker side

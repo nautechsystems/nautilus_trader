@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod convert;
 pub mod load;
 pub mod stream;
+
+#[cfg(feature = "arrow")]
+pub mod convert;
 
 mod record;
 

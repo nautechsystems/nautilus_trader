@@ -263,7 +263,7 @@ wget -O test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPET
   "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
 
 # Regenerate parquet (output: /tmp/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet)
-cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture
+cargo test -p nautilus-tardis --features arrow test_curate_deribit_deltas -- --ignored --nocapture
 ```
 
 ## Tutorial test data

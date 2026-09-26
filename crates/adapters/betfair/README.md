@@ -26,6 +26,7 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
+- `arrow`: Enables Apache Arrow data support.
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision`: Enables

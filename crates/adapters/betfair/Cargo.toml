@@ -20,6 +20,7 @@ name = "nautilus_betfair"
 crate-type = ["rlib"]
 
 [features]
+arrow = ["dep:arrow", "nautilus-serialization"]
 examples = ["nautilus-live/node", "nautilus-trading/examples"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -32,7 +33,7 @@ extension-module = [
 ]
 high-precision = [
   "nautilus-model/high-precision",
-  "nautilus-serialization/high-precision",
+  "nautilus-serialization?/high-precision",
 ]
 python = [
   "dep:nautilus-system",
@@ -49,7 +50,7 @@ ignored = ["arrow"] # Used by `custom_data` macro expansion
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["high-precision"]
+features = ["arrow", "high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -58,12 +59,13 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
@@ -83,6 +85,7 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

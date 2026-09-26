@@ -18,10 +18,11 @@
 //! These types carry Betfair domain data through the Nautilus data engine as
 //! [`CustomData`](nautilus_model::data::CustomData). Each type uses the
 //! `#[custom_data(pyo3)]` and `#[arrow_custom_data(pyo3)]` macros, which generate the model and
-//! Arrow persistence implementations respectively.
+//! Arrow persistence implementations respectively. The Arrow implementations require the `arrow`
+//! feature.
 //!
 //! Call [`register_betfair_custom_data`] once (e.g. during client `connect()`)
-//! to register all types for JSON and Arrow encoding.
+//! to register all types for JSON encoding, and Arrow encoding when the `arrow` feature is enabled.
 //!
 //! Absent optional race telemetry values use `f64::NAN` as the sentinel.
 
@@ -31,6 +32,7 @@ use nautilus_model::{
     enums::{BookAction, OrderSide},
     identifiers::InstrumentId,
 };
+#[cfg(feature = "arrow")]
 use nautilus_serialization::arrow_custom_data;
 use rust_decimal::Decimal;
 
@@ -56,7 +58,7 @@ mod nan_as_null {
 ///
 /// Carries last traded price, traded volume, and starting price
 /// near/far values per runner.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairTicker {
     /// The instrument ID for this ticker.
@@ -78,7 +80,7 @@ pub struct BetfairTicker {
 /// Realized Betfair Starting Price (BSP) for a runner.
 ///
 /// Emitted from the market definition when a runner's BSP is determined.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairStartingPrice {
     /// The instrument ID for this starting price.
@@ -96,7 +98,7 @@ pub struct BetfairStartingPrice {
 /// Mirrors `OrderBookDelta` fields as a custom data type so strategies
 /// can subscribe specifically to BSP book updates (spb/spl) separately
 /// from the exchange order book (atb/atl).
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairBspBookDelta {
     /// The instrument ID for this BSP delta.
@@ -121,7 +123,7 @@ pub struct BetfairBspBookDelta {
 ///
 /// Strategies can use this to know when a coherent set of market updates
 /// has been fully delivered.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairSequenceCompleted {
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -134,7 +136,7 @@ pub struct BetfairSequenceCompleted {
 ///
 /// Published when a matched bet is retroactively voided by Betfair, such as
 /// when a goal is disallowed following a VAR review.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairOrderVoided {
     /// The instrument ID for the voided order.
@@ -167,7 +169,7 @@ pub struct BetfairOrderVoided {
 ///
 /// Betfair's Total Performance Data (TPD) provides real-time GPS positions,
 /// speed, and stride frequency for each runner in supported races.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairRaceRunnerData {
     /// Race identifier (e.g. "28587288.1650").
@@ -216,7 +218,7 @@ pub struct BetfairRaceRunnerData {
 ///
 /// Provides sectional timing, race order, and obstacle data for the
 /// overall race rather than individual runners.
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairRaceProgress {
     /// Race identifier (e.g. "28587288.1650").
@@ -259,7 +261,7 @@ pub struct BetfairRaceProgress {
     pub ts_init: UnixNanos,
 }
 
-#[arrow_custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", arrow_custom_data(pyo3))]
 #[custom_data(pyo3)]
 pub struct BetfairCricketMatch {
     /// Betfair event identifier.
@@ -282,29 +284,49 @@ pub struct BetfairCricketMatch {
     pub ts_init: UnixNanos,
 }
 
-/// Registers all Betfair custom data types for JSON and Arrow encoding.
+/// Registers all Betfair custom data types for JSON encoding, and Arrow encoding when the
+/// `arrow` feature is enabled.
 ///
 /// This must be called once before emitting or persisting Betfair custom data.
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_betfair_custom_data() {
-    nautilus_serialization::ensure_custom_data_registered::<BetfairTicker>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairStartingPrice>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairBspBookDelta>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairSequenceCompleted>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairOrderVoided>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairRaceRunnerData>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairRaceProgress>();
-    nautilus_serialization::ensure_custom_data_registered::<BetfairCricketMatch>();
+    #[cfg(feature = "arrow")]
+    {
+        nautilus_serialization::ensure_custom_data_registered::<BetfairTicker>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairStartingPrice>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairBspBookDelta>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairSequenceCompleted>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairOrderVoided>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairRaceRunnerData>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairRaceProgress>();
+        nautilus_serialization::ensure_custom_data_registered::<BetfairCricketMatch>();
+    }
+
+    #[cfg(not(feature = "arrow"))]
+    {
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairTicker>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairStartingPrice>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairBspBookDelta>();
+        let _ =
+            nautilus_model::data::ensure_custom_data_json_registered::<BetfairSequenceCompleted>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairOrderVoided>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairRaceRunnerData>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairRaceProgress>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BetfairCricketMatch>();
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::data::{CustomDataTrait, register_custom_data_json};
+    #[cfg(feature = "arrow")]
     use nautilus_serialization::arrow::ArrowSchemaProvider;
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_ticker_schema() {
         let schema = BetfairTicker::get_schema(None);
@@ -318,6 +340,7 @@ mod tests {
         assert!(field_names.contains(&"ts_init".to_string()));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_starting_price_schema() {
         let schema = BetfairStartingPrice::get_schema(None);
@@ -328,6 +351,7 @@ mod tests {
         assert!(field_names.contains(&"ts_init".to_string()));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_bsp_book_delta_schema() {
         let schema = BetfairBspBookDelta::get_schema(None);
@@ -349,6 +373,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_sequence_completed_schema() {
         let schema = BetfairSequenceCompleted::get_schema(None);
@@ -357,6 +382,7 @@ mod tests {
         assert!(field_names.contains(&"ts_init".to_string()));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_order_voided_schema() {
         let schema = BetfairOrderVoided::get_schema(None);
@@ -375,6 +401,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_betfair_custom_data_registers_json_deserializers() {
+        register_betfair_custom_data();
+
+        assert_json_registered::<BetfairTicker>();
+        assert_json_registered::<BetfairStartingPrice>();
+        assert_json_registered::<BetfairBspBookDelta>();
+        assert_json_registered::<BetfairSequenceCompleted>();
+        assert_json_registered::<BetfairOrderVoided>();
+        assert_json_registered::<BetfairRaceRunnerData>();
+        assert_json_registered::<BetfairRaceProgress>();
+        assert_json_registered::<BetfairCricketMatch>();
+    }
+
+    fn assert_json_registered<T: CustomDataTrait>() {
+        let type_name = T::type_name_static();
+        let err = register_custom_data_json::<T>().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("Custom data type \"{type_name}\" is already registered for JSON"),
+        );
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
     fn test_betfair_race_runner_data_schema() {
         let schema = BetfairRaceRunnerData::get_schema(None);
         let field_names: Vec<_> = schema.fields().iter().map(|f| f.name().clone()).collect();
@@ -388,6 +438,7 @@ mod tests {
         assert!(field_names.contains(&"stride_frequency".to_string()));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_race_progress_schema() {
         let schema = BetfairRaceProgress::get_schema(None);
@@ -403,6 +454,7 @@ mod tests {
         assert!(field_names.contains(&"jumps".to_string()));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_cricket_match_schema() {
         let schema = BetfairCricketMatch::get_schema(None);
@@ -463,6 +515,7 @@ mod tests {
         assert_eq!(parsed.traded_volume, Some(Decimal::new(100, 0)));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_betfair_ticker_optional_decimal_arrow_roundtrip() {
         use arrow::{array::Array, datatypes::DataType};

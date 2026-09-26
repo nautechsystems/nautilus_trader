@@ -20,14 +20,20 @@ name = "nautilus_tardis"
 crate-type = ["rlib"]
 
 [features]
-default = ["replay", "high-precision"]
+default = ["high-precision"]
+arrow = [
+  "dep:arrow",
+  "dep:parquet",
+  "nautilus-persistence",
+  "nautilus-serialization",
+]
 examples = ["nautilus-live/node"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
-  "nautilus-serialization/extension-module",
+  "nautilus-serialization?/extension-module",
   "pyo3/extension-module",
   "python",
   "replay",
@@ -38,22 +44,22 @@ python = [
   "nautilus-core/python",
   "nautilus-live/python",
   "nautilus-model/python",
-  "nautilus-serialization/python",
+  "nautilus-serialization?/python",
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
   "replay",
 ]
-replay = []
+replay = ["arrow"]
 high-precision = [
   "nautilus-model/high-precision",
-  "nautilus-serialization/high-precision",
+  "nautilus-serialization?/high-precision",
 ]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["examples", "high-precision", "replay"]
+features = ["arrow", "examples", "high-precision", "replay"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -62,13 +68,14 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-persistence = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-persistence = { workspace = true, optional = true }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
@@ -78,7 +85,6 @@ flate2 = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
-parquet = { workspace = true, features = ["snap", "zstd"] }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 ryu = { workspace = true }
@@ -92,6 +98,8 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true }
+parquet = { workspace = true, features = ["snap", "zstd"], optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

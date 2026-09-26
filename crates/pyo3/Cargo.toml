@@ -23,6 +23,8 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 arrow = [
+  "nautilus-betfair?/arrow",
+  "nautilus-binance/arrow",
   "nautilus-deribit/arrow",
   "nautilus-hyperliquid/arrow",
   "nautilus-serialization/arrow",

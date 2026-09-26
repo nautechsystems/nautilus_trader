@@ -824,20 +824,25 @@ pub fn load_options_chain<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, fs::File, sync::Arc};
+    use std::fs;
+    #[cfg(feature = "arrow")]
+    use std::{fs::File, sync::Arc};
 
+    #[cfg(feature = "arrow")]
     use nautilus_core::paths::get_test_data_path as get_test_data_root;
     use nautilus_model::{
         enums::{AggressorSide, BookAction, OrderSide},
         identifiers::{InstrumentId, TradeId},
         types::Price,
     };
+    #[cfg(feature = "arrow")]
     use nautilus_serialization::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
     use nautilus_testkit::common::{
         get_tardis_binance_snapshot5_path, get_tardis_binance_snapshot25_path,
         get_tardis_bitmex_trades_path, get_tardis_deribit_book_l2_path,
         get_tardis_huobi_quotes_path,
     };
+    #[cfg(feature = "arrow")]
     use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::*;
     use rust_decimal_macros::dec;
@@ -1930,7 +1935,8 @@ hyperliquid,BTC,1640995201000001,1640995201100000,true,ask,49991.0,4.0";
     }
 
     // Curates the large Tardis Deribit CSV.gz into NautilusTrader Parquet format.
-    // Run manually: `cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture`
+    // Run manually: `cargo test -p nautilus-tardis --features arrow test_curate_deribit_deltas -- --ignored --nocapture`
+    #[cfg(feature = "arrow")]
     #[rstest]
     #[ignore = "one-time dataset curation, not for routine CI"]
     fn test_curate_deribit_deltas() {

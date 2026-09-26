@@ -394,7 +394,8 @@ if __name__ == "__main__":
 
 ### Rust replays
 
-To run a replay in Rust, create a binary similar to the following:
+To run a replay in Rust, enable the `nautilus-tardis` `replay` feature flag and create a binary
+similar to the following:
 
 ```rust
 use std::path::PathBuf;
@@ -422,7 +423,7 @@ A working example binary is available at `crates/adapters/tardis/bin/example_rep
 This can also be run using cargo:
 
 ```bash
-cargo run -p nautilus-tardis --bin tardis-replay <path_to_your_config>
+cargo run -p nautilus-tardis --features replay --bin tardis-replay <path_to_your_config>
 ```
 
 ### Option-chain backtest catalog

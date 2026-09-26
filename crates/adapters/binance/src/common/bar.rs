@@ -311,6 +311,7 @@ mod tests {
         assert_eq!(restored_bar, &bar);
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_bar_catalog_round_trip() {
         use std::sync::Arc;

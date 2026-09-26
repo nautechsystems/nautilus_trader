@@ -119,7 +119,8 @@ See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) f
 
 `BinanceBar`, `BinanceFuturesTicker`, `BinanceFuturesOpenInterest`, and
 `BinanceFuturesLiquidation` support Arrow/Parquet catalog persistence under
-`data/custom/{TypeName}/{identifier}`. Reads also discover the legacy Python-written
+`data/custom/{TypeName}/{identifier}`. Rust builds need the `nautilus-binance` `arrow` feature
+flag for this persistence. Reads also discover the legacy Python-written
 `data/custom_<snake_case>` layout (for example `data/custom_binance_bar`); migrate the catalog
 with [nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md) to move legacy
 files to the canonical layout.

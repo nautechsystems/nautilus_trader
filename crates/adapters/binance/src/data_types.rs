@@ -28,12 +28,18 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+#[cfg(feature = "arrow")]
 use nautilus_serialization::arrow_custom_data;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::common::bar::BinanceBar;
+
 /// Binance Futures current open interest snapshot.
-#[arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
+)]
 #[custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
 pub struct BinanceFuturesOpenInterest {
     /// The instrument for this snapshot.
@@ -180,7 +186,10 @@ impl CustomDataTrait for BinanceFuturesOpenInterestHist {
 }
 
 /// Binance Futures liquidation update from the `forceOrder` stream.
-#[arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
+)]
 #[custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
 pub struct BinanceFuturesLiquidation {
     /// The instrument for this liquidation event.
@@ -383,7 +392,10 @@ impl CustomDataTrait for BinanceFuturesMarkPriceUpdate {
 }
 
 /// Binance Futures 24-hour ticker statistics from the `ticker` stream.
-#[arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
+)]
 #[custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")]
 pub struct BinanceFuturesTicker {
     /// The instrument for these 24-hour statistics.
@@ -428,9 +440,25 @@ pub struct BinanceFuturesTicker {
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_binance_custom_data() {
-    nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesOpenInterest>();
-    nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesLiquidation>();
-    nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesTicker>();
+    #[cfg(feature = "arrow")]
+    {
+        nautilus_serialization::ensure_custom_data_registered::<BinanceBar>();
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesOpenInterest>();
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesLiquidation>();
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesTicker>();
+    }
+
+    #[cfg(not(feature = "arrow"))]
+    {
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceBar>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<
+            BinanceFuturesOpenInterest,
+        >();
+        let _ =
+            nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesLiquidation>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesTicker>();
+    }
+
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<
         BinanceFuturesOpenInterestHist,
     >();
@@ -441,13 +469,18 @@ pub fn register_binance_custom_data() {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Arc};
+    use std::str::FromStr;
+    #[cfg(any(feature = "arrow", feature = "python"))]
+    use std::sync::Arc;
 
     #[cfg(feature = "python")]
     use nautilus_core::Params;
+    #[cfg(feature = "arrow")]
     use nautilus_model::data::Data;
+    use nautilus_model::data::register_custom_data_json;
     #[cfg(feature = "python")]
     use nautilus_model::data::{CustomData, DataType};
+    #[cfg(feature = "arrow")]
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
     };
@@ -464,6 +497,26 @@ mod tests {
         register_binance_custom_data();
     }
 
+    #[rstest]
+    fn test_register_binance_custom_data_registers_json_deserializers() {
+        register_binance_custom_data();
+
+        assert_json_registered::<BinanceBar>();
+        assert_json_registered::<BinanceFuturesOpenInterest>();
+        assert_json_registered::<BinanceFuturesLiquidation>();
+        assert_json_registered::<BinanceFuturesTicker>();
+    }
+
+    fn assert_json_registered<T: CustomDataTrait>() {
+        let type_name = T::type_name_static();
+        let err = register_custom_data_json::<T>().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("Custom data type \"{type_name}\" is already registered for JSON"),
+        );
+    }
+
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_futures_open_interest_arrow_round_trip() {
         let original = BinanceFuturesOpenInterest::new(
@@ -493,6 +546,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_futures_liquidation_arrow_schema_uses_native_types() {
         use arrow::datatypes::DataType;
@@ -523,6 +577,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_futures_liquidation_arrow_round_trip() {
         let original = BinanceFuturesLiquidation::new(
@@ -556,6 +611,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_futures_ticker_arrow_round_trip() {
         let original = BinanceFuturesTicker::new(
@@ -671,6 +727,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_binance_futures_custom_data_catalog_round_trip() {
         use nautilus_model::data::{CustomData as CatalogCustomData, DataType as CatalogDataType};

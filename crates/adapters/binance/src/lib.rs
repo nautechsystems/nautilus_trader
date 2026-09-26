@@ -43,6 +43,7 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
+//! - `arrow`: Enables Apache Arrow data support.
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
@@ -61,7 +62,6 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
-pub mod arrow;
 pub mod common;
 pub mod config;
 pub mod data_types;
@@ -70,6 +70,9 @@ pub mod futures;
 pub mod spot;
 
 pub(crate) mod book;
+
+#[cfg(feature = "arrow")]
+pub mod arrow;
 
 #[cfg(feature = "python")]
 pub mod python;

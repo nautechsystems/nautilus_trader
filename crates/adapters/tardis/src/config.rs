@@ -16,6 +16,7 @@
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+#[cfg(feature = "arrow")]
 use parquet::basic::{Compression, ZstdLevel};
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,7 @@ pub enum ParquetCompression {
     Uncompressed,
 }
 
+#[cfg(feature = "arrow")]
 impl ParquetCompression {
     /// Converts the replay config compression value to a Parquet compression value.
     ///
@@ -230,6 +232,7 @@ mod tests {
         assert!(matches!(deserialized, BookSnapshotOutput::Depth));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_parquet_compression_default_is_zstd() {
         assert!(matches!(
@@ -242,6 +245,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_parquet_compression_serde_roundtrip() {
         let cases = [
