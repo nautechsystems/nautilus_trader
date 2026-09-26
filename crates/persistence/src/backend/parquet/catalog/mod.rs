@@ -55,7 +55,7 @@
 //!     Path::new("/path/to/data"),
 //!     None,       // storage_options
 //!     Some(5000), // batch_size
-//!     None,       // compression (defaults to SNAPPY)
+//!     None,       // compression (defaults to ZSTD level 1)
 //!     None,       // max_row_group_size (defaults to 131,072)
 //! );
 //!
@@ -238,7 +238,7 @@ nautilus_model::for_each_data_type!(define_builtin_data_dispatch);
 /// # Performance Considerations
 ///
 /// - **Batch Size**: Controls memory usage during data processing.
-/// - **Compression**: SNAPPY compression provides good balance of speed and size.
+/// - **Compression**: Affects file size and read and write speed (default: ZSTD level 1).
 /// - **Row Group Size**: Affects query performance and memory usage.
 /// - **File Consolidation**: Reduces the number of files for better query performance.
 pub struct ParquetDataCatalog {
@@ -276,8 +276,8 @@ impl ParquetDataCatalog {
     ///
     /// - `base_path`: The base directory path for data storage.
     /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options.
-    /// - `batch_size`: Number of records to process in each batch (default: 5000).
-    /// - `compression`: Parquet compression algorithm (default: SNAPPY).
+    /// - `batch_size`: Number of records to process in each batch (default: 10,000).
+    /// - `compression`: Parquet compression algorithm (default: ZSTD level 1).
     /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 131,072).
     ///
     /// # Panics
@@ -339,8 +339,8 @@ impl ParquetDataCatalog {
     ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
     ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
     ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
-    /// - `batch_size`: Number of records to process in each batch (default: 5000).
-    /// - `compression`: Parquet compression algorithm (default: SNAPPY).
+    /// - `batch_size`: Number of records to process in each batch (default: 10,000).
+    /// - `compression`: Parquet compression algorithm (default: ZSTD level 1).
     /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 131,072).
     ///
     /// # Errors

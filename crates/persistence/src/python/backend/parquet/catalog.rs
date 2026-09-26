@@ -141,7 +141,7 @@ impl PyParquetDataCatalog {
     ///
     /// - `base_path`: The base path for the catalog
     /// - `storage_options`: Optional storage configuration for cloud backends
-    /// - `batch_size`: Optional batch size for processing (default: 5000)
+    /// - `batch_size`: Optional batch size for processing (default: 10,000)
     /// - `compression`: Optional compression type (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 3=LZO, 4=BROTLI, 5=LZ4, 6=ZSTD)
     /// - `max_row_group_size`: Optional maximum row group size (default: 131,072)
     ///
