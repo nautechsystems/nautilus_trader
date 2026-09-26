@@ -5067,10 +5067,16 @@ fn test_bars_when_empty(cache: Cache) {
 
 #[rstest]
 fn test_bars_when_some(mut cache: Cache) {
-    let bars = vec![Bar::default(), Bar::default(), Bar::default()];
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let bars = vec![
+        bar(bar_type, UnixNanos::from(1), "1.00001"),
+        bar(bar_type, UnixNanos::from(2), "1.00002"),
+        bar(bar_type, UnixNanos::from(3), "1.00003"),
+    ];
     cache.add_bars(&bars).unwrap();
-    let result = cache.bars(&bars[0].bar_type);
-    assert_eq!(result, Some(bars));
+    let result = cache.bars(&bar_type);
+    // newest first
+    assert_eq!(result, Some(bars.into_iter().rev().collect()));
 }
 
 fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
@@ -11101,8 +11107,8 @@ fn test_add_quotes_same_timestamp_adds_all(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
-    // multiple bars at same timestamp
+fn test_add_time_bars_same_timestamp_replaces_front(mut cache: Cache) {
+    // for time bars, a bar with the same ts_event replaces the cached bar
     let ts = UnixNanos::from(1000);
     let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
 
@@ -11142,13 +11148,340 @@ fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
     cache.add_bar(bar1).unwrap();
     cache.add_bars(&[bar2, bar3]).unwrap();
 
-    // all three bars should be in cache
+    // one bar remains; the last bar added at the same timestamp wins
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(
+        result.len(),
+        1,
+        "Bars with same ts_event should not accumulate"
+    );
+    assert_eq!(result[0].close, Price::from("1.00002"));
+}
+
+#[rstest]
+fn test_add_renko_bars_same_timestamp_adds_all(mut cache: Cache) {
+    // mirrors `test_renko_bar_aggregator_multiple_bricks_in_one_update`: a 25-pip
+    // move with a 10-pip brick size emits two distinct bricks stamped with the
+    // update's ts
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-RENKO-MID-INTERNAL");
+
+    let brick1 = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    let brick2 = Bar::new(
+        bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    // a subsequent update at a later ts emits a further brick
+    let brick3 = Bar::new(
+        bar_type,
+        Price::from("1.00020"),
+        Price::from("1.00030"),
+        Price::from("1.00020"),
+        Price::from("1.00030"),
+        Quantity::from(1),
+        UnixNanos::from(2000),
+        UnixNanos::from(2000),
+    );
+
+    cache.add_bar(brick1).unwrap();
+    cache.add_bar(brick2).unwrap();
+    cache.add_bar(brick3).unwrap();
+
+    // all distinct bricks are cached, newest first
     let result = cache.bars(&bar_type).unwrap();
     assert_eq!(
         result.len(),
         3,
-        "All bars with same timestamp should be added"
+        "Distinct Renko bricks with the same ts_event should be added"
     );
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(2000),
+            UnixNanos::from(1000),
+            UnixNanos::from(1000),
+        ]
+    );
+    assert_eq!(result[1].open, Price::from("1.00010"));
+    assert_eq!(result[2].open, Price::from("1.00000"));
+}
+
+#[rstest]
+fn test_add_volume_bars_same_timestamp_adds_all(mut cache: Cache) {
+    // mirrors `test_volume_bar_aggregator_builds_multiple_bars_from_large_update`:
+    // a single 25-lot trade with a 10-lot threshold emits two bars stamped with the
+    // trade's ts, identical in content for a single-price trade
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-VOLUME-LAST-INTERNAL");
+
+    let bar1 = Bar::new(
+        bar_type,
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Quantity::from(10),
+        ts,
+        ts,
+    );
+
+    let bar2 = Bar::new(
+        bar_type,
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Quantity::from(10),
+        ts,
+        ts,
+    );
+
+    cache.add_bars(&[bar1, bar2]).unwrap();
+
+    // both bars are cached despite sharing ts_event and content
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(
+        result.len(),
+        2,
+        "Distinct volume bars with the same ts_event should be added"
+    );
+    assert_eq!(result[0].volume, Quantity::from(10));
+    assert_eq!(result[1].volume, Quantity::from(10));
+}
+
+#[rstest]
+fn test_add_bar_historical_older_than_front_inserted_behind(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(2_000), "1.00002"))
+        .unwrap();
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(1_000), "1.00001"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(stamps, vec![UnixNanos::from(2_000), UnixNanos::from(1_000)]);
+}
+
+#[rstest]
+fn test_add_bar_historical_equal_ts_event_time_bar_replaces_at_position(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "1.00001"),
+            bar(bar_type, UnixNanos::from(2_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(3_000), "1.00003"),
+        ])
+        .unwrap();
+
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(2_000), "1.00009"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 3);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(3_000),
+            UnixNanos::from(2_000),
+            UnixNanos::from(1_000),
+        ]
+    );
+    assert_eq!(result[1].close, Price::from("1.00009"));
+    assert_eq!(result[0].close, Price::from("1.00003"));
+    assert_eq!(result[2].close, Price::from("1.00001"));
+}
+
+#[rstest]
+fn test_add_bar_historical_equal_ts_event_non_time_bar_inserted(mut cache: Cache) {
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-RENKO-MID-INTERNAL");
+
+    let brick1 = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    let brick2 = Bar::new(
+        bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    cache.add_bar(brick1).unwrap();
+    cache.add_bar_historical(brick2).unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+}
+
+#[rstest]
+fn test_add_bar_historical_at_capacity_evicts_oldest() {
+    let mut cache = cache_with_data_capacity(1_000, 2);
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "1.00001"),
+            bar(bar_type, UnixNanos::from(3_000), "1.00003"),
+        ])
+        .unwrap();
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(2_000), "1.00002"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(stamps, vec![UnixNanos::from(3_000), UnixNanos::from(2_000)]);
+}
+
+#[rstest]
+fn test_add_bar_newer_ts_event_pushes(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(1_000), "1.00000"))
+        .unwrap();
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(61_000), "1.00001"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].ts_event, UnixNanos::from(61_000)); // newest first
+    assert_eq!(result[1].ts_event, UnixNanos::from(1_000));
+}
+
+#[rstest]
+fn test_add_bar_older_ts_event_skipped(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(61_000), "1.00001"))
+        .unwrap();
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(1_000), "1.00000"))
+        .unwrap();
+
+    // the older bar is not added and the front bar is unchanged
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].ts_event, UnixNanos::from(61_000));
+    assert_eq!(result[0].close, Price::from("1.00001"));
+}
+
+#[rstest]
+fn test_add_bars_older_history_after_newer_bars_skipped(mut cache: Cache) {
+    // an overlapping historical request for older history after newer bars are cached
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    // newest window already cached
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(121_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(181_000), "1.00003"),
+        ])
+        .unwrap();
+
+    // older overlapping request: only the bar matching the front ts_event replaces it,
+    // everything older than the front is skipped
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "0.99998"),
+            bar(bar_type, UnixNanos::from(61_000), "0.99999"),
+            bar(bar_type, UnixNanos::from(121_000), "1.00005"),
+            bar(bar_type, UnixNanos::from(181_000), "1.00006"),
+        ])
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![UnixNanos::from(181_000), UnixNanos::from(121_000)]
+    );
+    // the front bar was replaced by the later data; the older cached bar is unchanged
+    assert_eq!(result[0].close, Price::from("1.00006"));
+    assert_eq!(result[1].close, Price::from("1.00002"));
+}
+
+#[rstest]
+fn test_add_bars_batch_containing_newer_bars_pushed(mut cache: Cache) {
+    // a chronological batch newer than the cached front extends the series
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(150_000), "1.00001"))
+        .unwrap();
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "0.99998"),
+            bar(bar_type, UnixNanos::from(100_000), "0.99999"),
+            bar(bar_type, UnixNanos::from(200_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(300_000), "1.00003"),
+        ])
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 3);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(300_000),
+            UnixNanos::from(200_000),
+            UnixNanos::from(150_000),
+        ]
+    );
+}
+
+fn bar(bar_type: BarType, ts_event: UnixNanos, close: &str) -> Bar {
+    Bar::new(
+        bar_type,
+        Price::from(close),
+        Price::from(close),
+        Price::from(close),
+        Price::from(close),
+        Quantity::from(100_000),
+        ts_event,
+        ts_event,
+    )
 }
 
 // -- orders_emulated index tests ------------------------------------------------------------------

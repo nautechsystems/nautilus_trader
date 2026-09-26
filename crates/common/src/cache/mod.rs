@@ -37,7 +37,7 @@ mod tests;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    cmp::Reverse,
+    cmp::{Ordering, Reverse},
     fmt::{Debug, Display},
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
@@ -2398,7 +2398,10 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the `bar` to the cache.
+    /// Adds the `bar` to the cache, keeping the per-`bar_type` series newest-first.
+    ///
+    /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+    /// `ts_event` replaces the front bar for time bars.
     ///
     /// # Errors
     ///
@@ -2416,11 +2419,11 @@ impl Cache {
             .bars
             .entry(bar.bar_type)
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
-        bars.push_front(bar);
+        insert_bar(bars, bar);
         Ok(())
     }
 
-    /// Adds the `bars` to the cache.
+    /// Adds the `bars` to the cache, each following [`Cache::add_bar`].
     ///
     /// # Errors
     ///
@@ -2445,8 +2448,33 @@ impl Cache {
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
 
         for bar in bars {
-            bars_deque.push_front(*bar);
+            insert_bar(bars_deque, *bar);
         }
+        Ok(())
+    }
+
+    /// Adds the historical `bar` at its ordered position in the series.
+    ///
+    /// Request-generated bars are added this way, since the cache is their only
+    /// delivery path: bars older than the front are kept rather than skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the bar to the backing database fails.
+    pub fn add_bar_historical(&mut self, bar: Bar) -> anyhow::Result<()> {
+        log::debug!("Adding historical `Bar` {}", bar.bar_type);
+
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_bar(&bar)?;
+        }
+
+        let bars = self
+            .bars
+            .entry(bar.bar_type)
+            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
+        insert_bar_historical(bars, bar);
         Ok(())
     }
 
@@ -6604,4 +6632,46 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
+}
+
+/// Inserts `bar` into the newest-first bars deque for a `bar_type`.
+///
+/// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+/// `ts_event` replaces the front bar for time bars.
+fn insert_bar(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
+    match bars.front() {
+        None => bars.push_front(bar),
+        Some(front) => match bar.ts_event.cmp(&front.ts_event) {
+            Ordering::Greater => bars.push_front(bar),
+            Ordering::Equal => {
+                if bar.bar_type.spec().is_time_aggregated() {
+                    bars.replace_front(bar);
+                } else {
+                    bars.push_front(bar);
+                }
+            }
+            Ordering::Less => log::debug!(
+                "Skipping bar {bar} with `ts_event` older than last bar `ts_event` {}",
+                front.ts_event,
+            ),
+        },
+    }
+}
+
+/// Inserts `bar` at its ordered position in the newest-first bars deque.
+///
+/// Bars older than the front are kept; a time bar replaces the cached bar
+/// with an equal `ts_event`.
+fn insert_bar_historical(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
+    let index = bars.partition_point(|cached| cached.ts_event > bar.ts_event);
+
+    if bar.bar_type.spec().is_time_aggregated()
+        && bars
+            .get(index)
+            .is_some_and(|cached| cached.ts_event == bar.ts_event)
+    {
+        bars.replace(index, bar);
+    } else {
+        bars.insert(index, bar);
+    }
 }

@@ -389,8 +389,10 @@ make an unchanged Cython adapter source-compatible.
   subscription methods.
 - **Database cache backing**: unsupported with custom Python clients in either launch mode. See
   [startup](#startup-scheduling-and-shutdown) and [hosted event loops](../concepts/live.md#hosted-event-loops).
-- **Revised bars**: config retains `handle_revised_bars`, but the v2 core lacks the v1 bar revision
-  marker and revision overwrite behavior.
+- **Revised bars**: config retains `handle_revised_bars`, and the v2 core cache now replaces a
+  cached time bar when a later bar arrives with an equal `ts_event`, skipping older bars. The v1
+  `Bar.is_revision` marker is still absent, so whether revised bars are emitted at all remains
+  adapter-level filtering.
 - **Networking**: this interface does not restore removed HTTP/WebSocket bindings.
 
 ## Independent Rust/PyO3 packages
