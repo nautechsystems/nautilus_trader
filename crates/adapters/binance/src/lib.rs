@@ -69,5 +69,7 @@ pub mod factories;
 pub mod futures;
 pub mod spot;
 
+pub(crate) mod book;
+
 #[cfg(feature = "python")]
 pub mod python;

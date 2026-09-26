@@ -708,41 +708,50 @@ rate differ by product and Spot transport:
 | Spot JSON           | `<symbol>@depth`     | 1000ms (default) |
 | Futures             | `<symbol>@depth@0ms` | Unthrottled      |
 
+Book subscriptions emit snapshots, whether seeded from REST or received as partial-depth frames,
+with these flags:
+
+- Every snapshot delta carries `F_SNAPSHOT`, and the final delta carries `F_SNAPSHOT | F_LAST`.
+- A snapshot without levels is a lone `Clear` that empties the book.
+
 ### Futures L2 subscriptions
 
-Futures `L2_MBP` subscriptions with depth 5, 10, or 20 use the partial-depth stream
-`<symbol>@depth<levels>@100ms`. Binance provides partial-depth streams only at these depths.
+The `L2_MBP` subscription depth selects the stream:
 
-Each message is a snapshot of both sides of the book, emitted as a `Clear` delta followed by
-the snapshot levels. This removes absent prices and keeps at most the requested number of
-levels per side. These subscriptions do not request a REST snapshot, including after reconnects.
+| Depth                       | Stream                         | Book source               |
+| --------------------------- | ------------------------------ | ------------------------- |
+| 5, 10, or 20                | `<symbol>@depth<levels>@100ms` | Snapshot in each message  |
+| None, 50, 100, 500, or 1000 | `<symbol>@depth@0ms`           | REST snapshot, then diffs |
+| Any other                   | None                           | Rejected                  |
 
-Futures subscriptions without a depth, or with depth 50, 100, 500, or 1000, use the diff-depth
-stream. The depth limits the initial and reconnect REST snapshots, not the maintained book;
-omitting it selects a 1000-level snapshot. Subsequent updates can add levels beyond that depth.
+- **Partial depth**: Binance provides partial-depth streams only at 5, 10, and 20 levels. Each
+  message is a snapshot of both sides, emitted as a `Clear` delta followed by the snapshot levels,
+  so it removes absent prices and keeps at most the requested number of levels per side. These
+  subscriptions never request a REST snapshot, including after reconnects.
+- **Diff depth**: The depth limits the initial, reconnect, and recovery REST snapshots, not the
+  maintained book; omitting it selects a 1000-level snapshot. Later updates can add levels beyond
+  that depth.
 
 The `OrderBook.bids(depth=...)` and `OrderBook.asks(depth=...)` accessors limit their returned
-results without removing stored levels.
-
-Other `L2_MBP` subscription depths are rejected. Unsubscribe before changing an instrument's
-subscription depth.
+results without removing stored levels. Unsubscribe before changing an instrument's subscription
+depth.
 
 ### Spot L2 subscriptions
 
 Spot partial-depth subscriptions deliver self-contained top-N snapshots. The supported depths
-depend on the market data mode:
+depend on the [Spot market data mode](#spot-market-data-mode):
 
-- **JSON**: Explicit depths 5, 10, or 20 use the `<symbol>@depth<levels>` partial-depth stream.
-  Other explicit depths, including 50, 100, 500, and 1000, are rejected before subscription with
-  an error listing the valid depths.
-- **SBE**: Partial books require depth 20. Other partial depths are rejected before subscription;
-  use JSON market data for depth 5 or 10.
+| Depth                                   | JSON                     | SBE                |
+| --------------------------------------- | ------------------------ | ------------------ |
+| 5 or 10                                 | `<symbol>@depth<levels>` | Rejected; use JSON |
+| 20                                      | `<symbol>@depth20`       | `<symbol>@depth20` |
+| None (diff depth)                       | `<symbol>@depth`         | `<symbol>@depth`   |
+| Any other, including 50, 100, 500, 1000 | Rejected                 | Rejected           |
 
-Omit depth to use the diff-depth stream in either mode, seeded by a 5000-level REST snapshot.
-Unsubscribe before changing an instrument's subscription depth; a new partial-depth subscription
-does not remove the previous stream.
-
-See [Spot market data mode](#spot-market-data-mode) for transport configuration.
+- Rejected depths fail before subscription; in JSON mode the error lists the valid depths.
+- Diff-depth subscriptions are seeded by a 5000-level REST snapshot.
+- Unsubscribe before changing an instrument's subscription depth; a new partial-depth subscription
+  does not remove the previous stream.
 
 ### L1 top-of-book subscriptions
 
@@ -761,20 +770,58 @@ Explicit order-book snapshot requests are supported separately from subscription
 - **Spot**: Depths in [1, 5000].
 - **Futures**: Depths 5, 10, 20, 50, 100, 500, or 1000.
 
-### Snapshot synchronization
+### Snapshot synchronization and recovery
 
-Futures diff-depth subscriptions and Spot `BookDeltas` subscriptions without an explicit depth
-rebuild the order book on the initial subscription and on every data WebSocket reconnect.
-The rebuild runs in this order:
+Futures diff-depth subscriptions and Spot `L2_MBP` subscriptions without an explicit depth keep
+the diff-depth stream subscribed and seed the book from a REST snapshot, using the
+[shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
 
-1. Buffering of incoming deltas starts.
-1. The snapshot is requested and awaited.
-1. The snapshot response is parsed to `OrderBookDeltas`.
-1. The snapshot deltas are sent to the `DataEngine`.
-1. Buffered deltas are iterated, dropping those whose sequence number is not greater than the last
-   delta in the snapshot.
-1. Buffering stops.
-1. The remaining deltas are sent to the `DataEngine`.
+#### Synchronization
+
+Synchronization starts at the first diff after a subscription or data WebSocket reconnect:
+
+1. Diffs are buffered and a REST snapshot is requested.
+1. Buffered diffs covered by the snapshot's `lastUpdateId` are dropped.
+1. The remaining diffs must continue from the snapshot; otherwise another snapshot is requested.
+1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs.
+1. Each later diff is validated against the previous one before it is sent.
+
+Each diff must continue from the snapshot or the previous diff:
+
+| Product | First diff after the snapshot | Later diffs           |
+| ------- | ----------------------------- | --------------------- |
+| Spot    | `U <= lastUpdateId + 1`       | `U <= previous u + 1` |
+| Futures | `U <= lastUpdateId <= u`      | `pu == previous u`    |
+
+A diff that breaks these rules is a sequence gap: book output stops, diffs are buffered, and a
+fresh snapshot is requested without resubscribing. A diff that fails to parse surfaces as a gap on
+the next diff.
+
+#### Recovery limits
+
+- **Snapshot timeout**: `book_snapshot_timeout_secs` (default **10 seconds**) bounds each snapshot
+  request. Set it to `0` to leave requests to the HTTP client timeout.
+- **Retry budget**: Each recovery permits **at most eight snapshot attempts within 180 seconds**,
+  with exponential backoff and jitter.
+- **Reconnects**: A reconnect restarts synchronization from the new stream and preserves an active
+  recovery's remaining budget. That recovery's next snapshot can seed the book before the new
+  stream delivers a diff; the first diff must then continue from the snapshot.
+- **Terminal failure**: Exhausted attempts or a permanent request failure suppress the book's output
+  until reconnect or an explicit unsubscribe/subscribe cycle. Other books continue independently.
+
+#### Snapshot pacing
+
+Snapshot requests draw on a per-client share of the venue request-weight budget, so a burst of
+resyncs, such as after a reconnect, waits for budget instead of exceeding it:
+
+| Product | Snapshot budget  | Burst (half the budget) | Full snapshot cost |
+| ------- | ---------------- | ----------------------- | ------------------ |
+| Spot    | 3,000 per minute | 1,500                   | 250 (5000 levels)  |
+| Futures | 1,200 per minute | 600                     | 20 (1000 levels)   |
+
+- Queueing for the first snapshot does not consume the recovery's attempts or 180-second budget.
+- Explicit snapshot requests draw on the same budget.
+- The HTTP client's retries of a failed snapshot request are not paced.
 
 ## Quote timestamps
 
@@ -1111,11 +1158,13 @@ Binance charges these weights per request:
 | `/api/v3/order`           | 1      | Spot order placement.                  |
 | `/api/v3/allOrders`       | 20     | Spot historical orders (expensive).    |
 | `/api/v3/klines`          | 2+     | Scales with `limit` parameter.         |
+| `/api/v3/depth`           | 5+     | Scales with `limit`; 250 at 5000.      |
 | `/fapi/v1/order`          | 1      | Futures order placement.               |
 | `/fapi/v1/algoOrder`      | 0      | Uses order-count limits.               |
 | `/fapi/v1/allOrders`      | 20     | Futures historical orders (expensive). |
 | `/fapi/v1/commissionRate` | 20     | Futures commission rate query.         |
 | `/fapi/v1/klines`         | 5+     | Scales with `limit` parameter.         |
+| `/fapi/v1/depth`          | 2+     | Scales with `limit`; 20 at 1000.       |
 
 USD-M Futures `POST /fapi/v1/algoOrder` consumes `1` from both
 `X-MBX-ORDER-COUNT-10S` and `X-MBX-ORDER-COUNT-1M`. Binance charges no IP
@@ -1154,7 +1203,8 @@ The request bucket counts calls rather than weight, so it does not mirror the ve
 accounting. A run of high-weight or dynamic-weight endpoints (`/api/v3/allOrders` at weight 20, or
 `/klines` scaling with `limit`) spends venue weight faster than the local bucket accounts for.
 Large history requests may need manual pacing. Monitor the `X-MBX-USED-WEIGHT-*` response headers
-to track actual venue usage.
+to track actual venue usage. Order book snapshot requests also wait on a weight-aware budget; see
+[Snapshot pacing](#snapshot-pacing).
 
 :::warning
 Binance returns HTTP 429 when you exceed the allowed weight. Repeated
@@ -1185,6 +1235,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                       |
 | `instrument_refresh_interval_secs` | `3,600`   | Full catalog refresh interval; `0` disables it.                                |
 | `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |
+| `book_snapshot_timeout_secs`       | `10`      | Deadline for each diff-depth REST snapshot request; `0` disables it.           |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
 | `max_retries`                      | `3`       | Maximum retries for HTTP GET requests.                                         |

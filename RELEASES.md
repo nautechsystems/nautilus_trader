@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
 - Added Architect AX instrument schedules and estimated funding metadata to response models
+- Added Binance `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
 - Added `events.order_fill_declined.{instrument_id}` topic republishing fills and voids the engine declines
@@ -182,6 +183,12 @@ Released on TBD (UTC).
 - Fixed Binance bulk non-trading instrument skips logged as warnings instead of debug
 - Fixed Binance cancel-all requests ignoring `order_side`
 - Fixed Binance Spot `batch_cancel_orders` using a non-existent batch endpoint
+- Fixed Binance book recovery after sequence gaps, snapshot failures, and reconnects
+- Fixed Binance Spot empty depth snapshots failing to clear the book
+- Fixed Binance order book snapshots missing `F_SNAPSHOT` on their price levels
+- Fixed Binance Futures panic on depth updates without price levels
+- Fixed Binance depth snapshot bursts exceeding the venue request-weight limit
+- Fixed Binance Spot book unsubscribe and resubscribe commands reaching the stream pool out of order
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
@@ -241,6 +248,8 @@ Released on TBD (UTC).
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
+- Added Binance live book stress harness with fault injection and independent book oracles
+- Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
 - Upgraded `cargo-codspeed` tool to v5.0.2
 - Upgraded `cargo-nextest` tool to v0.9.146
 - Upgraded `markdownlint-cli2` tool and pre-commit hook to v0.23.3
@@ -282,6 +291,7 @@ Released on TBD (UTC).
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
+- Documented Binance order book synchronization, recovery limits, and snapshot pacing
 - Documented Hyperliquid inferred-fill commissions as unset
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence

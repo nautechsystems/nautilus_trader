@@ -180,7 +180,7 @@ pub fn parse_book_ticker(
 ///
 /// # Errors
 ///
-/// Returns an error if parsing fails.
+/// Returns an error if parsing fails or the update contains no levels.
 pub fn parse_depth_update(
     msg: &BinanceFuturesDepthUpdateMsg,
     instrument: &InstrumentAny,
@@ -223,8 +223,14 @@ fn parse_book_depth(
         ));
     }
 
+    let flags = if snapshot {
+        RecordFlag::F_SNAPSHOT as u8
+    } else {
+        0
+    };
+
     // Process bids
-    for (i, bid) in msg.bids.iter().enumerate() {
+    for bid in &msg.bids {
         let price = parse_required_price_at_precision(&bid[0], price_precision, "bid_price")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
         let size = parse_required_quantity_at_precision(&bid[1], size_precision, "bid_quantity")
@@ -237,9 +243,6 @@ fn parse_book_depth(
         } else {
             BookAction::Update
         };
-
-        let is_last = i == msg.bids.len() - 1 && msg.asks.is_empty();
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
 
         let order = BookOrder::new(OrderSide::Buy, price, size, 0);
 
@@ -255,7 +258,7 @@ fn parse_book_depth(
     }
 
     // Process asks
-    for (i, ask) in msg.asks.iter().enumerate() {
+    for ask in &msg.asks {
         let price = parse_required_price_at_precision(&ask[0], price_precision, "ask_price")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
         let size = parse_required_quantity_at_precision(&ask[1], size_precision, "ask_quantity")
@@ -268,9 +271,6 @@ fn parse_book_depth(
         } else {
             BookAction::Update
         };
-
-        let is_last = i == msg.asks.len() - 1;
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
 
         let order = BookOrder::new(OrderSide::Sell, price, size, 0);
 
@@ -285,11 +285,12 @@ fn parse_book_depth(
         ));
     }
 
-    if snapshot && let Some(last) = deltas.last_mut() {
+    if let Some(last) = deltas.last_mut() {
         last.flags |= RecordFlag::F_LAST as u8;
     }
 
-    Ok(OrderBookDeltas::new(instrument_id, deltas))
+    OrderBookDeltas::new_checked(instrument_id, deltas)
+        .map_err(|e| BinanceWsError::ParseError(e.to_string()))
 }
 
 /// Parses a mark price message into `MarkPriceUpdate`, `IndexPriceUpdate`, and `FundingRateUpdate`.
@@ -716,6 +717,18 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_depth_update_without_levels_returns_error() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
+        msg.bids.clear();
+        msg.asks.clear();
+
+        let result = parse_depth_update(&msg, &instrument, UnixNanos::from(1));
+
+        assert!(matches!(result, Err(BinanceWsError::ParseError(_))));
+    }
+
+    #[rstest]
     #[case::five(5)]
     #[case::ten(10)]
     #[case::twenty(20)]
@@ -751,14 +764,16 @@ mod tests {
                             Quantity::from_str(&level[1]).unwrap(),
                             0,
                         ),
-                        0,
+                        RecordFlag::F_SNAPSHOT as u8,
                         msg.final_update_id,
                         UnixNanos::from(123_456_788_000_000u64),
                         ts_init,
                     ));
                 }
             }
-            expected.last_mut().unwrap().flags = RecordFlag::F_LAST as u8;
+
+            expected.last_mut().unwrap().flags =
+                RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
             assert_eq!(snapshot.instrument_id, instrument.id());
             assert_eq!(snapshot.sequence, msg.final_update_id);
             assert_eq!(snapshot.deltas, expected);
