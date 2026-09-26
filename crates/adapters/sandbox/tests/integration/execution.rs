@@ -65,7 +65,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-        TradeId, TraderId, Venue,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
@@ -2059,6 +2059,90 @@ fn test_client_start_idempotent(mut execution_client: SandboxExecutionClient) {
     let result = execution_client.start();
 
     assert!(result.is_ok());
+}
+
+#[rstest]
+fn test_client_start_restores_cache_open_orders_into_matching_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context(trader_id, account_id, instrument.id().venue);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = resting_limit(&instrument, "O-RESTART-001", "100.00", UnixNanos::from(1));
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("SANDBOX-0-1"));
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(context.client.client_id()), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
+    }
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::Accepted,
+        "seed order must be Accepted before start"
+    );
+
+    context.client.start().unwrap();
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    let restore_events = drain_order_events(&mut rx);
+    assert!(
+        !restore_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_))),
+        "restoring a cache-open order must not re-emit OrderAccepted; got {:?}",
+        restore_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &order,
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cancel_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
+        "cache-open order must cancel cleanly after restart; got {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::CancelRejected(_))),
+        "restored order must not receive OrderCancelRejected; got {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Canceled);
 }
 
 #[rstest]
