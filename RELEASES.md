@@ -217,6 +217,7 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation of resolved, unredeemed balances (#4963), thanks for reporting @seungpyoson
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
+- Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit
 - Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`
 - Fixed Tardis Machine prices, sizes, and funding rates losing digits through `f64` parsing
 
@@ -251,6 +252,7 @@ Released on TBD (UTC).
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
 - Added Binance live book stress harness with fault injection and independent book oracles
 - Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
+- Optimized Tardis Machine decimal decoding
 - Upgraded `cargo-codspeed` tool to v5.0.2
 - Upgraded `cargo-nextest` tool to v0.9.146
 - Upgraded `markdownlint-cli2` tool and pre-commit hook to v0.23.3

@@ -185,9 +185,8 @@ pub fn serialize_optional<S: Serializer>(
 /// - The input is not a valid decimal or scientific string.
 /// - The value exceeds Decimal's exact mantissa or scale bounds.
 pub fn parse(value: &str) -> Result<Decimal, rust_decimal::Error> {
-    if !value.contains(['e', 'E'])
-        && let Ok(value) = Decimal::from_str_exact(value)
-    {
+    // `from_str_exact` rejects exponent markers, so plain input needs no scan for them first
+    if let Ok(value) = Decimal::from_str_exact(value) {
         return Ok(value);
     }
 

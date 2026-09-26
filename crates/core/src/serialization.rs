@@ -572,7 +572,8 @@ where
 ///
 /// The raw token is only available from direct JSON input: serde's internally tagged and
 /// untagged enum buffers cannot carry it. A buffered `serde_json::Value` renders its number,
-/// which keeps the source digits only with `serde_json/arbitrary_precision`.
+/// which keeps the source digits only with `serde_json/arbitrary_precision`. For borrowed JSON
+/// text, [`deserialize_decimal_token_borrowed`] reads the same tokens without copying them.
 ///
 /// # Errors
 ///
@@ -583,7 +584,7 @@ where
     D: Deserializer<'de>,
 {
     deserialize_optional_decimal_token(deserializer)?
-        .ok_or_else(|| D::Error::custom("expected a decimal, was null or an empty string"))
+        .ok_or_else(|| D::Error::custom(DECIMAL_TOKEN_MISSING))
 }
 
 /// Deserializes an `Option<Decimal>` from the source text of a JSON number, numeric string, or
@@ -602,11 +603,51 @@ pub fn deserialize_optional_decimal_token<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let Some(raw) = Option::<Box<RawValue>>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
+    Option::<Box<RawValue>>::deserialize(deserializer)?
+        .map_or(Ok(None), |raw| parse_decimal_token(&raw))
+}
 
-    let text = json_token_text(&raw).map_err(D::Error::custom)?;
+/// Deserializes a `Decimal` as [`deserialize_decimal_token`] does, borrowing the token from the
+/// input instead of copying it.
+///
+/// Requires a deserializer that borrows from its input, such as `serde_json::from_str` or
+/// `serde_json::from_slice`. Use [`deserialize_decimal_token`] for `serde_json::from_reader` and
+/// `serde_json::Value` input.
+///
+/// # Errors
+///
+/// Returns an error if the deserializer cannot lend the token, or for any token that
+/// [`deserialize_decimal_token`] rejects.
+pub fn deserialize_decimal_token_borrowed<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_optional_decimal_token_borrowed(deserializer)?
+        .ok_or_else(|| D::Error::custom(DECIMAL_TOKEN_MISSING))
+}
+
+/// Deserializes an `Option<Decimal>` as [`deserialize_optional_decimal_token`] does, borrowing
+/// the token from the input instead of copying it.
+///
+/// Requires borrowed input, as described for [`deserialize_decimal_token_borrowed`].
+///
+/// # Errors
+///
+/// Returns an error if the deserializer cannot lend the token, or for any token that
+/// [`deserialize_optional_decimal_token`] rejects.
+pub fn deserialize_optional_decimal_token_borrowed<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<&'de RawValue>::deserialize(deserializer)?.map_or(Ok(None), parse_decimal_token)
+}
+
+const DECIMAL_TOKEN_MISSING: &str = "expected a decimal, was null or an empty string";
+
+fn parse_decimal_token<E: Error>(raw: &RawValue) -> Result<Option<Decimal>, E> {
+    let text = json_token_text(raw).map_err(E::custom)?;
 
     if let Ok(value) = decimal::parse(&text) {
         return Ok(Some(value));
@@ -913,10 +954,11 @@ mod tests {
     use super::{
         DecimalVisitor, OptionalDecimalVisitor, Serializable, decimal, default_false, default_true,
         deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_native,
-        deserialize_decimal_or_zero, deserialize_decimal_token, deserialize_empty_string_as_none,
-        deserialize_empty_ustr_as_none, deserialize_optional_decimal,
-        deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
-        deserialize_optional_decimal_token, deserialize_optional_string_to_u64,
+        deserialize_decimal_or_zero, deserialize_decimal_token, deserialize_decimal_token_borrowed,
+        deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+        deserialize_optional_decimal, deserialize_optional_decimal_or_zero,
+        deserialize_optional_decimal_str, deserialize_optional_decimal_token,
+        deserialize_optional_decimal_token_borrowed, deserialize_optional_string_to_u64,
         deserialize_string_to_u8, deserialize_string_to_u64, deserialize_vec_decimal_from_str,
         msgpack::{FromMsgPack, ToMsgPack},
         parse_decimal, parse_optional_decimal, serialize_decimal_as_str,
@@ -1485,6 +1527,17 @@ mod tests {
         optional_value: Option<Decimal>,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct TestDecimalTokenBorrowed {
+        #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+        value: Decimal,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_optional_decimal_token_borrowed"
+        )]
+        optional_value: Option<Decimal>,
+    }
+
     #[rstest]
     #[case(r#"{"value": 100000000.123456789}"#, "100000000.123456789", None)]
     #[case(
@@ -1530,10 +1583,19 @@ mod tests {
         #[case] expected_optional: Option<&str>,
     ) {
         let result: TestDecimalToken = serde_json::from_str(json).unwrap();
+        let borrowed: TestDecimalTokenBorrowed = serde_json::from_str(json).unwrap();
 
         assert_eq!(result.value.to_string(), expected_value);
         assert_eq!(
             result
+                .optional_value
+                .map(|value| value.to_string())
+                .as_deref(),
+            expected_optional
+        );
+        assert_eq!(borrowed.value.to_string(), expected_value);
+        assert_eq!(
+            borrowed
                 .optional_value
                 .map(|value| value.to_string())
                 .as_deref(),
@@ -1568,6 +1630,28 @@ mod tests {
     #[case(r#"{"optional_value": 1}"#)]
     fn test_deserialize_decimal_token_rejects_invalid(#[case] json: &str) {
         assert!(serde_json::from_str::<TestDecimalToken>(json).is_err());
+        assert!(serde_json::from_str::<TestDecimalTokenBorrowed>(json).is_err());
+    }
+
+    #[rstest]
+    fn test_deserialize_decimal_token_borrowed_requires_borrowed_input() {
+        let json = r#"{"value": 1.25}"#;
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+
+        let from_slice: TestDecimalTokenBorrowed = serde_json::from_slice(json.as_bytes()).unwrap();
+        let from_reader =
+            serde_json::from_reader::<_, TestDecimalTokenBorrowed>(json.as_bytes()).unwrap_err();
+        let from_value = serde_json::from_value::<TestDecimalTokenBorrowed>(value).unwrap_err();
+
+        assert_eq!(from_slice.value, dec!(1.25));
+        assert_eq!(
+            from_reader.to_string(),
+            "invalid type: string \"1.25\", expected raw value at line 1 column 15"
+        );
+        assert_eq!(
+            from_value.to_string(),
+            "invalid type: string \"1.25\", expected raw value"
+        );
     }
 
     #[rstest]

@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use jiff::Timestamp;
-use nautilus_core::serialization::{deserialize_decimal_token, deserialize_optional_decimal_token};
+use nautilus_core::serialization::{
+    deserialize_decimal_token_borrowed, deserialize_optional_decimal_token_borrowed,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 use serde_json::value::RawValue;
@@ -94,10 +96,10 @@ pub struct TradeMsg {
     /// The trade ID provided by the exchange (optional).
     pub id: Option<String>,
     /// The trade price as provided by the exchange.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub price: Decimal,
     /// The trade amount as provided by the exchange.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub amount: Decimal,
     /// The liquidity taker side (aggressor) for the trade.
     pub side: String,
@@ -121,15 +123,24 @@ pub struct DerivativeTickerMsg {
     /// The last open interest if provided by exchange.
     pub open_interest: Option<f64>,
     /// The last funding rate if provided by exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub funding_rate: Option<Decimal>,
     /// The timestamp of the next funding if provided by exchange.
     pub funding_timestamp: Option<Timestamp>,
     /// The last index price if provided by exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub index_price: Option<Decimal>,
     /// The last mark price if provided by exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub mark_price: Option<Decimal>,
     /// The message timestamp provided by exchange.
     pub timestamp: Timestamp,
@@ -154,19 +165,31 @@ pub struct OptionSummaryMsg {
     /// The option expiration date provided by the exchange.
     pub expiration_date: Timestamp,
     /// The best bid price if provided by the exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_bid_price: Option<Decimal>,
     /// The best bid amount if provided by the exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_bid_amount: Option<Decimal>,
     /// The best bid implied volatility if provided by the exchange.
     #[serde(rename = "bestBidIV")]
     pub best_bid_iv: Option<f64>,
     /// The best ask price if provided by the exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_ask_price: Option<Decimal>,
     /// The best ask amount if provided by the exchange.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_ask_amount: Option<Decimal>,
     /// The best ask implied volatility if provided by the exchange.
     #[serde(rename = "bestAskIV")]
@@ -216,19 +239,19 @@ pub struct BarMsg {
     /// The requested trade bar interval.
     pub interval: u64,
     /// The open price.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub open: Decimal,
     /// The high price.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub high: Decimal,
     /// The low price.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub low: Decimal,
     /// The close price.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub close: Decimal,
     /// The total volume traded in given interval.
-    #[serde(deserialize_with = "deserialize_decimal_token")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub volume: Decimal,
     /// The buy volume traded in given interval.
     pub buy_volume: f64,
@@ -260,6 +283,10 @@ pub struct DisconnectMsg {
 }
 
 /// A Tardis Machine Server message type.
+///
+/// Deserializes from any `serde_json` input. The message structs read decimals from borrowed JSON
+/// tokens, so deserializing one directly requires borrowed input such as `serde_json::from_str`
+/// or `serde_json::from_slice`.
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
@@ -318,9 +345,15 @@ enum WsMessageKind {
 
 #[derive(Debug, Deserialize)]
 struct RawBookLevel {
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     price: Option<Decimal>,
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_token")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     amount: Option<Decimal>,
 }
 
