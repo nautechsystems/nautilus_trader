@@ -18,9 +18,10 @@
 #
 # - Compute `min(bid_size, ask_size) / max(bid_size, ask_size)`. Higher means
 #   balanced; lower means leaning.
-# - When the larger side is at least `trigger_min_size` and the ratio is below
+# - When the larger side exceeds `trigger_min_size` and the ratio is below
 #   `trigger_imbalance_ratio`, fire a single FOK limit order against the
-#   thicker side. A trigger cooldown of `min_seconds_between_triggers`
+#   thinner side: a buy at the best ask when bids are larger, otherwise a sell
+#   at the best bid. A trigger cooldown of `min_seconds_between_triggers`
 #   prevents the strategy from re-firing on every micro-update.
 #
 # The strategy is intentionally simple and has no edge.
@@ -39,7 +40,7 @@
 #     end
 #
 #     subgraph Strategy ["OrderBookImbalance"]
-#         R{{"larger >= trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
+#         R{{"larger > trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
 #         D{{"bid_size > ask_size?"}}
 #         BUY["Submit FOK BUY at best ask"]
 #         SELL["Submit FOK SELL at best bid"]
@@ -61,15 +62,19 @@
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`)
 # - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
-# - The sibling [`orderbook_data.py`](./orderbook_data.py) and
-#   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
-#   to this tutorial when downloading or converting it with Jupytext.
-# - Optionally, Binance T_DEPTH CSVs for the day you want to replay. The
-#   documented run uses BTCUSDT 2022-11-01 from
-#   [data.binance.vision](https://data.binance.vision), placed under
-#   `NAUTILUS_DATA_DIR/Binance/`. Without them the tutorial falls back to a
-#   bundled 100-row sample of each file, which runs end to end but is too short
-#   to trigger the strategy.
+# - The sibling
+#   [`orderbook_data.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_data.py)
+#   and
+#   [`orderbook_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_imbalance.py)
+#   files. Keep them next to this tutorial when downloading or converting it
+#   with Jupytext.
+# - Optionally, Binance USD-M futures T_DEPTH CSVs that you supply for the day
+#   you want to replay. The documented run uses BTCUSDT 2022-11-01, placed
+#   under `NAUTILUS_DATA_DIR/Binance/` (default `~/Downloads/Data/Binance/`).
+#   Without them the tutorial falls back to a 100-row sample of each file from
+#   the NautilusTrader test data, downloaded from GitHub on first run outside a
+#   source checkout. The sample runs end to end but is too short to trigger the
+#   strategy.
 
 # %%
 import os
@@ -112,9 +117,10 @@ from orderbook_data import deltas_from_frame, sample_data_path
 # ## Loading data
 #
 # Each row of `_depth_snap.csv` and `_depth_update.csv` is a single L2 level
-# event. The Binance loader maps them to NautilusTrader `OrderBookDelta`
-# objects with `update_type="snap"` for snapshots and `set` / `delete` for
-# updates. The full update file for BTCUSDT 2022-11-01 is ~12 GB
+# event. `load_binance_order_book_deltas` returns a pandas DataFrame with one
+# row per event: snapshot rows (`update_type="snap"`) become `ADD` actions
+# flagged `F_SNAPSHOT`, and update rows become `UPDATE`, or `DELETE` when the
+# quantity is zero. The full update file for BTCUSDT 2022-11-01 is ~12 GB
 # (~110 million rows), so the tutorial caps the read at 1,000,000 rows.
 
 # %%
@@ -172,8 +178,9 @@ deltas[:10]
 # ### Set up the data catalog
 #
 # Persist the instrument and deltas to a fresh `ParquetDataCatalog` so the
-# `BacktestNode` can lazy-load by time range. Re-running the tutorial wipes
-# any prior catalog at the same path.
+# `BacktestNode` can lazy-load by time range. The tutorial writes the catalog
+# to `catalog/` under the working directory and replaces that directory on
+# each run.
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"
@@ -283,7 +290,7 @@ node.generate_account_report(config.id, venue=Venue("BINANCE"))
 # %% [markdown]
 # ## What the run produces
 #
-# The figures below come from the full T_DEPTH files. The bundled sample covers
+# The figures below come from the full T_DEPTH files. The test data sample covers
 # 100 rows of each, so it completes without firing any orders.
 #
 # With one million updates the data spans roughly the first eleven minutes of

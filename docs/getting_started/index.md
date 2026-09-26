@@ -15,8 +15,7 @@ released. Confirm the install with:
 python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 ```
 
-See the [Installation](installation) guide for platform support, source builds, and
-Docker images.
+See the [Installation](installation) guide for platform support and source builds.
 
 ## 2. Run the quickstart
 

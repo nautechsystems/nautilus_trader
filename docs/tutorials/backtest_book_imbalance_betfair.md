@@ -79,9 +79,12 @@ Place the file at:
 test_data/local/betfair/1.253378068.gz
 ```
 
-This path is gitignored and not shipped with the repository. The bundled
-example dataset is a football MATCH_ODDS market with 3 runners and around
-82,000 MCM lines recorded over 18 days.
+The example's `DATA_FILE` constant points at this gitignored path. The
+results below come from a self-recorded football MATCH_ODDS market with 3
+runners and around 82,000 MCM lines recorded over 18 days. That file is not
+distributed with the repository. To run without it, pass a sample that ships
+in `test_data/betfair/`, such as `test_data/betfair/1-166811431.bz2`; the
+loader also reads `.bz2` files.
 
 ## Loading the data
 
@@ -98,22 +101,23 @@ let items = loader.load(&filepath)?;
 
 The loader returns a `Vec<BetfairDataItem>`:
 
-| Variant             | Description                                     | Maps to `Data` enum?         |
-| :------------------ | :---------------------------------------------- | :--------------------------- |
-| `Instrument`        | Runner definition from market definition.       | No (added separately)        |
-| `Status`            | Market status transition (PreOpen, Trading...). | No (`Data` has no variant)   |
-| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::BookDeltas`      |
-| `Trade`             | Incremental trade tick from cumulative volumes. | Yes, `Data::Trade`           |
-| `Ticker`            | Last traded price, volume, BSP near/far.        | -                            |
-| `StartingPrice`     | Betfair Starting Price for a runner.            | -                            |
-| `BspBookDelta`      | BSP-specific book delta.                        | -                            |
-| `InstrumentClose`   | Settlement event.                               | Yes, `Data::InstrumentClose` |
-| `SequenceCompleted` | Batch completion marker.                        | -                            |
-| `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                            |
-| `RaceProgress`      | Race-level progress data.                       | -                            |
+| Variant             | Description                                     | Maps to `Data` enum?          |
+| :------------------ | :---------------------------------------------- | :---------------------------- |
+| `Instrument`        | Runner definition from market definition.       | No (added separately)         |
+| `Status`            | Market status transition (PreOpen, Trading...). | Yes, `Data::InstrumentStatus` |
+| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::BookDeltas`       |
+| `Trade`             | Incremental trade tick from cumulative volumes. | Yes, `Data::Trade`            |
+| `Ticker`            | Last traded price, volume, BSP near/far.        | -                             |
+| `StartingPrice`     | Betfair Starting Price for a runner.            | -                             |
+| `BspBookDelta`      | BSP-specific book delta.                        | -                             |
+| `InstrumentClose`   | Settlement event.                               | Yes, `Data::InstrumentClose`  |
+| `SequenceCompleted` | Batch completion marker.                        | -                             |
+| `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                             |
+| `RaceProgress`      | Race-level progress data.                       | -                             |
+| `CricketMatch`      | Cricket match data (from CCM).                  | -                             |
 
 The backtest engine accepts the `Data` enum, so we map the variants we need
-and skip the Betfair-specific types:
+and skip `Status` and the Betfair-specific types:
 
 ```rust
 use nautilus_model::data::Data;
@@ -147,11 +151,11 @@ so the map deduplicates them by keeping the latest version.
 
 :::warning
 The `Status` variant carries market status transitions (PreOpen, Trading,
-Suspended, Closed) but the `Data` enum has no variant for it. This example
-does not replay status transitions. If you extend this into a strategy that
-places orders, the matching engine will not see market suspensions or
-closures from the stream. Subscribe to instrument status separately or add
-status routing to the engine.
+Suspended, Closed). This example skips it, so it does not replay status
+transitions. If you extend this into a strategy that places orders, add a
+`BetfairDataItem::Status(s) => data.push(Data::InstrumentStatus(s))` arm.
+The engine routes `Data::InstrumentStatus` to the matching engine, which
+then sees market suspensions and closures from the stream.
 :::
 
 ## The actor
@@ -168,9 +172,9 @@ engine.add_actor(actor)?;
 ```
 
 The second argument is the log interval: print a progress line every 5,000
-updates per runner. The example reads `IMBALANCE_LOG_INTERVAL` from the
-environment, so set it to a smaller value (`200`) when you want to capture
-finer-grained data for the panels at the end of this tutorial.
+updates per runner. The example sets it with the `LOG_INTERVAL` constant, so
+edit that constant to a smaller value (`200`) and rebuild when you want to
+capture finer-grained data for the panels at the end of this tutorial.
 
 The full source is at
 [`crates/trading/src/examples/actors/imbalance/actor.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/actors/imbalance/actor.rs).
@@ -266,7 +270,7 @@ swapped for a `Strategy`.
 
 ## Results
 
-The bundled MATCH_ODDS dataset has three runners and 143,098 data points;
+The self-recorded MATCH_ODDS dataset has three runners and 143,098 data points;
 a release build completes in about 48 ms:
 
 ```
@@ -290,7 +294,7 @@ imbalance.*
 ![Per-batch signed flow distribution](./assets/backtest_book_imbalance_betfair/panel_b_batch_distribution.png)
 
 **Figure 2.** *Distribution of per-batch signed flow ratio
-`(bid - ask) / (bid + ask)` over `IMBALANCE_LOG_INTERVAL=200` batches per
+`(bid - ask) / (bid + ask)` over `LOG_INTERVAL = 200` batches per
 runner. The shape of each runner's batch distribution is a sharper signal
 than the cumulative imbalance.*
 
@@ -306,12 +310,13 @@ The actor logs `[runner] update #N: batch bid=B ask=A cumulative imbalance=I`
 on every Nth update. The renderer parses those lines and writes static PNGs
 using the `nautilus_dark` tearsheet theme.
 
+Set the `LOG_INTERVAL` constant in `betfair_backtest.rs` to `200` first.
 After building NautilusTrader from source, run these commands from the repository root:
 
 ```bash
 make sync
 
-IMBALANCE_LOG_INTERVAL=200 cargo run -p nautilus-betfair --features examples --release \
+cargo run -p nautilus-betfair --features examples --release \
     --example betfair-backtest > /tmp/betfair.log 2>&1
 
 BETFAIR_LOG=/tmp/betfair.log \
@@ -330,6 +335,9 @@ cargo run -p nautilus-betfair --features examples --release --example betfair-ba
 
 # Custom data file
 cargo run -p nautilus-betfair --features examples --release --example betfair-backtest -- path/to/file.gz
+
+# Shipped sample file
+cargo run -p nautilus-betfair --features examples --release --example betfair-backtest -- test_data/betfair/1-166811431.bz2
 ```
 
 ## Complete source
@@ -349,6 +357,3 @@ The complete example is at
   like top-of-book spread, depth ratios, or weighted mid-price.
 - **Multiple markets**. Load several `.gz` files and run them through the
   same engine to test cross-market signals.
-- **Compare with Python**. Run the same backtest from Python using the
-  `BacktestEngine` Python API. Both surfaces drive the same Rust engine over
-  the same data pipeline, so the results should match.

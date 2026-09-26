@@ -13,7 +13,7 @@
 
 # %% [markdown]
 # ## Prerequisites
-# - Python 3.12+
+# - Python 3.12-3.14
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.
@@ -28,10 +28,12 @@ from pathlib import Path
 import pandas as pd
 
 from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
@@ -49,9 +51,10 @@ from nautilus_trader.trading import EmaCrossConfig
 # %% [markdown]
 # ## Load the sample data
 #
-# The tutorial runs with no download: `TestDataProvider` ships AUD/USD quote
+# The tutorial needs no manual download: `TestDataProvider` supplies AUD/USD quote
 # ticks, read from the local `test_data/` directory in a source checkout and
-# from GitHub otherwise. We take the first 20,000 to keep the run short.
+# downloaded from GitHub otherwise, so a wheel install needs network access. We take
+# the first 20,000 to keep the run short.
 #
 # To replay a longer history, download FX tick data from
 # [histdata.com](https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/)
@@ -81,7 +84,7 @@ raw_files
 #
 # Both loaders parse vendor rows into Nautilus `QuoteTick` objects with a
 # default notional size. Histdata CSV files contain
-# `timestamp, bid_price, ask_price` fields; the bundled TrueFX sample contains
+# `timestamp, bid_price, ask_price` fields; the TrueFX sample contains
 # `timestamp, bid, ask`.
 
 # %%
@@ -107,8 +110,9 @@ ticks[0:2]
 # %% [markdown]
 # See the [Loading data](../concepts/data/) guide for more details.
 #
-# Instantiate a `ParquetDataCatalog` with a storage directory (here we use the current directory).
-# Write the instrument and tick data to the catalog.
+# Instantiate a `ParquetDataCatalog` with a storage directory (here `catalog/` under the
+# current directory, which the guide replaces on each run). Write the instrument and tick
+# data to the catalog.
 #
 
 # %%
@@ -153,7 +157,8 @@ if all_ticks:
     last_tick_time = pd.Timestamp(all_ticks[-1].ts_init, unit="ns", tz="UTC")
     print(f"Data range: {first_tick_time} to {last_tick_time}")
 
-    # Set backtest range to first 2 weeks of data (as UNIX nanoseconds)
+    # Cap the backtest range at 2 weeks from the first tick (as UNIX nanoseconds);
+    # the AUD/USD sample spans about 5 hours, so it runs in full
     start_ns = all_ticks[0].ts_init
     end_ns = dt_to_unix_nanos(first_tick_time + pd.Timedelta(days=14))
     print(f"Backtest range: {first_tick_time} to {first_tick_time + pd.Timedelta(days=14)}")
@@ -214,7 +219,9 @@ data_configs = [
 config = BacktestRunConfig(
     venues=venue_configs,
     data=data_configs,
-    engine=BacktestEngineConfig(),
+    engine=BacktestEngineConfig(
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
+    ),
 )
 
 # %% [markdown]

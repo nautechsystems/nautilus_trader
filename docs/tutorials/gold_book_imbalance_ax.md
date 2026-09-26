@@ -11,8 +11,9 @@ Top-of-book imbalance is a microstructure signal: when one side of the BBO
 holds significantly more resting size than the other, the book is leaning
 and short-term price often moves toward the thinner side as the heavier
 side absorbs flow. The AX example `OrderBookImbalance` strategy fires a
-fill-or-kill (FOK) limit order against the thicker side every time the
-ratio between sides clears a threshold and a cooldown has elapsed.
+fill-or-kill (FOK) limit order that takes the thinner side (buying at the ask
+when bids are heavier) every time the ratio between sides clears a threshold
+and a cooldown has elapsed.
 
 Because the strategy only needs the BBO, it works with `mbp-1` (market by
 price, single best bid/ask) quote data rather than the full L2 book. That
@@ -33,7 +34,7 @@ flowchart LR
     end
 
     subgraph Strategy ["OrderBookImbalance"]
-        R{{"larger >= trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
+        R{{"larger > trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
         D2{{"bid_size > ask_size?"}}
         BUY["Submit FOK BUY at best ask"]
         SELL["Submit FOK SELL at best bid"]
@@ -66,6 +67,15 @@ Databento's
 
 - Python 3.12+
 - [NautilusTrader installed](../getting_started/installation.md).
+- A clone of the NautilusTrader repository. The snippets read
+  `crates/adapters/databento/publishers.json` and import the strategy from
+  `examples/live/architect_ax`, so run them from the repository root:
+
+```bash
+git clone https://github.com/nautechsystems/nautilus_trader
+cd nautilus_trader
+```
+
 - A Databento API key:
 
 ```bash
@@ -104,6 +114,8 @@ This pulls one trading day. The file is reused on subsequent runs.
 `DatabentoDataLoader.load_quotes` parses the `.dbn.zst` archive and
 emits `QuoteTick` objects. The `instrument_id` argument overrides the
 Databento symbology so every tick appears to come from `XAU-PERP.AX`.
+The loader cannot resolve a price precision for that ID, so pass
+`price_precision` explicitly; it must match the instrument definition below.
 
 ```python
 from nautilus_trader.adapters.databento import DatabentoDataLoader
@@ -116,13 +128,15 @@ loader = DatabentoDataLoader(publishers_path)
 quotes = loader.load_quotes(
     filepath=data_path,
     instrument_id=instrument_id,
+    price_precision=2,
 )
 ```
 
 ## Instrument definition
 
-Proxy data needs a manual instrument definition. Price precision and tick
-size match the CME source data. Margin parameters are backtest assumptions.
+Proxy data needs a manual instrument definition. Price precision, tick size,
+and margin parameters are backtest assumptions: the `0.01` tick is finer than
+both the CME `GC` tick (`0.10`) and the AX `XAU-PERP` tick (`0.1`).
 
 ```python
 from decimal import Decimal
@@ -165,12 +179,12 @@ Fees are explicit backtest assumptions. Check
 The strategy subscribes to quotes and compares bid and ask sizes on each
 `QuoteTick`. It does not subscribe to L2 book deltas.
 
-| Parameter                      | Value  | Description                                  |
-| ------------------------------ | ------ | -------------------------------------------- |
-| `max_trade_size`               | `10`   | Cap on contracts per FOK order.              |
-| `trigger_min_size`             | `1`    | Larger side must hold at least one contract. |
-| `trigger_imbalance_ratio`      | `0.10` | Trigger when smaller / larger < 10%.         |
-| `min_seconds_between_triggers` | `5.0`  | Cooldown between consecutive triggers.       |
+| Parameter                      | Value  | Description                                   |
+| ------------------------------ | ------ | --------------------------------------------- |
+| `max_trade_size`               | `10`   | Cap on contracts per FOK order.               |
+| `trigger_min_size`             | `1`    | Larger side must hold more than one contract. |
+| `trigger_imbalance_ratio`      | `0.10` | Trigger when smaller / larger < 10%.          |
+| `min_seconds_between_triggers` | `5.0`  | Cooldown between consecutive triggers.        |
 
 The AX examples define the strategy in
 [`examples/live/architect_ax/strategies.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/architect_ax/strategies.py).
@@ -294,7 +308,7 @@ After building NautilusTrader from source, run these commands from the repositor
 
 ```bash
 make sync
-GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
+GC_DBN=gc_gold_quotes.dbn.zst \
     uv run --project python --no-sync \
         python docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 ```
@@ -314,9 +328,9 @@ GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
 
 ## Running live
 
-The same `OrderBookImbalance` strategy runs live against AX Exchange. The
+The same `OrderBookImbalance` strategy runs live against the AX sandbox. The
 launch script swaps the `BacktestEngine` for a `LiveNode` with the AX
-data and execution clients configured. See the live example:
+data and execution clients configured for `AxEnvironment.SANDBOX`. See the live example:
 [`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py).
 
 For connection setup and API key configuration, see the

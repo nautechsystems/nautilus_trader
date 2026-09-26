@@ -25,9 +25,10 @@
 //! - `KRAKEN_FUTURES_API_KEY`
 //! - `KRAKEN_FUTURES_API_SECRET`
 //!
-//! Point at [demo-futures.kraken.com](https://demo-futures.kraken.com) for
-//! paper trading by setting `demo=true` on `resolve_futures` or by using a
-//! demo key pair.
+//! The example trades Kraken Futures production. To paper trade on
+//! [demo-futures.kraken.com](https://demo-futures.kraken.com), pass `demo=true` to
+//! `resolve_futures` and set `environment: KrakenEnvironment::Demo` on both client
+//! configs; it then reads `KRAKEN_FUTURES_DEMO_API_KEY` and `KRAKEN_FUTURES_DEMO_API_SECRET`.
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{

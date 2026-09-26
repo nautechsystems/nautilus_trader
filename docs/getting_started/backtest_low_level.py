@@ -10,7 +10,7 @@
 
 # %% [markdown]
 # ## Prerequisites
-# - Python 3.12+
+# - Python 3.12-3.14
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.
@@ -47,14 +47,16 @@ from nautilus_trader.trading import Strategy
 # %% [markdown]
 # ## Load data
 #
-# Load bundled test data (ETHUSDT trades from Binance), initialize the matching
-# instrument, and build Nautilus `TradeTick` objects from the CSV.
+# Load sample test data (ETHUSDT trades from Binance), initialize the matching
+# instrument, and build Nautilus `TradeTick` objects from the CSV. `TestDataProvider`
+# reads the CSV from the local `test_data/` directory in a source checkout and
+# downloads it from GitHub otherwise, so a wheel install needs network access.
 
 # %%
 # Initialize the instrument which matches the data
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
-# Build Nautilus trade ticks from the bundled Binance CSV
+# Build Nautilus trade ticks from the sample Binance CSV
 ticks = TestDataProvider.trades_from_binance_csv(
     ETHUSDT_BINANCE,
     "binance/ethusdt-trades.csv",
@@ -276,10 +278,10 @@ engine.generate_positions_report()
 # For repeated backtest runs, reset the engine
 engine.reset()
 
-# Clear or remove loaded components before adding replacements.
+# Clear loaded components before adding replacements.
 
 # %% [markdown]
-# Remove and add individual components (actors, strategies, execution algorithms) as required.
+# Clear and add components (actors, strategies, execution algorithms) as required.
 #
 # See the [BacktestEngine](../api_reference/backtest.md) API reference for the add and clear methods.
 #

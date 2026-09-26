@@ -78,7 +78,12 @@ for AX EURUSD-PERP backtests.
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader installed](../getting_started/installation.md).
+- [NautilusTrader installed](../getting_started/installation.md) with the
+  [`visualization` extra](../getting_started/installation.md#extras), which
+  provides pandas.
+- A source checkout of the repository. The backtest imports
+  `BBMeanReversion` from `examples/live/architect_ax/strategies.py`, which
+  the installed package does not include.
 - A free TrueFX account, used to download a monthly tick archive.
 
 ## Data preparation
@@ -349,6 +354,10 @@ The same `BBMeanReversion` strategy runs live against AX Exchange. The
 launch script swaps the `BacktestEngine` for a `LiveNode` with the AX
 data and execution clients configured. See the live example:
 [`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py).
+The script targets the AX sandbox (`AxEnvironment.SANDBOX` on both client
+configs) and places live sandbox orders. It also sets
+`LiveRiskEngineConfig(bypass=True)`, which skips pre-trade risk checks and
+order rate limits.
 
 For connection setup and API key configuration, see the
 [AX Exchange integration guide](../integrations/architect_ax.md).

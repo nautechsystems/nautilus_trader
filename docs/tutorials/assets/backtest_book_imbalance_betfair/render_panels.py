@@ -5,9 +5,9 @@ After building NautilusTrader from source, run these commands from the repositor
 
     make sync
 
-    # Run the example with a fine log interval so the panels have detail.
-    IMBALANCE_LOG_INTERVAL=200 \
-        cargo run -p nautilus-betfair --features examples --release \
+    # Set LOG_INTERVAL to 200 in crates/adapters/betfair/examples/betfair_backtest.rs
+    # first, so the panels have detail.
+    cargo run -p nautilus-betfair --features examples --release \
         --example betfair-backtest > /tmp/betfair.log 2>&1
 
     BETFAIR_LOG=/tmp/betfair.log \

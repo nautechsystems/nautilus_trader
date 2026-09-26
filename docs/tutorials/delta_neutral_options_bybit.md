@@ -27,7 +27,8 @@ session, the strategy will trade.
   pattern.
 - A Bybit API key with **trading permissions** for options and linear
   perpetuals.
-- Environment variables:
+- Environment variables for Bybit mainnet, which the example targets by
+  default (see [Running the example](#running-the-example) for testnet):
 
 ```bash
 export BYBIT_API_KEY="your-api-key"
@@ -231,9 +232,9 @@ vol points from mark IV: an offset of 0.02 sells two vol points below
 mark for faster fills.
 
 :::note
-Bybit's demo environment rejects orders with `order_iv`. The adapter
-denies them before they reach the API. Use mainnet or testnet for
-IV-based order placement.
+In Bybit's demo environment, new orders carry `order_iv` through the HTTP
+create-order endpoint. Amending an order by `order_iv` is not supported in
+demo: the adapter drops the modify with a warning before it reaches the API.
 :::
 
 ### Rehedging
@@ -253,8 +254,21 @@ duplicate submissions while an order is in flight.
 
 The strategy tracks positions via `on_order_filled`, not by querying
 the cache on every tick. Each fill updates the corresponding position
-counter (call, put, or hedge). At startup, existing positions are
-hydrated from the cache (populated by reconciliation).
+counter (call, put, or hedge). At startup, the strategy hydrates the
+counters from the cache (populated by reconciliation): it sums the signed
+quantity of every open position on the selected call, the selected put,
+and the hedge instrument. It does not filter by strategy, so positions
+opened elsewhere on those instruments count. Option positions on other
+strikes do not.
+
+:::warning
+Hydration treats any open `BTCUSDT-LINEAR` position as part of the hedge.
+With no option positions, an unrelated perpetual position larger than
+`rehedge_delta_threshold` breaches the threshold once Greeks arrive for
+both legs, and the strategy submits a market order that flattens it. Run
+the strategy on an account with no unrelated positions on the hedge
+instrument.
+:::
 
 ### Shutdown
 
@@ -309,11 +323,17 @@ deltas around the underlying.*
 
 ### Regenerate the panels
 
+The log comes from `bybit-delta-neutral`, the live trading binary. It
+connects to Bybit mainnet with your API keys. With the default config it
+places no entry orders, but it submits hedge orders if the account holds
+positions on the selected legs or the hedge instrument.
+
 After building NautilusTrader from source, run these commands from the repository root:
 
 ```bash
 make sync
 
+cargo build --release --example bybit-delta-neutral --package nautilus-bybit --features examples
 timeout 30 ./target/release/examples/bybit-delta-neutral > /tmp/bybit_dn.log 2>&1
 
 DN_LOG=/tmp/bybit_dn.log \
@@ -339,6 +359,17 @@ are illustrative because the default config does not place orders.
   remain open and unhedged until manually managed.
 
 ## Running the example
+
+:::warning
+The example trades on Bybit **mainnet** by default. It has no network
+constant: both client configs use `..Default::default()`, which selects
+`BybitEnvironment::Mainnet` and reads `BYBIT_API_KEY` and
+`BYBIT_API_SECRET`. To run on testnet, add
+`environment: BybitEnvironment::Testnet` to both `data_config` and
+`exec_config` in `node_delta_neutral.rs`, import `BybitEnvironment` from
+`nautilus_bybit::common::enums`, and rebuild. On testnet the adapter reads
+`BYBIT_TESTNET_API_KEY` and `BYBIT_TESTNET_API_SECRET`.
+:::
 
 ```bash
 cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples
