@@ -33,6 +33,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
+    instruments::InstrumentAny,
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     reports::ExecutionMassStatus,
     types::{Currency, Money, Price, Quantity},
@@ -50,6 +51,8 @@ use crate::{
 const DEADLINE: Duration = Duration::from_secs(5);
 const UNRESOLVED_MASS_STATUS_ERROR: &str = "cannot generate mass status: Polymarket settlement \
                                             registry holds 1 record(s) with unresolved evidence";
+const STREAM_GAP_MASS_STATUS_ERROR: &str = "cannot generate mass status: 1 Polymarket order(s) \
+                                            await a trade read after a user stream reconnect";
 // Matches the user stream endpoint name the execution client registers
 const USER_STREAMS_ENDPOINT: &str = "polymarket-user-streams";
 
@@ -1188,6 +1191,165 @@ async fn reconnect_resolves_provisional_trade_from_rest() {
     assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
 }
 
+// The trade matches while the user stream is down, so only REST reports it. The submit
+// response lands either while the stream is still reconnecting or after it has reconnected.
+#[rstest]
+#[case::post_completes_before_reconnect(true)]
+#[case::post_completes_after_reconnect(false)]
+#[tokio::test]
+async fn reconnect_discovers_trade_missed_during_stream_outage(
+    #[case] post_before_reconnect: bool,
+) {
+    let mut h = harness::Harness::build_with_cache(seed_taker_fee_schedule).await;
+    let declined = record_declined_fills();
+    serve_rest_trades(&h, &[]).await;
+    *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+    let post_gate = h.mock_state.order_request_gate.clone();
+    let upgrade_gate = h.mock_state.user_upgrade_gate.clone();
+    let request_paths = h.mock_state.startup_request_paths.clone();
+
+    let balance_reads = move || {
+        request_paths.try_lock().map_or(0, |paths| {
+            paths
+                .iter()
+                .filter(|path| *path == "/balance-allowance")
+                .count()
+        })
+    };
+
+    post_gate.enable();
+    upgrade_gate.enable();
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    let post_held = pump_until_venue(&mut h, || post_gate.started() == 1).await;
+    let outcome = handle.request_reconnect();
+    let upgrade_held = pump_until_venue(&mut h, || upgrade_gate.started() == 1).await;
+
+    let accepted = if post_before_reconnect {
+        post_gate.release();
+
+        let accepted = h
+            .pump_until(DEADLINE, |cache| {
+                order_reached(cache, &order, OrderStatus::Accepted)
+            })
+            .await;
+
+        upgrade_gate.release();
+        accepted
+    } else {
+        // The reconnect refreshes the account after starting the new stream session
+        let reads_before_reconnect = balance_reads();
+        upgrade_gate.release();
+        assert!(
+            pump_until_venue(&mut h, || balance_reads() > reads_before_reconnect).await,
+            "user stream did not reconnect",
+        );
+        post_gate.release();
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await
+    };
+
+    let blocked = reports_block(&mut h).await;
+    let status_while_blocked = cached_order(&h, &order).status();
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["status"] = json!("MATCHED");
+    venue_order["size_matched"] = json!("100.0000");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert!(post_held, "submit POST was not held");
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    assert!(upgrade_held, "user stream reconnect was not held");
+    assert!(accepted, "order did not reach Accepted");
+    assert_eq!(
+        blocked.map(|e| e.to_string()),
+        Some(STREAM_GAP_MASS_STATUS_ERROR.to_string()),
+    );
+    assert_eq!(status_while_blocked, OrderStatus::Accepted);
+    assert!(filled, "reconnect did not discover the missed trade");
+    assert!(resumed, "reports stayed blocked after the trade applied");
+    let cached = cached_order(&h, &order);
+
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(
+        fills[0].venue_order_id,
+        VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID)
+    );
+    assert_eq!(fills[0].last_qty, Quantity::from("100.0000"));
+    assert_eq!(fills[0].last_px, Price::from("0.5000"));
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fills[0].commission, Some(Money::from("0.5 pUSD")));
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The cached fill has local economics that REST would contradict, so it must not be admitted again
+#[rstest]
+#[tokio::test]
+async fn reconnect_reads_restored_order_without_readmitting_cached_fill() {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let mut h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    let declined = record_declined_fills();
+    serve_rest_trades(&h, &[]).await;
+    *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+
+    let outcome = handle.request_reconnect();
+    let blocked = reports_block(&mut h).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade.json", "CONFIRMED")]).await;
+    *h.mock_state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    assert_eq!(
+        blocked.map(|e| e.to_string()),
+        Some(STREAM_GAP_MASS_STATUS_ERROR.to_string()),
+    );
+    assert!(
+        resumed,
+        "reports stayed blocked after the restored order's read"
+    );
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("25.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
 #[rstest]
 #[tokio::test]
 async fn rest_confirmation_applies_quarantined_unapplied_trade_once() {
@@ -1514,6 +1676,43 @@ async fn reports_block(h: &mut harness::Harness) -> Option<anyhow::Error> {
     }
 
     None
+}
+
+async fn pump_until_venue(h: &mut harness::Harness, condition: impl Fn() -> bool) -> bool {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+
+    while tokio::time::Instant::now() < deadline {
+        if condition() {
+            return true;
+        }
+
+        h.pump_for(Duration::from_millis(10)).await;
+    }
+
+    false
+}
+
+// Charges the taker fee so the commission of a REST-sourced fill is observable
+fn seed_taker_fee_schedule(execution: &ExecutionHarness) {
+    let mut instrument = harness::instrument();
+
+    let InstrumentAny::BinaryOption(binary) = &mut instrument else {
+        panic!("expected binary option harness instrument");
+    };
+
+    binary
+        .info
+        .as_mut()
+        .expect("harness instrument info")
+        .insert(
+            "fee_schedule".into(),
+            json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
+        );
+    execution
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument)
+        .unwrap();
 }
 
 // Leaves the order as a previous run would: accepted, then filled 25 by `ws_user_trade.json`

@@ -193,6 +193,7 @@ pub(super) struct TestServerState {
     pub(super) positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) user_frames: tokio::sync::broadcast::Sender<String>,
     pub(super) user_socket_count: Arc<AtomicUsize>,
+    pub(super) user_upgrade_gate: Arc<RequestGate>,
 }
 
 impl Default for TestServerState {
@@ -280,6 +281,7 @@ impl Default for TestServerState {
             })))),
             user_frames,
             user_socket_count: Arc::new(AtomicUsize::new(0)),
+            user_upgrade_gate: Arc::new(RequestGate::default()),
         }
     }
 }
@@ -667,6 +669,7 @@ async fn handle_user_upgrade(
         .lock()
         .await
         .push("/ws".to_string());
+    state.user_upgrade_gate.wait().await;
     ws.on_upgrade(move |socket| handle_user_socket(socket, state))
 }
 

@@ -1046,12 +1046,7 @@ pub(crate) fn apply_rest_trade_evidence(
         }
     };
 
-    let actions = ctx.settlement.admit_rest_result(&admitted);
-    execute_settlement_actions(actions, rest_trade_info(trade).as_ref(), ctx, state);
-
-    if ctx.settlement.is_trade_confirmed(&admitted.venue_trade_id) {
-        confirm_trade_bookkeeping(&admitted, ctx.clock.get_time_ns(), ctx, state);
-    }
+    apply_admitted_rest_trade(&admitted, trade, ctx, state);
 }
 
 /// Applies REST evidence for an order whose submit outcome was unknown, returning `true` once
@@ -1069,11 +1064,109 @@ pub(crate) fn apply_uncertain_order_evidence(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) -> bool {
+    let Some((context, instrument)) = submitted_order_context(venue_order_id, order, ctx) else {
+        return false;
+    };
+
+    let trades_applied =
+        apply_order_trade_evidence(venue_order_id, order, trades, ctx, |admitted, trade| {
+            let actions = ctx.settlement.admit_rest_result(admitted);
+            execute_settlement_actions(actions, rest_trade_info(trade).as_ref(), ctx, state);
+        });
+
+    if !trades_applied {
+        return false;
+    }
+
+    let report = match parse_order_status_report(
+        order,
+        instrument.id(),
+        ctx.account_id,
+        ctx.pending_submits.client_order_id(&venue_order_id),
+        instrument.price_precision(),
+        instrument.size_precision(),
+        ctx.clock.get_time_ns(),
+    ) {
+        Ok(report) => report,
+        Err(e) => {
+            log::warn!("Cannot apply REST status of uncertain order {venue_order_id}: {e}");
+            return false;
+        }
+    };
+
+    let (_, buffered_fills) = take_status_update_fills(&report, ctx);
+
+    for fill in buffered_fills {
+        emit_buffered_order_filled(&context, &fill, ctx);
+    }
+
+    emit_tracked_order_status(&report, &context, report.ts_last, ctx);
+
+    // A filled taker order reaches the terminal normalization a stream confirmation would apply
+    if report.order_status == OrderStatus::Filled {
+        emit_taker_terminal_status(venue_order_id, ctx, report.ts_last);
+    }
+
+    true
+}
+
+/// Applies REST trades for an order that was live while the user stream was disconnected,
+/// returning `true` once they cover the venue's matched quantity.
+///
+/// Only trades the settlement registry has never seen are applied, so each missed fill applies
+/// once and trades it already holds keep their established resolution. The order status is not
+/// applied: the stream and reconciliation keep driving the lifecycle of an accepted order.
+pub(crate) fn apply_stream_gap_order_evidence(
+    venue_order_id: VenueOrderId,
+    order: &PolymarketOpenOrder,
+    trades: &[PolymarketTradeReport],
+    ctx: &WsDispatchContext<'_>,
+    state: &mut WsDispatchState,
+) -> bool {
+    if submitted_order_context(venue_order_id, order, ctx).is_none() {
+        return false;
+    }
+
+    apply_order_trade_evidence(venue_order_id, order, trades, ctx, |admitted, trade| {
+        if ctx.settlement.knows_trade(admitted) {
+            return;
+        }
+
+        log::info!(
+            "Discovered Polymarket trade {} on order {venue_order_id} missed during a user \
+             stream disconnect",
+            admitted.venue_trade_id
+        );
+        apply_admitted_rest_trade(admitted, trade, ctx, state);
+    })
+}
+
+fn apply_admitted_rest_trade(
+    admitted: &AdmittedTrade,
+    trade: &PolymarketTradeReport,
+    ctx: &WsDispatchContext<'_>,
+    state: &mut WsDispatchState,
+) {
+    let actions = ctx.settlement.admit_rest_result(admitted);
+    execute_settlement_actions(actions, rest_trade_info(trade).as_ref(), ctx, state);
+
+    if ctx.settlement.is_trade_confirmed(&admitted.venue_trade_id) {
+        confirm_trade_bookkeeping(admitted, ctx.clock.get_time_ns(), ctx, state);
+    }
+}
+
+/// Returns the captured context and instrument of a submitted order, or `None` when they are
+/// unknown or its REST order evidence contradicts them.
+fn submitted_order_context(
+    venue_order_id: VenueOrderId,
+    order: &PolymarketOpenOrder,
+    ctx: &WsDispatchContext<'_>,
+) -> Option<(OrderContext, InstrumentAny)> {
     let (Some(context), Some(instrument)) = (
         ctx.order_contexts.get(&venue_order_id),
         ctx.token_instruments.get_cloned(&order.asset_id),
     ) else {
-        return false;
+        return None;
     };
 
     if order.id != venue_order_id.as_str()
@@ -1084,9 +1177,23 @@ pub(crate) fn apply_uncertain_order_evidence(
             "REST order evidence for uncertain order {venue_order_id} contradicts the submitted \
              order"
         );
-        return false;
+        return None;
     }
 
+    Some((context, instrument))
+}
+
+/// Admits the REST trades touching an order and passes each to `apply`, returning `true` once
+/// every trade is terminal and the confirmed trades cover the venue's matched quantity.
+///
+/// Nothing is applied while any trade is still provisional.
+fn apply_order_trade_evidence(
+    venue_order_id: VenueOrderId,
+    order: &PolymarketOpenOrder,
+    trades: &[PolymarketTradeReport],
+    ctx: &WsDispatchContext<'_>,
+    mut apply: impl FnMut(&AdmittedTrade, &PolymarketTradeReport),
+) -> bool {
     let Some(order_trades) = uncertain_order_trades(venue_order_id, trades) else {
         return false;
     };
@@ -1123,8 +1230,7 @@ pub(crate) fn apply_uncertain_order_evidence(
                 .sum::<Decimal>();
         }
 
-        let actions = ctx.settlement.admit_rest_result(&admitted);
-        execute_settlement_actions(actions, rest_trade_info(trade).as_ref(), ctx, state);
+        apply(&admitted, trade);
     }
 
     // REST can list the order as matched before its trades appear
@@ -1135,35 +1241,6 @@ pub(crate) fn apply_uncertain_order_evidence(
             order.size_matched
         );
         return false;
-    }
-
-    let report = match parse_order_status_report(
-        order,
-        instrument.id(),
-        ctx.account_id,
-        ctx.pending_submits.client_order_id(&venue_order_id),
-        instrument.price_precision(),
-        instrument.size_precision(),
-        ctx.clock.get_time_ns(),
-    ) {
-        Ok(report) => report,
-        Err(e) => {
-            log::warn!("Cannot apply REST status of uncertain order {venue_order_id}: {e}");
-            return false;
-        }
-    };
-
-    let (_, buffered_fills) = take_status_update_fills(&report, ctx);
-
-    for fill in buffered_fills {
-        emit_buffered_order_filled(&context, &fill, ctx);
-    }
-
-    emit_tracked_order_status(&report, &context, report.ts_last, ctx);
-
-    // A filled taker order reaches the terminal normalization a stream confirmation would apply
-    if report.order_status == OrderStatus::Filled {
-        emit_taker_terminal_status(venue_order_id, ctx, report.ts_last);
     }
 
     true
@@ -3499,6 +3576,122 @@ mod tests {
         assert!(!applied);
         assert!(!fill_tracker.contains(&venue_order_id));
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_apply_stream_gap_order_evidence_applies_only_unseen_trades() {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
+                .expect("REST open order fixture");
+        order.status = PolymarketOrderStatus::Canceled;
+        order.original_size = dec!(100);
+        order.size_matched = dec!(50);
+        let seen: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
+                .expect("REST trade fixture");
+        let mut unseen = seen.clone();
+        unseen.id = "trade-0xunseen".to_string();
+        let trades = vec![seen.clone(), unseen.clone()];
+        let ws_trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = instrument_for_trade(&ws_trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument.clone());
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        let client_order_id = ClientOrderId::from("O-STREAM-GAP");
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100.0000"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        pending_submits.insert(venue_order_id, client_order_id);
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            venue_order_id,
+            instrument.id(),
+            client_order_id.as_str(),
+        );
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+
+        // A fill rebuilt from the cache at a snapped quantity that REST would contradict
+        settlement.hydrate_fill(&OrderFilled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument.id(),
+            client_order_id,
+            venue_order_id,
+            AccountId::from("POLY-001"),
+            TradeId::from(seen.id.as_str()),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("24.9900"),
+            Price::from("0.5000"),
+            Currency::pUSD(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+            false,
+            None,
+            None,
+            None,
+        ));
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+
+        let mut state = WsDispatchState::default();
+
+        let applied =
+            apply_stream_gap_order_evidence(venue_order_id, &order, &trades, &ctx, &mut state);
+
+        let mut events = Vec::new();
+
+        while let Ok(event) = receiver.try_recv() {
+            events.push(event);
+        }
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[0] else {
+            panic!("expected the unseen trade's fill, was {:?}", events[0]);
+        };
+
+        assert!(applied);
+        assert_eq!(events.len(), 1);
+        assert_eq!(filled.client_order_id, client_order_id);
+        assert_eq!(filled.venue_order_id, venue_order_id);
+        assert_eq!(filled.trade_id, TradeId::from(unseen.id.as_str()));
+        assert_eq!(filled.last_qty.as_decimal(), dec!(25));
+        assert_eq!(filled.last_px.as_decimal(), dec!(0.5));
+        assert_eq!(
+            settlement_state(&settlement, &unseen.id),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(
+            settlement_state(&settlement, &seen.id),
+            Some(SettlementState::Provisional)
+        );
+        assert!(trade_hard_fault(&settlement, &seen.id).is_none());
     }
 
     #[rstest]

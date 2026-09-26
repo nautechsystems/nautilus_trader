@@ -1104,12 +1104,16 @@ finality and refreshes the account. Matched WebSocket fills retain the raw trade
 
 #### Failed trades and REST resolution
 
-A WebSocket `FAILED` update never voids a fill by itself. The adapter quarantines the trade and
-reads it by ID from the authenticated REST trades endpoint (`GET /data/trades`). Contradicting
-WebSocket evidence for a fill the engine has not applied, such as changed fill values or a missing
-owned order, and a trade message that fails validation also quarantine the trade. The first read
-starts immediately. Until REST returns a terminal status, the adapter retries after 500 ms, doubling
-the delay up to 30 seconds, so a long `RETRYING` period leaves the trade quarantined.
+A WebSocket `FAILED` update never voids a fill by itself. The adapter quarantines a trade and reads
+it by ID from the authenticated REST trades endpoint (`GET /data/trades`) when:
+
+- The WebSocket reports `FAILED`.
+- WebSocket evidence contradicts a fill the engine has not applied, such as changed fill values or a
+  missing owned order.
+- A trade message fails validation.
+
+The first read starts immediately. Until REST returns a terminal status, the adapter retries after
+500 ms, doubling the delay up to 30 seconds, so a long `RETRYING` period leaves the trade quarantined.
 
 The first terminal REST result is final. A later WebSocket status that contradicts it, or new or
 changed evidence for fills the engine has not applied, triggers another REST read but never reverses
@@ -1130,17 +1134,27 @@ values, and refreshes the account.
 #### Reconnects and restarts
 
 A provisional status applies a fill only when the trade and all of the account's orders in it
-belong to the current uninterrupted WebSocket session. After a WebSocket reconnect, or after a
-restart for orders restored from the cache, the adapter quarantines new trades on those orders until
-REST reports `CONFIRMED` or `FAILED`. Fills on a resting order can therefore lag the venue until
-on-chain confirmation. On connect, the adapter rebuilds applied fills and voids from the cached order
-events, so a replayed trade does not produce a second fill.
+belong to the current uninterrupted WebSocket session. The stream does not replay updates missed
+while disconnected, so after a reconnect the adapter reads from REST:
 
-A reconnect also ends the session of trades whose fills were already applied from a provisional
-status. The stream does not replay a `CONFIRMED` or `FAILED` update missed while disconnected, so
-after reconnecting the adapter reads each of those trades from REST: `CONFIRMED` keeps the applied
-fill and `FAILED` voids it. Reports touching those trades fail until the read returns. Fills rebuilt
-from cached order events after a restart are not read again.
+- **New trades on existing orders**: the adapter quarantines them until REST reports `CONFIRMED` or
+  `FAILED`. This also applies after a restart to orders restored from the cache, so fills on a
+  resting order can lag the venue until on-chain confirmation.
+- **Provisionally applied trades**: the adapter reads each by ID. `CONFIRMED` keeps the fill and
+  `FAILED` voids it. Reports touching these trades fail until the read returns.
+- **Trades matched while disconnected**: the adapter reads each open order it submitted or restored
+  from the cache, and each order whose submit was in flight and succeeds after the reconnect. It
+  reads the order and the account's trades in its market, applies each trade it has not seen exactly
+  once with the REST values, and leaves the order status to the WebSocket and reconciliation. Orders
+  adopted from the venue are not read; their fills arrive through reconciliation.
+
+The adapter reads at most 10 orders per resolution pass, retrying each with backoff capped at 30
+seconds. Reports touching an order fail until none of its trades is provisional and confirmed trades
+cover the venue's matched quantity. Reading stops after 10 minutes without that evidence, which also
+lifts the report gate.
+
+On connect, the adapter rebuilds applied fills and voids from the cached order events, so a replayed
+trade does not produce a second fill. Those rebuilt fills are not read again.
 
 #### Settlement faults
 
@@ -1341,14 +1355,18 @@ longer reports; open positions close through fills or settlement.
 
 ### Settlement precedence
 
-While a trade is quarantined, hard-faulted, awaiting a REST read after a reconnect, or waiting for
-the engine to apply a fill or void, or while the adapter reads a submitted order with an unknown
-outcome, order status, fill, position
-status, and mass-status reports fail instead of returning coverage that reconciliation could use to
-infer fills. Mass status checks the whole account; the other reports check the requested instrument
-or order. A trade quarantined because its message failed validation blocks every report when it has
-no earlier admitted legs; otherwise the order and instrument scope of those legs applies. Reports
-also fail while the adapter rebuilds its settlement records on connect. See
+Order status, fill, position status, and mass-status reports fail instead of returning coverage
+that reconciliation could use to infer fills while:
+
+- A trade is quarantined, hard-faulted, awaiting a REST read after a reconnect, or waiting for the
+  engine to apply a fill or void.
+- The adapter reads a submitted order with an unknown outcome, or the trades of an order that was
+  live during a WebSocket disconnect.
+- The adapter rebuilds its settlement records on connect.
+
+Mass status checks the whole account; the other reports check the requested instrument or order. A
+trade quarantined because its message failed validation blocks every report when it has no earlier
+admitted legs; otherwise the order and instrument scope of those legs applies. See
 [settlement updates](#settlement-updates) for how trades resolve.
 
 ### Missing orders and API lag

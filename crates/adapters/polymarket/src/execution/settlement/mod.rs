@@ -30,4 +30,4 @@ pub(crate) use admission::{
     admit_trade_evidence, admit_trade_legs,
 };
 pub(crate) use registry::SettlementRegistry;
-pub(crate) use state::{SettlementAction, UncertainOrder};
+pub(crate) use state::{SettlementAction, UncertainOrder, UncertainOrderKind};

@@ -33,7 +33,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::LiquiditySide,
     events::{OrderEventAny, OrderFillVoided, OrderFilled},
-    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     types::Money,
 };
 use parking_lot::Mutex;
@@ -43,7 +43,7 @@ use super::{
     admission::{AdmittedLeg, AdmittedTrade},
     state::{
         LegApplication, MAX_SETTLEMENT_RECORDS, SettlementAction, SettlementLeg, SettlementRecord,
-        SettlementState, UncertainOrder,
+        SettlementState, UncertainOrder, UncertainOrderKind,
     },
 };
 use crate::common::enums::PolymarketTradeStatus;
@@ -51,12 +51,14 @@ use crate::common::enums::PolymarketTradeStatus;
 /// Registry state guarded by one mutex.
 ///
 /// `session_orders` holds the venue orders noted in the current stream session. It is bounded;
-/// an evicted order only degrades its fills to REST-gated application.
+/// an evicted order only degrades its fills to REST-gated application. `open_orders` holds the
+/// current venue order ID and instrument of each order the engine holds open.
 #[derive(Debug)]
 struct RegistryInner {
     live: bool,
     session: u64,
     session_orders: FifoCache<VenueOrderId, 100_000>,
+    open_orders: AHashMap<ClientOrderId, (VenueOrderId, InstrumentId)>,
     records: AHashMap<String, SettlementRecord>,
     leg_trade_ids: AHashMap<TradeId, String>,
     unbound_legs: AHashMap<TradeId, SettlementLeg>,
@@ -73,6 +75,7 @@ impl Default for RegistryInner {
             live: true,
             session: 0,
             session_orders: FifoCache::new(),
+            open_orders: AHashMap::new(),
             records: AHashMap::new(),
             leg_trade_ids: AHashMap::new(),
             unbound_legs: AHashMap::new(),
@@ -183,18 +186,72 @@ impl SettlementRegistry {
     /// assigned in its submit response, when the two differ.
     ///
     /// The adapter tracks the order under the venue-assigned ID, so eligibility follows it. An
-    /// order submitted before a session change stays ineligible.
+    /// order submitted before a session change stays ineligible and awaits a targeted REST read,
+    /// because the stream does not replay trades that matched while it was disconnected.
     pub(crate) fn note_order_accepted(
         &self,
         expected_venue_order_id: VenueOrderId,
         venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        noted_at: UnixNanos,
     ) {
         let mut inner = self.inner.lock();
 
-        if venue_order_id != expected_venue_order_id
-            && inner.session_orders.contains(&expected_venue_order_id)
-        {
+        if !inner.session_orders.contains(&expected_venue_order_id) {
+            insert_stream_gap_order(
+                &mut inner.uncertain_orders,
+                venue_order_id,
+                instrument_id,
+                noted_at,
+            );
+            self.resolution_wakeup.notify_one();
+        } else if venue_order_id != expected_venue_order_id {
             inner.session_orders.add(venue_order_id);
+        }
+    }
+
+    /// Records that the engine holds `client_order_id` open under `venue_order_id`.
+    pub(crate) fn note_order_open(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+    ) {
+        self.inner
+            .lock()
+            .open_orders
+            .insert(client_order_id, (venue_order_id, instrument_id));
+    }
+
+    /// Records that the engine no longer holds `client_order_id` open.
+    pub(crate) fn note_order_closed(&self, client_order_id: &ClientOrderId) {
+        self.inner.lock().open_orders.remove(client_order_id);
+    }
+
+    /// Requests a targeted REST read for every open order after the user stream reconnects.
+    ///
+    /// The stream does not replay trades that matched while it was disconnected, so reports
+    /// touching these orders fail closed until the read establishes their trades.
+    pub(crate) fn note_stream_gap(&self, noted_at: UnixNanos) {
+        let mut guard = self.inner.lock();
+        let inner = &mut *guard;
+
+        for (venue_order_id, instrument_id) in inner.open_orders.values() {
+            insert_stream_gap_order(
+                &mut inner.uncertain_orders,
+                *venue_order_id,
+                *instrument_id,
+                noted_at,
+            );
+        }
+
+        if !inner.open_orders.is_empty() {
+            log::info!(
+                "Requesting targeted REST reads for {} open Polymarket order(s) after a user \
+                 stream reconnect",
+                inner.open_orders.len()
+            );
+            self.resolution_wakeup.notify_one();
         }
     }
 
@@ -213,13 +270,14 @@ impl SettlementRegistry {
             UncertainOrder {
                 instrument_id,
                 noted_at,
+                kind: UncertainOrderKind::Submit,
             },
         );
 
         self.resolution_wakeup.notify_one();
     }
 
-    /// Returns the orders whose submit outcome awaits a targeted REST read.
+    /// Returns the orders whose venue state awaits a targeted REST read.
     pub(crate) fn uncertain_orders(&self) -> Vec<(VenueOrderId, UncertainOrder)> {
         self.inner
             .lock()
@@ -507,6 +565,16 @@ impl SettlementRegistry {
             })
     }
 
+    /// Returns whether the registry holds evidence or an observed fill for the trade.
+    pub(crate) fn knows_trade(&self, admitted: &AdmittedTrade) -> bool {
+        let inner = self.inner.lock();
+        inner.records.contains_key(&admitted.venue_trade_id)
+            || admitted
+                .legs
+                .iter()
+                .any(|leg| inner.unbound_legs.contains_key(&leg.trade_id))
+    }
+
     /// Fails report generation while the registry is hydrating or holds unresolved evidence in
     /// the requested instrument scope (or the whole account), so reconciliation cannot infer fill
     /// economics from incomplete coverage.
@@ -592,16 +660,26 @@ impl SettlementRegistry {
              with unresolved evidence"
         );
 
-        let uncertain = inner
+        let (submits, stream_gaps) = inner
             .uncertain_orders
             .iter()
             .filter(|(venue_order_id, order)| order_in_scope(venue_order_id, order))
-            .count();
+            .fold((0, 0), |(submits, stream_gaps), (_, order)| {
+                match order.kind {
+                    UncertainOrderKind::Submit => (submits + 1, stream_gaps),
+                    UncertainOrderKind::StreamGap => (submits, stream_gaps + 1),
+                }
+            });
 
         anyhow::ensure!(
-            uncertain == 0,
-            "cannot generate {report}: {uncertain} Polymarket order(s) have an unknown submit \
+            submits == 0,
+            "cannot generate {report}: {submits} Polymarket order(s) have an unknown submit \
              outcome"
+        );
+        anyhow::ensure!(
+            stream_gaps == 0,
+            "cannot generate {report}: {stream_gaps} Polymarket order(s) await a trade read \
+             after a user stream reconnect"
         );
         Ok(())
     }
@@ -991,6 +1069,23 @@ fn legs_materially_equal(previous: &[AdmittedLeg], incoming: &[AdmittedLeg]) -> 
     previous.len() == incoming.len() && previous.iter().all(|leg| incoming.contains(leg))
 }
 
+/// Marks an order for a targeted REST read of trades missed during a stream gap, unless it already
+/// awaits a read; an unknown submit outcome's read covers trades along with its status.
+fn insert_stream_gap_order(
+    uncertain_orders: &mut AHashMap<VenueOrderId, UncertainOrder>,
+    venue_order_id: VenueOrderId,
+    instrument_id: InstrumentId,
+    noted_at: UnixNanos,
+) {
+    uncertain_orders
+        .entry(venue_order_id)
+        .or_insert(UncertainOrder {
+            instrument_id,
+            noted_at,
+            kind: UncertainOrderKind::StreamGap,
+        });
+}
+
 fn hard_fault(inner: &mut RegistryInner, key: &str, reason: String) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
@@ -1197,7 +1292,7 @@ pub(crate) mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderType},
-        identifiers::{ClientOrderId, StrategyId, TraderId},
+        identifiers::{StrategyId, TraderId},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -1451,11 +1546,16 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    #[case::same_session(false, 1)]
-    #[case::after_reconnect(true, 0)]
+    #[case::same_session(false, 1, vec![])]
+    #[case::after_reconnect(true, 0, vec![(
+        VenueOrderId::from("0xtaker"),
+        UnixNanos::from(9_u64),
+        UncertainOrderKind::StreamGap,
+    )])]
     fn test_venue_assigned_order_id_inherits_session_note(
         #[case] reconnect: bool,
         #[case] expected_applies: usize,
+        #[case] expected_reads: Vec<(VenueOrderId, UnixNanos, UncertainOrderKind)>,
     ) {
         let registry = live_registry();
         let leg = taker_leg();
@@ -1466,11 +1566,22 @@ pub(crate) mod tests {
             registry.begin_session();
         }
 
-        registry.note_order_accepted(expected, leg.venue_order_id);
+        registry.note_order_accepted(
+            expected,
+            leg.venue_order_id,
+            leg.instrument_id,
+            UnixNanos::from(9_u64),
+        );
+        let reads: Vec<_> = registry
+            .uncertain_orders()
+            .into_iter()
+            .map(|(venue_order_id, order)| (venue_order_id, order.noted_at, order.kind))
+            .collect();
         let actions =
             registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![leg]));
 
         assert_eq!(apply_count(&actions), expected_applies);
+        assert_eq!(reads, expected_reads);
     }
 
     #[rstest]
@@ -1972,6 +2083,127 @@ pub(crate) mod tests {
         assert_eq!(listed[0].1.noted_at, UnixNanos::from(7_u64));
         assert!(registry.uncertain_orders().is_empty());
         assert!(registry.ensure_resolved(None, "mass status").is_ok());
+    }
+
+    #[rstest]
+    fn test_stream_gap_reads_open_orders_and_gates_reports_in_scope() {
+        let registry = live_registry();
+        let instrument_a = InstrumentId::from("TOKEN-A.POLYMARKET");
+        let instrument_b = InstrumentId::from("TOKEN-B.POLYMARKET");
+        registry.note_order_open(
+            ClientOrderId::from("O-1"),
+            VenueOrderId::from("0xreplaced"),
+            instrument_a,
+        );
+        registry.note_order_open(
+            ClientOrderId::from("O-1"),
+            VenueOrderId::from("0xopen"),
+            instrument_a,
+        );
+        registry.note_order_open(
+            ClientOrderId::from("O-2"),
+            VenueOrderId::from("0xclosed"),
+            instrument_b,
+        );
+        registry.note_order_closed(&ClientOrderId::from("O-2"));
+
+        registry.begin_session();
+        let woken_by_session = resolution_woken(&registry);
+        registry.note_stream_gap(UnixNanos::from(7_u64));
+        let woken = resolution_woken(&registry);
+
+        let reads: Vec<_> = registry
+            .uncertain_orders()
+            .into_iter()
+            .map(|(venue_order_id, order)| {
+                (
+                    venue_order_id,
+                    order.instrument_id,
+                    order.noted_at,
+                    order.kind,
+                )
+            })
+            .collect();
+
+        let in_scope = registry.ensure_resolved(Some(instrument_a), "fill reports");
+        let other_instrument = registry.ensure_resolved(Some(instrument_b), "fill reports");
+        let order_scope =
+            registry.ensure_order_resolved(&VenueOrderId::from("0xopen"), "fill reports");
+        registry.clear_uncertain_order(&VenueOrderId::from("0xopen"));
+
+        assert!(!woken_by_session);
+        assert!(woken);
+        assert_eq!(
+            reads,
+            vec![(
+                VenueOrderId::from("0xopen"),
+                instrument_a,
+                UnixNanos::from(7_u64),
+                UncertainOrderKind::StreamGap,
+            )]
+        );
+        assert_eq!(
+            in_scope.unwrap_err().to_string(),
+            "cannot generate fill reports: 1 Polymarket order(s) await a trade read after a user \
+             stream reconnect"
+        );
+        assert!(other_instrument.is_ok());
+        assert_eq!(
+            order_scope.unwrap_err().to_string(),
+            "cannot generate fill reports for venue order 0xopen: 1 Polymarket order(s) await a \
+             trade read after a user stream reconnect"
+        );
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+    }
+
+    #[rstest]
+    fn test_stream_gap_keeps_unknown_submit_read() {
+        let registry = live_registry();
+        let venue_order_id = VenueOrderId::from("0xuncertain");
+        let instrument_id = InstrumentId::from("TOKEN-A.POLYMARKET");
+        registry.note_order_uncertain(venue_order_id, instrument_id, UnixNanos::from(3_u64));
+        registry.note_order_open(ClientOrderId::from("O-1"), venue_order_id, instrument_id);
+
+        registry.note_stream_gap(UnixNanos::from(7_u64));
+        let reads = registry.uncertain_orders();
+
+        assert_eq!(reads.len(), 1);
+        assert_eq!(reads[0].0, venue_order_id);
+        assert_eq!(reads[0].1.noted_at, UnixNanos::from(3_u64));
+        assert_eq!(reads[0].1.kind, UncertainOrderKind::Submit);
+        assert_eq!(
+            registry
+                .ensure_resolved(None, "mass status")
+                .unwrap_err()
+                .to_string(),
+            "cannot generate mass status: 1 Polymarket order(s) have an unknown submit outcome"
+        );
+    }
+
+    #[rstest]
+    fn test_knows_trade_from_evidence_or_unbound_observed_fill() {
+        let registry = live_registry();
+        let taker = taker_leg();
+        let maker = maker_leg("0xmaker");
+        let taker_trade = trade(PolymarketTradeStatus::Confirmed, vec![taker.clone()]);
+
+        let maker_trade = AdmittedTrade {
+            venue_trade_id: "trade-2".to_string(),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![maker.clone()],
+        };
+
+        let unknown = (
+            registry.knows_trade(&taker_trade),
+            registry.knows_trade(&maker_trade),
+        );
+        registry.note_order_submitted(taker.venue_order_id);
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![taker]));
+        registry.observe_fill_applied(&applied_fill(&maker, None));
+
+        assert_eq!(unknown, (false, false));
+        assert!(registry.knows_trade(&taker_trade));
+        assert!(registry.knows_trade(&maker_trade));
     }
 
     #[rstest]

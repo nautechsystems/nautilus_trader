@@ -666,7 +666,13 @@ pub(super) fn handle_order_response(
                     let ts_now = clock.get_time_ns();
 
                     order_contexts.register_context(venue_order_id, OrderContext::from(order));
-                    settlement.note_order_accepted(expected_venue_order_id, venue_order_id);
+                    settlement.note_order_accepted(
+                        expected_venue_order_id,
+                        venue_order_id,
+                        order.instrument_id(),
+                        ts_now,
+                    );
+
                     if decision.emit_accepted && order_contexts.mark_accepted(venue_order_id) {
                         emitter.emit_order_accepted(order, venue_order_id, ts_now);
                     }

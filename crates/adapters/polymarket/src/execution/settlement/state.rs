@@ -138,11 +138,22 @@ pub(crate) enum SettlementAction {
     },
 }
 
-/// A submitted order whose venue outcome is unknown, awaiting a targeted REST read.
+/// Why a submitted order awaits a targeted REST read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UncertainOrderKind {
+    /// The submit outcome is unknown.
+    Submit,
+    /// The order was live while the user stream was disconnected, and the stream does not replay
+    /// trades missed during the outage.
+    StreamGap,
+}
+
+/// A submitted order whose venue state is unknown, awaiting a targeted REST read.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UncertainOrder {
     pub instrument_id: InstrumentId,
     pub noted_at: UnixNanos,
+    pub kind: UncertainOrderKind,
 }
 
 /// One synchronized settlement record per venue trade.
