@@ -213,6 +213,7 @@ Released on TBD (UTC).
 - Fixed OKX account state always reporting `MARGIN`, ignoring the configured account type
 - Fixed OKX fee and filled-quantity caches growing unbounded over long-running sessions
 - Fixed OKX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
+- Fixed OKX `close_fraction` orders reconciling with zero quantity (#5068), thanks for reporting @victor-santana-hub
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
