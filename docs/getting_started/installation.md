@@ -66,10 +66,10 @@ We do not recommend release candidates for production environments, such as live
 controlling real capital.
 :::
 
-Run this command outside a NautilusTrader source checkout. The repository root uses an
-`exclude-newer` uv policy for reproducible development, which can filter out newly published
-wheels. Inside a source checkout, use [Build Python from source](#8-build-python-from-source)
-instead.
+Run this command outside a NautilusTrader source checkout. The repository's
+`python/pyproject.toml` sets an `exclude-newer` uv policy for reproducible development, which can
+filter out newly published wheels. Inside a source checkout, use
+[Build Python from source](#8-build-python-from-source) instead.
 
 Current wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
 a debug build, or a platform wheel that is not available.
@@ -105,8 +105,10 @@ This enables users to install either the latest stable release or pre-release ve
 ### Stable wheels
 
 Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard
-versioning. As on PyPI, the latest stable release is still on the 1.x line, so add `--pre` for a
-2.x wheel.
+versioning. As on PyPI, the latest stable release is still on the 1.x line. Unlike PyPI, this index
+also hosts development wheels, so adding `--pre` installs the newest development wheel rather than
+a release candidate. To install a 2.x release candidate, pin its version
+(`nautilus_trader==2.0.0rcN`).
 
 To install the latest stable release:
 
@@ -162,7 +164,7 @@ You can view all available versions of `nautilus_trader` on the [package index](
 To programmatically request and list available versions:
 
 ```bash
-curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -o '<a href="[^"#]*' | sed 's/<a href="//' | sort
 ```
 
 ### Branch updates
@@ -349,7 +351,8 @@ For direct commands and test targets, see the [Python package README][python-rea
 
 ## From GitHub release
 
-To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).
+To install a binary wheel from GitHub, first navigate to the [releases](https://github.com/nautechsystems/nautilus_trader/releases)
+list and open the release matching the version you want.
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
 ```bash
@@ -384,8 +387,8 @@ when porting a 1.x application.
 
 ### uv resolves an older version inside the repository
 
-The repository root sets an `exclude-newer` policy for reproducible development, which hides
-recently published wheels. Run install commands from another directory, or
+The repository's `python/pyproject.toml` sets an `exclude-newer` policy for reproducible
+development, which hides recently published wheels. Run install commands from another directory, or
 [build from source](#from-source).
 
 ### Wheel not found for your platform
@@ -451,9 +454,6 @@ For pure Rust crates, high-precision works on all platforms (including Windows) 
 the `high-precision` feature flag.
 :::
 
-The performance tradeoff is that standard-precision is ~3-5% faster in typical backtests,
-but has lower decimal precision and a smaller representable value range.
-
 :::note
 Performance benchmarks comparing the modes are pending.
 :::
@@ -475,7 +475,7 @@ To enable high-precision (128-bit) mode in Rust, add the `high-precision` featur
 
 ```toml
 [dependencies]
-nautilus-core = { version = "*", features = ["high-precision"] }
+nautilus-model = { version = "*", features = ["high-precision"] }
 ```
 
 :::info

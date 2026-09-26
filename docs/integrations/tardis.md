@@ -849,8 +849,10 @@ Trade ticks use the venue-provided trade ID from the Tardis message or CSV row
 as the `TradeId`. When the venue omits the trade ID (empty string or null on
 some exchanges), both the WebSocket parser and CSV parser fall back to a
 deterministic FNV-1a hash of the symbol, timestamp, price, amount, and side.
-The same venue event yields the same trade ID across replays, keeping
-downstream dedup intact.
+Price and amount hash by decimal value, so both parsers derive the same ID for
+the same event, provided its CSV values round-trip through `f64` unchanged. The
+same venue event yields the same trade ID across replays, keeping downstream
+dedup intact.
 
 ## Limitations and considerations
 

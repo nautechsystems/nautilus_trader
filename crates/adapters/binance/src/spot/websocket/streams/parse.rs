@@ -171,12 +171,12 @@ pub fn parse_bbo_event(
 /// Parses a depth snapshot event into `OrderBookDeltas` using the supplied
 /// adapter initialization timestamp for the aggregate and every inner delta.
 ///
-/// Returns `None` if the snapshot contains no levels.
+/// A snapshot without levels clears the book.
 pub fn parse_depth_snapshot(
     event: &DepthSnapshotStreamEvent,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Option<OrderBookDeltas> {
+) -> OrderBookDeltas {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -197,75 +197,40 @@ pub fn parse_depth_snapshot(
         ts_init,
     ));
 
-    // Add bid levels
-    for (i, level) in event.bids.iter().enumerate() {
-        let price = Price::from_mantissa_exponent(
-            level.price_mantissa,
-            event.price_exponent,
-            price_precision,
-        );
-        let size = Quantity::from_mantissa_exponent(
-            level.qty_mantissa as u64,
-            event.qty_exponent,
-            size_precision,
-        );
-        let flags = if i == event.bids.len() - 1 && event.asks.is_empty() {
-            RecordFlag::F_LAST as u8
-        } else {
-            0
-        };
+    for (side, levels) in [
+        (OrderSide::Buy, &event.bids),
+        (OrderSide::Sell, &event.asks),
+    ] {
+        for level in levels {
+            let price = Price::from_mantissa_exponent(
+                level.price_mantissa,
+                event.price_exponent,
+                price_precision,
+            );
+            let size = Quantity::from_mantissa_exponent(
+                level.qty_mantissa as u64,
+                event.qty_exponent,
+                size_precision,
+            );
+            let order = BookOrder::new(side, price, size, 0);
 
-        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                RecordFlag::F_SNAPSHOT as u8,
+                sequence,
+                ts_event,
+                ts_init,
+            ));
+        }
     }
 
-    // Add ask levels
-    for (i, level) in event.asks.iter().enumerate() {
-        let price = Price::from_mantissa_exponent(
-            level.price_mantissa,
-            event.price_exponent,
-            price_precision,
-        );
-        let size = Quantity::from_mantissa_exponent(
-            level.qty_mantissa as u64,
-            event.qty_exponent,
-            size_precision,
-        );
-        let flags = if i == event.asks.len() - 1 {
-            RecordFlag::F_LAST as u8
-        } else {
-            0
-        };
-
-        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
-    // A snapshot that only contains the synthetic clear delta has no book levels
-    // to apply and is treated as "no usable update".
-    if deltas.len() <= 1 {
-        return None;
-    }
-
-    Some(OrderBookDeltas::new(instrument_id, deltas))
+    OrderBookDeltas::new(instrument_id, deltas)
 }
 
 /// Parses a depth diff event into `OrderBookDeltas` using the supplied adapter
@@ -636,7 +601,7 @@ mod tests {
             symbol: Ustr::from("ETHUSDT"),
         };
 
-        let deltas = parse_depth_snapshot(&event, &instrument, ts_init).unwrap();
+        let deltas = parse_depth_snapshot(&event, &instrument, ts_init);
 
         assert_eq!(deltas.instrument_id, instrument.id());
         assert_eq!(deltas.deltas.len(), 3);
@@ -649,7 +614,11 @@ mod tests {
         assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[2].order.price, Price::new(123.50, 2));
         assert_eq!(deltas.deltas[2].order.size, Quantity::new(3.0, 4));
-        assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(deltas.deltas[1].flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(
+            deltas.deltas[2].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
         assert_eq!(deltas.deltas[0].sequence, 123);
         assert_eq!(deltas.deltas[2].sequence, 123);
         assert_eq!(
@@ -661,7 +630,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_depth_snapshot_empty_returns_none() {
+    fn test_parse_depth_snapshot_empty_clears_book() {
         let instrument = sample_instrument();
         let event = DepthSnapshotStreamEvent {
             event_time_us: 1_700_000_000_000_000,
@@ -675,7 +644,13 @@ mod tests {
 
         let deltas = parse_depth_snapshot(&event, &instrument, UnixNanos::from(2));
 
-        assert!(deltas.is_none());
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].sequence, 123);
+        assert_eq!(
+            deltas.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 
     #[rstest]

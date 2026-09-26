@@ -140,7 +140,8 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
-Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it.
+Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it. A
+Postgres backing clears only the node's trader rows.
 
 Python injects the same database config through `LiveNodeBuilder`. The node constructs and owns the
 adapter when it starts:
@@ -176,6 +177,10 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
+
+A Postgres backing loads, writes, and flushes only the node's trader, so nodes with different
+trader IDs can share one database. See [Cache](../concepts/cache.md) for what a scoped flush keeps
+and how to assign account events persisted before trader scoping.
 
 With `snapshot_orders=True`, the execution engine persists an order snapshot during submission
 processing and after each state change. Order snapshots require a Redis or Postgres cache backing.

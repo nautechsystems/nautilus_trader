@@ -215,7 +215,7 @@ fn test_submit_orders_reject_invalid_notional_limit(mut engine: RiskEngine) {
     let (handler, saved) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
     msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
 
-    let accepted = engine.check_orders_risk(&instrument, &orders, false, RiskCheck::Submit);
+    let accepted = engine.check_orders_risk(&instrument, &orders, false, RiskCheck::Submit, None);
 
     let events = saved.get_messages();
     assert!(!accepted);

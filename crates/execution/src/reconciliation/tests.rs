@@ -4397,6 +4397,15 @@ fn test_create_inferred_reconciliation_trade_id_differs_across_instruments() {
 }
 
 #[rstest]
+#[case::venue_trade_id("T-000001")]
+#[case::uuid_v4("2d89666b-1a1e-4a75-b193-4eb3b454c757")]
+fn test_is_inferred_reconciliation_trade_id_format_rejects_other_formats(#[case] value: &str) {
+    let trade_id = TradeId::from(value);
+
+    assert!(!is_inferred_reconciliation_trade_id_format(&trade_id));
+}
+
+#[rstest]
 fn test_create_inferred_reconciliation_trade_id_is_deterministic() {
     let first = create_inferred_reconciliation_trade_id(
         AccountId::from("TEST-001"),

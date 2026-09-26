@@ -357,7 +357,8 @@ fastest order type on dYdX because they skip on-chain storage.
   dynamic short-term window (`40 blocks × seconds_per_block`)
 - Use Good-Til-Block (GTB) for replay protection instead of Cosmos SDK sequences
 - Can be broadcast **concurrently** (no semaphore, cached sequence)
-- Expire silently without generating cancel events
+- Expire without a cancel transaction; the indexer reports each expiry as a cancel, which the
+  adapter emits as `OrderCanceled`
 - Cannot be batched in a single transaction (one `MsgPlaceOrder` per tx)
 
 #### Long-term orders

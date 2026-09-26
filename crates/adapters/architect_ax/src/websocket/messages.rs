@@ -35,12 +35,9 @@ use crate::{
             AxMarketDataLevel, AxMdRequestType, AxOrderRequestType, AxOrderSide, AxOrderStatus,
             AxOrderWsMessageType, AxTimeInForce,
         },
-        parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
-            deserialize_optional_decimal_or_zero,
-        },
+        parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_from_str},
     },
-    http::models::AxOrderRejectReason,
+    http::models::{AxEstimatedFundingRate, AxOrderRejectReason, AxRepriceBehavior},
 };
 
 /// Market data WebSocket message emitted by the data handler.
@@ -69,6 +66,7 @@ pub enum AxDataWsMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribe {
     /// Client request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Request type (always "subscribe").
     #[serde(rename = "type")]
@@ -92,6 +90,7 @@ pub struct AxMdSubscribe {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribe {
     /// Client request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Request type (always "unsubscribe").
     #[serde(rename = "type")]
@@ -107,6 +106,7 @@ pub struct AxMdUnsubscribe {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribeCandles {
     /// Client request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Request type (always "subscribe_candles").
     #[serde(rename = "type")]
@@ -124,6 +124,7 @@ pub struct AxMdSubscribeCandles {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribeCandles {
     /// Client request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Request type (always "unsubscribe_candles").
     #[serde(rename = "type")]
@@ -142,7 +143,7 @@ pub struct AxMdUnsubscribeCandles {
 pub struct AxMdHeartbeat {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
 }
 
@@ -154,7 +155,7 @@ pub enum AxMdMessage {
     BookL1(AxMdBookL1),
     BookL2(AxMdBookL2),
     BookL3(AxMdBookL3),
-    Ticker(AxMdTicker),
+    Ticker(Box<AxMdTicker>),
     Trade(AxMdTrade),
     Candle(AxMdCandle),
     Heartbeat(AxMdHeartbeat),
@@ -166,8 +167,10 @@ pub enum AxMdMessage {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AxMdSubscriptionResponse {
     /// Request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Result payload (contains subscribed symbol or candle info).
+    #[serde(alias = "res")]
     pub result: AxMdSubscriptionResult,
 }
 
@@ -176,24 +179,26 @@ pub struct AxMdSubscriptionResponse {
 pub struct AxMdSubscriptionResult {
     /// Subscribed symbol (for regular subscriptions).
     #[serde(default)]
-    pub subscribed: Option<String>,
+    pub subscribed: Option<Ustr>,
     /// Subscribed candle info (for candle subscriptions).
     #[serde(default)]
-    pub subscribed_candle: Option<String>,
+    pub subscribed_candle: Option<Ustr>,
     /// Unsubscribed symbol (for unsubscription responses).
     #[serde(default)]
-    pub unsubscribed: Option<String>,
+    pub unsubscribed: Option<Ustr>,
     /// Unsubscribed candle info (for candle unsubscription responses).
     #[serde(default)]
-    pub unsubscribed_candle: Option<String>,
+    pub unsubscribed_candle: Option<Ustr>,
 }
 
 /// Error response from market data WebSocket with nested error object.
 #[derive(Clone, Debug, Deserialize)]
 pub struct AxMdErrorResponse {
     /// Request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: Option<i64>,
     /// Nested error object containing code and message.
+    #[serde(alias = "err")]
     pub error: AxMdErrorInner,
 }
 
@@ -224,24 +229,24 @@ impl From<AxMdErrorResponse> for AxWsError {
 pub struct AxMdTicker {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,
     /// Last price (null when no recent price data, e.g. before first trade).
-    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
-    pub p: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub p: Option<Decimal>,
     /// Last quantity.
     pub q: u64,
     /// Open price (24h), null before first session open.
-    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
-    pub o: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub o: Option<Decimal>,
     /// Low price (24h, null when no recent price data).
-    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
-    pub l: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub l: Option<Decimal>,
     /// High price (24h, null when no recent price data).
-    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
-    pub h: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub h: Option<Decimal>,
     /// Volume (24h).
     pub v: u64,
     /// Open interest.
@@ -262,6 +267,18 @@ pub struct AxMdTicker {
     /// Last settlement price.
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub lsp: Option<Decimal>,
+    /// Best bid price.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub bp: Option<Decimal>,
+    /// Best ask price.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub ap: Option<Decimal>,
+    /// Last settlement timestamp (Unix epoch seconds).
+    #[serde(default)]
+    pub lst: Option<i64>,
+    /// Live funding estimate.
+    #[serde(default)]
+    pub ef: Option<AxEstimatedFundingRate>,
 }
 
 /// Trade message from market data WebSocket.
@@ -348,7 +365,7 @@ pub struct AxBookLevelL3 {
 pub struct AxMdBookL1 {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,
@@ -369,7 +386,7 @@ pub struct AxMdBookL1 {
 pub struct AxMdBookL2 {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,
@@ -393,7 +410,7 @@ pub struct AxMdBookL2 {
 pub struct AxMdBookL3 {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,
@@ -413,6 +430,7 @@ pub struct AxMdBookL3 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsPlaceOrder {
     /// Request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Message type (always "p").
     pub t: AxOrderRequestType,
@@ -447,6 +465,7 @@ pub struct AxWsPlaceOrder {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsCancelOrder {
     /// Request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Message type (always "x").
     pub t: AxOrderRequestType,
@@ -461,6 +480,7 @@ pub struct AxWsCancelOrder {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsGetOpenOrders {
     /// Request ID for correlation.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Message type (always "o").
     pub t: AxOrderRequestType,
@@ -473,8 +493,10 @@ pub struct AxWsGetOpenOrders {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsPlaceOrderResponse {
     /// Request ID matching the original request.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Response result.
+    #[serde(alias = "result")]
     pub res: AxWsPlaceOrderResult,
 }
 
@@ -492,8 +514,10 @@ pub struct AxWsPlaceOrderResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsCancelOrderResponse {
     /// Request ID matching the original request.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Response result.
+    #[serde(alias = "result")]
     pub res: AxWsCancelOrderResult,
 }
 
@@ -511,8 +535,10 @@ pub struct AxWsCancelOrderResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOpenOrdersResponse {
     /// Request ID matching the original request.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Open orders result.
+    #[serde(alias = "result")]
     pub res: AxWsOpenOrdersResult,
 }
 
@@ -529,8 +555,10 @@ pub struct AxWsOpenOrdersResult {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AxWsOrderErrorResponse {
     /// Request ID matching the original request.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Error details.
+    #[serde(alias = "error")]
     pub err: AxWsOrderError,
 }
 
@@ -538,9 +566,9 @@ pub struct AxWsOrderErrorResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AxWsOrderError {
     /// Error code (e.g., 400).
-    pub code: i64,
+    pub code: Option<i64>,
     /// Error message.
-    pub msg: String,
+    pub msg: Option<String>,
 }
 
 /// List subscription response from the Ax orders WebSocket.
@@ -549,8 +577,10 @@ pub struct AxWsOrderError {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AxWsListResponse {
     /// Request ID matching the original request.
+    #[serde(alias = "request_id")]
     pub rid: i64,
     /// Response result.
+    #[serde(alias = "result")]
     pub res: AxWsListResult,
 }
 
@@ -562,6 +592,12 @@ pub struct AxWsListResult {
     /// Order data (null on initial subscription, array of orders otherwise).
     #[serde(default)]
     pub o: Option<Vec<AxWsOrder>>,
+    /// Whether orders cancel on disconnect.
+    #[serde(default)]
+    pub cod: Option<bool>,
+    /// Client heartbeat timeout accepted by the server, in seconds.
+    #[serde(default)]
+    pub chb: Option<u64>,
 }
 
 /// Order details in WebSocket messages.
@@ -570,7 +606,7 @@ pub struct AxWsOrder {
     /// Order ID.
     pub oid: String,
     /// User ID.
-    pub u: String,
+    pub u: Ustr,
     /// Instrument symbol.
     pub s: Ustr,
     /// Order price.
@@ -590,7 +626,7 @@ pub struct AxWsOrder {
     pub tif: AxTimeInForce,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Optional client order ID.
     #[serde(default)]
@@ -601,6 +637,18 @@ pub struct AxWsOrder {
     /// Optional text/description.
     #[serde(default)]
     pub txt: Option<String>,
+    /// Account identifier.
+    #[serde(default)]
+    pub aid: Option<Ustr>,
+    /// Whether the order is post-only.
+    #[serde(default)]
+    pub po: bool,
+    /// Post-only reprice behavior reported by AX.
+    #[serde(default)]
+    pub rb: Option<AxRepriceBehavior>,
+    /// Order rejection reason.
+    #[serde(default)]
+    pub r: Option<AxOrderRejectReason>,
 }
 
 /// Heartbeat event from orders WebSocket.
@@ -613,7 +661,7 @@ pub struct AxWsHeartbeat {
     pub t: AxOrderWsMessageType,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
 }
 
@@ -625,7 +673,7 @@ pub struct AxWsHeartbeat {
 pub struct AxWsOrderAcknowledged {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -649,6 +697,9 @@ pub struct AxWsTradeExecution {
     pub d: AxOrderSide,
     /// Whether this was an aggressor (taker) order.
     pub agg: bool,
+    /// Account identifier.
+    #[serde(default)]
+    pub aid: Option<Ustr>,
 }
 
 /// Order partially filled event.
@@ -659,7 +710,7 @@ pub struct AxWsTradeExecution {
 pub struct AxWsOrderPartiallyFilled {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -677,7 +728,7 @@ pub struct AxWsOrderPartiallyFilled {
 pub struct AxWsOrderFilled {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -695,7 +746,7 @@ pub struct AxWsOrderFilled {
 pub struct AxWsOrderCanceled {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -716,7 +767,7 @@ pub struct AxWsOrderCanceled {
 pub struct AxWsOrderRejected {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -738,7 +789,7 @@ pub struct AxWsOrderRejected {
 pub struct AxWsOrderExpired {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -754,16 +805,18 @@ pub struct AxWsOrderExpired {
 pub struct AxWsOrderReplaced {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
     /// Replaced order details.
     pub ro: Box<AxWsOrder>,
-    /// New order ID assigned to the replacement order.
-    pub noid: String,
-    /// New order details.
-    pub no: Box<AxWsOrder>,
+    /// New order ID for cancel-replace; absent for an in-place amend.
+    #[serde(default)]
+    pub noid: Option<String>,
+    /// New order details for cancel-replace; absent for an in-place amend.
+    #[serde(default)]
+    pub no: Option<Box<AxWsOrder>>,
 }
 
 /// Order done for day event.
@@ -774,7 +827,7 @@ pub struct AxWsOrderReplaced {
 pub struct AxWsOrderDoneForDay {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Event ID.
     pub eid: String,
@@ -790,7 +843,7 @@ pub struct AxWsOrderDoneForDay {
 pub struct AxWsCancelRejected {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Subsecond timestamp nanoseconds.
     pub tn: i64,
     /// Order ID that failed to cancel.
     pub oid: String,
@@ -799,6 +852,12 @@ pub struct AxWsCancelRejected {
     /// Rejection text/description.
     #[serde(default)]
     pub txt: Option<String>,
+    /// Client order identifier.
+    #[serde(default)]
+    pub cid: Option<u64>,
+    /// Order details, when provided by the venue.
+    #[serde(default)]
+    pub o: Option<AxWsOrder>,
 }
 
 /// Venue-level order event from the Ax orders WebSocket.
@@ -924,8 +983,11 @@ impl AxWsError {
 impl From<AxWsOrderErrorResponse> for AxWsError {
     fn from(resp: AxWsOrderErrorResponse) -> Self {
         Self {
-            code: Some(resp.err.code.to_string()),
-            message: resp.err.msg,
+            code: resp.err.code.map(|code| code.to_string()),
+            message: resp
+                .err
+                .msg
+                .unwrap_or_else(|| "AX request failed without an error message".to_owned()),
             request_id: Some(resp.rid),
         }
     }
@@ -1182,10 +1244,10 @@ mod tests {
             panic!("expected ticker message");
         };
         assert_eq!(ticker.s, "QQQ-PERP");
-        assert_eq!(ticker.p, Decimal::ZERO);
-        assert_eq!(ticker.o, Decimal::ZERO);
-        assert_eq!(ticker.l, Decimal::ZERO);
-        assert_eq!(ticker.h, Decimal::ZERO);
+        assert_eq!(ticker.p, None);
+        assert_eq!(ticker.o, None);
+        assert_eq!(ticker.l, None);
+        assert_eq!(ticker.h, None);
         assert_eq!(ticker.m, Some(dec!(716.38)));
         assert_eq!(ticker.i, Some(AxInstrumentState::Open));
     }
@@ -1305,9 +1367,9 @@ mod tests {
         let json = include_str!("../../test_data/ws_order_replaced_live.json");
         let msg: AxWsOrderReplaced = serde_json::from_str(json).unwrap();
 
-        assert_eq!(msg.noid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
-        assert_eq!(msg.no.oid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
-        assert_eq!(msg.no.p, dec!(1.0926));
+        assert_eq!(msg.noid.as_deref(), Some("O-01KWY01WX8JT4DABKC6FRS5NT4"));
+        assert_eq!(msg.no.as_ref().unwrap().oid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
+        assert_eq!(msg.no.as_ref().unwrap().p, dec!(1.0926));
         assert_eq!(msg.ro.o, AxOrderStatus::Replaced);
     }
 
@@ -1330,8 +1392,8 @@ mod tests {
         let json = include_str!("../../test_data/ws_order_error_response.json");
         let msg: AxWsOrderErrorResponse = serde_json::from_str(json).unwrap();
         assert_eq!(msg.rid, 1);
-        assert_eq!(msg.err.code, 400);
-        assert!(msg.err.msg.contains("initial margin"));
+        assert_eq!(msg.err.code, Some(400));
+        assert!(msg.err.msg.as_deref().unwrap().contains("initial margin"));
     }
 
     #[rstest]
@@ -1411,5 +1473,40 @@ mod tests {
     fn test_parse_order_message_variants(#[case] json: &str, #[case] expected: FrameKind) {
         let msg = parse_order_message(json).expect("should parse");
         assert_eq!(classify(&msg), expected);
+    }
+    #[rstest]
+    fn test_ticker_missing_prices_remain_absent() {
+        let mut value: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_md_ticker_null_prices.json"
+        ))
+        .unwrap();
+
+        for field in ["p", "o", "l", "h"] {
+            value.as_object_mut().unwrap().remove(field);
+        }
+
+        let ticker: AxMdTicker = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            (ticker.p, ticker.o, ticker.l, ticker.h),
+            (None, None, None, None)
+        );
+        assert_eq!(ticker.m, Some(dec!(716.38)));
+    }
+
+    #[rstest]
+    #[case(include_str!("../../test_data/captured/open-reject.json"))]
+    #[case(include_str!("../../test_data/captured/open-backoff.json"))]
+    #[case(include_str!("../../test_data/captured/open-top.json"))]
+    #[case(include_str!("../../test_data/captured/open-inactive.json"))]
+    fn test_ws_order_preserves_captured_metadata(#[case] raw: &str) {
+        let response: serde_json::Value = serde_json::from_str(raw).unwrap();
+        for value in response["orders"].as_array().unwrap() {
+            let order: AxWsOrder = serde_json::from_value(value.clone()).unwrap();
+            let actual = serde_json::to_value(order).unwrap();
+
+            for field in ["aid", "po", "rb", "ts", "tn", "oid", "q", "xq", "rq"] {
+                assert_eq!(actual[field], value[field], "{field}");
+            }
+        }
     }
 }

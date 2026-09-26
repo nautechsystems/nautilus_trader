@@ -17,7 +17,7 @@
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
+use nautilus_common::cache::fifo::FifoCacheMap;
 #[cfg(test)]
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
@@ -31,6 +31,7 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
+use super::settlement::SettlementRegistry;
 use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
 
 /// Cumulative fill state for a single order.
@@ -43,15 +44,24 @@ struct OrderFillState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FillCorrectionMetadata {
-    pub correction_key: String,
+    pub venue_trade_id: String,
     pub info: Option<IndexMap<Ustr, Ustr>>,
-    pub is_confirmed: bool,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct BufferedFill {
     pub report: FillReport,
     pub correction: Option<FillCorrectionMetadata>,
+}
+
+impl BufferedFill {
+    /// Returns whether the fill may emit now: a fill without correction metadata always may, and
+    /// a trade fill only while the settlement registry permits its application.
+    pub(crate) fn claim(&self, settlement: &SettlementRegistry) -> bool {
+        self.correction.as_ref().is_none_or(|correction| {
+            settlement.claim_buffered_fill(&correction.venue_trade_id, &self.report.trade_id)
+        })
+    }
 }
 
 /// Registration map plus the fill and order-report buffers, all under one mutex.
@@ -65,9 +75,6 @@ struct TrackerInner {
     orders: AHashMap<VenueOrderId, OrderFillState>,
     pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
     pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
-    voided_trades: FifoCache<String, 10_000>,
-    confirmed_trades: FifoCache<String, 10_000>,
-    applied_buffered_fills: FifoCacheMap<String, Vec<OrderFilled>, 10_000>,
 }
 
 /// Tracks per-order fill accumulation, detects dust residuals, and buffers WS messages that arrive
@@ -244,78 +251,26 @@ impl OrderFillTrackerMap {
             .unwrap_or_default()
     }
 
-    /// Emits a buffered fill and records it for a possible later trade failure atomically.
+    /// Emits a buffered fill once `authorize` allows it, otherwise suppresses it and rolls back
+    /// its tracker quantity.
     ///
-    /// If `FAILED` won the lock first, the fill is suppressed and its tracker quantity is rolled
-    /// back. Otherwise the event is sent before it becomes visible to the failure path, preserving
-    /// `OrderFilled` before `OrderFillVoided` on the execution channel.
-    pub(crate) fn emit_buffered_fill<F>(
-        &self,
-        fill: OrderFilled,
-        correction: Option<&FillCorrectionMetadata>,
-        emit: F,
-    ) -> bool
+    /// The decision, rollback, and overfill bump run under the tracker lock, so they stay
+    /// consistent with concurrent fills for the same order.
+    pub(crate) fn emit_buffered_fill<A, F>(&self, fill: OrderFilled, authorize: A, emit: F) -> bool
     where
+        A: FnOnce() -> bool,
         F: FnOnce(OrderFilled, Option<Quantity>),
     {
-        let Some(correction) = correction else {
-            let new_qty = self.buy_overfill_bump(&fill.venue_order_id);
-            emit(fill, new_qty);
-            return true;
-        };
-
         let mut guard = self.inner.lock();
-        if guard.voided_trades.contains(&correction.correction_key) {
+
+        if !authorize() {
             reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
             return false;
         }
 
         let new_qty = buy_overfill_bump_in(&mut guard.orders, &fill.venue_order_id);
-        emit(fill.clone(), new_qty);
-
-        if let Some(fills) = guard
-            .applied_buffered_fills
-            .get_mut(&correction.correction_key)
-        {
-            fills.push(fill);
-        } else {
-            guard
-                .applied_buffered_fills
-                .insert(correction.correction_key.clone(), vec![fill]);
-        }
+        emit(fill, new_qty);
         true
-    }
-
-    /// Marks a trade failed and returns buffered fills that were already emitted.
-    pub(crate) fn void_buffered_trade(&self, correction_key: &str) -> Vec<OrderFilled> {
-        let key = correction_key.to_string();
-        let mut guard = self.inner.lock();
-        guard.confirmed_trades.remove(&key);
-        guard.voided_trades.add(key.clone());
-        let fills = guard
-            .applied_buffered_fills
-            .remove(&key)
-            .unwrap_or_default();
-
-        for fill in &fills {
-            reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
-        }
-        fills
-    }
-
-    pub(crate) fn mark_trade_confirmed(&self, correction_key: &str) {
-        self.inner
-            .lock()
-            .confirmed_trades
-            .add(correction_key.to_string());
-    }
-
-    #[must_use]
-    pub(crate) fn is_trade_confirmed(&self, correction_key: &str) -> bool {
-        self.inner
-            .lock()
-            .confirmed_trades
-            .contains(&correction_key.to_string())
     }
 
     pub(crate) fn reverse_fill(&self, venue_order_id: &VenueOrderId, quantity: Quantity) {
@@ -694,7 +649,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_failed_trade_suppresses_buffered_fill_drained_later() {
+    fn test_refused_buffered_fill_is_suppressed_and_rolled_back() {
         use std::cell::Cell;
 
         use nautilus_model::{
@@ -722,18 +677,18 @@ mod tests {
             client_order_id: None,
             venue_position_id: None,
         };
-        let correction_key = "trade-failed-before-drain-order-failed-before-drain";
+
+        let venue_trade_id = "trade-failed-before-drain-order-failed-before-drain";
 
         let accepted = tracker.accept_or_buffer_fill(
             venue_order_id,
             report.clone(),
             FillCorrectionMetadata {
-                correction_key: correction_key.to_string(),
+                venue_trade_id: venue_trade_id.to_string(),
                 info: None,
-                is_confirmed: false,
             },
         );
-        let prior_fills = tracker.void_buffered_trade(correction_key);
+
         let drained = tracker.register_and_take_pending_fills(
             venue_order_id,
             Some(ClientOrderId::from("O-FAILED-BEFORE-DRAIN")),
@@ -764,12 +719,16 @@ mod tests {
             None,
         );
         let was_emitted = Cell::new(false);
-        let emitted = tracker.emit_buffered_fill(fill, buffered.correction.as_ref(), |_, _| {
-            was_emitted.set(true);
-        });
+
+        let emitted = tracker.emit_buffered_fill(
+            fill,
+            || buffered.correction.is_none(),
+            |_, _| {
+                was_emitted.set(true);
+            },
+        );
 
         assert!(accepted.is_none());
-        assert!(prior_fills.is_empty());
         assert_eq!(drained.len(), 1);
         assert!(!emitted);
         assert!(!was_emitted.get());

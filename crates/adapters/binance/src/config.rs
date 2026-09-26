@@ -21,6 +21,7 @@ use nautilus_common::factories::ClientConfig;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     enums::OmsType,
     identifiers::{AccountId, InstrumentId},
@@ -225,6 +226,12 @@ pub struct BinanceDataClientConfig {
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Bounds each REST depth snapshot request for diff depth books. Set to 0 to disable.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
@@ -255,6 +262,7 @@ nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
     instrument_provider: BinanceInstrumentProviderConfig,
     instrument_refresh_interval_secs: u64,
     instrument_status_poll_secs: u64,
+    book_snapshot_timeout_secs: u64,
     recv_window_ms: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,
@@ -583,6 +591,7 @@ instrument_status_poll_secs = 600
         assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.spot_market_data_mode, BinanceSpotMarketDataMode::Sbe);
         assert_eq!(config.instrument_status_poll_secs, 600);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]

@@ -81,7 +81,7 @@ pub fn pool_definition(
     let arbitrum = arbitrum();
     let dex = uniswap_v3();
     let weth = Token::new(
-        arbitrum.clone(),
+        Arc::clone(&arbitrum),
         address!("0x37a645648dF29205C6261289983FB04ECD70b4B3"),
         "Wrapped Ether".to_string(),
         "WETH".to_string(),
@@ -1162,7 +1162,7 @@ fn test_pancakeswap_snapshot_restore_preserves_fee_model_for_replay(mut profiler
         .unwrap();
 
     let snapshot = profiler.extract_snapshot().unwrap();
-    let mut restored = PoolProfiler::new(profiler.pool.clone());
+    let mut restored = PoolProfiler::new(Arc::clone(&profiler.pool));
     restored.restore_from_snapshot(snapshot).unwrap();
     restored
         .process(&DexPoolData::Flash(create_flash_event(
@@ -3541,7 +3541,7 @@ fn test_process_swap_replays_min_boundary_to_event_state() {
     // confirm the applied state matches on-chain. The matching simulate-level test proves the
     // simulation already reaches these values, so the self-correction branches do not fire here.
     let mut profiler = min_boundary_profiler();
-    let pool = profiler.pool.clone();
+    let pool = Arc::clone(&profiler.pool);
     let min_plus_1 = U160::from(4_295_128_740u64);
 
     let swap = PoolSwap::new(

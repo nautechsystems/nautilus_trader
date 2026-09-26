@@ -164,7 +164,11 @@ def run_backtest() -> object:
         / "publishers.json"
     )
     loader = DatabentoDataLoader(publishers_path)
-    quotes = loader.load_quotes(filepath=GC_DBN, instrument_id=instrument_id)
+    quotes = loader.load_quotes(
+        filepath=GC_DBN,
+        instrument_id=instrument_id,
+        price_precision=XAU_PERP.price_precision,
+    )
 
     engine = BacktestEngine(
         BacktestEngineConfig(

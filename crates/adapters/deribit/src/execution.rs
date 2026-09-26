@@ -15,7 +15,7 @@
 
 //! Live execution client implementation for the Deribit adapter.
 
-use std::{future::Future, time::Duration};
+use std::{future::Future, io, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -48,6 +48,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
+use serde::Serialize;
 
 use crate::{
     common::{
@@ -59,7 +60,7 @@ use crate::{
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
         client::DeribitWebSocketClient,
-        messages::{DeribitOrderParams, NautilusWsMessage},
+        messages::{DeribitEditParams, DeribitOrderParams, NautilusWsMessage},
         parse::parse_user_order_msg,
     },
 };
@@ -237,7 +238,7 @@ impl DeribitExecutionClient {
         }
     }
 
-    // Rejects unsupported order types and time-in-force values
+    // Rejects unsupported order types, time-in-force values, and params without exact JSON numbers
     fn build_order_params(order: &dyn Order) -> anyhow::Result<DeribitOrderParams> {
         let order_type = match order.order_type() {
             OrderType::Limit => "limit",
@@ -287,7 +288,7 @@ impl DeribitExecutionClient {
 
         let trigger = resolve_trigger_type(order.trigger_type());
 
-        Ok(DeribitOrderParams {
+        let params = DeribitOrderParams {
             instrument_name: order.instrument_id().symbol.to_string(),
             amount: order.quantity().as_decimal(),
             order_type,
@@ -313,7 +314,11 @@ impl DeribitExecutionClient {
             trigger,
             max_show: None,
             valid_until,
-        })
+        };
+
+        check_params_serialize(&params)?;
+
+        Ok(params)
     }
 
     /// Submits a single order to Deribit.
@@ -908,13 +913,25 @@ impl ExecutionClient for DeribitExecutionClient {
             "Modifying order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
+        let params = DeribitEditParams {
+            order_id: order_id.clone(),
+            amount: quantity.as_decimal(),
+            price: Some(price.as_decimal()),
+            post_only: None,
+            reject_post_only: None,
+            reduce_only: None,
+            trigger_price: None,
+        };
+
+        if let Err(e) = check_params_serialize(&params) {
+            return reject_modify_command(&self.emitter, self.clock, &cmd, &e.to_string());
+        }
+
         // Spawn async task to send modify via WebSocket
         self.spawn_task("modify_order", async move {
             if let Err(e) = ws_client
                 .modify_order(
-                    &order_id,
-                    quantity,
-                    price,
+                    params,
                     client_order_id,
                     trader_id,
                     strategy_id,
@@ -1203,6 +1220,13 @@ fn reject_modify_command(
         ts_event,
     );
     anyhow::bail!("{reason}");
+}
+
+// Serializes the params as the handler will, so a decimal without an exact JSON number is rejected
+// locally instead of failing after the order is submitted.
+fn check_params_serialize<T: Serialize>(params: &T) -> anyhow::Result<()> {
+    serde_json::to_writer(io::sink(), params)
+        .map_err(|e| anyhow::anyhow!("Cannot serialize order params: {e}"))
 }
 
 #[cfg(test)]

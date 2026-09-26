@@ -935,6 +935,7 @@ proptest! {
             ts_last,
         );
         prop_assert_eq!(a, b);
+        prop_assert!(is_inferred_reconciliation_trade_id_format(&a));
     }
 
     #[rstest]

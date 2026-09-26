@@ -790,6 +790,17 @@ pub struct OKXPosition {
     /// Black-Scholes vega in dollars, only applicable to OPTION.
     #[serde(default)]
     pub vega_bs: String,
+    /// Algo orders placed with `closeFraction` to close this position.
+    #[serde(default)]
+    pub close_order_algo: Vec<OKXCloseOrderAlgo>,
+}
+
+/// Represents an algo order that closes an OKX position through `closeFraction`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCloseOrderAlgo {
+    /// Algo order ID.
+    pub algo_id: String,
 }
 
 /// Represents the response from `POST /api/v5/trade/order` (place order).

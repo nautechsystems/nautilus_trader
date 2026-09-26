@@ -20,6 +20,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use axum::{
     Router,
     extract::State,
+    http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
 };
@@ -454,6 +455,81 @@ fn create_router(state: TestServerState) -> Router {
         .route("/api/v2", post(handle_jsonrpc_request))
         .route("/health", get(|| async { "OK" }))
         .with_state(state)
+}
+
+async fn start_raw_response_server(status: StatusCode, body: &'static str) -> SocketAddr {
+    let app = Router::new()
+        .route("/api/v2", post(move || async move { (status, body) }))
+        .route("/health", get(|| async { "OK" }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind test server");
+    let addr = listener.local_addr().expect("Failed to get local addr");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("Test server failed");
+    });
+
+    addr
+}
+
+async fn get_instrument_from_raw_response(
+    status: StatusCode,
+    body: &'static str,
+) -> DeribitHttpError {
+    let addr = start_raw_response_server(status, body).await;
+    wait_for_server(addr).await;
+
+    let client = DeribitRawHttpClient::new(
+        Some(format!("http://{addr}/api/v2")),
+        DeribitEnvironment::Mainnet,
+        5,
+        0,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
+
+    let params = GetInstrumentParams {
+        instrument_name: "BTC-PERPETUAL".to_string(),
+    };
+
+    client.get_instrument(params).await.unwrap_err()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_non_json_response_returns_unexpected_status() {
+    let error =
+        get_instrument_from_raw_response(StatusCode::BAD_REQUEST, "<html>Bad Request</html>").await;
+
+    match error {
+        DeribitHttpError::UnexpectedStatus { status, body } => {
+            assert_eq!(status, 400);
+            assert_eq!(body, "<html>Bad Request</html>");
+        }
+        other => panic!("Expected UnexpectedStatus, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_json_response_with_invalid_result_returns_json_error() {
+    let error = get_instrument_from_raw_response(
+        StatusCode::OK,
+        r#"{"jsonrpc":"2.0","id":1,"result":{"unexpected":true}}"#,
+    )
+    .await;
+
+    match error {
+        DeribitHttpError::JsonError(message) => {
+            assert!(message.contains("missing field"), "{message}");
+        }
+        other => panic!("Expected JsonError, was {other:?}"),
+    }
 }
 
 #[rstest]
@@ -1063,19 +1139,19 @@ async fn test_get_tradingview_chart_data_success() {
 
     // Verify first bar data
     assert_eq!(chart_data.ticks[0], 1766483460000);
-    assert_eq!(chart_data.open[0], 87451.0);
-    assert_eq!(chart_data.high[0], 87456.5);
-    assert_eq!(chart_data.low[0], 87451.0);
-    assert_eq!(chart_data.close[0], 87456.5);
-    assert_eq!(chart_data.volume[0], 2.94375216);
+    assert_eq!(chart_data.open[0], dec!(87451.0));
+    assert_eq!(chart_data.high[0], dec!(87456.5));
+    assert_eq!(chart_data.low[0], dec!(87451.0));
+    assert_eq!(chart_data.close[0], dec!(87456.5));
+    assert_eq!(chart_data.volume[0], dec!(2.94375216));
 
     // Verify last bar data
     assert_eq!(chart_data.ticks[4], 1766483700000);
-    assert_eq!(chart_data.open[4], 87456.0);
-    assert_eq!(chart_data.high[4], 87456.5);
-    assert_eq!(chart_data.low[4], 87456.0);
-    assert_eq!(chart_data.close[4], 87456.0);
-    assert_eq!(chart_data.volume[4], 0.1018798);
+    assert_eq!(chart_data.open[4], dec!(87456.0));
+    assert_eq!(chart_data.high[4], dec!(87456.5));
+    assert_eq!(chart_data.low[4], dec!(87456.0));
+    assert_eq!(chart_data.close[4], dec!(87456.0));
+    assert_eq!(chart_data.volume[4], dec!(0.1018798));
 
     // Verify request was tracked
     assert_eq!(
@@ -1189,12 +1265,12 @@ async fn test_get_order_book_success() {
     assert_eq!(order_book.best_ask_amount, Some(dec!(125090.0)));
 
     // Verify first bid level
-    assert_eq!(order_book.bids[0][0], 87002.5); // price
-    assert_eq!(order_book.bids[0][1], 199190.0); // amount
+    assert_eq!(order_book.bids[0][0], dec!(87002.5)); // price
+    assert_eq!(order_book.bids[0][1], dec!(199190.0)); // amount
 
     // Verify first ask level
-    assert_eq!(order_book.asks[0][0], 87003.0); // price
-    assert_eq!(order_book.asks[0][1], 125090.0); // amount
+    assert_eq!(order_book.asks[0][0], dec!(87003.0)); // price
+    assert_eq!(order_book.asks[0][1], dec!(125090.0)); // amount
 
     // Verify timestamp
     assert_eq!(order_book.timestamp, 1766554855140);

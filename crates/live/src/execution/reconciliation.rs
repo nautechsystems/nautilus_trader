@@ -38,7 +38,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::reconciliation::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
-    should_reconciliation_update,
+    is_inferred_reconciliation_trade_id_format, should_reconciliation_update,
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -185,13 +185,15 @@ pub struct PositionFillReportPlan {
     pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
 }
 
-/// Whether a fill is attributable and free of active inferred-fill overlap.
+/// Whether a fill is attributable and free of inferred-fill or reconciled-position overlap.
 #[derive(Debug)]
 pub enum PositionFillReportPreparation {
     /// The report can be applied to the cached execution state.
     Ready,
     /// An active inferred fill prevents authoritative replay.
     InferredOverlap,
+    /// A position reconciled from a venue position report already includes the fill.
+    SnapshotOverlap,
     /// A hedge fill cannot be assigned to an unambiguous position.
     Unattributed,
 }
@@ -598,12 +600,27 @@ pub(super) fn should_project_fill(
 
 /// Checks active fill history for deterministic inferred reconciliation IDs.
 ///
+/// Replays the order only when an active reconciliation fill has the inferred ID format.
+///
 /// # Errors
 ///
-/// Returns an error if the cached order history cannot be replayed.
+/// Returns an error if the order requires replay and its cached history cannot be replayed.
 pub(super) fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
     let events = order.events();
     let trade_ids = order.trade_ids();
+
+    let is_candidate = |fill: &OrderFilled| {
+        fill.reconciliation
+            && is_inferred_reconciliation_trade_id_format(&fill.trade_id)
+            && trade_ids.contains(&&fill.trade_id)
+    };
+
+    if !events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(fill) if is_candidate(fill)))
+    {
+        return Ok(false);
+    }
 
     let Some((first, remaining)) = events.split_first() else {
         return Ok(false);
@@ -628,7 +645,7 @@ pub(super) fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool>
             continue;
         };
 
-        if !fill.reconciliation || !trade_ids.contains(&&fill.trade_id) {
+        if !is_candidate(fill) {
             continue;
         }
 
@@ -1125,6 +1142,43 @@ pub(super) mod tests {
             .collect();
 
         (instrument, fills)
+    }
+
+    #[rstest]
+    #[case::venue_format("T-VENUE-1")]
+    #[case::uuid_v5_format("2d89666b-1a1e-5a75-b193-4eb3b454c757")]
+    fn test_has_active_inferred_fill_ignores_venue_trade_ids(#[case] trade_id: &str) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("TEST-001"));
+        order.apply(submitted).unwrap();
+
+        let trade_id = TradeId::from(trade_id);
+
+        let OrderEventAny::Filled(mut fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(trade_id),
+            None,
+            Some(Price::from("100.00")),
+            Some(Quantity::from("1.000")),
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        fill.reconciliation = true;
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+
+        assert!(order.trade_ids().contains(&&trade_id));
+        assert!(!has_active_inferred_fill(&order).unwrap());
     }
 
     #[rstest]

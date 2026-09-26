@@ -26,9 +26,7 @@
 //!
 //! Run with: `cargo run --example bybit-greeks-tester --package nautilus-bybit --features examples`
 //!
-//! Credentials are read from the environment when set:
-//! - `BYBIT_API_KEY`
-//! - `BYBIT_API_SECRET`
+//! The data client uses public market data endpoints, so no API credentials are needed.
 
 use std::fmt::Debug;
 
@@ -198,8 +196,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = *BYBIT_CLIENT_ID;
 
     let bybit_config = BybitDataClientConfig {
-        api_key: None,    // Will use 'BYBIT_API_KEY' env var
-        api_secret: None, // Will use 'BYBIT_API_SECRET' env var
+        api_key: None,
+        api_secret: None,
         product_types: vec![BybitProductType::Option],
         ..Default::default()
     };

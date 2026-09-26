@@ -434,19 +434,35 @@ tick-by-tick book updates.
 
 ### Sequence gap recovery
 
-The adapter records the `change_id` of every book message and checks the `prev_change_id` of
-each incremental update against it. Only raw-channel updates carry `prev_change_id`; aggregated
-messages are self-contained snapshots and need no sequence check.
+The adapter records the `change_id` of every book message it applies and checks the
+`prev_change_id` of each incremental update against it. Only raw-channel updates carry
+`prev_change_id`; aggregated messages are self-contained snapshots and need no sequence check.
 
-When a gap is detected (a missed message), the adapter automatically:
+When a gap is detected (a missed message), or a level in a book message fails conversion to `Price`
+or `Quantity` (for example, a value beyond their range), the adapter automatically:
 
-1. Drops the delta that exposed the gap, and every further delta for the affected instrument.
-2. Unsubscribes from that instrument's book channels.
+1. Drops that message, and every further delta for the affected instrument.
+2. Unsubscribes from that instrument's delta book channels.
 3. Resubscribes once the unsubscribe is acknowledged, to obtain a fresh snapshot.
-4. Resumes normal processing once the snapshot arrives, reseeding the sequence from it.
+4. Resumes normal processing once each resubscribed channel delivers a snapshot that converts,
+   reseeding the sequence from it.
 
 During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
 unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
+
+A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every
+interval, so the adapter never resyncs it: it drops a snapshot that fails conversion, and the next
+snapshot replaces the book.
+
+:::warning[Subscribe each instrument to one delta book channel]
+Book channels for the same instrument share one sequence and resync state. If an instrument has more
+than one delta book channel (for example `raw` and `100ms`) and a resync starts while one of them
+still awaits its initial snapshot, that channel can stay unsubscribed until the next reconnect.
+:::
+
+The adapter logs a warning and skips a malformed level, including a value that does not parse as a
+decimal. A level whose amount rounds to zero at the instrument's size precision is treated as
+absent: snapshots skip it, incremental updates delete it, and the adapter logs a warning.
 
 ## Funding rates
 

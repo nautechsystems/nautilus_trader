@@ -160,8 +160,8 @@ class FillModel:
         self,
         _instrument: typing.Any,
         _order: typing.Any,
-        _best_bid: model.Price,
-        _best_ask: model.Price,
+        _best_bid: model.Price | None = ...,
+        _best_ask: model.Price | None = ...,
     ) -> model.OrderBook | None: ...
 
 @typing.final

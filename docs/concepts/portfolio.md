@@ -236,8 +236,12 @@ price is excluded from the total and appears in the missing-price tracker.
 ### Venue and account scope
 
 Python collection queries accept optional `venue` and `account_id` scopes. If both are provided,
-they must resolve to the same account or the query raises `ValueError`. With `account_id=None`, a
-venue query aggregates across every account on that venue.
+the account must be issued under the venue or hold a position there, or the query raises
+`ValueError`. With `account_id=None`, a venue query aggregates across every account on that venue.
+
+`balances_locked`, `instrument_initial_margins`, and `instrument_maintenance_margins` read a single
+account instead. Without `account_id`, they resolve only when exactly one account is issued under
+the venue and return `None` otherwise.
 
 An account-filtered valuation reconciles only that account's observation, so
 flags raised by other accounts on the same venue survive.

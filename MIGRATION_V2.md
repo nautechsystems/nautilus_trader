@@ -825,6 +825,20 @@ ALTER TYPE AGGRESSOR_SIDE RENAME VALUE 'SELLER' TO 'SELL';
 
 Do not run those statements if the enum already contains `BUY` and `SELL`.
 
+The Postgres cache is scoped to the node's trader ID. `nautilus database init` qualifies the order
+and position snapshot keys and the order-position index key with the trader, and fails with the
+offending rows if any snapshot or index row has no resolvable trader.
+
+Account events persisted before trader scoping have no trader, and nothing establishes which trader
+owns them. While any exist, every node using the database fails to connect, and the error lists the
+affected accounts. Assign each one to its trader before starting a node:
+
+```bash
+nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
+```
+
+The command connects to Postgres directly, so it works while nodes are blocked.
+
 ## Compare backtest performance
 
 Use `scripts/benchmark-backtest-versions.py` for a wall-clock comparison between the released v1

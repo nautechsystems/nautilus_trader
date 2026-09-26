@@ -765,6 +765,13 @@ impl InstrumentClass {
         )
     }
 
+    pub(crate) const fn is_premium_based(&self) -> bool {
+        matches!(
+            self,
+            Self::Option | Self::OptionSpread | Self::BinaryOption | Self::Warrant
+        )
+    }
+
     /// Returns the [`InstrumentClass`] for the parent-symbol suffix, if recognized.
     ///
     /// Matches strict uppercase forms only. Both Databento-style abbreviations
@@ -2404,6 +2411,26 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(class.allows_negative_price(), expected);
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Option, true)]
+    #[case(InstrumentClass::OptionSpread, true)]
+    #[case(InstrumentClass::BinaryOption, true)]
+    #[case(InstrumentClass::Warrant, true)]
+    #[case(InstrumentClass::Spot, false)]
+    #[case(InstrumentClass::Swap, false)]
+    #[case(InstrumentClass::Future, false)]
+    #[case(InstrumentClass::FuturesSpread, false)]
+    #[case(InstrumentClass::Forward, false)]
+    #[case(InstrumentClass::Cfd, false)]
+    #[case(InstrumentClass::Bond, false)]
+    #[case(InstrumentClass::SportsBetting, false)]
+    fn test_instrument_class_is_premium_based(
+        #[case] class: InstrumentClass,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(class.is_premium_based(), expected);
     }
 
     #[rstest]

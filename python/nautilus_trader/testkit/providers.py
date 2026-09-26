@@ -22,13 +22,17 @@ import csv
 import io
 import math
 import os
+import re
+import urllib.error
 import urllib.request
 from datetime import datetime
 from decimal import Decimal
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
+from nautilus_trader import __version__
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
@@ -74,7 +78,18 @@ TEST_DATA_DIR = (
 _GITHUB_RAW_URL = (
     "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/{branch}/test_data/{path}"
 )
-_DEFAULT_BRANCH = "develop"
+_DEVELOP_BRANCH = "develop"
+_RELEASE_VERSION = re.compile(r"\d+\.\d+\.\d+(?:rc\d+)?")
+
+
+def _default_branch(version: str) -> str:
+    # Released versions read the test data they were tagged with, since develop moves on
+    if _RELEASE_VERSION.fullmatch(version):
+        return f"v{version}"
+    return _DEVELOP_BRANCH
+
+
+_DEFAULT_BRANCH = _default_branch(__version__)
 
 
 def __getattr__(name: str) -> Any:
@@ -93,10 +108,23 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def _read_test_data(path: str, branch: str = _DEFAULT_BRANCH) -> bytes:
+def _read_test_data(path: str, branch: str | None = None) -> bytes:
     if TEST_DATA_DIR.exists():
         return (TEST_DATA_DIR / path).read_bytes()
 
+    if branch is not None:
+        return _download_test_data(path, branch)
+
+    try:
+        return _download_test_data(path, _DEFAULT_BRANCH)
+    except urllib.error.HTTPError as e:
+        # A source build carries its upcoming version before that release is tagged
+        if e.code != HTTPStatus.NOT_FOUND or _DEFAULT_BRANCH == _DEVELOP_BRANCH:
+            raise
+        return _download_test_data(path, _DEVELOP_BRANCH)
+
+
+def _download_test_data(path: str, branch: str) -> bytes:
     url = _GITHUB_RAW_URL.format(branch=branch, path=path)
     with urllib.request.urlopen(url) as response:  # noqa: S310  # Fixed https scheme
         return response.read()
@@ -294,16 +322,21 @@ class TestDataProvider:
     otherwise, so they also work from an installed wheel. `quotes_from_histdata_csv`
     is the exception: it reads only the caller-supplied `file_path`.
 
+    Downloads default to the release tag of the installed version, so a release reads
+    the test data it shipped with. Development builds, and source builds of a version
+    not yet tagged, read from `develop`.
+
     Parameters
     ----------
-    branch : str
-        The NautilusTrader GitHub branch for remote paths.
+    branch : str, optional
+        The NautilusTrader GitHub branch or tag for remote paths, read without falling
+        back to `develop`. If `None`, downloads use the default described above.
 
     """
 
     __test__ = False  # Prevents pytest from collecting this as a test class
 
-    def __init__(self, branch: str = _DEFAULT_BRANCH) -> None:
+    def __init__(self, branch: str | None = None) -> None:
         """
         Initialize the provider with the GitHub branch used for remote paths.
         """

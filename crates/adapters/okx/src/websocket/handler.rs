@@ -375,10 +375,6 @@ impl OKXWsFeedHandler {
                     poll_raw_next = true;
                 }
 
-                () = time::sleep(time::Duration::from_millis(100)) => {
-                    // Wake the loop to poll the stop signal while both channels are idle
-                }
-
                 msg = self.raw_rx.recv() => {
                     let event = match msg {
                         Some(msg) => match Self::parse_raw_message(msg) {
@@ -481,6 +477,11 @@ impl OKXWsFeedHandler {
 
                 () = std::future::ready(()), if poll_raw_next => {
                     poll_raw_next = false;
+                }
+
+                // Polled last so a ready message never registers and drops a timer
+                () = time::sleep(time::Duration::from_millis(100)) => {
+                    // Wake the loop to poll the stop signal while both channels are idle
                 }
 
                 else => {

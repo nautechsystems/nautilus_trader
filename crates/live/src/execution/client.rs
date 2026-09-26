@@ -217,6 +217,10 @@ impl ExecutionClient for LiveExecutionClient {
             .provides_bulk_position_coverage(instrument_id)
     }
 
+    fn settles_contract_expirations(&self) -> bool {
+        self.client.borrow().settles_contract_expirations()
+    }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,

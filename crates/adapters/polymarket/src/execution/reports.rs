@@ -42,9 +42,10 @@ use super::{
         weighted_average_price,
     },
     reconciliation::{
-        FillContext, FillReportScope, TargetOrderReportScope, apply_fill_time_filters,
-        build_fill_reports_from_trades, build_reconciliation_position_reports,
-        build_target_order_report, cap_order_report_filled_qty, confirmed_filled_quantities,
+        FillContext, FillReportScope, ResolvedBalanceScope, TargetOrderReportScope,
+        apply_fill_time_filters, build_fill_reports_from_trades,
+        build_reconciliation_position_reports, build_target_order_report,
+        cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity, venue_leg_filled_before_and_quantity,
     },
     responses::confirm_modify_replacement,
@@ -795,6 +796,7 @@ impl PolymarketExecutionClient {
                 &self.emitter,
                 self.clock,
                 &self.fill_tracker,
+                &self.settlement,
                 &self.order_contexts,
                 &self.ws_dispatch_state,
             );
@@ -1004,6 +1006,7 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.config.reconciliation_load_ids(),
+            &self.resolved_balance_scope(),
         )?;
 
         log::debug!("Generated {} position status reports", reports.len());
@@ -1025,8 +1028,13 @@ impl PolymarketExecutionClient {
             self.core.venue,
             lookback_mins,
             self.config.reconciliation_load_ids(),
+            &self.resolved_balance_scope(),
         )
         .await
+    }
+
+    fn resolved_balance_scope(&self) -> ResolvedBalanceScope {
+        ResolvedBalanceScope::from_cache(&self.core.cache(), self.core.venue, self.core.account_id)
     }
 }
 

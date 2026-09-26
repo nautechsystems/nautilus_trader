@@ -1693,7 +1693,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// are retained so registered strategy routing remains configured across resets.
+    /// and execution client account, route, and external client registrations are retained so
+    /// registered strategy and client routing remain configured across resets.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
@@ -2986,6 +2987,9 @@ impl Cache {
     }
 
     /// Returns a borrow of the account for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`; look those
+    /// accounts up by account ID instead.
     #[pyo3(name = "account_for_venue")]
     fn py_account_for_venue(&self, py: Python, venue: Venue) -> PyResult<Option<Py<PyAny>>> {
         match self.account_for_venue(&venue) {
@@ -2995,6 +2999,8 @@ impl Cache {
     }
 
     /// Returns a reference to the account ID for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`.
     #[pyo3(name = "account_id")]
     fn py_account_id(&self, venue: Venue) -> Option<AccountId> {
         self.account_id(&venue).copied()

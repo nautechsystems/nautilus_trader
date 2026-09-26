@@ -26,7 +26,7 @@ use core::fmt::NumBuffer;
 use std::{ffi::c_char, hint::black_box};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use databento::dbn::{self, Record, record::RecordHeader};
+use databento::dbn::{self, record::RecordHeader};
 use nautilus_databento::decode::{
     decode_bbo_msg, decode_cmbp1_msg, decode_imbalance_msg, decode_mbo_msg, decode_mbp1_msg,
     decode_mbp10_msg, decode_ohlcv_msg, decode_price_increment, decode_price_or_undef,

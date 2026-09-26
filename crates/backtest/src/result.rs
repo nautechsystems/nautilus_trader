@@ -139,6 +139,7 @@ pub(crate) struct CanonicalDiagnostic {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum CanonicalDiagnosticCode {
     FundingSettlementFailed,
+    AccountBalanceRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -410,7 +411,10 @@ fn validate_diagnostics(value: &Value) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("canonical diagnostic must be an object"))?;
         validate_fields(object, &["code"], "canonical diagnostic")?;
         anyhow::ensure!(
-            object.get("code").and_then(Value::as_str) == Some("funding-settlement-failed"),
+            matches!(
+                object.get("code").and_then(Value::as_str),
+                Some("funding-settlement-failed" | "account-balance-rejected")
+            ),
             "unsupported canonical diagnostic code"
         );
     }

@@ -336,24 +336,30 @@ or drop older execution data. That does not change the position-report rule abov
 report is still the quantity target.
 :::
 
+For all live trading options, see the `LiveExecutionEngineConfig`
+[API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecutionEngineConfig).
+
+### Order ownership and tags
+
 Each strategy can configure `external_order_instrument_ids` as its intent to claim venue-sourced
 external orders and materialized reconciliation activity for specific instruments. Live strategy
 registration materializes that intent as active claims, which the strategy can replace at runtime.
 This lets a strategy resume managing open orders and positions when no cached state exists.
 
-Unclaimed external orders use strategy ID `EXTERNAL` with tag `VENUE`. Unclaimed orders
-generated during position reconciliation use strategy ID `EXTERNAL` with tag `RECONCILIATION`.
-Claimed orders and fills use the claiming strategy ID and have no external/reconciliation tag,
-so the strategy can continue managing the recovered state.
+An external order's strategy ID and origin tag depend on its source and on whether a strategy
+claims its instrument. Claimed orders and fills use the claiming strategy ID, so the strategy can
+continue managing the recovered state.
+
+| Order source                  | Unclaimed                        | Claimed                                 |
+| ----------------------------- | -------------------------------- | --------------------------------------- |
+| Venue order                   | `EXTERNAL`, tag `VENUE`          | Claiming strategy, no tag               |
+| Position reconciliation order | `EXTERNAL`, tag `RECONCILIATION` | Claiming strategy, tag `RECONCILIATION` |
 
 :::tip
 To detect unclaimed external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`.
 Ownership does not exclude these orders from position tracking or portfolio calculations. Historical
 fills still follow the [bounded history safety](#bounded-history-safety) rules when applicable.
 :::
-
-For all live trading options, see the `LiveExecutionEngineConfig`
-[API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecutionEngineConfig).
 
 ### Submission recovery diagnostics
 
@@ -488,6 +494,8 @@ does not prevent recovery from an explicit position report.
 - Logs a warning when NETTING ownership is split across multiple strategies for the same account
   and instrument, since venue position reports are account-level net positions.
 
+#### Synthetic orders
+
 Reconciliation generates synthetic MARKET order reports and fills with a known price:
 
 - Opening from flat uses the reported `avg_px_open`.
@@ -499,6 +507,36 @@ Reconciliation generates synthetic MARKET order reports and fills with a known p
 
 The engine skips quantity differences that round to zero at instrument size precision. Startup
 validation still checks the remaining difference against the account's quantity tolerance.
+
+#### Replayed fills
+
+While a position that reconciliation opened from a venue position report stays open, a fill report
+for that instrument and account with an earlier `ts_event` updates its order but no position. The
+report already includes those executions, so this stops a venue that resends them after a restart,
+such as Interactive Brokers TWS, from doubling the position. Earlier fills still apply when no such
+position is open for the instrument and account.
+
+The protection has these known gaps:
+
+- **Reconciliation window**: the synthetic opening fill carries the reconciliation time rather
+  than the report time, so a real fill that lands between the position report query and
+  reconciliation also stays off the position. Continuous position checks align it only when they
+  run with `generate_missing_orders` enabled.
+- **Opening order purge**: the protection needs the synthetic opening order in the cache. When
+  closed-order purging is enabled, a `purge_closed_orders_buffer_mins` shorter than the venue's
+  replay delay can remove it first.
+- **Bundled fills**: fills that arrive bundled with an order status report bypass the protection.
+
+A fill kept off the position stays on its order only, as in
+[order-only fill projection](#order-only-fill-projection), with these effects:
+
+- **Event store restore**: restoring the cache from the event store applies the fill to a
+  position, so the restored position can overstate the venue quantity.
+- **Fill voids**: a venue fill void for the fill is rejected, so its order stays filled.
+- **Locked balance**: an open order that the fill closes keeps its locked balance until the next
+  order event for that instrument and account.
+- **Position checks**: if the reconciled position closes before a continuous position check aligns
+  it, later checks stop at the fill until it falls outside `position_check_lookback_mins`.
 
 #### Startup position validation
 
@@ -629,7 +667,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 | **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`.                          |
 | **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite-side LIMIT order with calculated price.                                               |
 | **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates LIMIT order to close internal and open external position.                                      |
-| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.                                   |
+| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Tags `RECONCILIATION`; uses a claim when configured, otherwise `EXTERNAL`.                               |
 
 ### Runtime checks
 

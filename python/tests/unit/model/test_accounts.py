@@ -29,6 +29,7 @@ from nautilus_trader.model import AccountType
 from nautilus_trader.model import BettingAccount
 from nautilus_trader.model import CashAccount
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import CryptoFuture
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
@@ -43,6 +44,7 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import Symbol
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import VenueOrderId
@@ -976,6 +978,97 @@ def test_margin_account_calculate_maintenance_margin() -> None:
     )
 
     assert isinstance(margin, Money)
+
+
+def _ethbtc_quanto() -> CryptoFuture:
+    """
+    Build an ETHBTC quanto future settled in USDT.
+    """
+    return CryptoFuture(
+        instrument_id=InstrumentId.from_str("ETHBTC-123.BINANCE"),
+        raw_symbol=Symbol("ETHBTC"),
+        underlying=Currency.from_str("ETH"),
+        quote_currency=Currency.from_str("BTC"),
+        settlement_currency=Currency.from_str("USDT"),
+        is_inverse=False,
+        activation_ns=0,
+        expiration_ns=0,
+        price_precision=5,
+        size_precision=3,
+        price_increment=Price.from_str("0.00001"),
+        size_increment=Quantity.from_str("0.001"),
+        ts_event=0,
+        ts_init=0,
+        margin_init=Decimal("0.1"),
+        margin_maint=Decimal("0.05"),
+    )
+
+
+def test_margin_account_quanto_margin_is_in_settlement_currency() -> None:
+    """
+    Test margin account quanto margin is in settlement currency.
+    """
+    instrument = _ethbtc_quanto()
+    state = AccountState(
+        account_id=AccountId("SIM-002"),
+        account_type=AccountType.MARGIN,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("1000 USDT"),
+                locked=Money.from_str("0 USDT"),
+                free=Money.from_str("1000 USDT"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=None,
+    )
+    account = MarginAccount(state, calculate_account_state=True)
+    quantity = Quantity.from_str("100.000")
+    price = Price.from_str("0.05000")
+
+    initial = account.calculate_initial_margin(instrument, quantity, price)
+    maintenance = account.calculate_maintenance_margin(instrument, quantity, price)
+
+    assert instrument.is_quanto
+    assert initial == Money.from_str("0.5 USDT")
+    assert maintenance == Money.from_str("0.25 USDT")
+
+
+def test_cash_account_calculate_balance_locked_buy_quanto_uses_settlement_currency() -> None:
+    """
+    Test cash account calculate balance locked buy quanto uses settlement currency.
+    """
+    state = AccountState(
+        account_id=AccountId("SIM-001"),
+        account_type=AccountType.CASH,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("1000 USDT"),
+                locked=Money.from_str("0 USDT"),
+                free=Money.from_str("1000 USDT"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=None,
+    )
+    account = CashAccount(state, calculate_account_state=True)
+
+    locked = account.calculate_balance_locked(
+        instrument=_ethbtc_quanto(),
+        side=OrderSide.BUY,
+        quantity=Quantity.from_str("5.000"),
+        price=Price.from_str("0.03600"),
+    )
+
+    assert locked == Money.from_str("0.18 USDT")
 
 
 def test_margin_account_is_unleveraged_default() -> None:

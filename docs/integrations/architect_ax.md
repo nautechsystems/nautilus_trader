@@ -184,13 +184,15 @@ AX instrument states map to `MarketStatusAction` as follows:
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
-data is available via WebSocket L1 book subscriptions. AX also publishes no index prices and no
-instrument close events, so those subscriptions log a warning and yield no data.
+data is available via WebSocket L1 book subscriptions. The adapter does not expose AX index prices
+or instrument close events, so those subscriptions log a warning and yield no data.
 :::
 
 :::note
 AX L3 snapshots contain per-order quantities but no venue order IDs. The adapter assigns synthetic
 IDs within each snapshot. It cannot track the same individual order across snapshots.
+L2 and L3 processing requires full snapshots (`st: true`). The adapter rejects incremental
+frames (`st: false`) to avoid clearing unchanged book levels.
 :::
 
 :::note
@@ -216,8 +218,9 @@ smallest stream that covers the active Nautilus subscriptions:
   required AX level or delivery flags change.
 
 AX documents estimated funding rates on ticker events and an estimated-funding request on the orders
-WebSocket. Nautilus exposes settled funding-rate updates through HTTP polling; the adapter does not
-parse or emit the venue's estimated funding fields as a separate Nautilus data type.
+WebSocket. Ticker models retain estimated-funding metadata. Nautilus exposes settled funding-rate
+updates through HTTP polling; the adapter does not emit a separate estimated-funding data type or
+request standalone estimates.
 
 ### HTTP API behavior
 
@@ -290,6 +293,16 @@ configured trigger, then sends a plain limit order to this adapter.
 | `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.    |
 | `display_qty`    | -         | Rejected locally; the adapter wire path has no display field. |
 
+The adapter omits `rb` on place and replace requests, using AX's default `rej` behavior for
+post-only orders. Selecting `bo` (back off one tick from the opposite side) or `tbl` (best price on
+the same side) is not supported. See the [AX changelog](https://docs.architect.exchange/changelog).
+
+Order-history, open-order, and WebSocket order responses retain `rb` as optional typed adapter
+metadata on `AxOrderDetail`, `AxOpenOrder`, and `AxWsOrder`. It describes the latest place or replace request and takes effect
+only when that request has `po: true`. Missing or null values remain absent; unrecognized strings map
+to `Unknown`, not `Reject`. `OrderStatusReport` does not expose this metadata, so reconciliation
+reports cannot distinguish these repricing policies for externally placed or replaced orders.
+
 The reduce-only boundary matters because AX has no reduce-only field. In sandbox, an order whose
 reduce-only instruction was dropped from the wire payload was accepted and filled as an ordinary
 order, which can open or increase exposure instead of closing it; production behavior was not
@@ -360,7 +373,10 @@ adapter does not submit venue-native conditional orders.
 Historical order reports carry the venue reject reason (`r`, falling back to `txt`), so
 reconciled `OrderRejected` events keep the same reason strings as their real-time counterparts;
 reconciled `OrderCanceled` events can also carry the venue reason where a live cancel carries
-none.
+none. Reports retain the venue's post-only flag and subsecond timestamp. Replaced historical
+order IDs are terminal; day-complete orders expire, and expired IOC orders cancel, matching the
+WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
+an order from the snapshot. A fill with an unknown sibling order state still reaches execution.
 
 Startup mass-status reconciliation bounds its `/orders` and `/fills` requests by
 `reconciliation_lookback_mins`, and positions are always reported as a current snapshot. A
@@ -369,6 +385,12 @@ window is floored at that cap. With a bounded window, fills for instruments that
 flat apply to their orders without materializing positions, so round trips completed inside
 the window do not open phantom positions on restart. Without a bound, every historical order
 on the account is fetched and reconciled at startup.
+:::
+
+:::warning
+After a restart without cached replacement history, reconciliation can apply an older order's
+state or fields to its replacement, making a working order appear canceled locally. Recovery
+remains incomplete; check replaced orders against AX before resuming trading.
 :::
 
 ### Account state

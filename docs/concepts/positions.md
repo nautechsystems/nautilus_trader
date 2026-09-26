@@ -50,11 +50,37 @@ As additional fills occur, the position:
 
 A position closes when the **net quantity becomes zero** (`FLAT`). At closure:
 
-- The closing order ID is recorded.
+- The closing order ID is recorded. A settlement at contract expiration leaves it empty.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
 - In either OMS type, when the position later reopens under the same ID, the engine snapshots
   the closed state to preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
+
+### Settlement at contract expiration
+
+In a live node, an `InstrumentClose` of type `CONTRACT_EXPIRED` for a binary option on a venue
+served by one of the node's execution clients settles every open position in that instrument at the
+close price, such as `1` for a winning outcome and `0` for a losing one. For each position, the
+execution engine:
+
+- Closes the current cycle at the close price without creating an order or fill.
+- Books realized PnL for the settled quantity. Fill quantities and commissions stay as filled, so
+  opening fees remain in realized PnL.
+- Emits one `PositionClosed` with no closing order ID.
+
+The first close applied to an instrument is authoritative. A repeated or conflicting close, or a
+restart that restores the settled position, does not settle it again. After settlement, a fill or
+fill void for the instrument still updates its order but no longer changes positions: the engine
+logs a warning and emits no position event.
+
+Settlement does not redeem venue assets or change account balances. Venue account reports stay
+authoritative for cash, so an unredeemed payout counts toward account balances only once the venue
+reports the redeemed funds.
+
+Backtests and sandbox paper trading keep the simulated venue's expiration handling instead: the
+matching engine closes positions with expiration fills, and those fills credit the simulated
+account. The live node does not apply engine settlement on a venue whose execution client settles
+expiring contracts itself, as the sandbox client does.
 
 ## Order fill aggregation
 
@@ -278,7 +304,8 @@ Position PnL calculations account for instrument specifications and market conve
 
 ### Realized PnL
 
-The price component of realized PnL is calculated when fills partially or fully close a position.
+The price component of realized PnL is calculated when fills partially or fully close a position,
+or when a [settlement at contract expiration](#settlement-at-contract-expiration) closes it.
 Commissions in the position's cost currency affect realized PnL as each fill arrives.
 
 ```python
@@ -291,7 +318,9 @@ Commissions in the position's cost currency affect realized PnL as each fill arr
 # SHORT: realized_pnl = closed_quantity * multiplier * (1/exit_price - 1/entry_price)
 ```
 
-The position side selects the formula.
+The position side selects the formula. Premium-based inverse instruments, such as coin-settled
+options, quote the premium in the base currency, so they use the standard formula and report PnL
+and notional value in the base currency.
 
 ### Unrealized PnL
 
@@ -343,7 +372,8 @@ notional = position.notional_value(current_price)
 
 :::warning
 In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
-supplied inverse price is not positive, or the result cannot be represented as `Money`.
+supplied price is not positive for a non-premium inverse position, or the result cannot be
+represented as `Money`.
 Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
 panics if the calculation fails.
 :::
@@ -358,7 +388,7 @@ panics if the calculation fails.
 - `trader_id`: The trader who owns the position.
 - `strategy_id`: The strategy managing the position.
 - `opening_order_id`: Client order ID that opened the position.
-- `closing_order_id`: Client order ID that closed the position, if closed.
+- `closing_order_id`: Client order ID that closed the position, if a fill closed it.
 
 ### Position state
 
@@ -457,7 +487,8 @@ the values, settlement-currency precision, and sequence of fills.
 
 `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
 rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
-Inverse PnL calculations reject nonpositive open or close prices and positive prices below `1e-15`.
+Inverse PnL calculations for non-premium instruments reject nonpositive open or close prices and
+positive prices below `1e-15`.
 With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
 `f64` panics, so `Position` does not support 17- or 18-decimal fill values.
 

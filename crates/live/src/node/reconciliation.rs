@@ -366,6 +366,15 @@ impl LiveNode {
                         );
                         continue;
                     }
+                    Ok(PositionFillReportPreparation::SnapshotOverlap) => {
+                        log::debug!(
+                            "Ignoring fill {} for {}/{} because a reconciled position already includes it",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
                     Ok(PositionFillReportPreparation::Unattributed) => {
                         log::debug!(
                             "Ignoring unattributable hedge fill {} for {}/{} before synthetic fallback",

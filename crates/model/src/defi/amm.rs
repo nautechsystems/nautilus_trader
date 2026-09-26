@@ -298,7 +298,7 @@ mod tests {
         );
 
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
                 .parse()
                 .unwrap(),
@@ -308,7 +308,7 @@ mod tests {
         );
 
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                 .parse()
                 .unwrap(),
@@ -324,7 +324,7 @@ mod tests {
         let ts_init = UnixNanos::from(1_234_567_890_000_000_000u64);
 
         let pool = Pool::new(
-            chain.clone(),
+            Arc::clone(&chain),
             Arc::new(dex),
             pool_address,
             pool_identifier,
@@ -379,7 +379,7 @@ mod tests {
         );
 
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
                 .parse()
                 .unwrap(),
@@ -389,7 +389,7 @@ mod tests {
         );
 
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                 .parse()
                 .unwrap(),

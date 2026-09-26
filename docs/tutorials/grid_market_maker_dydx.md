@@ -66,11 +66,14 @@ dYdX v4 fits market-making well:
 
 ### Funded dYdX account
 
-You need a dYdX account with USDC collateral. See the
+You need a dYdX account with USDC collateral. The example trades on
+mainnet by default; [Run the example](#run-the-example) shows how to switch
+to testnet. See the
 [Testnet setup](../integrations/dydx.md#testnet-setup) section in the
 integration guide for instructions on creating and funding a testnet
-account. The testnet wallet also needs an API trading key registered
-through the dYdX UI.
+account. An API trading key is optional: the adapter signs with the
+account's own private key unless you set up
+[permissioned key trading](../integrations/dydx.md#permissioned-key-trading).
 
 ### Environment variables
 
@@ -239,10 +242,11 @@ for details.
 
 ### Post-only orders
 
-All grid orders are submitted with `post_only=true`. The exchange rejects
-any order that would cross the spread at match time, so every fill lands
-at the maker fee rate and the grid never inadvertently lifts its own
-offers during requote transitions.
+All grid orders are submitted with `post_only=true`. The exchange accepts
+and then immediately cancels any post-only order that would cross the
+spread at match time (the strategy sees `OrderCanceled`, not
+`OrderRejected`), so every fill lands at the maker fee rate and the grid
+never inadvertently lifts its own offers during requote transitions.
 
 ## Running and stopping
 
@@ -265,12 +269,17 @@ DYDX_WALLET_ADDRESS=dydx1...
 
 ### Run the example
 
+:::warning
+This command places real orders on **dYdX mainnet** by default: the `DYDX_NETWORK` constant near
+the top of `crates/adapters/dydx/examples/node_grid_mm.rs` is `DydxNetwork::Mainnet`, and the
+example reads `DYDX_PRIVATE_KEY` and `DYDX_WALLET_ADDRESS`. To run against testnet, set
+`DYDX_NETWORK` to `DydxNetwork::Testnet` and rebuild; the example then reads
+`DYDX_TESTNET_PRIVATE_KEY` and `DYDX_TESTNET_WALLET_ADDRESS`.
+:::
+
 ```bash
 cargo run --example dydx-grid-mm --package nautilus-dydx --features examples
 ```
-
-The example targets mainnet. To run against testnet, set the `DYDX_NETWORK` constant near the top
-of the example to `DydxNetwork::Testnet` (this needs a testnet API trading key) and rebuild.
 
 ### Graceful shutdown
 
@@ -284,7 +293,8 @@ Press **Ctrl+C** to stop the node. The shutdown sequence:
 ## Code walkthrough
 
 The `main` function lives at
-[`crates/adapters/dydx/examples/node_grid_mm.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples/node_grid_mm.rs):
+[`crates/adapters/dydx/examples/node_grid_mm.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples/node_grid_mm.rs).
+This simplified copy inlines the example's constants:
 
 ```rust
 const DYDX_NETWORK: DydxNetwork = DydxNetwork::Mainnet;
@@ -378,7 +388,9 @@ flowchart TB
 
 ## Strategy internals
 
-The key Rust snippets from `grid_mm.rs` follow.
+The following Rust snippets are simplified from the strategy source in
+[`crates/trading/src/examples/strategies/grid_mm/strategy.rs`](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/trading/src/examples/strategies/grid_mm/strategy.rs),
+which adds error handling and state tracking omitted here.
 
 ### Trade size resolution (`on_start`)
 
@@ -561,10 +573,17 @@ set to ~16 blocks ahead, giving the eight-second expiry.*
 
 ### Regenerate the panels
 
+:::warning
+The capture run places real orders on dYdX mainnet by default. To capture a testnet run instead,
+set `DYDX_NETWORK` to `DydxNetwork::Testnet` before building (see [Run the example](#run-the-example)).
+:::
+
 After building NautilusTrader from source, run these commands from the repository root:
 
 ```bash
 make sync
+
+cargo build --release --example dydx-grid-mm --package nautilus-dydx --features examples
 
 # Capture a 35-second mainnet run.
 timeout 35 ./target/release/examples/dydx-grid-mm > /tmp/dydx_main.log 2>&1
@@ -585,6 +604,9 @@ DYDX_LOG=/tmp/dydx_main.log \
 | `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.         |
 | `benign cancel error, treating as success`          | Cancel for an already-filled or expired order (normal). |
 | `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.             |
+
+The `Submit short-term order`, `BatchCancel`, and benign cancel lines log at DEBUG level. The
+example sets `stdout_level: LevelFilter::Info`, so change it to `LevelFilter::Debug` to see them.
 
 ### Expected behavior patterns
 
@@ -623,7 +645,7 @@ let btc_config = GridMarketMakerConfig::builder()
         StrategyConfig::builder()
             .strategy_id(StrategyId::from("GRID_MM-BTC"))
             .order_id_tag("BTC".to_string())
-            .build(),
+            .build()?,
     )
     .grid_step_bps(50)
     .build();
@@ -635,7 +657,7 @@ let eth_config = GridMarketMakerConfig::builder()
         StrategyConfig::builder()
             .strategy_id(StrategyId::from("GRID_MM-ETH"))
             .order_id_tag("ETH".to_string())
-            .build(),
+            .build()?,
     )
     .grid_step_bps(100)
     .build();

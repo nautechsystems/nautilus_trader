@@ -64,7 +64,8 @@ stream, raw reports, generated events, and metadata needed to replay how the eng
 world. Data responses are the exception: every response to an engine request is captured, including
 book, option-chain reference price, and custom-data responses. Only some of them, listed under
 [Cache replay](#cache-replay), carry a rule that applies them back to cache state; the rest are
-inspection records.
+inspection records. Every published `InstrumentClose` is also captured, because a contract
+expiration settles positions.
 
 ## Boundaries
 
@@ -355,6 +356,8 @@ tail in `seq` order, decodes supported cache-affecting payloads, and applies the
 - Synthesized account, order, and position events
 - Captured order lists
 - Complete data responses for instruments, quotes, trades, funding rates, and bars
+- Instrument closes, which settle binary-option positions as live execution does. A replayed fill
+  or fill void after that settlement updates its order but not the settled position
 
 The loader **does not**:
 

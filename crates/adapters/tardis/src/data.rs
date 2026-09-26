@@ -67,7 +67,7 @@ use crate::{
         cache::DerivativeTickerCache,
         client::determine_instrument_info,
         is_unsupported_streaming_error,
-        message::WsMessage,
+        message::{WsMessage, decode_ws_message},
         parse::{
             parse_derivative_ticker_index_price, parse_derivative_ticker_mark_price,
             parse_tardis_ws_message_data, parse_tardis_ws_message_funding_rate,
@@ -391,48 +391,46 @@ impl TardisDataClient {
             };
 
             match msg {
-                Some(Ok(tungstenite::Message::Text(text))) => {
-                    match serde_json::from_str::<WsMessage>(&text) {
-                        Ok(ws_msg) => {
-                            if matches!(ws_msg, WsMessage::Disconnect(_)) {
-                                log::debug!("Received disconnect message");
-                                continue;
-                            }
+                Some(Ok(tungstenite::Message::Text(text))) => match decode_ws_message(&text) {
+                    Ok(ws_msg) => {
+                        if matches!(ws_msg, WsMessage::Disconnect(_)) {
+                            log::debug!("Received disconnect message");
+                            continue;
+                        }
 
-                            let info = determine_instrument_info(&ws_msg, instrument_map);
+                        let info = determine_instrument_info(&ws_msg, instrument_map);
 
-                            if let Some(info) = info {
-                                if matches!(ws_msg, WsMessage::DerivativeTicker(_)) {
-                                    if !Self::send_derivative_ticker_events(
-                                        &ws_msg,
-                                        &info,
-                                        sender,
-                                        &mut ticker_cache,
-                                    ) {
+                        if let Some(info) = info {
+                            if matches!(ws_msg, WsMessage::DerivativeTicker(_)) {
+                                if !Self::send_derivative_ticker_events(
+                                    &ws_msg,
+                                    &info,
+                                    sender,
+                                    &mut ticker_cache,
+                                ) {
+                                    return false;
+                                }
+                            } else {
+                                let data = parse_tardis_ws_message_data(
+                                    ws_msg,
+                                    &info,
+                                    book_snapshot_output,
+                                    extract_bbo_as_quotes,
+                                );
+
+                                for data in data {
+                                    if let Err(e) = sender.send(DataEvent::Data(data)) {
+                                        log::error!("Failed to send data event: {e}");
                                         return false;
-                                    }
-                                } else {
-                                    let data = parse_tardis_ws_message_data(
-                                        ws_msg,
-                                        &info,
-                                        book_snapshot_output,
-                                        extract_bbo_as_quotes,
-                                    );
-
-                                    for data in data {
-                                        if let Err(e) = sender.send(DataEvent::Data(data)) {
-                                            log::error!("Failed to send data event: {e}");
-                                            return false;
-                                        }
                                     }
                                 }
                             }
                         }
-                        Err(e) => {
-                            log::error!("Failed to deserialize message: {e}");
-                        }
                     }
-                }
+                    Err(e) => {
+                        log::error!("Failed to deserialize message: {e}");
+                    }
+                },
                 Some(Ok(tungstenite::Message::Close(Some(frame))))
                     if is_unsupported_streaming_error(&frame.reason) =>
                 {

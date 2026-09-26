@@ -628,36 +628,53 @@ impl<'a> PortfolioApi<'a> {
         self.portfolio.borrow().is_initialized()
     }
 
-    /// Returns the locked balances for the given venue.
+    /// Returns the locked balances for the `account_id`, or for the account issued under `venue`
+    /// when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow().balances_locked(venue)
+    pub fn balances_locked(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<Currency, Money> {
+        self.portfolio.borrow().balances_locked(venue, account_id)
     }
 
-    /// Returns the initial margin requirements for the given venue.
+    /// Returns the initial margin requirements for the `account_id`, or for the account issued
+    /// under `venue` when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn instrument_initial_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().instrument_initial_margins(venue)
-    }
-
-    /// Returns the maintenance margin requirements for the given venue.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the portfolio is already mutably borrowed.
-    #[must_use]
-    pub fn instrument_maintenance_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
+    pub fn instrument_initial_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
         self.portfolio
             .borrow()
-            .instrument_maintenance_margins(venue)
+            .instrument_initial_margins(venue, account_id)
+    }
+
+    /// Returns the maintenance margin requirements for the `account_id`, or for the account
+    /// issued under `venue` when no account ID is given.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the portfolio is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_maintenance_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        self.portfolio
+            .borrow()
+            .instrument_maintenance_margins(venue, account_id)
     }
 
     /// Returns the unrealized PnLs for all positions at the given venue.
@@ -959,10 +976,13 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::VirtualClock, factories::OrderFactory};
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderType},
+        enums::{AccountType, OrderSide, OrderType},
+        events::AccountState,
         identifiers::{AccountId, InstrumentId, StrategyId, TraderId, Venue},
         orders::Order,
+        types::{AccountBalance, MarginBalance},
     };
     use rstest::rstest;
 
@@ -1066,9 +1086,9 @@ mod tests {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
 
         assert!(!api.is_initialized());
-        assert!(api.balances_locked(&venue).is_empty());
-        assert!(api.instrument_initial_margins(&venue).is_empty());
-        assert!(api.instrument_maintenance_margins(&venue).is_empty());
+        assert!(api.balances_locked(&venue, None).is_empty());
+        assert!(api.instrument_initial_margins(&venue, None).is_empty());
+        assert!(api.instrument_maintenance_margins(&venue, None).is_empty());
         assert_eq!(api.unrealized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.realized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.net_exposures(&venue, None), None);
@@ -1102,5 +1122,64 @@ mod tests {
         assert!(api.recorded_realized_pnls().is_empty());
 
         let _statistics = api.statistics();
+    }
+
+    #[rstest]
+    fn test_portfolio_api_account_queries_select_account_id() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let portfolio = RefCell::new(Portfolio::new(clock, cache, None));
+        let venue = Venue::from("SIM");
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let total = Money::from("1000 USD");
+
+        for (account_id, locked, initial, maintenance) in [
+            ("SIM-001", "100 USD", "30 USD", "15 USD"),
+            ("SIM-002", "250 USD", "70 USD", "35 USD"),
+        ] {
+            let account_id = AccountId::from(account_id);
+            let locked = Money::from(locked);
+            let initial = Money::from(initial);
+            let maintenance = Money::from(maintenance);
+            let balance = AccountBalance::new(total, locked, total - locked);
+            let margin = MarginBalance::new(initial, maintenance, Some(instrument_id));
+            let event_id = UUID4::new();
+
+            let state = AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![balance],
+                vec![margin],
+                true,
+                event_id,
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            );
+            portfolio.borrow_mut().update_account(&state);
+        }
+
+        let api = PortfolioApi::new(&portfolio);
+        let account_id = AccountId::from("SIM-002");
+        let expected_locked = Money::from("250 USD");
+        let expected_initial = Money::from("70 USD");
+        let expected_maintenance = Money::from("35 USD");
+
+        let balances_locked = api.balances_locked(&venue, Some(&account_id));
+        let initial_margins = api.instrument_initial_margins(&venue, Some(&account_id));
+        let maintenance_margins = api.instrument_maintenance_margins(&venue, Some(&account_id));
+
+        assert_eq!(
+            balances_locked,
+            IndexMap::from([(Currency::USD(), expected_locked)])
+        );
+        assert_eq!(
+            initial_margins,
+            IndexMap::from([(instrument_id, expected_initial)])
+        );
+        assert_eq!(
+            maintenance_margins,
+            IndexMap::from([(instrument_id, expected_maintenance)])
+        );
     }
 }

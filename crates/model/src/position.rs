@@ -36,7 +36,10 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{InstrumentClass, OrderSide, PositionAdjustmentType, PositionSide},
+    data::InstrumentClose,
+    enums::{
+        InstrumentClass, InstrumentCloseType, OrderSide, PositionAdjustmentType, PositionSide,
+    },
     events::{OrderFillVoided, OrderFilled, PositionAdjusted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
@@ -113,6 +116,7 @@ pub struct Position {
 pub enum PositionReplayEvent {
     Filled(OrderFilled),
     Adjusted(PositionAdjusted),
+    InstrumentClosed(InstrumentClose),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -750,6 +754,90 @@ impl Position {
         self.debug_assert_invariants();
     }
 
+    /// Settles the open position at the payout price of an authoritative contract expiration.
+    ///
+    /// The settlement closes the current cycle at `close.close_price` and books its realized PnL
+    /// without an order fill. Fill quantities and commissions stay as filled. The close is
+    /// recorded in the replay history, so [`Self::is_settled`] holds until a later fill reopens
+    /// the position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the close targets another instrument, is not a contract expiration,
+    /// the position is not open, or the settlement PnL cannot be represented. An error leaves the
+    /// position unchanged.
+    pub fn apply_instrument_close(&mut self, close: InstrumentClose) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            close.instrument_id == self.instrument_id,
+            "instrument close {} does not match position instrument {}",
+            close.instrument_id,
+            self.instrument_id,
+        );
+        anyhow::ensure!(
+            close.close_type == InstrumentCloseType::ContractExpired,
+            "instrument close for {} is not a contract expiration",
+            close.instrument_id,
+        );
+        anyhow::ensure!(
+            self.is_open(),
+            "cannot settle position {} which is not open",
+            self.id,
+        );
+
+        self.apply_instrument_close_state(close, true)
+    }
+
+    fn apply_instrument_close_state(
+        &mut self,
+        close: InstrumentClose,
+        record_replay: bool,
+    ) -> anyhow::Result<()> {
+        // A replayed close that finds the corrected history already flat has nothing to settle
+        if self.side == PositionSide::Flat {
+            return Ok(());
+        }
+
+        let last_qty = self.quantity;
+        let last_px = close.close_price.as_f64();
+        let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty.as_f64());
+
+        let realized_return = self
+            .calculate_return(self.avg_px_open, avg_px_close)
+            .unwrap_or_else(|e| {
+                log::error!("Error calculating return: {e}");
+                0.0
+            });
+
+        let settlement_pnl = self.try_calculate_pnl(self.avg_px_open, last_px, last_qty)?;
+
+        let realized_pnl = match self.realized_pnl {
+            Some(current) => current.checked_add(settlement_pnl).ok_or_else(|| {
+                anyhow::anyhow!("settlement PnL overflow for position {}", self.id)
+            })?,
+            None => settlement_pnl,
+        };
+
+        if record_replay {
+            self.replay_events
+                .push(PositionReplayEvent::InstrumentClosed(close));
+        }
+
+        self.avg_px_close = Some(avg_px_close);
+        self.realized_return = realized_return;
+        self.realized_pnl = Some(realized_pnl);
+        self.side = PositionSide::Flat;
+        self.signed_qty = 0.0;
+        self.quantity = Quantity::zero(self.size_precision);
+        self.closing_order_id = None;
+        self.ts_last = close.ts_event;
+        self.ts_closed = Some(close.ts_event);
+        self.duration_ns = close.ts_event.saturating_duration_since(self.ts_opened);
+
+        self.debug_assert_invariants();
+
+        Ok(())
+    }
+
     fn debug_assert_invariants(&self) {
         debug_assert!(
             match self.side {
@@ -952,6 +1040,10 @@ impl Position {
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
                     self.apply_adjustment_state(*adjustment, false);
+                }
+                PositionReplayEvent::InstrumentClosed(close) => {
+                    self.apply_instrument_close_state(*close, false)
+                        .expect("replaying a validated instrument close must succeed");
                 }
             }
         }
@@ -1235,7 +1327,8 @@ impl Position {
         quantity: f64,
     ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
-        let result = if self.is_inverse {
+
+        let result = if self.is_inverse && !self.instrument_class.is_premium_based() {
             anyhow::ensure!(
                 self.base_currency.is_some(),
                 "inverse position {} has no base currency",
@@ -1415,7 +1508,8 @@ impl Position {
     /// # Errors
     ///
     /// Returns an error if this is an inverse position without a base currency, the price is not
-    /// positive for inverse valuation, or the result cannot be represented as [`Money`].
+    /// positive for a non-premium inverse position, or the result cannot be represented as
+    /// [`Money`].
     pub fn try_notional_value(&self, last: Price) -> anyhow::Result<Money> {
         let currency = if self.is_inverse {
             self.base_currency.ok_or_else(|| {
@@ -1432,6 +1526,7 @@ impl Position {
             self.quantity,
             last,
             self.multiplier,
+            self.instrument_class,
             self.is_inverse,
             false,
             currency,
@@ -1483,6 +1578,27 @@ impl Position {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         self.side == PositionSide::Flat && self.ts_closed.is_some()
+    }
+
+    /// Returns whether an authoritative instrument close settled the current cycle.
+    ///
+    /// Reads the replay history, so it is false for a copy made by
+    /// [`Self::clone_without_events`] or [`Self::clone_for_snapshot`].
+    #[must_use]
+    pub fn is_settled(&self) -> bool {
+        matches!(
+            self.replay_events.last(),
+            Some(PositionReplayEvent::InstrumentClosed(_))
+        )
+    }
+
+    /// Returns whether replaying the position's fills alone cannot rebuild its state.
+    ///
+    /// Fill voids and settlements change state without a fill, so persistence must store the
+    /// complete replay state for such a position.
+    #[must_use]
+    pub fn requires_replay_state(&self) -> bool {
+        !self.fill_voids.is_empty() || self.is_settled()
     }
 
     /// Returns the signed quantity as a `Decimal`.
@@ -1592,9 +1708,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        enums::{OrderSide, OrderType, PositionAdjustmentType, PositionSide},
+        data::InstrumentClose,
+        enums::{InstrumentCloseType, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
         events::{
-            OrderEventAny, OrderFillVoided, OrderFilled, PositionAdjusted,
+            OrderEventAny, OrderFillVoided, OrderFilled, PositionAdjusted, PositionSnapshot,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
@@ -1602,10 +1719,11 @@ mod tests {
             stubs::uuid4,
         },
         instruments::{
-            CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
+            BinaryOption, CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, Instrument,
+            InstrumentAny, stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::{Position, PositionFillVoid, fold_net_position},
+        position::{Position, PositionFillVoid, PositionReplayEvent, fold_net_position},
         stubs::*,
         types::{Currency, Money, Price, Quantity},
     };
@@ -3073,6 +3191,216 @@ mod tests {
         assert_eq!(position.ts_last, UnixNanos::from(2));
     }
 
+    fn binary_fill(
+        instrument: &InstrumentAny,
+        trade_id: &str,
+        last_qty: &str,
+        last_px: &str,
+        ts_event: u64,
+    ) -> OrderFilled {
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(format!("O-{trade_id}").as_str()))
+            .venue_order_id(VenueOrderId::from(format!("V-{trade_id}").as_str()))
+            .account_id(AccountId::from("POLYMARKET-001"))
+            .trade_id(TradeId::from(trade_id))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(last_qty))
+            .last_px(Price::from(last_px))
+            .currency(Currency::USDC())
+            .commission(Money::from("0.10 USDC"))
+            .position_id(PositionId::from("P-BINARY"))
+            .ts_event(UnixNanos::from(ts_event))
+            .ts_init(UnixNanos::from(ts_event))
+            .build()
+    }
+
+    fn contract_expired(instrument: &InstrumentAny, close_price: &str) -> InstrumentClose {
+        InstrumentClose::new(
+            instrument.id(),
+            Price::from(close_price),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(300),
+            UnixNanos::from(301),
+        )
+    }
+
+    #[rstest]
+    #[case::winner("1.000", dec!(5.90), 1.5)]
+    #[case::loser("0.000", dec!(-4.10), -1.0)]
+    fn test_apply_instrument_close_settles_without_fill(
+        binary_option: BinaryOption,
+        #[case] close_price: &str,
+        #[case] expected_realized_pnl: Decimal,
+        #[case] expected_return: f64,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_fill(&instrument, "T-OPEN", "10.00", "0.400", 100);
+        let mut position = Position::new(&instrument, fill.clone());
+        let close = contract_expired(&instrument, close_price);
+        let requires_replay_state_before = position.requires_replay_state();
+
+        position.apply_instrument_close(close).unwrap();
+        let snapshot = PositionSnapshot::from_replay_state(&position, None);
+        let restored: Position = serde_json::from_value(snapshot.replay_state.unwrap()).unwrap();
+
+        assert!(!requires_replay_state_before);
+        assert!(position.requires_replay_state());
+        assert!(position.is_closed());
+        assert!(position.is_settled());
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.signed_qty, 0.0);
+        assert_eq!(position.quantity, Quantity::from("0.00"));
+        assert_eq!(position.peak_qty, Quantity::from("10.00"));
+        assert_eq!(position.buy_qty, Quantity::from("10.00"));
+        assert_eq!(position.sell_qty, Quantity::from("0.00"));
+        assert_eq!(position.opening_order_id, fill.client_order_id);
+        assert_eq!(position.closing_order_id, None);
+        assert_eq!(position.events, vec![fill]);
+        assert_eq!(position.commissions(), vec![Money::from("0.10 USDC")]);
+        assert_eq!(position.avg_px_open, 0.4);
+        assert_eq!(
+            position.avg_px_close,
+            Some(Price::from(close_price).as_f64())
+        );
+        assert!((position.realized_return - expected_return).abs() < 1e-12);
+        assert_eq!(
+            position.realized_pnl.unwrap().as_decimal(),
+            expected_realized_pnl
+        );
+        assert_eq!(position.ts_last, UnixNanos::from(300));
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(300)));
+        assert_eq!(position.duration_ns, DurationNanos::new(200));
+        assert!(matches!(
+            position.replay_events.last(),
+            Some(PositionReplayEvent::InstrumentClosed(event)) if *event == close
+        ));
+        assert!(restored.is_settled());
+        assert!(restored.is_closed());
+        assert_eq!(restored.realized_pnl, position.realized_pnl);
+        assert_eq!(restored.avg_px_close, position.avg_px_close);
+        assert_eq!(restored.ts_closed, position.ts_closed);
+    }
+
+    #[rstest]
+    fn test_apply_instrument_close_after_partial_close(binary_option: BinaryOption) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let opening_fill = binary_fill(&instrument, "T-OPEN", "10.00", "0.400", 100);
+        let mut reducing_fill = binary_fill(&instrument, "T-REDUCE", "4.00", "0.600", 200);
+        reducing_fill.order_side = OrderSide::Sell;
+        let mut position = Position::new(&instrument, opening_fill);
+        position.apply(&reducing_fill);
+
+        position
+            .apply_instrument_close(contract_expired(&instrument, "1.000"))
+            .unwrap();
+
+        assert!(position.is_closed());
+        assert_eq!(position.quantity, Quantity::from("0.00"));
+        assert_eq!(position.buy_qty, Quantity::from("10.00"));
+        assert_eq!(position.sell_qty, Quantity::from("4.00"));
+        assert!((position.avg_px_close.unwrap() - 0.84).abs() < 1e-12);
+        assert!((position.realized_return - 1.1).abs() < 1e-12);
+        assert_eq!(position.realized_pnl.unwrap().as_decimal(), dec!(4.20));
+        assert_eq!(position.closing_order_id, None);
+    }
+
+    #[rstest]
+    #[case::fills_only(false, false, false)]
+    #[case::fill_voided(true, false, true)]
+    #[case::settled(false, true, true)]
+    fn test_requires_replay_state(
+        binary_option: BinaryOption,
+        #[case] void_fill: bool,
+        #[case] settle: bool,
+        #[case] expected: bool,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_fill(&instrument, "T-OPEN", "10.00", "0.400", 100);
+        let mut position = Position::new(&instrument, fill.clone());
+
+        if void_fill {
+            position
+                .apply_fill_void(
+                    matching_fill_void(&fill, Quantity::from("2.00"), None),
+                    Quantity::from("2.00"),
+                    None,
+                )
+                .unwrap();
+        }
+
+        if settle {
+            position
+                .apply_instrument_close(contract_expired(&instrument, "1.000"))
+                .unwrap();
+        }
+
+        assert_eq!(position.requires_replay_state(), expected);
+    }
+
+    #[rstest]
+    #[case::other_instrument(Some("OTHER.POLYMARKET"), InstrumentCloseType::ContractExpired, false)]
+    #[case::end_of_session(None, InstrumentCloseType::EndOfSession, false)]
+    #[case::not_open(None, InstrumentCloseType::ContractExpired, true)]
+    fn test_apply_instrument_close_rejects_without_mutation(
+        binary_option: BinaryOption,
+        #[case] instrument_id: Option<&str>,
+        #[case] close_type: InstrumentCloseType,
+        #[case] settle_first: bool,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_fill(&instrument, "T-OPEN", "10.00", "0.400", 100);
+        let mut position = Position::new(&instrument, fill);
+
+        if settle_first {
+            position
+                .apply_instrument_close(contract_expired(&instrument, "1.000"))
+                .unwrap();
+        }
+
+        let before = serde_json::to_value(&position).unwrap();
+
+        let close = InstrumentClose::new(
+            instrument_id.map_or_else(|| instrument.id(), InstrumentId::from),
+            Price::from("1.000"),
+            close_type,
+            UnixNanos::from(400),
+            UnixNanos::from(401),
+        );
+
+        let result = position.apply_instrument_close(close);
+
+        assert!(result.is_err());
+        assert_eq!(serde_json::to_value(&position).unwrap(), before);
+    }
+
+    #[rstest]
+    fn test_fill_void_replays_instrument_close(binary_option: BinaryOption) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let opening_fill = binary_fill(&instrument, "T-OPEN", "10.00", "0.400", 100);
+        let adding_fill = binary_fill(&instrument, "T-ADD", "5.00", "0.500", 200);
+        let fill_voided = matching_fill_void(&adding_fill, Quantity::from("5.00"), None);
+        let mut position = Position::new(&instrument, opening_fill);
+        position.apply(&adding_fill);
+        let close = contract_expired(&instrument, "1.000");
+        position.apply_instrument_close(close).unwrap();
+
+        let closed_cycles_pnl = position
+            .apply_fill_void(fill_voided, Quantity::from("5.00"), None)
+            .unwrap();
+
+        assert_eq!(closed_cycles_pnl, None);
+        assert!(position.is_closed());
+        assert!(position.is_settled());
+        assert_eq!(position.quantity, Quantity::from("0.00"));
+        assert_eq!(position.peak_qty, Quantity::from("10.00"));
+        assert_eq!(position.buy_qty, Quantity::from("10.00"));
+        assert_eq!(position.realized_pnl.unwrap().as_decimal(), dec!(5.80));
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(300)));
+        assert_eq!(position.fill_voids.len(), 1);
+        assert_eq!(position.replay_events.len(), 3);
+    }
+
     #[rstest]
     fn test_fill_void_returns_all_closed_cycle_pnl(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
@@ -3973,6 +4301,67 @@ mod tests {
         assert_eq!(
             position.notional_value(Price::from("11000.0")),
             Money::from("9.09090909 BTC")
+        );
+    }
+
+    #[rstest]
+    #[case("0.030", "0.001 BTC", "0.003 BTC", "0.00098 BTC")]
+    #[case("0.000", "-0.002 BTC", "0 BTC", "-0.00202 BTC")]
+    fn test_calculate_pnl_for_inverse_option_values_premium_in_base(
+        mut crypto_option_btc_deribit: CryptoOption,
+        #[case] close_px: &str,
+        #[case] expected_unrealized_pnl: &str,
+        #[case] expected_notional: &str,
+        #[case] expected_realized_pnl: &str,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+        let option = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let open_fill = TestOrderEventStubs::filled(
+            &open_order,
+            &option,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("0.020")),
+            None,
+            None,
+            Some(Money::from("0.00001 BTC")),
+            None,
+            None,
+        );
+        let close_fill = TestOrderEventStubs::filled(
+            &close_order,
+            &option,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from(close_px)),
+            None,
+            None,
+            Some(Money::from("0.00001 BTC")),
+            None,
+            None,
+        );
+        let mut position = Position::new(&option, open_fill.into());
+        let unrealized_pnl = position.unrealized_pnl(Price::from(close_px));
+        let notional = position.notional_value(Price::from(close_px));
+
+        position.apply(&close_fill.into());
+
+        assert_eq!(unrealized_pnl, Money::from(expected_unrealized_pnl));
+        assert_eq!(notional, Money::from(expected_notional));
+        assert_eq!(
+            position.realized_pnl,
+            Some(Money::from(expected_realized_pnl))
         );
     }
 

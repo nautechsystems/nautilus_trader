@@ -128,6 +128,10 @@ pub struct Cache {
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
     external_order_claims: AHashMap<InstrumentId, StrategyId>,
+    client_accounts: AHashMap<ClientId, AccountId>,
+    client_routes: AHashMap<Venue, ClientId>,
+    default_client_id: Option<ClientId>,
+    external_clients: AHashSet<ClientId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
@@ -162,6 +166,10 @@ impl Debug for Cache {
             .field("option_greeks", &self.option_greeks)
             .field("yield_curves", &self.yield_curves)
             .field("external_order_claims", &self.external_order_claims)
+            .field("client_accounts", &self.client_accounts)
+            .field("client_routes", &self.client_routes)
+            .field("default_client_id", &self.default_client_id)
+            .field("external_clients", &self.external_clients)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
             .field("order_lists", &self.order_lists)
@@ -230,6 +238,10 @@ impl Cache {
             option_greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
             external_order_claims: AHashMap::new(),
+            client_accounts: AHashMap::new(),
+            client_routes: AHashMap::new(),
+            default_client_id: None,
+            external_clients: AHashSet::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
             order_lists: AHashMap::new(),
@@ -350,6 +362,73 @@ impl Cache {
         );
 
         Ok(())
+    }
+
+    /// Returns the account ID registered for the execution client `client_id`.
+    ///
+    /// The registration does not depend on account issuers or client names. The account itself
+    /// may not be cached yet, for example before the client reports its first account state.
+    #[must_use]
+    pub fn account_id_for_client(&self, client_id: &ClientId) -> Option<&AccountId> {
+        self.client_accounts.get(client_id)
+    }
+
+    /// Registers `account_id` as the account of the execution client `client_id`, replacing any
+    /// previous registration for the client.
+    ///
+    /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_client_account(&mut self, client_id: ClientId, account_id: AccountId) {
+        self.client_accounts.insert(client_id, account_id);
+    }
+
+    /// Removes the account registration of the execution client `client_id`.
+    pub fn remove_client_account(&mut self, client_id: &ClientId) {
+        self.client_accounts.remove(client_id);
+    }
+
+    /// Returns the execution client registered as the route for `venue`, else the default client.
+    #[must_use]
+    pub fn client_id_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
+        self.client_routes
+            .get(venue)
+            .or(self.default_client_id.as_ref())
+    }
+
+    /// Registers the execution client `client_id` as the route for commands on `venue`, replacing
+    /// any previous route for the venue.
+    ///
+    /// Routes and the default client survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_client_route(&mut self, client_id: ClientId, venue: Venue) {
+        self.client_routes.insert(venue, client_id);
+    }
+
+    /// Registers the execution client `client_id` as the default route for venues without a
+    /// route, replacing any previous default.
+    pub fn set_default_client(&mut self, client_id: ClientId) {
+        self.default_client_id = Some(client_id);
+    }
+
+    /// Removes the venue routes and default route of the execution client `client_id`.
+    pub fn remove_client_routes(&mut self, client_id: &ClientId) {
+        self.client_routes.retain(|_, routed| routed != client_id);
+
+        if self.default_client_id.as_ref() == Some(client_id) {
+            self.default_client_id = None;
+        }
+    }
+
+    /// Returns whether `client_id` is registered as an external execution client, whose commands
+    /// are published for another process to execute.
+    #[must_use]
+    pub fn is_external_client(&self, client_id: &ClientId) -> bool {
+        self.external_clients.contains(client_id)
+    }
+
+    /// Registers `client_id` as an external execution client.
+    ///
+    /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_external_client(&mut self, client_id: ClientId) {
+        self.external_clients.insert(client_id);
     }
 
     /// Sets the cache database adapter for persistence.
@@ -589,9 +668,7 @@ impl Cache {
 
         // Index accounts
         for account_id in self.accounts.keys() {
-            self.index
-                .venue_account
-                .insert(account_id.get_issuer(), *account_id);
+            self.index.add_venue_account(*account_id);
         }
 
         // Index orders
@@ -955,11 +1032,12 @@ impl Cache {
         for account_id in self.accounts.keys() {
             if !self
                 .index
-                .venue_account
-                .contains_key(&account_id.get_issuer())
+                .venue_accounts
+                .get(&account_id.get_issuer())
+                .is_some_and(|account_ids| account_ids.contains(account_id))
             {
                 log::error!(
-                    "{failure} in accounts: {account_id} not found in `self.index.venue_account`",
+                    "{failure} in accounts: {account_id} not found in `self.index.venue_accounts`",
                 );
                 error_count += 1;
             }
@@ -1074,10 +1152,10 @@ impl Cache {
         }
 
         // Check indexes
-        for account_id in self.index.venue_account.values() {
+        for account_id in self.index.venue_accounts.values().flatten() {
             if !self.accounts.contains_key(account_id) {
                 log::error!(
-                    "{failure} in `index.venue_account`: {account_id} not found in `self.accounts`",
+                    "{failure} in `index.venue_accounts`: {account_id} not found in `self.accounts`",
                 );
                 error_count += 1;
             }
@@ -1956,7 +2034,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// are retained so registered strategy routing remains configured across resets.
+    /// and execution client account, route, and external client registrations are retained so
+    /// registered strategy and client routing remain configured across resets.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 
@@ -2012,14 +2091,17 @@ impl Cache {
         }
     }
 
-    /// Flushes the caches database which permanently removes all persisted data.
+    /// Flushes the cache database, permanently removing the data the backing owns.
     ///
-    /// If flushing the database connection fails, an error is logged.
-    pub fn flush_db(&mut self) {
-        if let Some(database) = &mut self.database
-            && let Err(e) = database.flush()
-        {
-            log::error!("Failed to flush database: {e}");
+    /// Does nothing when no database is configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing the database fails.
+    pub fn flush_db(&mut self) -> anyhow::Result<()> {
+        match &mut self.database {
+            Some(database) => database.flush(),
+            None => Ok(()),
         }
     }
 
@@ -2503,9 +2585,7 @@ impl Cache {
 
         let account_id = account.id();
         self.accounts.insert(account_id, SharedCell::new(account));
-        self.index
-            .venue_account
-            .insert(account_id.get_issuer(), account_id);
+        self.index.add_venue_account(account_id);
         Ok(())
     }
 
@@ -3173,9 +3253,7 @@ impl Cache {
     /// Caches the `account` in memory without updating the database.
     pub fn cache_account_owned(&mut self, account: AccountAny) {
         let account_id = account.id();
-        self.index
-            .venue_account
-            .insert(account_id.get_issuer(), account_id);
+        self.index.add_venue_account(account_id);
         match self.accounts.get(&account_id) {
             Some(account_cell) => *account_cell.borrow_mut() = account,
             None => {
@@ -3442,6 +3520,43 @@ impl Cache {
 
         if let Some(database) = &mut self.database {
             database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(position)
+    }
+
+    /// Updates a cached position by applying an authoritative instrument close in place.
+    ///
+    /// Returns a transient copy of the settled state without stored history. The canonical cached
+    /// position retains its complete history, including the close. A failed database update is
+    /// logged rather than returned, because the cached position has already settled and callers
+    /// still need its settled state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache or the close cannot be
+    /// applied. An error leaves the position unchanged.
+    pub fn update_position_from_instrument_close(
+        &mut self,
+        position_id: PositionId,
+        close: InstrumentClose,
+    ) -> anyhow::Result<Position> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        let position = {
+            let mut position = position_cell.borrow_mut();
+            position.apply_instrument_close(close)?;
+            position.clone_without_events()
+        };
+
+        self.refresh_position_indexes(&position);
+
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.update_position(&position_cell.borrow())
+        {
+            log::error!("Failed to persist settled position {position_id}: {e}");
         }
 
         Ok(position)
@@ -6317,11 +6432,12 @@ impl Cache {
     }
 
     /// Returns a borrow of the account for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`; look those
+    /// accounts up by account ID instead.
     #[must_use]
     pub fn account_for_venue(&self, venue: &Venue) -> Option<AccountRef<'_>> {
-        self.index
-            .venue_account
-            .get(venue)
+        self.account_id(venue)
             .and_then(|account_id| self.accounts.get(account_id))
             .map(|account_cell| AccountRef::new(account_cell.borrow()))
     }
@@ -6329,20 +6445,23 @@ impl Cache {
     /// Returns an owned snapshot of the account for the `venue` (if found).
     ///
     /// Use when downstream needs an owned [`AccountAny`] that crosses a boundary. The snapshot
-    /// will not reflect later cache mutations.
+    /// will not reflect later cache mutations. Returns `None` when more than one account is
+    /// issued under the `venue`.
     #[must_use]
     pub fn account_for_venue_owned(&self, venue: &Venue) -> Option<AccountAny> {
-        self.index
-            .venue_account
-            .get(venue)
+        self.account_id(venue)
             .and_then(|account_id| self.accounts.get(account_id))
             .map(|account_cell| account_cell.borrow().clone())
     }
 
     /// Returns a reference to the account ID for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`.
     #[must_use]
     pub fn account_id(&self, venue: &Venue) -> Option<&AccountId> {
-        self.index.venue_account.get(venue)
+        let mut account_ids = self.index.venue_accounts.get(venue)?.iter();
+        let account_id = account_ids.next()?;
+        account_ids.next().is_none().then_some(account_id)
     }
 
     /// Returns borrows of all accounts for the `account_id`.

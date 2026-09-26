@@ -230,7 +230,7 @@ pub(crate) fn path_to_file_uri(path: &str) -> String {
 }
 
 /// Converts a file:// URI to a native path for the current platform.
-/// On Windows, "file:///C:/x/y" becomes "C:\x\y" so LocalFileSystem and std::fs work correctly.
+/// On Windows, `file:///C:/x/y` becomes `C:\x\y` so `LocalFileSystem` and `std::fs` work correctly.
 #[cfg(windows)]
 pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     let without_scheme = uri

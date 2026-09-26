@@ -504,6 +504,10 @@ define_switchboard! {
     get_order_fill_voided_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.order_fill_voided.{}", instrument_id;
 
+    order_fill_declined_topics: InstrumentId,
+    get_order_fill_declined_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_fill_declined.{}", instrument_id;
+
     event_order_topics: StrategyId,
     get_event_order_topic(strategy_id: StrategyId) -> strategy_id,
     "events.order.{}", strategy_id;
@@ -719,6 +723,7 @@ define_wrappers! {
     get_order_canceled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_filled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_fill_voided_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_fill_declined_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_snapshot_order_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
     get_snapshot_position_topic(position_id: PositionId) -> MStr<Topic>,
     get_event_order_topic(strategy_id: StrategyId) -> MStr<Topic>,

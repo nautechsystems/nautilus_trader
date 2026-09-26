@@ -39,7 +39,7 @@ client = db.Historical()  # Uses the DATABENTO_API_KEY environment variable
 # The response is in USD, displayed as fractional cents.
 
 # %% [markdown]
-# The following request is for a small amount of data (as used in this Medium article [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
+# The following request is for a small amount of data (as used in the Databento blog post [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
 
 # %%
 from pathlib import Path
@@ -66,7 +66,7 @@ client.metadata.get_cost(
 )
 
 # %% [markdown]
-# Use the historical API to request the data used in the Medium article.
+# Use the historical API to request the data used in the blog post.
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
@@ -94,6 +94,8 @@ df
 
 # %% [markdown]
 # ## Write to data catalog
+#
+# The guide writes the catalog to `catalog/` under the working directory and replaces that directory on each run.
 
 # %%
 import shutil
@@ -122,7 +124,7 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 loader = DatabentoDataLoader()
 
 # %% [markdown]
-# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ES.GLBX").
+# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ESZ3.GLBX").
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
@@ -150,7 +152,7 @@ len(depths)
 # ## Preparing a month of AAPL trades
 
 # %% [markdown]
-# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trade` schema, which will translate to Nautilus `TradeTick` objects.
+# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trades` schema, which will translate to Nautilus `TradeTick` objects.
 
 # %%
 # Request cost quote (USD) - this endpoint is 'free'

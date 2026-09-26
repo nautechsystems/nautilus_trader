@@ -874,7 +874,7 @@ emissions are filtered to active subscriptions.
 ### Order book recovery ownership
 
 [`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX and Lighter. Keep venue-specific book synchronization and recovery in each adapter's `src/book/`,
+OKX, Lighter, and Binance. Keep venue-specific book synchronization and recovery in each adapter's `src/book/`,
 with WebSocket handlers dispatching commands and frames.
 
 #### Recovery state and retry budgets
@@ -910,6 +910,8 @@ snapshot parsing. The shared types describe the result of validation and monitor
 
 Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
 its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+Binance keeps its diff streams subscribed: a replacement attempt fetches a REST snapshot, and the
+adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 
 #### Task lifetime and cancellation
 

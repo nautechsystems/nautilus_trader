@@ -2037,6 +2037,7 @@ fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Ve
     assert!(!execution_client.is_connected());
     assert_eq!(execution_client.venue(), venue);
     assert_eq!(execution_client.oms_type(), OmsType::Netting);
+    assert!(execution_client.settles_contract_expirations());
     assert_eq!(execution_client.matching_engine_count(), 0);
 }
 
@@ -4480,6 +4481,65 @@ fn test_command_response_cannot_overtake_a_fill_through_exec_engine(
     );
     assert_eq!(cached_status(&harness.cache, &resting), OrderStatus::Filled);
     assert_eq!(cached_status(&harness.cache, &next), OrderStatus::Accepted);
+}
+
+/// An immediately marketable IOC must apply its accepted event once through the async execution
+/// channel before the fill event reaches the execution engine.
+#[rstest]
+fn test_async_immediate_limit_ioc_publishes_accepted_before_fill(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let quote = create_quote_tick(instrument.id(), 1000.00, 1001.00);
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id("O-ASYNC-IOC-1".into())
+        .ts_init(harness.test_clock.borrow().timestamp_ns())
+        .build();
+    cache_order(&harness, &order);
+    submit_cached_through_engine(&harness, trader_id, &order);
+
+    assert_eq!(
+        harness
+            .settle()
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>(),
+        vec!["submitted"],
+    );
+
+    let due = UnixNanos::from(*order.ts_init() + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    let settled: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(settled, vec!["accepted", "filled"]);
+
+    let published: Vec<&str> = harness
+        .published
+        .borrow()
+        .iter()
+        .filter(|event| event.client_order_id() == order.client_order_id())
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(published, vec!["submitted", "accepted", "filled"]);
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
 }
 
 /// Commands sharing one due time apply in arrival order: the monotonic `inbound_seq` tie-break

@@ -16,7 +16,18 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_deribit::websocket::messages::{DeribitWsMessage, parse_raw_message};
+use nautilus_core::UnixNanos;
+use nautilus_deribit::{
+    common::parse::parse_deribit_instrument_any,
+    http::models::{DeribitInstrument, DeribitJsonRpcResponse},
+    websocket::{
+        messages::{
+            DeribitBookMsg, DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage, parse_raw_message,
+        },
+        parse::parse_book_msg,
+    },
+};
+use nautilus_model::instruments::InstrumentAny;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -29,6 +40,7 @@ const QUOTE: &str = include_str!("../test_data/ws_quote.json");
 const TEST_REQUEST: &str = include_str!("../test_data/ws_test_request.json");
 const SUBSCRIBE_RESPONSE: &str = include_str!("../test_data/ws_subscribe_response.json");
 const ERROR: &str = include_str!("../test_data/ws_error.json");
+const INSTRUMENTS: &str = include_str!("../test_data/http_get_instruments.json");
 
 /// Benchmarks the main `parse_raw_message` function for all message types.
 fn bench_parse_raw_message(c: &mut Criterion) {
@@ -278,6 +290,90 @@ fn bench_parsing_comparison(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks typed decoding of payloads as the WebSocket handler and HTTP client read them.
+fn bench_payload_decode(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Deribit Payload Decode");
+
+    let instrument = perpetual_instrument();
+    let book_change = book_change_payload(25);
+    let trades = notification_data(TRADES);
+    let ticker = notification_data(TICKER);
+
+    group.bench_function("book_change_50_levels", |b| {
+        b.iter(|| {
+            let msg = serde_json::from_str::<DeribitBookMsg>(black_box(&book_change)).unwrap();
+            let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+            black_box(deltas);
+        });
+    });
+
+    group.bench_function("trades", |b| {
+        b.iter(|| {
+            let msgs = serde_json::from_str::<Vec<DeribitTradeMsg>>(black_box(&trades)).unwrap();
+            black_box(msgs);
+        });
+    });
+
+    group.bench_function("ticker", |b| {
+        b.iter(|| {
+            let msg = serde_json::from_str::<DeribitTickerMsg>(black_box(&ticker)).unwrap();
+            black_box(msg);
+        });
+    });
+
+    group.bench_function("http_instruments", |b| {
+        b.iter(|| {
+            let response =
+                serde_json::from_slice::<DeribitJsonRpcResponse<Vec<DeribitInstrument>>>(
+                    black_box(INSTRUMENTS.as_bytes()),
+                )
+                .unwrap();
+            black_box(response);
+        });
+    });
+
+    group.finish();
+}
+
+fn perpetual_instrument() -> InstrumentAny {
+    let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+        serde_json::from_str(INSTRUMENTS).unwrap();
+    let instrument = &response.result.unwrap()[0];
+    parse_deribit_instrument_any(instrument, UnixNanos::default(), UnixNanos::default())
+        .unwrap()
+        .unwrap()
+}
+
+fn notification_data(message: &str) -> String {
+    match parse_raw_message(message).unwrap() {
+        DeribitWsMessage::Notification(notification) => notification.params.data.get().to_string(),
+        _ => panic!("expected a notification"),
+    }
+}
+
+// Mixes new, change, and delete levels with BTC-PERPETUAL tick and lot sizes
+fn book_change_payload(levels_per_side: usize) -> String {
+    let side = |start: f64, step: f64| {
+        (0..levels_per_side)
+            .map(|i| {
+                let price = start + step * i as f64;
+                match i % 5 {
+                    0 => format!(r#"["delete",{price:.1},0.0]"#),
+                    1 | 2 => format!(r#"["new",{price:.1},{}.0]"#, 100 + i * 10),
+                    _ => format!(r#"["change",{price:.1},{}.0]"#, 100 + i * 10),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    format!(
+        r#"{{"type":"change","instrument_name":"BTC-PERPETUAL","timestamp":1699999999500,"change_id":123456790,"prev_change_id":123456789,"bids":[{}],"asks":[{}]}}"#,
+        side(42500.0, -0.5),
+        side(42500.5, 0.5),
+    )
+}
+
 criterion_group!(
     benches,
     bench_parse_raw_message,
@@ -288,5 +384,6 @@ criterion_group!(
     bench_message_routing,
     bench_tungstenite_message_access,
     bench_parsing_comparison,
+    bench_payload_decode,
 );
 criterion_main!(benches);

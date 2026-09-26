@@ -2860,6 +2860,10 @@ async fn start_exec_query_order_test_server(state: Arc<QueryOrderRouteState>) ->
             get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
         )
         .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})) }),
+        )
+        .route(
             "/api/v5/trade/order",
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_state);
@@ -5496,6 +5500,151 @@ async fn test_generate_mass_status_uses_live_child_quantity_for_close_fraction_p
     assert_eq!(report.order_status, OrderStatus::Triggered);
     assert_eq!(report.quantity, Quantity::from("1"));
     assert_eq!(report.filled_qty, Quantity::from("0"));
+}
+
+#[rstest]
+#[case::net_long("sell", "0.05", OrderSide::Sell)]
+#[case::net_short("buy", "-0.05", OrderSide::Buy)]
+#[tokio::test]
+async fn test_generate_mass_status_uses_linked_position_size_for_pending_close_fraction_order(
+    #[case] order_side: &'static str,
+    #[case] position_size: &'static str,
+    #[case] expected_side: OrderSide,
+) {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    if params.get("ordType").map(String::as_str) != Some("conditional") {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response =
+                        load_test_data("http_get_orders_algo_pending_close_fraction.json");
+                    response["data"][0]["side"] = json!(order_side);
+                    Json(response).into_response()
+                },
+            ),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route(
+            "/api/v5/account/positions",
+            get(move || async move {
+                let mut response = load_test_data("http_get_positions_close_order_algo.json");
+                response["data"][0]["pos"] = json!(position_size);
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("close-frac-algo"))
+        .expect("expected close-fraction algo report");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-close-frac-status"))
+    );
+    assert_eq!(report.order_side, Some(expected_side));
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.quantity, Quantity::from("0.05"));
+    assert_eq!(report.filled_qty, Quantity::from("0.00"));
+    assert_eq!(report.trigger_price, Some(Price::from("50000.0")));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_when_close_fraction_position_lookup_is_unavailable() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params.get("ordType").map(String::as_str) != Some("conditional") {
+                    return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                }
+
+                Json(load_test_data(
+                    "http_get_orders_algo_pending_close_fraction.json",
+                ))
+                .into_response()
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route(
+            "/api/v5/account/positions",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                // Position reports query by instrument type; only the close-fraction lookup fails
+                if params.contains_key("instType") {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                } else {
+                    StatusCode::SERVICE_UNAVAILABLE.into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.max_retries = 1;
+            config.retry_delay_initial_ms = 1;
+            config.retry_delay_max_ms = 1;
+        });
+
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Failed to fetch pending algo order reports"),
+        "was {error:#}"
+    );
 }
 
 #[rstest]

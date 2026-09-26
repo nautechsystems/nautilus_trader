@@ -938,11 +938,28 @@ For an unknown outcome, the adapter:
 - Defers a pending cancel until the expected venue order ID is known.
 - Registers fill tracking under that venue order ID.
 
+##### Order and trade reads
+
+The adapter reads the order and its trades from REST, retrying with backoff capped at 30 seconds
+until the venue state is known. Terminal trades apply through the settlement records first, then the
+order status accepts the order and releases its fills. The status waits while any trade is still
+provisional or while confirmed trades do not yet cover the venue's matched quantity.
+
+##### Report gating
+
+Reports that cover the order or its instrument fail until that read applies or reading stops, so
+reconciliation does not infer fills from partial venue state.
+
+##### Read timeout
+
+Reading stops after 10 minutes without applying the venue state. The adapter logs a warning, lifts
+the report gate, and leaves the order `Submitted`.
+
 ### Position management
 
 | Feature              | Binary Options | Notes                                                                       |
 | -------------------- | -------------- | --------------------------------------------------------------------------- |
-| Query positions      | ✓              | Current user positions from the Polymarket Data API.                        |
+| Query positions      | ✓              | Data API user positions, excluding resolved balances.                       |
 | Split, merge, redeem | ✓              | Deposit Wallet operations; see [Position operations](#position-operations). |
 | Position mode        | -              | Binary outcome positions only.                                              |
 | Leverage control     | -              | No leverage available.                                                      |
@@ -1062,6 +1079,7 @@ generation and allows Gamma to supply each token's tick again.
 
 Trades on Polymarket can have the following statuses:
 
+- `MATCHED_NOT_BROADCASTED`: The orders matched before an on-chain transaction was broadcast.
 - `MATCHED`: Trade has been matched and sent to the executor service. The executor submits it as
   a transaction to the Exchange contract.
 - `MINED`: Trade is observed to be mined into the chain, and no finality threshold is established.
@@ -1069,16 +1087,79 @@ Trades on Polymarket can have the following statuses:
 - `RETRYING`: Trade transaction has failed (revert or reorg) and is being retried/resubmitted by the operator.
 - `FAILED`: Trade has failed and is not being retried.
 
+`CONFIRMED` and `FAILED` are terminal. The other statuses are provisional: the trade can still
+succeed or fail.
+
 ### Settlement updates
 
 Once a trade is initially matched, subsequent status updates arrive through the user WebSocket.
-The execution adapter emits one `OrderFilled` at `MATCHED`. It treats `MINED` and `RETRYING` as
-settlement updates without emitting another fill. `CONFIRMED` records finality and refreshes the
-account. If the trade reaches `FAILED`, the adapter emits one `OrderFillVoided` for each locally
-applied fill and refreshes the account. The correction does not relist the failed quantity, but it
-preserves any maker-order remainder that was already working. An execution-complete order becomes
-`VOIDED`. Matched WebSocket fills retain the raw trade fields in the `info` field of the
-`OrderFilled` event.
+The execution adapter tracks each trade's venue settlement separately from whether the engine has
+applied each of the account's fills, and it emits each fill and each correction at most once.
+
+For an order this client submitted in the current WebSocket session, the adapter emits one
+`OrderFilled` at the first provisional status it receives, usually `MATCHED`. It treats later
+provisional statuses as settlement updates without emitting another fill. `CONFIRMED` records
+finality and refreshes the account. Matched WebSocket fills retain the raw trade fields in the
+`info` field of the `OrderFilled` event.
+
+#### Failed trades and REST resolution
+
+A WebSocket `FAILED` update never voids a fill by itself. The adapter quarantines the trade and
+reads it by ID from the authenticated REST trades endpoint (`GET /data/trades`). Contradicting
+WebSocket evidence for a fill the engine has not applied, such as changed fill values or a missing
+owned order, and a trade message that fails validation also quarantine the trade. The first read
+starts immediately. Until REST returns a terminal status, the adapter retries after 500 ms, doubling
+the delay up to 30 seconds, so a long `RETRYING` period leaves the trade quarantined.
+
+The first terminal REST result is final. A later WebSocket status that contradicts it, or new or
+changed evidence for fills the engine has not applied, triggers another REST read but never reverses
+the first result.
+
+##### REST `FAILED` result
+
+The adapter emits one `OrderFillVoided` for each fill the engine applied, including a fill the engine
+applies after the result arrives, and refreshes the account. Fills the adapter had not yet emitted
+are never emitted. The correction does not relist the failed quantity, but it preserves any
+maker-order remainder that was already working. An execution-complete order becomes `VOIDED`.
+
+##### REST `CONFIRMED` result
+
+The adapter emits any of the account's fills that the engine has not applied, using the REST trade
+values, and refreshes the account.
+
+#### Reconnects and restarts
+
+A provisional status applies a fill only when the trade and all of the account's orders in it
+belong to the current uninterrupted WebSocket session. After a WebSocket reconnect, or after a
+restart for orders restored from the cache, the adapter quarantines new trades on those orders until
+REST reports `CONFIRMED` or `FAILED`. Fills on a resting order can therefore lag the venue until
+on-chain confirmation. On connect, the adapter rebuilds applied fills and voids from the cached order
+events, so a replayed trade does not produce a second fill.
+
+A reconnect also ends the session of trades whose fills were already applied from a provisional
+status. The stream does not replay a `CONFIRMED` or `FAILED` update missed while disconnected, so
+after reconnecting the adapter reads each of those trades from REST: `CONFIRMED` keeps the applied
+fill and `FAILED` voids it. Reports touching those trades fail until the read returns. Fills rebuilt
+from cached order events after a restart are not read again.
+
+#### Settlement faults
+
+A trade enters a hard fault when its venue outcome and the engine's state cannot be reconciled:
+
+- A later terminal REST result differs from the first one.
+- The engine declines a fill the adapter emitted, unless REST already reported `FAILED`.
+- The engine declines a correction void, so the applied fill cannot be reversed.
+- REST `CONFIRMED` values contradict an applied fill, or the terminal REST result omits one of the
+  account's fills that the engine applied.
+
+A hard-faulted trade admits no further fills or voids, except the one void owed for a fill applied
+after REST reported `FAILED`. The adapter logs the fault at error level, refreshes the account, and
+blocks reconciliation for the trade (see [settlement precedence](#settlement-precedence)) until the
+node restarts.
+
+The adapter keeps settlement records for the lifetime of the execution client. If more than 100,000
+records accumulate after connect, the client faults closed: it reports disconnected and refuses new
+commands until restart. Records rebuilt from the cache on connect do not count toward this limit.
 
 ### Trade ID derivation
 
@@ -1236,10 +1317,39 @@ is as follows:
 - Generate missing orders to bring Nautilus execution state in line with positions reported by
   Polymarket.
 
-An individual order lookup can return a live or terminal status. When it instead returns no order,
-the adapter recovers a cached individual order from trade history if its terminal WebSocket update
-was missed. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement
-states do not.
+### Position reports
+
+#### Resolved balances
+
+Position reports omit resolved balances:
+
+- A balance in an instrument that Nautilus settled from an `InstrumentClose` is always omitted, so
+  reconciliation cannot reopen settled exposure.
+- A balance that the Data API marks `redeemable` is omitted when the account has no open Nautilus
+  position in that instrument. While an open position still holds it, the balance stays reported
+  until settlement closes the position.
+
+The adapter drops these balances before instrument mapping, so an expired instrument that is no
+longer loaded does not fail reconciliation. The outcome tokens stay in the wallet until redeemed.
+
+#### Missing reports
+
+A missing position report is not evidence of a flat position. Redemption removes a balance from
+the Data API without a trade, and Polymarket can redeem winning tokens automatically shortly after
+resolution. Continuous position checks therefore never close a position that the Data API no
+longer reports; open positions close through fills or settlement.
+
+### Settlement precedence
+
+While a trade is quarantined, hard-faulted, awaiting a REST read after a reconnect, or waiting for
+the engine to apply a fill or void, or while the adapter reads a submitted order with an unknown
+outcome, order status, fill, position
+status, and mass-status reports fail instead of returning coverage that reconciliation could use to
+infer fills. Mass status checks the whole account; the other reports check the requested instrument
+or order. A trade quarantined because its message failed validation blocks every report when it has
+no earlier admitted legs; otherwise the order and instrument scope of those legs applies. Reports
+also fail while the adapter rebuilds its settlement records on connect. See
+[settlement updates](#settlement-updates) for how trades resolve.
 
 ### Missing orders and API lag
 
@@ -1284,7 +1394,8 @@ Position checks have their own `position_check_interval_secs`, also disabled by 
 checks do not poll wallet positions. Owner-mode position reports come from the Data API and can
 reflect a different point in time from CLOB orders and trades; session mode omits wallet-wide
 position reports. Treat an apparent position mismatch as requiring reconciliation, not as proof
-that a particular fill is false.
+that a particular fill is false. A position the Data API no longer reports stays open until a
+fill or settlement closes it; see [missing reports](#missing-reports).
 
 ### Mass-status reconciliation
 
@@ -1309,8 +1420,10 @@ Polymarket commission.
 
 `/data/order/{id}` can return live or terminal orders. When it returns no order for a known ID,
 `generate_order_status_report` falls back to `/data/trades` and filters the returned trades by the venue
-order ID. This avoids the engine resolving a local `ACCEPTED` order as `REJECTED`, which would discard
-fills that already happened at the venue.
+order ID. This recovers a cached order whose terminal WebSocket update was missed, and avoids the engine
+resolving a local `ACCEPTED` order as `REJECTED`, which would discard fills that already happened at the
+venue. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement states do
+not.
 
 The cached order is resolved via `client_order_id`, falling back to the cache's `venue_order_id` index
 when only the venue ID is known. When the request supplies or resolves to a `client_order_id`, the cached
@@ -1344,20 +1457,23 @@ Duplicate delivery, failed settlement, and delayed REST snapshots require differ
 
 #### Duplicate fills
 
-The user WebSocket deduplicates trade messages with `{trade.id}-{trade.taker_order_id}`. Individual
-execution fills use the venue trade ID for takers and a composite of trade ID and maker order ID for
-makers. REST and WebSocket use the same fill identifiers, so replaying the same fill does not add its
-quantity again. See [trade ID derivation](#trade-id-derivation) and [fill recovery and
+The adapter tracks each venue trade ID and emits each of the account's fills at most once, so a
+replayed trade message does not emit again. Individual execution fills use the venue trade ID for
+takers and a composite of trade ID and maker order ID for makers. REST and WebSocket use the same
+fill identifiers, so replaying the same fill does not add its quantity again. See [trade ID
+derivation](#trade-id-derivation) and [fill recovery and
 deduplication](#fill-recovery-and-deduplication).
 
 #### Failed settlement
 
-`MATCHED` emits a fill before final settlement. `MINED` and `RETRYING` do not emit another fill.
-`CONFIRMED` can recover a fill whose earlier update was missed. `FAILED` voids locally applied matched
-fills and suppresses buffered fills for that trade.
+For orders submitted in the current WebSocket session, `MATCHED` emits a fill before final
+settlement. `MINED` and `RETRYING` do not emit another fill. `CONFIRMED` can recover a fill whose
+earlier update was missed. A WebSocket `FAILED` quarantines the trade; only a targeted REST `FAILED`
+result voids locally applied fills and suppresses buffered fills for that trade.
 
-Exposure can therefore change before finality; the adapter does not wait for confirmation on the live
-WebSocket path. See [trades](#trades).
+Exposure can therefore change before finality: for current-session orders the adapter does not wait
+for confirmation. After a reconnect or restart, fills on existing orders wait for a terminal REST
+result. See [settlement updates](#settlement-updates).
 
 #### Cumulative reports
 
@@ -1717,9 +1833,14 @@ do not receive a fresh polling window, and missing expiration does not cause ind
 When the client applies a resolution, position-owned legs emit one `InstrumentStatus` close and one
 `InstrumentClose`. Data-only legs emit whichever event types have active subscriptions. The winner
 leg closes at `1`, and the losing leg closes at `0`. The close type is
-`InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
-tokens or claim funds on-chain. Deposit Wallet users can redeem winning tokens with
-[Position operations](#position-operations).
+`InstrumentCloseType.CONTRACT_EXPIRED`. In a live node, the execution engine settles each open
+position in the leg at that price and emits one `PositionClosed` without an order or fill; the
+first close applied is authoritative (see
+[Settlement at contract expiration](../concepts/positions.md#settlement-at-contract-expiration)).
+
+Settlement does not redeem tokens or claim funds on-chain. The pUSD balance includes the payout
+only after redemption, so account balances exclude unredeemed winnings until then. Deposit Wallet
+users can redeem winning tokens with [Position operations](#position-operations).
 
 #### Closure and subscription release
 
@@ -1840,11 +1961,11 @@ deduplicated across reconnects. If a trade arrives before its instrument is avai
 leaves it out of the dedup state. A redelivered event or later REST reconciliation can apply it after
 instrument loading completes.
 
-The adapter also constructs every owned fill report for a trade before emitting any of them or
-recording the trade as processed. If commission construction fails, it emits no fill for that trade
-and leaves its deduplication, confirmation, and terminal state unchanged. A duplicate or reconnect
-replay can retry the trade, while scheduled REST reconciliation remains the authoritative recovery
-path.
+The adapter also validates every owned leg of a trade, including its commission, before emitting any
+fill for it. If validation fails, it emits no fill for that trade and quarantines it, and a targeted
+terminal REST read settles it as described in
+[Failed trades and REST resolution](#failed-trades-and-rest-resolution). Replayed WebSocket updates do
+not retry a quarantined trade.
 
 #### Terminal quantity normalization
 

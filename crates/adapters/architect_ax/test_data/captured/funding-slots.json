@@ -1,0 +1,23 @@
+{
+  "symbol": "EURUSD-PERP",
+  "date": "2026-09-24",
+  "timezone": "Europe/London",
+  "variant": "daily_close",
+  "interval_count": 1,
+  "slot_interval_minutes": null,
+  "cap_bps": "100.0",
+  "slots": [
+    {
+      "index": 1,
+      "funding_time": "2026-09-24T15:00:00Z",
+      "status": "projected",
+      "mark_twap": null,
+      "underlying_twap": null,
+      "premium_bps": null,
+      "funding_rate_bps": null,
+      "capped": false
+    }
+  ],
+  "realized_sum_bps": "0",
+  "projected_eod_bps": "0"
+}

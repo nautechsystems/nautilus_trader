@@ -13,15 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, io::Read, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
+use flate2::read::GzDecoder;
 use nautilus_core::{
     DurationNanos, UnixNanos,
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers};
+use nautilus_network::http::{
+    HttpClient, HttpRedirectPolicy, HttpResponse, create_standard_nautilus_headers,
+};
 
 use super::{
     error::{Error, TardisErrorResponse},
@@ -42,6 +45,12 @@ use crate::{
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+const CONTENT_ENCODING: &str = "content-encoding";
+const GZIP: &str = "gzip";
+
+// Deribit's all-symbol instrument list decompresses to about 284 MB
+const MAX_DECOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// A Tardis HTTP API client.
 /// See <https://docs.tardis.dev/api/http>.
@@ -106,6 +115,9 @@ impl TardisHttpClient {
             );
         }
 
+        // Uncompressed all-symbol instrument lists exceed the default HTTP response limit
+        headers.insert("Accept-Encoding".to_string(), GZIP.to_string());
+
         let keyed_quotas = vec![(TARDIS_REST_RATE_KEY.to_string(), *TARDIS_REST_QUOTA)];
         let client = HttpClient::builder()
             .redirect_policy(HttpRedirectPolicy::Reject)
@@ -114,6 +126,7 @@ impl TardisHttpClient {
             .default_quota(*TARDIS_REST_QUOTA)
             .maybe_timeout_secs(timeout_secs.or(Some(60)))
             .maybe_proxy_url(proxy_url)
+            .header_keys(vec![CONTENT_ENCODING.to_string()])
             .build()?;
 
         Ok(Self {
@@ -166,8 +179,10 @@ impl TardisHttpClient {
         let status = response.status.as_u16();
         log::debug!("Response status: {status}");
 
+        let body = decode_body(&response)?;
+
         if !response.status.is_success() {
-            let body = String::from_utf8_lossy(&response.body).to_string();
+            let body = String::from_utf8_lossy(&body).to_string();
             return if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&body) {
                 Err(Error::ApiError {
                     status,
@@ -183,7 +198,7 @@ impl TardisHttpClient {
             };
         }
 
-        let body = String::from_utf8_lossy(&response.body);
+        let body = String::from_utf8_lossy(&body);
         log::trace!("{body}");
 
         if let Ok(instrument) = serde_json::from_str::<TardisInstrumentInfo>(&body) {
@@ -303,11 +318,62 @@ impl TardisHttpClient {
     }
 }
 
+fn decode_body(response: &HttpResponse) -> Result<Cow<'_, [u8]>> {
+    match response.headers.get(CONTENT_ENCODING) {
+        None => Ok(Cow::Borrowed(response.body.as_ref())),
+        Some(encoding) if encoding.eq_ignore_ascii_case(GZIP) => {
+            decompress_gzip(&response.body, MAX_DECOMPRESSED_BYTES).map(Cow::Owned)
+        }
+        Some(encoding) => Err(Error::Request(format!(
+            "unsupported response content encoding '{encoding}'"
+        ))),
+    }
+}
+
+fn decompress_gzip(body: &[u8], max_bytes: u64) -> Result<Vec<u8>> {
+    let mut reader = GzDecoder::new(body).take(max_bytes + 1);
+    let mut decompressed = Vec::new();
+    reader
+        .read_to_end(&mut decompressed)
+        .map_err(|e| Error::Request(format!("failed to decompress response body: {e}")))?;
+
+    if reader.limit() == 0 {
+        return Err(Error::Request(format!(
+            "decompressed response body exceeds maximum of {max_bytes} bytes"
+        )));
+    }
+
+    Ok(decompressed)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use flate2::{Compression, write::GzEncoder};
+    use nautilus_network::http::{HttpStatus, StatusCode};
     use nautilus_testkit::http::assert_http_redirect_rejected;
+    use rstest::rstest;
 
     use super::*;
+
+    fn gzip(data: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn http_response(encoding: Option<&str>, body: Vec<u8>) -> HttpResponse {
+        HttpResponse {
+            status: HttpStatus::new(StatusCode::OK),
+            headers: encoding
+                .map(|encoding| (CONTENT_ENCODING.to_string(), encoding.to_string()))
+                .into_iter()
+                .collect(),
+            body: body.into(),
+        }
+    }
+
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
         let client = TardisHttpClient::new(Some("test-key"), None, Some(3), false, None)
@@ -322,5 +388,63 @@ mod tests {
                 .as_u16()
         })
         .await;
+    }
+
+    #[rstest]
+    #[case::identity(None, b"[7]".to_vec())]
+    #[case::gzip(Some("gzip"), gzip(b"[7]"))]
+    #[case::gzip_uppercase(Some("GZIP"), gzip(b"[7]"))]
+    fn test_decode_body(#[case] encoding: Option<&str>, #[case] body: Vec<u8>) {
+        let response = http_response(encoding, body);
+
+        let decoded = decode_body(&response).unwrap();
+
+        assert_eq!(decoded.as_ref(), b"[7]");
+    }
+
+    #[rstest]
+    #[case::unsupported(Some("br"), b"[7]".to_vec(), "unsupported response content encoding 'br'")]
+    #[case::corrupt(
+        Some("gzip"),
+        b"[7]".to_vec(),
+        "failed to decompress response body: unexpected end of file"
+    )]
+    fn test_decode_body_rejects(
+        #[case] encoding: Option<&str>,
+        #[case] body: Vec<u8>,
+        #[case] expected: &str,
+    ) {
+        let response = http_response(encoding, body);
+
+        let error = decode_body(&response).unwrap_err();
+
+        let Error::Request(message) = error else {
+            panic!("expected request error, was {error:?}");
+        };
+
+        assert_eq!(message, expected);
+    }
+
+    #[rstest]
+    #[case::at_max(10)]
+    #[case::below_max(11)]
+    fn test_decompress_gzip_at_or_below_max_bytes(#[case] max_bytes: u64) {
+        let decompressed = decompress_gzip(&gzip(b"0123456789"), max_bytes).unwrap();
+
+        assert_eq!(decompressed, b"0123456789");
+    }
+
+    #[rstest]
+    fn test_decompress_gzip_above_max_bytes() {
+        let error = decompress_gzip(&gzip(b"0123456789"), 9).unwrap_err();
+
+        let Error::Request(message) = error else {
+            panic!("expected request error, was {error:?}");
+        };
+
+        assert_eq!(
+            message,
+            "decompressed response body exceeds maximum of 9 bytes"
+        );
     }
 }

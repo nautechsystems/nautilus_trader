@@ -102,6 +102,7 @@ struct DataTestServerState {
     depth_update_final_update_id: u64,
     depth_update_prev_final_update_id: u64,
     second_depth_update_prev_final_update_id: Option<u64>,
+    empty_depth_update_index: Option<usize>,
     depth_update_repetitions: usize,
     stale_depth_updates_on_unsubscribe: usize,
     unsubscribe_failures_before_success: usize,
@@ -126,6 +127,7 @@ impl Default for DataTestServerState {
             depth_update_final_update_id: 1027025,
             depth_update_prev_final_update_id: 1027023,
             second_depth_update_prev_final_update_id: None,
+            empty_depth_update_index: None,
             depth_update_repetitions: 1,
             stale_depth_updates_on_unsubscribe: 0,
             unsubscribe_failures_before_success: 0,
@@ -399,52 +401,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                         let _result = socket.send(Message::Text(kline.to_string().into())).await;
                     } else if stream.contains("@depth") {
                         for index in 0..state.depth_update_repetitions {
-                            let update_offset = index as u64;
-                            let first_update_id = if index == 0 {
-                                state.depth_update_first_update_id
-                            } else {
-                                state.depth_update_final_update_id + update_offset
-                            };
-                            let prev_final_update_id = if index == 0 {
-                                state.depth_update_prev_final_update_id
-                            } else if index == 1 {
-                                state
-                                    .second_depth_update_prev_final_update_id
-                                    .unwrap_or(state.depth_update_final_update_id)
-                            } else {
-                                state.depth_update_final_update_id + update_offset - 1
-                            };
-                            let mut depth_update = json!({
-                                "e": "depthUpdate",
-                                "E": 1700000000000_i64,
-                                "T": 1700000000000_i64,
-                                "s": "BTCUSDT",
-                                "U": first_update_id,
-                                "u": state.depth_update_final_update_id + update_offset,
-                                "pu": prev_final_update_id,
-                                "b": [["50000.00", "1.000"], ["49999.00", "2.000"]],
-                                "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
-                            });
-
-                            if let Some(depth) = stream_depth_levels(&stream) {
-                                let offset = index * depth;
-                                depth_update["b"] = serde_json::to_value(
-                                    (0..depth)
-                                        .map(|i| {
-                                            [(50000 - offset - i).to_string(), "2.000".to_string()]
-                                        })
-                                        .collect::<Vec<_>>(),
-                                )
-                                .unwrap();
-                                depth_update["a"] = serde_json::to_value(
-                                    (0..depth)
-                                        .map(|i| {
-                                            [(50001 + offset + i).to_string(), "3.000".to_string()]
-                                        })
-                                        .collect::<Vec<_>>(),
-                                )
-                                .unwrap();
-                            }
+                            let depth_update = depth_update_message(&state, &stream, index);
                             tokio::time::sleep(state.depth_update_delay).await;
                             let _result = socket
                                 .send(Message::Text(depth_update.to_string().into()))
@@ -537,6 +494,65 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
             }
         }
     }
+}
+
+fn depth_update_message(
+    state: &DataTestServerState,
+    stream: &str,
+    index: usize,
+) -> serde_json::Value {
+    let update_offset = index as u64;
+
+    let first_update_id = if index == 0 {
+        state.depth_update_first_update_id
+    } else {
+        state.depth_update_final_update_id + update_offset
+    };
+
+    let prev_final_update_id = if index == 0 {
+        state.depth_update_prev_final_update_id
+    } else if index == 1 {
+        state
+            .second_depth_update_prev_final_update_id
+            .unwrap_or(state.depth_update_final_update_id)
+    } else {
+        state.depth_update_final_update_id + update_offset - 1
+    };
+
+    let mut depth_update = json!({
+        "e": "depthUpdate",
+        "E": 1700000000000_i64,
+        "T": 1700000000000_i64,
+        "s": "BTCUSDT",
+        "U": first_update_id,
+        "u": state.depth_update_final_update_id + update_offset,
+        "pu": prev_final_update_id,
+        "b": [["50000.00", "1.000"], ["49999.00", "2.000"]],
+        "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
+    });
+
+    if state.empty_depth_update_index == Some(index) {
+        depth_update["b"] = json!([]);
+        depth_update["a"] = json!([]);
+    }
+
+    if let Some(depth) = stream_depth_levels(stream) {
+        let offset = index * depth;
+        depth_update["b"] = serde_json::to_value(
+            (0..depth)
+                .map(|i| [(50000 - offset - i).to_string(), "2.000".to_string()])
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        depth_update["a"] = serde_json::to_value(
+            (0..depth)
+                .map(|i| [(50001 + offset + i).to_string(), "3.000".to_string()])
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    }
+
+    depth_update
 }
 
 async fn handle_depth(State(state): State<DataTestServerState>) -> Response {
@@ -2292,7 +2308,7 @@ async fn test_subscribe_partial_book_deltas(#[case] depth: usize) {
             assert_eq!(snapshot.sequence, 1027025 + index as u64);
             assert_eq!(
                 snapshot.deltas.last().unwrap().flags,
-                RecordFlag::F_LAST as u8
+                RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
             );
             assert_eq!(book.bids(None).count(), depth);
             assert_eq!(book.asks(None).count(), depth);
@@ -3414,7 +3430,11 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(snapshot.deltas[4].order.side, Some(OrderSide::Sell));
     assert_eq!(snapshot.deltas[4].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(snapshot.deltas[4].order.size.as_decimal(), dec!(1.500));
-    assert_eq!(snapshot.deltas[4].flags, RecordFlag::F_LAST as u8);
+    assert_eq!(snapshot.deltas[1].flags, RecordFlag::F_SNAPSHOT as u8);
+    assert_eq!(
+        snapshot.deltas[4].flags,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+    );
 
     assert_eq!(replayed.sequence, 1027025);
     assert_eq!(replayed.deltas.len(), 4);
@@ -3771,6 +3791,143 @@ async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() 
     assert_eq!(replayed.sequence, 1027025);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
     assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_recovers_live_sequence_gap() {
+    let state = DataTestServerState {
+        depth_snapshot_last_update_ids: vec![1027024, 1027026],
+        depth_update_delay: Duration::from_millis(300),
+        depth_update_repetitions: 2,
+        second_depth_update_prev_final_update_id: Some(1027020),
+        ..Default::default()
+    };
+
+    let depth_requests = state.depth_requests.clone();
+    let addr = start_data_test_server_with_state(state).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut received = Vec::new();
+
+    for _ in 0..3 {
+        let Some(Data::BookDeltas(deltas)) = recv_data(&mut rx, Duration::from_secs(5)).await
+        else {
+            panic!("expected order book deltas");
+        };
+
+        received.push(deltas);
+    }
+
+    assert_eq!(
+        received.iter().map(|d| d.sequence).collect::<Vec<_>>(),
+        vec![1027024, 1027025, 1027026]
+    );
+    assert_eq!(received[0].deltas[0].action, BookAction::Clear);
+    assert_eq!(received[1].deltas[0].action, BookAction::Update);
+    assert_eq!(received[2].deltas[0].action, BookAction::Clear);
+    assert_eq!(received[2].deltas.len(), 5);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
+    assert!(
+        recv_data(&mut rx, Duration::from_millis(200))
+            .await
+            .is_none()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_book_deltas_empty_diff_advances_sequence() {
+    let state = DataTestServerState {
+        depth_update_delay: Duration::from_millis(300),
+        depth_update_repetitions: 3,
+        empty_depth_update_index: Some(1),
+        ..Default::default()
+    };
+
+    let depth_requests = state.depth_requests.clone();
+    let addr = start_data_test_server_with_state(state).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            BookType::L2_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut sequences = Vec::new();
+
+    for _ in 0..3 {
+        let Some(Data::BookDeltas(deltas)) = recv_data(&mut rx, Duration::from_secs(5)).await
+        else {
+            panic!("expected order book deltas");
+        };
+
+        sequences.push(deltas.sequence);
+    }
+
+    assert_eq!(sequences, vec![1027024, 1027025, 1027027]);
+    assert!(
+        recv_data(&mut rx, Duration::from_millis(200))
+            .await
+            .is_none()
+    );
+    assert_eq!(depth_requests.load(Ordering::Relaxed), 1);
 }
 
 #[rstest]

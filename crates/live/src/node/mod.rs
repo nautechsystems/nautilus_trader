@@ -2031,7 +2031,10 @@ impl LiveNode {
             .as_ref()
             .is_some_and(|config| config.flush_on_start)
         {
-            cache.borrow_mut().flush_db();
+            cache
+                .borrow_mut()
+                .flush_db()
+                .context("Failed to flush persistent cache")?;
             return Ok(());
         }
 
@@ -3450,7 +3453,7 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_execution::{
         engine::{ExecutionEngine, SnapshotAnchorer, stubs::StubExecutionClient},
-        reconciliation::create_inferred_fill_for_qty,
+        reconciliation::{RECONCILIATION_ORDER_TAG, create_inferred_fill_for_qty},
     };
     use nautilus_model::{
         accounts::{AccountAny, MarginAccount},
@@ -3470,7 +3473,10 @@ mod tests {
             AccountId, ActorId, ClientId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, Venue, VenueOrderId,
         },
-        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
+        },
         orders::{
             OrderAny, OrderList, OrderTestBuilder,
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
@@ -5341,6 +5347,120 @@ mod tests {
         assert_eq!(
             cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
             2
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_falls_back_when_reconciled_position_includes_fill() {
+        let (mut node, _, _) =
+            position_fill_test_fixture("ReconciledPositionFillNode", Quantity::from("1.0"));
+        let account_id = AccountId::from("TEST-001");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let key = (instrument.id(), account_id);
+        let commission = Money::zero(instrument.quote_currency());
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(StrategyId::external())
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-RECONCILED"))
+            .quantity(Quantity::from("1.000000"))
+            .tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)])
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-RECONCILED"));
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_order(
+                order.clone(),
+                None,
+                Some(ClientId::from("POSITION-FILLS")),
+                false,
+            )
+            .unwrap();
+        node.process_reconciliation_events(&[submitted, accepted]);
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&order.client_order_id())
+            .unwrap();
+        let opening_fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-RECONCILED")),
+            None,
+            Some(Price::from("100.00")),
+            Some(Quantity::from("1.000000")),
+            Some(LiquiditySide::Taker),
+            Some(commission),
+            Some(UnixNanos::from(2_000)),
+            Some(account_id),
+        );
+        node.process_reconciliation_events(&[opening_fill]);
+
+        // A real fill between the position report query and reconciliation stays off the position
+        let held_fill_report = FillReport::new(
+            account_id,
+            instrument.id(),
+            VenueOrderId::from("V-HELD"),
+            TradeId::from("T-HELD"),
+            OrderSide::Buy,
+            Quantity::from("1.000000"),
+            Price::from("100.00"),
+            commission,
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        );
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .reconcile_fill_report(&held_fill_report);
+
+        let venue_report = PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            PositionSide::Long,
+            Quantity::from("2.000000"),
+            UnixNanos::from(3_000),
+            UnixNanos::from(3_000),
+            None,
+            None,
+            Some(dec!(100.00)),
+        );
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![held_fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let held_order = cache.order(&ClientOrderId::from("V-HELD")).unwrap();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(held_order.filled_qty(), Quantity::from("1.000000"));
+        assert_eq!(
+            positions
+                .iter()
+                .map(|position| position.quantity)
+                .sum::<Quantity>(),
+            Quantity::from("2.000000")
+        );
+        assert!(
+            positions
+                .iter()
+                .all(|position| !position.trade_ids.contains(&held_fill_report.trade_id))
         );
     }
 

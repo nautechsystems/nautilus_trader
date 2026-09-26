@@ -172,3 +172,12 @@ name = "binance-futures-exec-trailing-stop-tester"
 path = "examples/futures/node_exec_trailing_stop_tester.rs"
 required-features = ["examples"]
 doc = false
+
+# Live validation harness, excluded from `cargo test` and nextest runs.
+# Run with `cargo test --package nautilus-binance --features examples --test binance-book-stress -- spot 10 14`
+[[test]]
+name = "binance-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

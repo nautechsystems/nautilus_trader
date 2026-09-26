@@ -6815,6 +6815,8 @@ impl OKXHttpClient {
                 orders.retain(|order| order.state == state);
             }
 
+            self.resolve_close_fraction_sizes(&mut orders).await?;
+
             complete &= self.collect_algo_reports(
                 account_id,
                 &orders,
@@ -6908,6 +6910,10 @@ impl OKXHttpClient {
                 if let Some(state) = state {
                     pending.retain(|order| order.state == state);
                 }
+
+                self.resolve_close_fraction_sizes(&mut pending)
+                    .await
+                    .map_err(OKXPendingAlgoOrderReportsError::new)?;
 
                 let pending_reports_complete = match self.collect_algo_reports(
                     account_id,
@@ -7034,6 +7040,55 @@ impl OKXHttpClient {
     /// Exposes raw HTTP client for testing purposes
     pub fn raw_client(&self) -> &Arc<OKXRawHttpClient> {
         &self.inner
+    }
+
+    /// Sets `sz` on open `closeFraction` algo orders from the positions they close.
+    ///
+    /// OKX omits `sz` when an algo order closes the whole position, and links the order to that
+    /// position through `closeOrderAlgo` instead. Reconciliation needs a positive quantity to
+    /// materialize the order, so the linked position size stands in for it.
+    async fn resolve_close_fraction_sizes(
+        &self,
+        orders: &mut [OKXOrderAlgo],
+    ) -> anyhow::Result<()> {
+        let needs_size = |order: &OKXOrderAlgo| {
+            order.sz.is_empty() && !order.close_fraction.is_empty() && is_open_okx_algo(order.state)
+        };
+
+        if !orders.iter().any(needs_size) {
+            return Ok(());
+        }
+
+        let positions = self
+            .inner
+            .get_positions(GetPositionsParams::default())
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        for order in orders.iter_mut().filter(|order| needs_size(order)) {
+            let position = positions.iter().find(|position| {
+                position
+                    .close_order_algo
+                    .iter()
+                    .any(|algo| algo.algo_id == order.algo_id)
+            });
+
+            let Some(position) = position else {
+                log::warn!(
+                    "No position links close-fraction algo order {}, quantity remains zero",
+                    order.algo_id,
+                );
+                continue;
+            };
+
+            let size = Decimal::from_str(&position.pos).with_context(|| {
+                format!("invalid position size for algo order {}", order.algo_id)
+            })?;
+
+            order.sz = size.abs().to_string();
+        }
+
+        Ok(())
     }
 
     #[expect(clippy::too_many_arguments)]

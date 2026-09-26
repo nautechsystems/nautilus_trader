@@ -679,6 +679,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         }
     }
 }

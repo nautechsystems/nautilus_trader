@@ -184,7 +184,8 @@ node.run().await?;
 :::warning
 With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
-`CacheConfig.flush_on_start = true` clears the backing instead.
+`CacheConfig.flush_on_start = true` clears the backing instead. A Postgres backing clears only the
+node's trader rows (see below).
 :::
 
 Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
@@ -211,6 +212,24 @@ finally:
 Pass `PostgresCacheConfig` instead to back cache data with Postgres. Postgres does not support actor
 or strategy state persistence, so do not combine it with `load_state` or `save_state`. Both configs
 come from `nautilus_trader.infrastructure`.
+
+A Postgres backing is scoped to the node's trader ID, so several nodes can share one database. The
+node loads and writes only its own orders, positions, snapshots, and accounts, keyed by trader, so
+two traders can reuse the same client order or position IDs. `flush_on_start` deletes only that
+trader's rows. Currencies, instruments, instrument closes, market data, and general data stay
+shared across traders.
+
+:::warning
+Upgrading an existing database is a required migration step. Account events persisted before
+trader scoping have no trader, and nothing establishes which trader owns them, so connecting fails
+while any exist. This blocks every node using that database. The error lists the affected accounts.
+Run `nautilus database init`, then assign each account to its trader:
+
+```bash
+nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
+```
+
+:::
 
 :::warning
 Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the
@@ -489,6 +508,10 @@ account = self.cache.account(account_id)  # Retrieve account by ID
 account = self.cache.account_for_venue(venue)  # Retrieve account for a specific venue
 account_id = self.cache.account_id(venue)  # Retrieve account ID for a venue
 ```
+
+A venue lookup resolves only when exactly one account is issued under the venue (the account ID
+prefix, such as `BINANCE` in `BINANCE-001`). When several accounts share a venue,
+`account_for_venue` and `account_id` return `None`; retrieve those accounts by ID.
 
 #### Instruments
 

@@ -33,7 +33,7 @@ use nautilus_model::{
 use nautilus_okx::{
     common::{
         consts::OKX_CLIENT_ID,
-        enums::{OKXEnvironment, OKXInstrumentType},
+        enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode},
     },
     config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
@@ -46,6 +46,7 @@ use nautilus_trading::strategy::StrategyConfig;
 // submitting orders or sending shutdown cancel/close commands.
 const DRY_RUN: bool = false;
 const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
+const MARGIN_MODE: OKXMarginMode = OKXMarginMode::Cross;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "OKX-001";
 const NODE_NAME: &str = "OKX-EXEC-TESTER-001";
@@ -80,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap],
+        margin_mode: Some(MARGIN_MODE),
         environment: okx_environment,
         ..Default::default()
     };

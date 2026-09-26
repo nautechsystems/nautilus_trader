@@ -128,7 +128,7 @@ gate-open, an unsubscribe racing an in-flight subscribe), not by message count.
 | Serial repetition of the race scenario                                      | Scheduler sensitivity                                                | 5+ consecutive live passes; 100x repetition for deterministic harnesses                 | Flakes that pass once and fail rarely                                     |
 
 Route each venue the way it accepts: Polymarket requires the HK tunnel exit
-(see the agent-ops runbook); OKX and Lighter validate direct. Confirm the route
+(see the agent-ops runbook); OKX, Lighter, and Binance validate direct. Confirm the route
 delivers venue data before a long run: sockets can connect while the venue
 stays silent. Branches the venue never produces live belong in a captured-wire
 deterministic harness, not in the live run.

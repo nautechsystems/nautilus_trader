@@ -1,11 +1,13 @@
 """
 Render the Derive delta-neutral options tutorial panels.
 
-After building NautilusTrader from source, run these commands from the repository root:
+The runner reads its settings from constants in
+``crates/adapters/derive/examples/node_delta_neutral.rs``. Before the capture, set
+``DERIVE_ENVIRONMENT`` to ``DeriveEnvironment::Mainnet`` and ``HEDGE_ENABLED`` to
+``false``, and revert them afterwards. Then, after building NautilusTrader from
+source, run these commands from the repository root:
 
     make sync
-    export DERIVE_ENVIRONMENT=mainnet
-    export DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false
     timeout 45 cargo run --example derive-delta-neutral --package nautilus-derive --features examples \
         > /tmp/derive_dn.log 2>&1
 
@@ -14,8 +16,8 @@ After building NautilusTrader from source, run these commands from the repositor
         python docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
 
 The default example has ``enter_strangle: false`` so a clean account
-places no option entry orders. Set ``DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false``
-for a no-order smoke run. The renderer parses the log for the selected
+places no option entry orders, and ``HEDGE_ENABLED = false`` makes the run submit
+no hedge orders. The renderer parses the log for the selected
 call / put strikes, then draws four illustrative panels explaining the
 strategy mechanics: a short-strangle payoff curve, a delta-drift
 simulation, the rehedge threshold visualization, and the strike picker.

@@ -127,8 +127,6 @@ impl CashAccount {
     /// # Errors
     ///
     /// Returns an error if `allow_borrowing` is false and any balance has a negative total.
-    ///
-    /// TODO: Force stop backtest engine on error (like Python's `set_backtest_force_stop`)
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         if !self.allow_borrowing {
             for balance in balances {
@@ -565,7 +563,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_buy_quanto_uses_quote_currency(
+    fn test_calculate_balance_locked_buy_quanto_uses_settlement_currency(
         cash_account_million_usd: CashAccount,
         ethbtc_quanto: CryptoFuture,
     ) {
@@ -578,7 +576,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("0.18 BTC"));
+        assert_eq!(balance_locked, Money::from("0.18 USDT"));
     }
 
     #[rstest]

@@ -4796,6 +4796,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4868,6 +4869,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4940,6 +4942,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5012,6 +5015,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5088,6 +5092,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5164,6 +5169,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5236,6 +5242,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5309,6 +5316,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let report = parse_position_status_report(
@@ -5387,6 +5395,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");

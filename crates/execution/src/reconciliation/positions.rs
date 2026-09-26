@@ -21,17 +21,20 @@
 //! (default 0.01%) after reconciliation is applied.
 
 use indexmap::{IndexMap, IndexSet};
+use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::{
+    RECONCILIATION_ORDER_TAG,
     ids::{create_synthetic_trade_id, create_synthetic_venue_order_id},
     types::{FillAdjustmentResult, FillSnapshot, ReconciliationResult, VenuePositionSnapshot},
 };
@@ -459,6 +462,36 @@ pub fn check_position_reconciliation(
     );
 
     false
+}
+
+/// Returns whether `report` predates an open position for its instrument and account that a
+/// synthetic reconciliation order opened and that does not hold the fill's trade.
+///
+/// The venue position report behind such a position already includes the fill, so applying it
+/// to the position would count the execution twice.
+#[must_use]
+pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillReport) -> bool {
+    cache
+        .positions_open(
+            None,
+            Some(&report.instrument_id),
+            None,
+            Some(&report.account_id),
+            None,
+        )
+        .into_iter()
+        .any(|position| {
+            report.ts_event < position.ts_opened
+                && !position.trade_ids.contains(&report.trade_id)
+                && cache
+                    .order(&position.opening_order_id)
+                    .is_some_and(|order| {
+                        order.tags().is_some_and(|tags| {
+                            tags.iter()
+                                .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+                        })
+                    })
+        })
 }
 
 /// Caps a price at the instrument's maximum price.

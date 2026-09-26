@@ -341,14 +341,14 @@ mod tests {
             "Collect",
         ));
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000001"),
             "USD Coin".to_string(),
             "USDC".to_string(),
             6,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000002"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),

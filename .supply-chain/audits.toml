@@ -1730,6 +1730,12 @@ criteria = "safe-to-deploy"
 delta = "0.60.0 -> 0.61.0"
 notes = "Published client source is unchanged apart from the DBN 0.69 dependency and release notes. No client API, endpoint, authentication, unsafe, build-script, filesystem, process, credential, or network-destination behavior changed."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.61.0 -> 0.62.0"
+notes = "Published client source only bumps dbn to 0.70.0, drops an unused Record import, and updates the changelog. No client API, endpoint, authentication, unsafe, build-script, filesystem, process, credential, or network-destination behavior changed."
+
 [[audits.datafusion]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2174,6 +2180,12 @@ criteria = "safe-to-deploy"
 delta = "0.68.0 -> 0.69.0"
 notes = "Clamps RecordBuf byte slices to their fixed capacity, fixing an unsound safe mutation path. Metadata decoding is bounded to the declared metadata section and validates collection counts before allocation and reads. Other changes add UnsubscribeAck and expose the last decoded record from async decoders. No new build script, dependency class, or ambient capability."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.69.0 -> 0.70.0"
+notes = "Replaces Record::header() with per-field accessors and renames Venue::Def/DEF to Venue::Cdef/CDEF. RecordRef, RecordRefMut, RecordBuf, and RecordEnum keep header(). RecordRefMut borrows are tied to self, closing the aliased mutable-reference hole. Batch decode reuses the existing RecordRef constructors on FSM-owned buffers. Adds Core Indices publishers. No new build script, network destination, process, or credential behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2245,6 +2257,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.68.0 -> 0.69.0"
 notes = "Published source is unchanged; only package version metadata advances in lockstep with dbn 0.69.0."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.69.0 -> 0.70.0"
+notes = "Generated Record impls emit per-field accessors instead of header(). No new unsafe, build script, filesystem, network, process, or credential behavior."
 
 [[audits.displaydoc]]
 who = "Nautech Systems <info@nautechsystems.io>"

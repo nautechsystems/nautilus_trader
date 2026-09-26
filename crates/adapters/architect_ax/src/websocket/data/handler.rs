@@ -530,7 +530,7 @@ mod tests {
             AxMdSubscriptionResponse {
                 rid: 1,
                 result: AxMdSubscriptionResult {
-                    subscribed: Some("EURUSD-PERP".to_string()),
+                    subscribed: Some(Ustr::from("EURUSD-PERP")),
                     subscribed_candle: None,
                     unsubscribed: None,
                     unsubscribed_candle: None,
@@ -633,7 +633,7 @@ mod tests {
                 result: AxMdSubscriptionResult {
                     subscribed: None,
                     subscribed_candle: None,
-                    unsubscribed: Some("EURUSD-PERP".to_string()),
+                    unsubscribed: Some(Ustr::from("EURUSD-PERP")),
                     unsubscribed_candle: None,
                 },
             },

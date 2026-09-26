@@ -91,8 +91,7 @@ curl -L -o /tmp/tardis_kraken/PF_XBTUSD_quotes.csv.gz \
 
 The runnable example binary shown later in this tutorial reads from
 `/tmp/tardis_kraken/` by default, so downloading into that directory up front
-means `cargo run` works without needing `KRAKEN_TRADES` or `KRAKEN_QUOTES`
-overrides.
+means `cargo run` works without editing the example's path constants.
 
 :::tip
 Full historical ranges require a paid Tardis API key. Use the
@@ -110,14 +109,14 @@ use nautilus_tardis::csv::load::{load_quotes, load_trades};
 
 let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
 let trades = load_trades(
-    "PF_XBTUSD_trades.csv.gz",
+    "/tmp/tardis_kraken/PF_XBTUSD_trades.csv.gz",
     Some(1),               // price_precision
     Some(4),               // size_precision
     Some(instrument_id),
     None,                  // limit
 )?;
 let quotes = load_quotes(
-    "PF_XBTUSD_quotes.csv.gz",
+    "/tmp/tardis_kraken/PF_XBTUSD_quotes.csv.gz",
     Some(1),
     Some(4),
     Some(instrument_id),
@@ -165,10 +164,10 @@ let instrument = CryptoPerpetual::builder()
     .unwrap();
 ```
 
-Margin rates are explicit backtest assumptions. This example uses a zero fee
-model. Check the
+Margin and fee rates are explicit backtest assumptions. This example uses a
+maker/taker fee model with 0.02% maker and 0.05% taker rates. Check the
 [Kraken Futures fee schedule](https://futures.kraken.com/features/fee-schedule)
-before using non-zero rates.
+for current rates.
 
 ## Dollar-bar sampling
 
@@ -357,7 +356,9 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100_000 USD")])
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .fee_model(
+            FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0005))).into(),
+        )
         .build()?,
 )?;
 
@@ -419,8 +420,8 @@ cargo run -p nautilus-kraken --features examples \
 ```
 
 By default it reads `PF_XBTUSD_trades.csv.gz` and `PF_XBTUSD_quotes.csv.gz`
-from `/tmp/tardis_kraken/`. Override with `KRAKEN_TRADES` and
-`KRAKEN_QUOTES` environment variables.
+from `/tmp/tardis_kraken/`. To read other files, edit the `TRADES_PATH` and
+`QUOTES_PATH` constants in `crates/adapters/kraken/examples/engine_hurst_vpin_backtest.rs`.
 
 ![Trade detail during the active window](./assets/hurst_vpin_kraken/panel_a_price_regime.png)
 
@@ -469,23 +470,31 @@ static PNGs via Plotly's Kaleido exporter.
 - **Add a volatility gate**. Overlay a realized-volatility estimator
   on the same bars to suppress entries during clearly chaotic
   sessions.
-- **Go live on Kraken Futures demo**. Once the backtest behaves, drive
-  the same strategy through the Kraken live client factories against
-  [demo-futures.kraken.com](https://demo-futures.kraken.com). A runnable
-  live wiring ships as:
+- **Go live on Kraken Futures**. Once the backtest behaves, drive the
+  same strategy through the Kraken live client factories. A runnable live
+  wiring ships as `kraken-hurst-vpin-live`.
+
+  The example trades **Kraken Futures production with real funds** by
+  default: both clients use the default `KrakenEnvironment::Live`, and it
+  reads `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET`. To paper
+  trade on [demo-futures.kraken.com](https://demo-futures.kraken.com)
+  instead, edit `crates/adapters/kraken/examples/node_hurst_vpin_live.rs`
+  before running: pass `true` as the `demo` argument to
+  `KrakenCredential::resolve_futures`, and set
+  `environment: KrakenEnvironment::Demo` (from `nautilus_kraken::common::enums`)
+  on both `KrakenDataClientConfig` and `KrakenExecutionClientConfig`. The
+  example then reads `KRAKEN_FUTURES_DEMO_API_KEY` and
+  `KRAKEN_FUTURES_DEMO_API_SECRET`.
 
   ```bash
   cargo run -p nautilus-kraken --features examples \
     --example kraken-hurst-vpin-live
   ```
 
-  Set `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET` in the
-  environment before running.
-
 ## Further reading
 
 - [`HurstVpinDirectional` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/hurst_vpin_directional)
-- [Data concepts: bar types and aggregation](../concepts/data/)
+- [Data concepts: bar types and aggregation](../concepts/data/index.md#bars-and-aggregation)
 - [Tardis integration guide](../integrations/tardis.md)
 - [Kraken integration guide](../integrations/kraken.md)
 - [Kraken Futures documentation](https://docs.kraken.com/api/docs/futures-api)

@@ -4365,17 +4365,17 @@ async fn test_http_cancel_orders_preserves_rejected_items() {
 }
 
 #[rstest]
+#[case::linked_position("http_get_positions_close_order_algo.json", "0.05")]
+#[case::unlinked_position("http_get_positions.json", "0.00")]
 #[tokio::test]
-async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order() {
-    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order(
+    #[case] positions_fixture: &str,
+    #[case] expected_quantity: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    *state.positions_response.lock().await = Some(load_test_data(positions_fixture));
+    let addr = start_test_server(state).await;
     let base_url = format!("http://{addr}");
-
-    let swap_instruments = load_swap_instruments_any();
-    let size_precision = swap_instruments
-        .iter()
-        .find(|instrument| instrument.id() == InstrumentId::from("BTC-USDT-SWAP.OKX"))
-        .expect("expected BTC-USDT-SWAP instrument")
-        .size_precision();
 
     let client = OKXHttpClient::with_credentials(
         Some("test_key".to_string()),
@@ -4391,7 +4391,7 @@ async fn test_http_request_algo_order_status_report_parses_close_fraction_condit
     )
     .unwrap();
 
-    for instrument in swap_instruments {
+    for instrument in load_swap_instruments_any() {
         client.cache_instrument(instrument);
     }
 
@@ -4405,12 +4405,57 @@ async fn test_http_request_algo_order_status_report_parses_close_fraction_condit
         .unwrap()
         .expect("expected algo report");
 
+    assert_eq!(report.venue_order_id, VenueOrderId::from("close-frac-algo"));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
     assert_eq!(report.order_type, OrderType::StopMarket);
     assert_eq!(report.trigger_price, Some(Price::from("50000")));
     assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
     assert_eq!(report.price, None);
-    assert_eq!(report.quantity, Quantity::zero(size_precision));
+    assert_eq!(report.quantity, Quantity::from(expected_quantity));
     assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_rejects_invalid_close_fraction_position_size() {
+    let state = Arc::new(TestServerState::default());
+    let mut positions = load_test_data("http_get_positions_close_order_algo.json");
+    positions["data"][0]["pos"] = json!("invalid");
+    *state.positions_response.lock().await = Some(positions);
+    let addr = start_test_server(state).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let error = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-close-frac-status"),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("invalid position size for algo order close-frac-algo"),
+        "was {error:#}"
+    );
 }
 
 #[rstest]

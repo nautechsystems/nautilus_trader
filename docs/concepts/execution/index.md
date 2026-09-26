@@ -202,6 +202,27 @@ If a submit-time risk check fails, the system generates an `OrderDenied` event w
 standardized [reason code](#order-denied-reasons). If a modify-time risk check fails, it
 generates an `OrderModifyRejected` event.
 
+### Account selection
+
+Balance, margin, and position checks use the account of the execution client that will run the
+command, before `OrderSubmitted` assigns the order's account. The risk engine selects the account
+in this order:
+
+1. An order that already has an account, such as an order being modified, uses that account.
+1. A command for an external client (`external_clients`) uses the venue's account only when exactly
+   one account is issued under the venue.
+1. A command `client_id` that names a registered execution client uses that client's account.
+1. Any other command uses the account of the client routed for the instrument's venue, then the
+   default client's account. This includes a command whose `client_id` names neither a registered
+   nor an external client, which the execution engine routes the same way.
+1. A command with no venue route or default client uses the venue's account only when exactly one
+   account is issued under the venue.
+
+An order list selects one account from the command's `client_id` and instrument. When no account
+resolves, or the selected client's account is not cached yet, the risk engine denies the order or
+rejects the modification with `VALIDATION_FAILED`. It never falls back to another account. Positions
+and open orders count toward position-reducing checks only when they belong to the selected account.
+
 ### Whole-position conditional exits
 
 Some execution clients support conditional exits whose venue determines the closing quantity from
@@ -219,6 +240,7 @@ An order qualifies for the placeholder exemption only when all of these conditio
   `close_position=true`.
 - It has a positive placeholder quantity and sets `reduce_only=true`.
 - The command, order, and linked cached position use the same instrument and position ID.
+- The linked position belongs to the [selected account](#account-selection).
 - The linked position is open, the order side closes it, and the placeholder quantity does not
   exceed the position quantity.
 
@@ -257,9 +279,9 @@ The states become progressively more restrictive:
 
 In `REDUCING`, an individual `SubmitOrder` is eligible only when the order sets
 `reduce_only=true`, the command and order identify the same instrument, and the supplied position
-ID matches the order's cached open position. The order side must oppose the position, and the
-submitted quantity must not exceed the cached position quantity. Order lists and modifications are
-denied.
+ID matches the order's cached open position on the [selected account](#account-selection). The
+order side must oppose the position, and the submitted quantity must not exceed the cached position
+quantity. Order lists and modifications are denied.
 
 The risk engine applies these rules before forwarding commands to execution.
 
@@ -526,6 +548,15 @@ report when that ID already exists on the order, regardless of its price or quan
 
 Synthetic and inferred reconciliation fills use deterministic IDs. Replaying the same inputs after
 a restart therefore produces the same `trade_id` and is deduplicated.
+
+### Declined fill notification
+
+When the `ExecutionEngine` rejects an `OrderFilled` or `OrderFillVoided` instead of applying it,
+for example as a duplicate, an overfill, or for an order it cannot find, it publishes the unchanged
+event on the `events.order_fill_declined.{instrument_id}` topic. Each rejection site logs the reason;
+the published event does not carry it. An adapter that tracks whether its fills and corrections were
+applied can subscribe to this topic. The engine does not publish on it for reconciliation
+projections, which update only the order.
 
 ### Configuration
 

@@ -22,6 +22,7 @@ pub(crate) mod context;
 pub(crate) mod order_fill_tracker;
 pub(crate) mod pending;
 pub(crate) mod reconciliation;
+pub(crate) mod settlement;
 pub(crate) mod submitter;
 pub(crate) mod types;
 
@@ -74,6 +75,7 @@ use self::{
     order_builder::PolymarketOrderBuilder,
     order_fill_tracker::OrderFillTrackerMap,
     pending::{PendingCancelTracker, PendingSubmitTracker},
+    settlement::SettlementRegistry,
     submitter::OrderSubmitter,
 };
 use crate::{
@@ -105,6 +107,9 @@ pub struct PolymarketExecutionClient {
     heartbeat_healthy: Arc<AtomicBool>,
     order_event_handler: Option<TypedHandler<OrderEventAny>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
+    fill_observer: Option<TypedHandler<OrderEventAny>>,
+    void_observer: Option<TypedHandler<OrderEventAny>>,
+    decline_observer: Option<TypedHandler<OrderEventAny>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
     pending_submits: PendingSubmitTracker,
@@ -112,6 +117,7 @@ pub struct PolymarketExecutionClient {
     order_contexts: Arc<OrderContextRegistry>,
     order_reservations: Arc<Mutex<AHashMap<ClientOrderId, Money>>>,
     fill_tracker: Arc<OrderFillTrackerMap>,
+    settlement: Arc<SettlementRegistry>,
     ws_dispatch_state: Arc<Mutex<WsDispatchState>>,
 }
 
@@ -181,7 +187,15 @@ impl PolymarketExecutionClient {
             immediate_first: false,
             max_elapsed_ms: Some(180_000),
         };
-        let submitter = OrderSubmitter::new(http_client.clone(), order_builder, retry_config);
+
+        let settlement = Arc::new(SettlementRegistry::new(core.account_id));
+
+        let submitter = OrderSubmitter::new(
+            http_client.clone(),
+            order_builder,
+            retry_config,
+            settlement.clone(),
+        );
 
         let ws_client = PolymarketWebSocketClient::new_user_with_proxy(
             config.base_url_ws.clone(),
@@ -226,6 +240,9 @@ impl PolymarketExecutionClient {
             heartbeat_healthy: Arc::new(AtomicBool::new(true)),
             order_event_handler: None,
             position_event_handler: None,
+            fill_observer: None,
+            void_observer: None,
+            decline_observer: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),
             pending_submits: PendingSubmitTracker::default(),
@@ -233,8 +250,17 @@ impl PolymarketExecutionClient {
             order_contexts: Arc::new(OrderContextRegistry::default()),
             order_reservations: Arc::new(Mutex::new(AHashMap::new())),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
+            settlement,
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })
+    }
+
+    fn check_not_faulted(&self) -> anyhow::Result<()> {
+        if let Some(reason) = self.settlement.client_fault_reason() {
+            anyhow::bail!("Polymarket execution client is faulted closed until restart: {reason}");
+        }
+
+        Ok(())
     }
 }
 
@@ -269,6 +295,7 @@ fn resolve_maker_address(
 impl ExecutionClient for PolymarketExecutionClient {
     fn is_connected(&self) -> bool {
         self.core.is_connected()
+            && !self.settlement.client_faulted()
             && (!self.config.heartbeat_enabled
                 || self
                     .heartbeat_healthy
@@ -297,6 +324,12 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn position_reconciliation_tolerance(&self) -> Decimal {
         crate::common::consts::POSITION_RECONCILIATION_TOLERANCE
+    }
+
+    // Redemption, including the venue's automatic redemption of winning tokens, removes a Data
+    // API balance without a trade, so a missing balance is not evidence of a flat position.
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
     }
 
     fn generate_account_state(
@@ -328,29 +361,35 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.submit_order_command(&cmd)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.submit_order_list_command(&cmd);
         Ok(())
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.modify_order_command(&cmd);
         Ok(())
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.cancel_order_command(&cmd);
         Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.cancel_all_orders_command(&cmd)
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
+        self.check_not_faulted()?;
         self.batch_cancel_orders_command(&cmd);
         Ok(())
     }
@@ -402,36 +441,85 @@ impl ExecutionClient for PolymarketExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        self.generate_order_status_report_impl(cmd).await
+        gate_report(
+            || {
+                self.settlement
+                    .ensure_resolved(cmd.instrument_id, "order status report")
+            },
+            Box::pin(self.generate_order_status_report_impl(cmd)),
+        )
+        .await
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        self.generate_order_status_reports_impl(cmd).await
+        gate_report(
+            || {
+                self.settlement
+                    .ensure_resolved(cmd.instrument_id, "order status reports")
+            },
+            self.generate_order_status_reports_impl(cmd),
+        )
+        .await
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        self.generate_fill_reports_impl(cmd).await
+        let (instrument_id, venue_order_id) = (cmd.instrument_id, cmd.venue_order_id);
+        gate_report(
+            || match venue_order_id {
+                Some(venue_order_id) => self
+                    .settlement
+                    .ensure_order_resolved(&venue_order_id, "fill reports"),
+                None => self
+                    .settlement
+                    .ensure_resolved(instrument_id, "fill reports"),
+            },
+            self.generate_fill_reports_impl(cmd),
+        )
+        .await
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        self.generate_position_status_reports_impl(cmd).await
+        gate_report(
+            || {
+                self.settlement
+                    .ensure_resolved(cmd.instrument_id, "position status reports")
+            },
+            self.generate_position_status_reports_impl(cmd),
+        )
+        .await
     }
 
     async fn generate_mass_status(
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        self.generate_mass_status_impl(lookback_mins).await
+        gate_report(
+            || self.settlement.ensure_resolved(None, "mass status"),
+            self.generate_mass_status_impl(lookback_mins),
+        )
+        .await
     }
+}
+
+/// Runs a report's venue reads between two settlement gate checks, so evidence that becomes
+/// unresolved while the reads are in flight still fails the report.
+async fn gate_report<T>(
+    gate: impl Fn() -> anyhow::Result<()>,
+    report: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    gate()?;
+    let report = report.await?;
+    gate()?;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -439,6 +527,24 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_gate_report_rechecks_settlement_after_venue_reads() {
+        let settlement = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+
+        let result = gate_report(|| settlement.ensure_resolved(None, "mass status"), async {
+            settlement.quarantine_invalid_trade("trade-quarantined-during-read");
+            Ok(())
+        })
+        .await;
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "cannot generate mass status: Polymarket settlement registry holds 1 record(s) with \
+             unresolved evidence"
+        );
+    }
 
     #[rstest]
     #[case(PolymarketSignatureType::PolyProxy)]

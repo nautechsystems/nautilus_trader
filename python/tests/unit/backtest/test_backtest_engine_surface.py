@@ -1392,6 +1392,60 @@ def test_add_actor_with_constructed_instance_consumes_quotes() -> None:
     engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("taker_rate", "ask_size", "rejected_total"),
+    [
+        (Decimal(0), 250, r"-21\.50"),
+        (Decimal("0.0001"), 2500, r"-24\.00"),
+    ],
+    ids=["slippage", "commission"],
+)
+def test_run_raises_when_fill_cost_exceeds_cash_balance(
+    taker_rate: Decimal,
+    ask_size: int,
+    rejected_total: str,
+) -> None:
+    """
+    Test a fill the cash account cannot pay for fails the run.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.aapl_equity()
+    engine.add_venue(
+        venue=Venue("XNAS"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(250_001.0, USD)],
+        fee_model=MakerTakerFeeModel(maker_rate=taker_rate, taker_rate=taker_rate),
+    )
+    engine.add_instrument(instrument)
+    engine.add_strategy(
+        StreamingWhipsaw(
+            StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="2500"),
+        ),
+    )
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("99.99"),
+                ask_price=Price.from_str("100.00"),
+                bid_size=Quantity.from_int(ask_size),
+                ask_size=Quantity.from_int(ask_size),
+                ts_event=0,
+                ts_init=0,
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"balance would become negative: {rejected_total} USD",
+    ):
+        engine.run()
+
+    engine.dispose()
+
+
 def test_add_strategy_with_constructed_instance_submits_orders() -> None:
     """
     Test add strategy with constructed instance submits orders.

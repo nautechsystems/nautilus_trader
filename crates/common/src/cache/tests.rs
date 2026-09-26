@@ -1193,7 +1193,7 @@ fn test_check_integrity_detects_missing_or_stale_index_entries(
 
     match corruption {
         IntegrityCorruption::AccountForward => {
-            cache.index.venue_account.remove(&account_venue);
+            cache.index.venue_accounts.remove(&account_venue);
         }
         IntegrityCorruption::OrderForward => {
             cache.index.order_strategy.remove(&client_order_id);
@@ -1692,7 +1692,16 @@ fn test_dispose_when_empty(mut cache: Cache) {
 
 #[rstest]
 fn test_flush_db_when_empty(mut cache: Cache) {
-    cache.flush_db();
+    cache.flush_db().unwrap();
+}
+
+#[rstest]
+fn test_flush_db_returns_database_error() {
+    let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::fail_flush())));
+
+    let error = cache.flush_db().unwrap_err();
+
+    assert_eq!(error.to_string(), "flush failed");
 }
 
 #[rstest]
@@ -5466,6 +5475,59 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::first_added_first(false)]
+#[case::second_added_first(true)]
+fn test_cache_account_for_venue_when_accounts_share_issuer_returns_none(
+    mut cache: Cache,
+    #[case] reversed: bool,
+) {
+    let venue = Venue::from("SIM");
+    let account_a = AccountId::from("SIM-001");
+    let account_b = AccountId::from("SIM-002");
+    let state_a = make_cash_account_state(account_a, "100");
+    let state_b = make_cash_account_state(account_b, "200");
+    let mut states = vec![state_a, state_b];
+
+    if reversed {
+        states.reverse();
+    }
+
+    for state in states {
+        let account = AccountAny::from_events(&[state]).unwrap();
+        cache.add_account(account).unwrap();
+    }
+
+    let venue_lookup = |cache: &Cache| {
+        (
+            cache.account_id(&venue).copied(),
+            cache.account_for_venue(&venue).map(|account| account.id()),
+            cache
+                .account_for_venue_owned(&venue)
+                .map(|account| account.id()),
+        )
+    };
+
+    let usd_total = |cache: &Cache, account_id: &AccountId| {
+        cache.account(account_id).and_then(|account| {
+            account
+                .balance(Some(Currency::USD()))
+                .map(|balance| balance.total)
+        })
+    };
+
+    let added = venue_lookup(&cache);
+    cache.clear_index();
+    cache.build_index();
+    let rebuilt = venue_lookup(&cache);
+
+    assert_eq!(added, (None, None, None));
+    assert_eq!(rebuilt, (None, None, None));
+    assert_eq!(usd_total(&cache, &account_a), Some(Money::from("100 USD")));
+    assert_eq!(usd_total(&cache, &account_b), Some(Money::from("200 USD")));
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_cache_take_account_returns_none_for_unknown(mut cache: Cache) {
     let result = cache.take_account(&AccountId::test_default());
     assert!(result.is_none());
@@ -5553,6 +5615,99 @@ fn make_cash_account_state(account_id: AccountId, total_usd: &str) -> AccountSta
         UnixNanos::default(),
         Some(Currency::USD()),
     )
+}
+
+#[rstest]
+#[case::alpha_first(false)]
+#[case::bravo_first(true)]
+fn test_cache_client_accounts_survive_index_rebuild_and_reset(
+    mut cache: Cache,
+    #[case] reversed: bool,
+) {
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let alpha_account_id = AccountId::from("SIM-001");
+    let bravo_account_id = AccountId::from("SIM-002");
+    let replacement_account_id = AccountId::from("SIM-003");
+    let mut registrations = vec![(alpha_id, alpha_account_id), (bravo_id, bravo_account_id)];
+
+    if reversed {
+        registrations.reverse();
+    }
+
+    for (client_id, account_id) in registrations {
+        cache.add_client_account(client_id, account_id);
+    }
+
+    let resolve = |cache: &Cache| {
+        (
+            cache.account_id_for_client(&alpha_id).copied(),
+            cache.account_id_for_client(&bravo_id).copied(),
+        )
+    };
+
+    cache.clear_index();
+    cache.build_index();
+    let after_rebuild = resolve(&cache);
+    cache.reset();
+    let after_reset = resolve(&cache);
+    cache.add_client_account(alpha_id, replacement_account_id);
+    let after_replace = resolve(&cache);
+    cache.remove_client_account(&alpha_id);
+    let after_remove = resolve(&cache);
+
+    assert_eq!(
+        after_rebuild,
+        (Some(alpha_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(
+        after_reset,
+        (Some(alpha_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(
+        after_replace,
+        (Some(replacement_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(after_remove, (None, Some(bravo_account_id)));
+}
+
+#[rstest]
+fn test_cache_client_routes_survive_index_rebuild_and_reset(mut cache: Cache) {
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let external_id = ClientId::from("EXTERNAL");
+    let sim = Venue::from("SIM");
+    let xnas = Venue::from("XNAS");
+    cache.add_client_route(alpha_id, sim);
+    cache.set_default_client(bravo_id);
+    cache.add_external_client(external_id);
+
+    let resolve = |cache: &Cache| {
+        (
+            cache.client_id_for_venue(&sim).copied(),
+            cache.client_id_for_venue(&xnas).copied(),
+            cache.is_external_client(&external_id),
+            cache.is_external_client(&alpha_id),
+        )
+    };
+
+    cache.clear_index();
+    cache.build_index();
+    let after_rebuild = resolve(&cache);
+    cache.reset();
+    let after_reset = resolve(&cache);
+    cache.remove_client_routes(&alpha_id);
+    let after_remove_route = resolve(&cache);
+    cache.remove_client_routes(&bravo_id);
+    let after_remove_default = resolve(&cache);
+
+    assert_eq!(after_rebuild, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(after_reset, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(
+        after_remove_route,
+        (Some(bravo_id), Some(bravo_id), true, false)
+    );
+    assert_eq!(after_remove_default, (None, None, true, false));
 }
 
 #[rstest]
@@ -8889,6 +9044,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_flush: bool,
     fail_add_instrument_close: bool,
     fail_add_order: bool,
     fail_add_position: bool,
@@ -8983,6 +9139,13 @@ impl SnapshotBlobTestDatabase {
         )
     }
 
+    fn fail_flush() -> Self {
+        Self {
+            fail_flush: true,
+            ..Default::default()
+        }
+    }
+
     fn fail_persistence_io() -> Self {
         Self {
             fail_persistence_io: true,
@@ -9012,6 +9175,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
+        if self.fail_flush {
+            anyhow::bail!("flush failed");
+        }
         Ok(())
     }
 
@@ -10080,6 +10246,41 @@ fn test_update_position_commits_canonical_state_when_database_update_fails() {
     assert!(cached.is_closed());
     assert!(cache.is_position_closed(&position_id));
     assert!(!cache.is_position_open(&position_id));
+}
+
+#[rstest]
+fn test_update_position_from_instrument_close_returns_position_when_database_update_fails() {
+    let database = SnapshotBlobTestDatabase::fail_update_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache.add_instrument(instrument.clone()).unwrap();
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .trade_id(TradeId::new("T-SETTLE"))
+        .last_qty(Quantity::from("10.00"))
+        .last_px(Price::from("0.400"))
+        .currency(Currency::USDC())
+        .position_id(PositionId::new("P-SETTLE"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+
+    let settled = cache
+        .update_position_from_instrument_close(position.id, close)
+        .unwrap();
+
+    assert_eq!(settled.id, position.id);
+    assert_eq!(settled.realized_pnl, Some(Money::from("6.00 USDC")));
+    assert!(cache.position(&position.id).unwrap().is_settled());
+    assert!(cache.is_position_closed(&position.id));
 }
 
 #[rstest]

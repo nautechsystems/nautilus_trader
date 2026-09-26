@@ -141,6 +141,16 @@ impl OrderMatchingEngine {
             }
         };
 
+        // Inverse settlement divides by the spot, so an invalid level defers like a missing one
+        if self.instrument.is_inverse() && !underlying_price.is_positive() {
+            return Ok(self.option_settlement_retry(
+                "non-positive-underlying-price",
+                &format!(
+                    "Non-positive underlying price {underlying_price} for inverse option {instrument_id}"
+                ),
+            ));
+        }
+
         let option_close_price = self
             .instrument_close
             .as_ref()
@@ -263,11 +273,24 @@ impl OrderMatchingEngine {
 
         let spot = underlying_price.as_decimal();
         let strike_value = strike.as_decimal();
-        let value = match self.instrument.option_kind() {
+
+        let intrinsic = match self.instrument.option_kind() {
             Some(OptionKind::Call) => (spot - strike_value).max(Decimal::ZERO),
             _ => (strike_value - spot).max(Decimal::ZERO),
         };
-        Price::from_decimal_dp(value, strike.precision).expect("Invalid option settlement price")
+
+        // Inverse options quote the premium in the base currency, so the quote-point
+        // payout converts at the settlement spot.
+        let (value, precision) = if self.instrument.is_inverse() {
+            let value = intrinsic
+                .checked_div(spot)
+                .expect("inverse option settlement requires a positive underlying price");
+            (value, self.instrument.price_precision())
+        } else {
+            (intrinsic, strike.precision)
+        };
+
+        Price::from_decimal_dp(value, precision).expect("Invalid option settlement price")
     }
 
     fn option_plan_exercise_position(

@@ -118,6 +118,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let settlement = self.settlement.clone();
         let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
@@ -162,9 +163,11 @@ impl PolymarketExecutionClient {
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(response),
                         &order,
+                        expected_venue_order_id,
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &settlement,
                         &order_contexts,
                         &pending_cancels,
                         account_id,
@@ -210,6 +213,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
+                            &settlement,
                             &order_contexts,
                             &pending_submits,
                             &pending_cancels,
@@ -288,6 +292,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let settlement = self.settlement.clone();
         let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
@@ -367,9 +372,11 @@ impl PolymarketExecutionClient {
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(result.response),
                         &order,
+                        result.expected_venue_order_id,
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &settlement,
                         &order_contexts,
                         &pending_cancels,
                         account_id,
@@ -436,6 +443,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
+                            &settlement,
                             &order_contexts,
                             &pending_submits,
                             &pending_cancels,
@@ -640,6 +648,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let settlement = self.settlement.clone();
         let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
@@ -724,6 +733,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
+                        &settlement,
                         &order_contexts,
                         &ws_dispatch_state,
                         &pending_submits,
@@ -750,6 +760,7 @@ impl PolymarketExecutionClient {
                                 &emitter,
                                 clock,
                                 &fill_tracker,
+                                &settlement,
                                 &order_contexts,
                                 &ws_dispatch_state,
                                 &pending_submits,
@@ -772,6 +783,7 @@ impl PolymarketExecutionClient {
                                             &emitter,
                                             clock,
                                             &fill_tracker,
+                                            &settlement,
                                             &order_contexts,
                                             &pending_submits,
                                             &pending_cancels,
@@ -977,6 +989,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
+        let settlement = self.settlement.clone();
         let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let token_instruments = self.shared_token_instruments.clone();
@@ -1409,6 +1422,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
+                            &settlement,
                             &order_contexts,
                             &ws_dispatch_state,
                         );

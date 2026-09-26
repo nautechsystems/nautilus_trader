@@ -35,10 +35,10 @@ mod serial_tests {
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
-            CustomData, DataType,
+            CustomData, DataType, InstrumentClose,
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
-        enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
+        enums::{CurrencyType, InstrumentCloseType, OrderSide, OrderStatus, OrderType},
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
@@ -47,8 +47,8 @@ mod serial_tests {
             order::spec::OrderFillVoidedSpec,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
-            stubs::account_id,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+            TraderId, VenueOrderId, stubs::account_id,
         },
         instruments::{
             Instrument, InstrumentAny,
@@ -60,7 +60,7 @@ mod serial_tests {
                 perpetual_contract_eurusd,
             },
         },
-        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
@@ -80,7 +80,12 @@ mod serial_tests {
     }
 
     async fn get_test_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database()).await {
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            get_pg_cache_database(TraderId::default()),
+        )
+        .await
+        {
             Ok(result) => result.map_err(|e| {
                 anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
             }),
@@ -89,6 +94,11 @@ mod serial_tests {
                  {e}"
             )),
         }
+    }
+
+    // Clears every table between tests. The cache's own `flush` only removes its trader's rows.
+    async fn reset_test_database(database: &PostgresCacheDatabase) {
+        DatabaseQueries::truncate(&database.pool).await.unwrap();
     }
 
     async fn connect_test_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
@@ -125,7 +135,7 @@ mod serial_tests {
             Duration::from_secs(5),
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -152,7 +162,7 @@ mod serial_tests {
         );
         assert_eq!(result.get("test_id").unwrap().to_owned(), test_id_value);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -374,7 +384,7 @@ mod serial_tests {
             .collect::<HashSet<InstrumentId>>()
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -440,7 +450,7 @@ mod serial_tests {
             assert_eq!(serde_json::to_value(loaded.info()).unwrap(), info);
             assert_eq!(serde_json::to_value(all[&id].info()).unwrap(), info);
         }
-        database.flush().unwrap();
+        reset_test_database(&database).await;
         database.close().unwrap();
     }
 
@@ -477,7 +487,7 @@ mod serial_tests {
             serde_json::to_string(&Some(info)).unwrap()
         );
         let mut cleanup_database = get_test_pg_cache_database().await.unwrap();
-        cleanup_database.flush().unwrap();
+        reset_test_database(&cleanup_database).await;
         cleanup_database.close().unwrap();
     }
 
@@ -501,8 +511,7 @@ mod serial_tests {
         )
         .await;
 
-        // Call flush which will truncate all the tables
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
 
         // Check if all the tables are empty
         let currencies = pg_cache.load_currencies().await.unwrap();
@@ -510,7 +519,7 @@ mod serial_tests {
         let instruments = pg_cache.load_instruments().await.unwrap();
         assert_eq!(instruments.len(), 0);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -600,7 +609,7 @@ mod serial_tests {
             vec![client_id].into_iter().collect::<HashSet<ClientId>>()
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -657,6 +666,7 @@ mod serial_tests {
         let missing_order_id = ClientOrderId::new("O-PG-ORIGIN-MISSING");
         let error = DatabaseQueries::index_order_clients(
             &pg_cache.pool,
+            &TraderId::default(),
             &[
                 (order_1.client_order_id(), client_a),
                 (missing_order_id, client_b),
@@ -692,7 +702,7 @@ mod serial_tests {
         assert_eq!(cache.client_id(&order_2.client_order_id()), Some(&client_b));
 
         cache.dispose();
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -743,6 +753,7 @@ mod serial_tests {
 
         let error = DatabaseQueries::index_order_clients(
             &pg_cache.pool,
+            &TraderId::default(),
             &[
                 (unclaimed_order.client_order_id(), conflicting_client),
                 (claimed_order.client_order_id(), conflicting_client),
@@ -763,7 +774,7 @@ mod serial_tests {
             Some(&existing_client)
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -810,7 +821,7 @@ mod serial_tests {
         assert_eq!(index.len(), 1);
         assert_eq!(index.get(&client_order_id), Some(&position_id_2));
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -904,10 +915,14 @@ mod serial_tests {
                     .unwrap()
                     .is_some_and(|loaded| loaded.events == position.events)
                     && pg_cache.load_positions().await.unwrap().len() == 1
-                    && DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
-                        .await
-                        .unwrap()
-                        .len()
+                    && DatabaseQueries::load_position_events(
+                        &pg_cache.pool,
+                        &position.id,
+                        &TraderId::default(),
+                    )
+                    .await
+                    .unwrap()
+                    .len()
                         == 3
             },
             Duration::from_secs(5),
@@ -915,14 +930,18 @@ mod serial_tests {
         .await;
 
         let loaded = pg_cache.load_position(&position.id).await.unwrap().unwrap();
-        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
-            .await
-            .unwrap();
+        let events = DatabaseQueries::load_position_events(
+            &pg_cache.pool,
+            &position.id,
+            &TraderId::default(),
+        )
+        .await
+        .unwrap();
 
         assert_entirely_equal(loaded, position.clone());
         assert_eq!(events, position.events.clone());
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1010,23 +1029,30 @@ mod serial_tests {
 
         wait_until_async(
             || async {
-                let events =
-                    DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
-                        .await
-                        .unwrap();
+                let events = DatabaseQueries::load_position_events(
+                    &pg_cache.pool,
+                    &reopened_position.id,
+                    &TraderId::default(),
+                )
+                .await
+                .unwrap();
                 events.len() == 1 && events[0].event_id == reopen_fill.event_id
             },
             Duration::from_secs(5),
         )
         .await;
 
-        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
-            .await
-            .unwrap();
+        let events = DatabaseQueries::load_position_events(
+            &pg_cache.pool,
+            &reopened_position.id,
+            &TraderId::default(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(events, reopened_position.events.clone());
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1082,10 +1108,13 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let events: Vec<OrderFilled> =
-            DatabaseQueries::load_position_events(&pg_cache.pool, &position_id)
-                .await
-                .unwrap();
+        let events: Vec<OrderFilled> = DatabaseQueries::load_position_events(
+            &pg_cache.pool,
+            &position_id,
+            &TraderId::default(),
+        )
+        .await
+        .unwrap();
         let result = pg_cache.load_position(&position_id).await;
 
         assert_eq!(events.len(), 2);
@@ -1097,7 +1126,7 @@ mod serial_tests {
                 .contains("E-PG-DUPLICATE-FILL")
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1133,7 +1162,7 @@ mod serial_tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no position_id"));
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1216,7 +1245,7 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let positions = DatabaseQueries::load_positions(&pg_cache.pool)
+        let positions = DatabaseQueries::load_positions(&pg_cache.pool, &TraderId::default())
             .await
             .unwrap();
 
@@ -1226,7 +1255,7 @@ mod serial_tests {
             good_position.events.as_slice()
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1298,7 +1327,7 @@ mod serial_tests {
             .unwrap();
         assert_entirely_equal(market_order_result.unwrap(), market_order);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1352,7 +1381,7 @@ mod serial_tests {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Distinct account ID and flush: these tests share one database
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
 
         let mut init_state = wallet_account_state();
         init_state.account_id = AccountId::from("WALLET-001");
@@ -1403,18 +1432,18 @@ mod serial_tests {
         assert_entirely_equal(loaded, account);
         assert!(Currency::try_from_str("ENG729P").is_none());
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_wallet_account_rejects_malformed_balance() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
 
         let mut event = wallet_account_state();
         event.account_id = AccountId::from("WALLET-MALFORMED-001");
-        DatabaseQueries::add_account(&pg_cache.pool, false, event)
+        DatabaseQueries::add_account(&pg_cache.pool, false, event, &TraderId::default())
             .await
             .unwrap();
         sqlx::query(
@@ -1428,6 +1457,7 @@ mod serial_tests {
         let error = DatabaseQueries::load_account_events(
             &pg_cache.pool,
             &AccountId::from("WALLET-MALFORMED-001"),
+            &TraderId::default(),
         )
         .await
         .unwrap_err();
@@ -1436,7 +1466,7 @@ mod serial_tests {
             error.to_string().contains("missing field `total`"),
             "was: {error}"
         );
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1445,7 +1475,8 @@ mod serial_tests {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
 
-        let result = DatabaseQueries::add_account(&pg_cache.pool, true, event).await;
+        let result =
+            DatabaseQueries::add_account(&pg_cache.pool, true, event, &TraderId::default()).await;
 
         assert!(result.is_err());
         assert!(
@@ -1455,7 +1486,7 @@ mod serial_tests {
                 .contains("Account event does not exist")
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1490,7 +1521,7 @@ mod serial_tests {
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0], quote);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1525,7 +1556,7 @@ mod serial_tests {
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0], trade);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1560,7 +1591,7 @@ mod serial_tests {
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0], bar);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1583,7 +1614,7 @@ mod serial_tests {
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0], signal);
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1630,7 +1661,7 @@ mod serial_tests {
             "CustomData roundtrip through Postgres must preserve equality"
         );
 
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1675,7 +1706,7 @@ mod serial_tests {
             .unwrap();
 
         assert_entirely_equal(loaded, expected);
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1723,7 +1754,7 @@ mod serial_tests {
 
         assert_eq!(loaded.avg_px, snapshot.avg_px);
         assert_eq!(loaded.slippage, snapshot.slippage);
-        pg_cache.flush().unwrap();
+        reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
     }
 
@@ -1790,7 +1821,7 @@ mod serial_tests {
             serde_json::to_value(instrument).unwrap()
         );
         assert_eq!(restored.info(), None);
-        restored_database.flush().unwrap();
+        reset_test_database(&restored_database).await;
         restored_database.close().unwrap();
     }
 
@@ -1898,11 +1929,17 @@ mod serial_tests {
         .await
         .unwrap();
 
+        sqlx::query(r#"INSERT INTO "trader" (id) VALUES ('TRADER-LEGACY') ON CONFLICT DO NOTHING"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
         sqlx::query(
-            r#"INSERT INTO "order" (id, strategy_id, client_order_id, order_type, order_side,
-               quantity, time_in_force, status, avg_px, slippage, init_id, ts_init, ts_last)
-               VALUES ('O-LEGACY-FLOAT', 'S-1', 'O-LEGACY-FLOAT', 'MARKET', 'BUY', '1', 'GTC',
-               'FILLED', $1, $2, 'i', '0', '0')"#,
+            r#"INSERT INTO "order" (id, trader_id, strategy_id, client_order_id, order_type,
+               order_side, quantity, time_in_force, status, avg_px, slippage, init_id, ts_init,
+               ts_last)
+               VALUES ('O-LEGACY-FLOAT', 'TRADER-LEGACY', 'S-1', 'O-LEGACY-FLOAT', 'MARKET', 'BUY',
+               '1', 'GTC', 'FILLED', $1, $2, 'i', '0', '0')"#,
         )
         .bind(LEGACY_AVG_PX.parse::<f64>().unwrap())
         .bind(LEGACY_SLIPPAGE.parse::<f64>().unwrap())
@@ -2017,7 +2054,7 @@ mod serial_tests {
         assert_eq!(loaded.events.len(), 2);
         assert_entirely_equal(&loaded, &position);
 
-        restarted.flush().unwrap();
+        reset_test_database(&restarted).await;
         restarted.close().unwrap();
     }
 
@@ -2105,7 +2142,870 @@ mod serial_tests {
         assert_eq!(loaded.fill_voids.len(), 1);
         assert_entirely_equal(&loaded, &position);
 
-        restarted.flush().unwrap();
+        reset_test_database(&restarted).await;
         restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_position_survives_restart_with_settlement() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-SETTLED"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.00"))
+            .build();
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-PG-SETTLED")),
+            Some(PositionId::new("P-PG-SETTLED")),
+            Some(Price::from("0.400")),
+            Some(Quantity::from("10.00")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("POLYMARKET-001")),
+        ) else {
+            unreachable!();
+        };
+
+        let mut position = Position::new(&instrument, fill);
+        pg_cache.add_position(&position).unwrap();
+        position
+            .apply_instrument_close(InstrumentClose::new(
+                instrument.id(),
+                Price::from("1.000"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(300),
+                UnixNanos::from(301),
+            ))
+            .unwrap();
+        pg_cache.update_position(&position).unwrap();
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let loaded = restarted
+            .load_position(&position.id)
+            .await
+            .unwrap()
+            .expect("position should load from the settled snapshot");
+
+        assert!(loaded.is_settled());
+        assert!(loaded.is_closed());
+        assert_entirely_equal(&loaded, &position);
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    async fn get_test_pg_cache_database_for_trader(
+        trader_id: TraderId,
+    ) -> anyhow::Result<PostgresCacheDatabase> {
+        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database(trader_id)).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
+    async fn add_test_instrument(pg_cache: &PostgresCacheDatabase, instrument: &InstrumentAny) {
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_currency(&Currency::USD()).unwrap();
+        pg_cache.add_instrument(instrument).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    const SHARED_CLIENT_ORDER_ID: &str = "O-PG-SHARED-001";
+    const SHARED_STRATEGY_ID: &str = "S-001";
+
+    // The NETTING position ID `{instrument_id}-{strategy_id}` has no trader component, so every
+    // trader running the same strategy on the same instrument produces it
+    fn shared_netting_position_id(instrument: &InstrumentAny) -> PositionId {
+        PositionId::new(format!("{}-{SHARED_STRATEGY_ID}", instrument.id()))
+    }
+
+    fn shared_order(instrument: &InstrumentAny, trader_id: TraderId, quantity: &str) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .strategy_id(StrategyId::new(SHARED_STRATEGY_ID))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(quantity))
+            .client_order_id(ClientOrderId::new(SHARED_CLIENT_ORDER_ID))
+            .build()
+    }
+
+    fn shared_position(instrument: &InstrumentAny, order: &OrderAny, quantity: &str) -> Position {
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            order,
+            instrument,
+            Some(TradeId::new("E-PG-SHARED-001")),
+            Some(shared_netting_position_id(instrument)),
+            Some(Price::from("100.0")),
+            Some(Quantity::from(quantity)),
+            None,
+            None,
+            None,
+            Some(AccountId::new("SIM-001")),
+        ) else {
+            unreachable!();
+        };
+        Position::new(instrument, fill)
+    }
+
+    // A cash account under the shared account ID, with a trader-specific balance
+    fn shared_account(balance: &str) -> AccountAny {
+        AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd(balance, "0 USD", balance),
+            false,
+            false,
+        ))
+    }
+
+    // Persists an order, a NETTING position, the order-position index, a client claim, both
+    // snapshots and an account under the shared IDs, as a trader's node would
+    fn write_shared_state(
+        pg_cache: &PostgresCacheDatabase,
+        instrument: &InstrumentAny,
+        trader_id: TraderId,
+        quantity: &str,
+        balance: &str,
+        client_id: ClientId,
+    ) -> (OrderAny, Position, AccountAny) {
+        let order = shared_order(instrument, trader_id, quantity);
+        let position = shared_position(instrument, &order, quantity);
+        let account = shared_account(balance);
+
+        pg_cache.add_order(&order, None).unwrap();
+        pg_cache.add_position(&position).unwrap();
+        pg_cache
+            .index_order_position(order.client_order_id(), position.id)
+            .unwrap();
+        pg_cache
+            .index_order_clients(&[(order.client_order_id(), client_id)])
+            .unwrap();
+        pg_cache.snapshot_order_state(&order).unwrap();
+        pg_cache
+            .snapshot_position_state(&position, UnixNanos::from(1_000_000_000), None)
+            .unwrap();
+        pg_cache.add_account(&account).unwrap();
+
+        (order, position, account)
+    }
+
+    async fn count_rows(pool: &PgPool, table: &str) -> i64 {
+        sqlx::query_scalar(AssertSqlSafe(format!(r#"SELECT COUNT(*) FROM "{table}""#)))
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn wait_for_shared_rows(pool: &PgPool, expected: i64) {
+        wait_until_async(
+            || async {
+                count_rows(pool, "order").await == expected
+                    && count_rows(pool, "position").await == expected
+                    && count_rows(pool, "order_position_index").await == expected
+                    && count_rows(pool, "account_event").await == expected
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    // Asserts that `pg_cache` restores exactly one trader's shared-ID state
+    async fn assert_shared_state(
+        pg_cache: &PostgresCacheDatabase,
+        order: &OrderAny,
+        position: &Position,
+        account: &AccountAny,
+        client_id: ClientId,
+    ) {
+        let client_order_id = order.client_order_id();
+
+        let orders = pg_cache.load_orders().await.unwrap();
+        assert_eq!(orders.len(), 1);
+        assert_entirely_equal(&orders[&client_order_id], order);
+
+        let positions = pg_cache.load_positions().await.unwrap();
+        assert_eq!(positions.len(), 1);
+        assert_entirely_equal(&positions[&position.id], position);
+        assert_eq!(
+            DatabaseQueries::load_position_events(
+                &pg_cache.pool,
+                &position.id,
+                &pg_cache.trader_id()
+            )
+            .await
+            .unwrap(),
+            position.events
+        );
+
+        let order_snapshot = pg_cache
+            .load_order_snapshot(&client_order_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(order_snapshot.trader_id, pg_cache.trader_id());
+        assert_eq!(order_snapshot.quantity, order.quantity());
+
+        let position_snapshot = pg_cache
+            .load_position_snapshot(&position.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(position_snapshot.trader_id, pg_cache.trader_id());
+        assert_eq!(position_snapshot.quantity, position.quantity);
+
+        let index = pg_cache.load_index_order_position().unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get(&client_order_id), Some(&position.id));
+
+        let clients = pg_cache.load_index_order_client().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(clients.get(&client_order_id), Some(&client_id));
+
+        let accounts = pg_cache.load_accounts().await.unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_entirely_equal(&accounts[&account.id()], account);
+    }
+
+    async fn assert_no_trader_state(pg_cache: &PostgresCacheDatabase, position_id: &PositionId) {
+        let client_order_id = ClientOrderId::new(SHARED_CLIENT_ORDER_ID);
+
+        assert!(pg_cache.load_orders().await.unwrap().is_empty());
+        assert!(pg_cache.load_positions().await.unwrap().is_empty());
+        assert!(pg_cache.load_accounts().await.unwrap().is_empty());
+        assert!(pg_cache.load_index_order_position().unwrap().is_empty());
+        assert!(pg_cache.load_index_order_client().unwrap().is_empty());
+        assert!(
+            pg_cache
+                .load_order_snapshot(&client_order_id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            pg_cache
+                .load_position_snapshot(position_id)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_traders_sharing_ids_restore_their_own_state_after_restart() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let client_a = ClientId::new("CLIENT-A");
+        let client_b = ClientId::new("CLIENT-B");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        add_test_instrument(&pg_cache_a, &instrument).await;
+
+        let (order_a, position_a, account_a) = write_shared_state(
+            &pg_cache_a,
+            &instrument,
+            trader_a,
+            "1.0",
+            "1000000 USD",
+            client_a,
+        );
+        let (order_b, position_b, account_b) = write_shared_state(
+            &pg_cache_b,
+            &instrument,
+            trader_b,
+            "2.0",
+            "500000 USD",
+            client_b,
+        );
+        assert_eq!(order_a.client_order_id(), order_b.client_order_id());
+        assert_eq!(position_a.id, position_b.id);
+        wait_for_shared_rows(&pg_cache_a.pool, 2).await;
+
+        let mut pg_cache_a = pg_cache_a;
+        let mut pg_cache_b = pg_cache_b;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+
+        let mut restarted_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let mut restarted_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+
+        assert_shared_state(&restarted_a, &order_a, &position_a, &account_a, client_a).await;
+        assert_shared_state(&restarted_b, &order_b, &position_b, &account_b, client_b).await;
+
+        reset_test_database(&restarted_a).await;
+        restarted_a.close().unwrap();
+        restarted_b.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_replacing_shared_position_id_keeps_other_trader_fills() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        add_test_instrument(&pg_cache_a, &instrument).await;
+
+        let (_, position_a, _) = write_shared_state(
+            &pg_cache_a,
+            &instrument,
+            trader_a,
+            "1.0",
+            "1000000 USD",
+            ClientId::new("CLIENT-A"),
+        );
+        let (_, position_b, _) = write_shared_state(
+            &pg_cache_b,
+            &instrument,
+            trader_b,
+            "2.0",
+            "500000 USD",
+            ClientId::new("CLIENT-B"),
+        );
+        wait_for_shared_rows(&pg_cache_a.pool, 2).await;
+
+        // A reopened position replaces its trader's event log under the same NETTING ID
+        let reopened_order = shared_order(&instrument, trader_b, "3.0");
+        let reopened_b = shared_position(&instrument, &reopened_order, "3.0");
+        pg_cache_b.add_position(&reopened_b).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache_b
+                    .load_position(&position_b.id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|position| position.events == reopened_b.events)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let events_a =
+            DatabaseQueries::load_position_events(&pg_cache_a.pool, &position_a.id, &trader_a)
+                .await
+                .unwrap();
+        assert_eq!(events_a, position_a.events);
+
+        reset_test_database(&pg_cache_a).await;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::first_trader_flushes(true)]
+    #[case::second_trader_flushes(false)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_flush_with_shared_ids_keeps_other_trader_state(#[case] flush_a: bool) {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let client_a = ClientId::new("CLIENT-A");
+        let client_b = ClientId::new("CLIENT-B");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        add_test_instrument(&pg_cache_a, &instrument).await;
+
+        let (order_a, position_a, account_a) = write_shared_state(
+            &pg_cache_a,
+            &instrument,
+            trader_a,
+            "1.0",
+            "1000000 USD",
+            client_a,
+        );
+        let (order_b, position_b, account_b) = write_shared_state(
+            &pg_cache_b,
+            &instrument,
+            trader_b,
+            "2.0",
+            "500000 USD",
+            client_b,
+        );
+        wait_for_shared_rows(&pg_cache_a.pool, 2).await;
+
+        if flush_a {
+            pg_cache_a.flush().unwrap();
+            assert_no_trader_state(&pg_cache_a, &position_a.id).await;
+            assert_shared_state(&pg_cache_b, &order_b, &position_b, &account_b, client_b).await;
+        } else {
+            pg_cache_b.flush().unwrap();
+            assert_no_trader_state(&pg_cache_b, &position_b.id).await;
+            assert_shared_state(&pg_cache_a, &order_a, &position_a, &account_a, client_a).await;
+        }
+
+        // Shared reference data survives a trader's flush
+        assert!(
+            pg_cache_a
+                .load_instrument(&instrument.id())
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        reset_test_database(&pg_cache_a).await;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_traders_sharing_an_account_id_load_their_own_account_state() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        pg_cache_a.add_currency(&Currency::USD()).unwrap();
+
+        // Each cache writes on its own connection, so B's account needs A's currency committed
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "currency").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let account_a = AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+            false,
+            false,
+        ));
+        let account_b = AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd("500000 USD", "0 USD", "500000 USD"),
+            false,
+            false,
+        ));
+        assert_eq!(account_a.id(), account_b.id());
+        pg_cache_a.add_account(&account_a).unwrap();
+        pg_cache_b.add_account(&account_b).unwrap();
+
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "account_event").await == 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let accounts_a = pg_cache_a.load_accounts().await.unwrap();
+        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
+        assert_entirely_equal(&accounts_a[&account_a.id()], &account_a);
+        assert_entirely_equal(&accounts_b[&account_b.id()], &account_b);
+
+        let mut pg_cache_a = pg_cache_a;
+        let mut pg_cache_b = pg_cache_b;
+        reset_test_database(&pg_cache_a).await;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_same_account_event_in_both_caches_keeps_first_trader_state() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        pg_cache_a.add_currency(&Currency::USD()).unwrap();
+
+        // Both caches persist the same `AccountState`, so both writes carry the same event ID
+        let account = shared_account("1000000 USD");
+        pg_cache_a.add_account(&account).unwrap();
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "account_event").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let conflict = DatabaseQueries::add_account(
+            &pg_cache_b.pool,
+            false,
+            account.last_event().unwrap(),
+            &trader_b,
+        )
+        .await;
+        pg_cache_b.add_account(&account).unwrap();
+        pg_cache_b.flush().unwrap();
+
+        let mut pg_cache_a = pg_cache_a;
+        pg_cache_a.close().unwrap();
+        let mut restarted_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        let accounts_a = restarted_a.load_accounts().await.unwrap();
+        let accounts_b = pg_cache_b.load_accounts().await.unwrap();
+        let owners: Vec<Option<String>> =
+            sqlx::query_scalar(r#"SELECT trader_id FROM "account_event""#)
+                .fetch_all(&restarted_a.pool)
+                .await
+                .unwrap();
+
+        reset_test_database(&restarted_a).await;
+        restarted_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+
+        let error = conflict.unwrap_err().to_string();
+        assert!(
+            error.contains("is already persisted for another trader"),
+            "was: {error}"
+        );
+        assert_eq!(owners, vec![Some(trader_a.to_string())]);
+        assert_entirely_equal(&accounts_a[&account.id()], &account);
+        assert!(accounts_b.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_same_order_event_in_both_caches_keeps_first_trader_state() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let pg_cache_a = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&pg_cache_a).await;
+        let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b)
+            .await
+            .unwrap();
+        add_test_instrument(&pg_cache_a, &instrument).await;
+
+        let order = shared_order(&instrument, trader_a, "1.0");
+        pg_cache_a.add_order(&order, None).unwrap();
+        wait_until_async(
+            || async { count_rows(&pg_cache_a.pool, "order_event").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Re-persisting the event under another trader keeps its ID
+        let mut initialized = order.init_event().clone();
+        initialized.trader_id = trader_b;
+        let conflict =
+            DatabaseQueries::add_order_event(&pg_cache_b.pool, Box::new(initialized), None).await;
+        pg_cache_b.flush().unwrap();
+
+        let orders_a = pg_cache_a.load_orders().await.unwrap();
+        let orders_b = pg_cache_b.load_orders().await.unwrap();
+        let owners: Vec<Option<String>> =
+            sqlx::query_scalar(r#"SELECT trader_id FROM "order_event""#)
+                .fetch_all(&pg_cache_a.pool)
+                .await
+                .unwrap();
+
+        let mut pg_cache_a = pg_cache_a;
+        reset_test_database(&pg_cache_a).await;
+        pg_cache_a.close().unwrap();
+        pg_cache_b.close().unwrap();
+
+        let error = conflict.unwrap_err().to_string();
+        assert!(
+            error.contains("is already persisted for another trader"),
+            "was: {error}"
+        );
+        assert_eq!(owners, vec![Some(trader_a.to_string())]);
+        assert_eq!(orders_a.len(), 1);
+        assert_entirely_equal(&orders_a[&order.client_order_id()], &order);
+        assert!(orders_b.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_connect_fails_until_account_events_without_trader_are_assigned() {
+        let trader_a = TraderId::from("TRADER-001");
+        let trader_b = TraderId::from("TRADER-002");
+        let mut writer = get_test_pg_cache_database_for_trader(trader_a)
+            .await
+            .unwrap();
+        reset_test_database(&writer).await;
+        writer.add_currency(&Currency::USD()).unwrap();
+
+        let account = AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+            false,
+            false,
+        ));
+        writer.add_account(&account).unwrap();
+        wait_until_async(
+            || async { count_rows(&writer.pool, "account_event").await == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+        writer.close().unwrap();
+
+        // Account events persisted before trader-scoped persistence carry no trader
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+        sqlx::query(r#"UPDATE "account_event" SET trader_id = NULL"#)
+            .execute(&pg)
+            .await
+            .unwrap();
+
+        // Every trader sharing the database is blocked until the account is assigned
+        let mut blocked_errors = Vec::new();
+        for trader_id in [trader_a, trader_b] {
+            blocked_errors.push(
+                get_test_pg_cache_database_for_trader(trader_id)
+                    .await
+                    .err()
+                    .map(|e| e.to_string()),
+            );
+        }
+
+        // Assignment connects directly, as the CLI does, so it works while the cache is blocked
+        let assigned = DatabaseQueries::assign_account_trader(&pg, &account.id(), &trader_a).await;
+        let reassigned =
+            DatabaseQueries::assign_account_trader(&pg, &account.id(), &trader_b).await;
+        let unassigned = DatabaseQueries::load_unassigned_account_ids(&pg).await;
+
+        // Reconnect and load without panicking, so the cleanup below always runs
+        let reconnected = async {
+            let mut pg_cache_a = get_test_pg_cache_database_for_trader(trader_a).await?;
+            let mut pg_cache_b = get_test_pg_cache_database_for_trader(trader_b).await?;
+            let accounts_a = pg_cache_a.load_accounts().await?;
+            let accounts_b = pg_cache_b.load_accounts().await?;
+            pg_cache_a.close()?;
+            pg_cache_b.close()?;
+            anyhow::Ok((accounts_a, accounts_b))
+        }
+        .await;
+
+        // Clean up before asserting, so a failure cannot leave later tests blocked
+        DatabaseQueries::truncate(&pg).await.unwrap();
+
+        let (accounts_a, accounts_b) = reconnected.unwrap();
+
+        for error in blocked_errors {
+            let error = error.expect("connect should fail while account events have no trader");
+            assert!(
+                error.contains(account.id().as_str())
+                    && error.contains("nautilus database assign-account"),
+                "was: {error}"
+            );
+        }
+        assert_eq!(assigned.unwrap(), 1);
+        assert_eq!(reassigned.unwrap(), 0);
+        assert!(unassigned.unwrap().is_empty());
+        assert_entirely_equal(&accounts_a[&account.id()], &account);
+        assert!(accounts_b.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_assign_account_trader_rejects_unknown_account() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+
+        let error = DatabaseQueries::assign_account_trader(
+            &pg,
+            &AccountId::from("SIM-UNKNOWN-ASSIGN"),
+            &TraderId::from("TRADER-001"),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "No account events found for SIM-UNKNOWN-ASSIGN"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_flush_returns_error_when_database_fails() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        pg_cache.close().unwrap();
+
+        let result = pg_cache.flush();
+
+        assert!(result.is_err());
+    }
+
+    // Extracts the trader-key migration from the real schema file, so the test runs the shipped
+    // SQL rather than a copy of it.
+    fn trader_key_migration_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/tables.sql");
+        let schema = std::fs::read_to_string(path).unwrap();
+        let marker = "DO $$\nDECLARE\n    unresolved TEXT;";
+        let start = schema
+            .find(marker)
+            .expect("no trader-key migration in tables.sql");
+        let end = schema[start..]
+            .find("END $$;")
+            .expect("unterminated trader-key migration in tables.sql")
+            + start
+            + "END $$;".len();
+        schema[start..end].to_string()
+    }
+
+    // Restores the pre-migration keys inside `tx`: single-column primary keys and an index with
+    // no trader
+    async fn downgrade_trader_keys(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) {
+        for statement in [
+            r#"ALTER TABLE "order" DROP CONSTRAINT order_pkey"#,
+            r#"ALTER TABLE "order" ADD PRIMARY KEY (id)"#,
+            r#"ALTER TABLE "position" DROP CONSTRAINT position_pkey"#,
+            r#"ALTER TABLE "position" ADD PRIMARY KEY (id)"#,
+            r#"ALTER TABLE "order_position_index" DROP CONSTRAINT order_position_index_pkey"#,
+            r#"ALTER TABLE "order_position_index" ALTER COLUMN trader_id DROP NOT NULL"#,
+            r#"ALTER TABLE "order_position_index" ADD PRIMARY KEY (client_order_id)"#,
+            r#"INSERT INTO "trader" (id) VALUES ('MIGRATE-001'), ('MIGRATE-002')
+               ON CONFLICT (id) DO NOTHING"#,
+            r#"INSERT INTO "order_event" (id, kind, trader_id, strategy_id, client_order_id,
+                   ts_event, ts_init)
+               VALUES ('MIGRATE-EVENT-1', 'OrderInitialized', 'MIGRATE-001', 'S-001',
+                       'O-MIGRATE-1', '0', '0')"#,
+            r#"INSERT INTO "position_event" (id, kind, trader_id, strategy_id, client_order_id,
+                   venue_order_id, account_id, trade_id, order_type, order_side, last_px,
+                   last_qty, liquidity_side, position_id, ts_event, ts_init)
+               VALUES ('MIGRATE-FILL-2', 'OrderFilled', 'MIGRATE-002', 'S-001', 'O-MIGRATE-2',
+                       'V-2', 'SIM-001', 'E-2', 'MARKET', 'BUY', '1', '1', 'TAKER',
+                       'P-MIGRATE-2', '0', '0')"#,
+            r#"INSERT INTO "order_position_index" (client_order_id, position_id)
+               VALUES ('O-MIGRATE-1', 'P-MIGRATE-1'), ('O-MIGRATE-2', 'P-MIGRATE-2')"#,
+        ] {
+            sqlx::query(statement).execute(&mut **tx).await.unwrap();
+        }
+    }
+
+    async fn primary_key_columns(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+    ) -> Vec<String> {
+        sqlx::query_scalar(
+            "SELECT keys.column_name::TEXT
+            FROM information_schema.table_constraints AS constraints
+            JOIN information_schema.key_column_usage AS keys
+              ON keys.constraint_schema = constraints.constraint_schema
+             AND keys.constraint_name = constraints.constraint_name
+            WHERE constraints.table_schema = current_schema()
+              AND constraints.table_name = $1
+              AND constraints.constraint_type = 'PRIMARY KEY'
+            ORDER BY keys.ordinal_position",
+        )
+        .bind(table)
+        .fetch_all(&mut **tx)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_trader_key_migration_qualifies_keys_and_attributes_index_rows() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+
+        // Rolled back at the end: PostgreSQL DDL is transactional, so neither the downgraded keys
+        // nor the probe rows can outlive the test, even on panic
+        let mut tx = pg.begin().await.unwrap();
+        downgrade_trader_keys(&mut tx).await;
+
+        sqlx::query(AssertSqlSafe(trader_key_migration_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let order_key = primary_key_columns(&mut tx, "order").await;
+        let position_key = primary_key_columns(&mut tx, "position").await;
+        let index_key = primary_key_columns(&mut tx, "order_position_index").await;
+        let index: Vec<(String, String)> = sqlx::query_as(
+            r#"SELECT client_order_id, trader_id FROM "order_position_index"
+               WHERE client_order_id LIKE 'O-MIGRATE-%' ORDER BY client_order_id"#,
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+        // Re-running the migration once keys are qualified is a no-op
+        sqlx::query(AssertSqlSafe(trader_key_migration_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        tx.rollback().await.unwrap();
+
+        assert_eq!(order_key, vec!["trader_id", "id"]);
+        assert_eq!(position_key, vec!["trader_id", "id"]);
+        assert_eq!(index_key, vec!["trader_id", "client_order_id"]);
+        assert_eq!(
+            index,
+            vec![
+                (String::from("O-MIGRATE-1"), String::from("MIGRATE-001")),
+                (String::from("O-MIGRATE-2"), String::from("MIGRATE-002")),
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_trader_key_migration_reports_unresolved_index_rows() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+        let mut tx = pg.begin().await.unwrap();
+        downgrade_trader_keys(&mut tx).await;
+
+        sqlx::query(
+            r#"INSERT INTO "order_position_index" (client_order_id, position_id)
+               VALUES ('O-MIGRATE-ORPHAN', 'P-MIGRATE-ORPHAN')"#,
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        let error = sqlx::query(AssertSqlSafe(trader_key_migration_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+
+        tx.rollback().await.unwrap();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("Order position index entries have no resolvable trader")
+                && message.contains("O-MIGRATE-ORPHAN"),
+            "was: {message}"
+        );
     }
 }

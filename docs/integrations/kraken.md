@@ -517,6 +517,10 @@ Order and fill records contribute to the completeness flag: the set is incomplet
 instrument could not be resolved, or when a record could not be parsed. Position records do not
 currently contribute, and the futures position read still drops an unresolved symbol silently.
 
+Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
+stop after 500 pages. A read cut short by that cap is reported as incomplete rather than silently
+truncated.
+
 ### Spot reconciliation
 
 **Order status reports:**
