@@ -1317,21 +1317,27 @@ is as follows:
 - Generate missing orders to bring Nautilus execution state in line with positions reported by
   Polymarket.
 
+### Position reports
+
+#### Resolved balances
+
 Position reports omit resolved balances:
 
 - A balance in an instrument that Nautilus settled from an `InstrumentClose` is always omitted, so
   reconciliation cannot reopen settled exposure.
 - A balance that the Data API marks `redeemable` is omitted when the account has no open Nautilus
   position in that instrument. While an open position still holds it, the balance stays reported
-  until settlement closes the position, so reconciliation does not infer a flat position first.
+  until settlement closes the position.
 
 The adapter drops these balances before instrument mapping, so an expired instrument that is no
 longer loaded does not fail reconciliation. The outcome tokens stay in the wallet until redeemed.
 
-An individual order lookup can return a live or terminal status. When it instead returns no order,
-the adapter recovers a cached individual order from trade history if its terminal WebSocket update
-was missed. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement
-states do not.
+#### Missing reports
+
+A missing position report is not evidence of a flat position. Redemption removes a balance from
+the Data API without a trade, and Polymarket can redeem winning tokens automatically shortly after
+resolution. Continuous position checks therefore never close a position that the Data API no
+longer reports; open positions close through fills or settlement.
 
 ### Settlement precedence
 
@@ -1388,7 +1394,8 @@ Position checks have their own `position_check_interval_secs`, also disabled by 
 checks do not poll wallet positions. Owner-mode position reports come from the Data API and can
 reflect a different point in time from CLOB orders and trades; session mode omits wallet-wide
 position reports. Treat an apparent position mismatch as requiring reconciliation, not as proof
-that a particular fill is false.
+that a particular fill is false. A position the Data API no longer reports stays open until a
+fill or settlement closes it; see [missing reports](#missing-reports).
 
 ### Mass-status reconciliation
 
@@ -1413,8 +1420,10 @@ Polymarket commission.
 
 `/data/order/{id}` can return live or terminal orders. When it returns no order for a known ID,
 `generate_order_status_report` falls back to `/data/trades` and filters the returned trades by the venue
-order ID. This avoids the engine resolving a local `ACCEPTED` order as `REJECTED`, which would discard
-fills that already happened at the venue.
+order ID. This recovers a cached order whose terminal WebSocket update was missed, and avoids the engine
+resolving a local `ACCEPTED` order as `REJECTED`, which would discard fills that already happened at the
+venue. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement states do
+not.
 
 The cached order is resolved via `client_order_id`, falling back to the cache's `venue_order_id` index
 when only the venue ID is known. When the request supplies or resolves to a `client_order_id`, the cached

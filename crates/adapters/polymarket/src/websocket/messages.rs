@@ -580,12 +580,6 @@ impl UserWsMessage {
     ///
     /// Returns [`serde_json::Error`] when `text` is not a valid user-message batch.
     pub fn parse_batch(text: &str) -> serde_json::Result<Vec<Self>> {
-        /// Reads only the tag, to classify an element before deserializing it.
-        #[derive(Deserialize)]
-        struct EventTypeTag {
-            event_type: Option<String>,
-        }
-
         // Elements stay raw so the derived impl parses each one and rejects a duplicated
         // `event_type`; `serde_json::Value` would silently keep the last occurrence.
         let elements: Vec<&RawValue> = serde_json::from_str(text)?;
@@ -593,10 +587,10 @@ impl UserWsMessage {
         let mut skipped = 0usize;
 
         for element in elements {
-            let tag: EventTypeTag = serde_json::from_str(element.get())?;
-            match tag.event_type.as_deref() {
-                Some(event_type) if !matches!(event_type, "order" | "trade") => skipped += 1,
-                _ => messages.push(serde_json::from_str(element.get())?),
+            if Self::has_unrecognized_event_type(element.get()) {
+                skipped += 1;
+            } else {
+                messages.push(serde_json::from_str(element.get())?);
             }
         }
 
@@ -605,6 +599,19 @@ impl UserWsMessage {
         }
 
         Ok(messages)
+    }
+
+    pub(crate) fn has_unrecognized_event_type(text: &str) -> bool {
+        /// Reads only the tag, to classify a message before deserializing it.
+        #[derive(Deserialize)]
+        struct EventTypeTag {
+            event_type: Option<String>,
+        }
+
+        serde_json::from_str::<EventTypeTag>(text).is_ok_and(|tag| {
+            tag.event_type
+                .is_some_and(|event_type| !matches!(event_type.as_str(), "order" | "trade"))
+        })
     }
 
     fn parse_reordered(text: &str) -> serde_json::Result<Self> {
@@ -1306,6 +1313,19 @@ mod tests {
             UserWsMessage::parse_batch(&text).expect("batch of unknown event types should parse");
 
         assert!(actual.is_empty());
+    }
+
+    #[rstest]
+    #[case::auto_redeem(auto_redeem_element().to_string(), true)]
+    #[case::order(load_text("ws_user_order_msg.json"), false)]
+    #[case::trade(load_text("ws_user_trade_msg.json"), false)]
+    #[case::missing_event_type(serde_json::json!({"type": "order"}).to_string(), false)]
+    #[case::not_an_object(serde_json::json!([]).to_string(), false)]
+    fn test_user_ws_message_has_unrecognized_event_type(
+        #[case] text: String,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(UserWsMessage::has_unrecognized_event_type(&text), expected);
     }
 
     #[rstest]

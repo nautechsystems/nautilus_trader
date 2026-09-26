@@ -2393,13 +2393,31 @@ impl ExecutionManager {
                 continue;
             }
 
-            let ReportClientCoverage::Resolved(responsible_clients) = coverage else {
-                log::warn!(
-                    "Skipping fill report query for {}/{}: responsible execution client coverage is unavailable",
-                    key.0,
-                    key.1,
-                );
-                continue;
+            let responsible_clients = match coverage {
+                ReportClientCoverage::Resolved(responsible_clients) => responsible_clients,
+
+                // Coverage only decides whether an absent report proves a flat position
+                ReportClientCoverage::Unavailable(responsible_clients)
+                    if !venue_reports.is_empty() =>
+                {
+                    responsible_clients
+                }
+                ReportClientCoverage::Unavailable(_) => {
+                    log::debug!(
+                        "Skipping fill report query for {}/{}: responsible execution client coverage is unavailable",
+                        key.0,
+                        key.1,
+                    );
+                    continue;
+                }
+                ReportClientCoverage::Unresolved => {
+                    log::warn!(
+                        "Skipping fill report query for {}/{}: responsible execution client coverage is unresolved",
+                        key.0,
+                        key.1,
+                    );
+                    continue;
+                }
             };
 
             if responsible_clients.is_empty()
@@ -7028,6 +7046,91 @@ mod tests {
             assert_eq!(query.command.end, Some(query_end));
             assert_eq!(query.command.correlation_id, Some(check.command.command_id));
             assert_eq!(query.command.log_receipt_level, LogLevel::Debug);
+        }
+
+        #[rstest]
+        #[case::reported(Some("2.0"), true)]
+        #[case::unreported(None, false)]
+        fn test_plan_position_fill_reports_unavailable_coverage_requires_venue_report(
+            #[case] venue_qty: Option<&str>,
+            #[case] expect_query: bool,
+        ) {
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+
+            let mut manager = ExecutionManager::new(
+                clock.clone(),
+                cache.clone(),
+                ExecutionManagerConfig {
+                    position_check_threshold_ns: DurationNanos::ZERO,
+                    ..Default::default()
+                },
+            )
+            .expect("valid config");
+
+            let spot = test_bybit_spot_instrument();
+            cache.borrow_mut().add_instrument(spot.clone()).unwrap();
+            let position = insert_open_position(
+                &cache,
+                &spot,
+                PositionId::from("P-SPOT-UNAVAILABLE"),
+                OrderSide::Buy,
+                "1.0",
+                "2000.00",
+            );
+            let key = (position.instrument_id, position.account_id);
+            let client = PositionCoverageStubClient;
+            let clients: [&dyn ExecutionClient; 1] = [&client];
+            let mut check = manager.prepare_position_report_check(UUID4::new(), &clients);
+            let ts_now = clock.borrow().timestamp_ns();
+
+            let reports: Vec<PositionStatusReport> = venue_qty
+                .into_iter()
+                .map(|qty| {
+                    PositionStatusReport::new(
+                        position.account_id,
+                        position.instrument_id,
+                        PositionSide::Long,
+                        Quantity::from(qty),
+                        ts_now,
+                        ts_now,
+                        None,
+                        None,
+                        Some(dec!(2000.00)),
+                    )
+                })
+                .collect();
+
+            let queried_clients = IndexSet::from([client.client_id()]);
+
+            let plan = manager.plan_position_fill_reports(
+                &mut check,
+                &reports,
+                &queried_clients,
+                &IndexSet::new(),
+                &clients,
+            );
+
+            let expected_queries = if expect_query {
+                vec![(key, client.client_id())]
+            } else {
+                Vec::new()
+            };
+
+            assert_eq!(
+                check.client_coverage.get(&key),
+                Some(&ReportClientCoverage::Unavailable(IndexSet::from([
+                    client.client_id()
+                ])))
+            );
+            assert_eq!(plan.discrepancy_keys, IndexSet::from([key]));
+            assert_eq!(
+                plan.queries
+                    .iter()
+                    .map(|query| (query.key, query.client_id))
+                    .collect::<Vec<_>>(),
+                expected_queries
+            );
         }
 
         #[rstest]

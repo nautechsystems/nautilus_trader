@@ -217,6 +217,7 @@ Released on TBD (UTC).
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates
 - Fixed Polymarket reconciliation of resolved, unredeemed balances (#4963), thanks for reporting @seungpyoson
+- Fixed Polymarket reconciliation closing auto-redeemed positions at the entry price before settlement
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit

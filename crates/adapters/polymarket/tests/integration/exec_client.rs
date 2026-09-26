@@ -288,6 +288,16 @@ async fn test_exec_client_creation() {
 
 #[rstest]
 #[tokio::test]
+async fn test_exec_client_does_not_provide_bulk_position_coverage() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    assert!(!client.provides_bulk_position_coverage(InstrumentId::from("TEST-TOKEN.POLYMARKET")));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_poly1271_requires_distinct_funder() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;

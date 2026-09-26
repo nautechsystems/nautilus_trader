@@ -326,6 +326,12 @@ impl ExecutionClient for PolymarketExecutionClient {
         crate::common::consts::POSITION_RECONCILIATION_TOLERANCE
     }
 
+    // Redemption, including the venue's automatic redemption of winning tokens, removes a Data
+    // API balance without a trade, so a missing balance is not evidence of a flat position.
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
+    }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,

@@ -479,6 +479,10 @@ impl FeedHandler {
                 } else {
                     match UserWsMessage::parse(text) {
                         Ok(msg) => vec![PolymarketWsMessage::User(msg)],
+                        Err(_) if UserWsMessage::has_unrecognized_event_type(text) => {
+                            log::debug!("Skipped user WS message with an unrecognized event_type");
+                            vec![]
+                        }
                         Err(e) => {
                             log::warn!(
                                 "Failed to parse user WS message: {e}; payload={}",
