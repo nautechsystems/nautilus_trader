@@ -635,6 +635,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_balance_locked_sell_binary_option_reserves_nothing(
+        cash_account_million_usd: CashAccount,
+        binary_option: crate::instruments::BinaryOption,
+    ) {
+        // BinaryOption::base_currency() is None: there is no modeled asset to reserve, so a
+        // SELL must not reserve quote collateral.
+        let balance_locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &InstrumentAny::BinaryOption(binary_option),
+                OrderSide::Sell,
+                Quantity::from("5.00"),
+                Price::from("0.500"),
+                None,
+            )
+            .unwrap();
+        println!("SELL 5 @ 0.50 BinaryOption locks: {balance_locked:?}");
+        assert_eq!(balance_locked, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
     fn test_calculate_pnls_for_single_currency_cash_account(
         cash_account_million_usd: CashAccount,
         audusd_sim: CurrencyPair,
