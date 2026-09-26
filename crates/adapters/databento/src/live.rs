@@ -638,6 +638,9 @@ impl DatabentoFeedHandler {
                 self.subscriptions.len()
             );
 
+            // Anchors remain only when the first connection failed, so this session replays
+            let replay = self.subscriptions.iter().any(|sub| sub.start.is_some());
+
             for sub in self.subscriptions.clone() {
                 client.subscribe(sub).await?;
             }
@@ -645,6 +648,8 @@ impl DatabentoFeedHandler {
             for sub in &mut self.subscriptions {
                 sub.start = None;
             }
+
+            buffering_start = replay.then(|| clock.get_time_ns());
             client.start().await?;
             running = true;
             log::info!("Resubscription complete");
@@ -932,7 +937,10 @@ impl DatabentoFeedHandler {
                             ))));
                         }
 
-                        continue;
+                        // Replayed trades stay out of the live stream
+                        if buffering_start.is_some_and(|start| msg.ts_recv <= start) {
+                            continue;
+                        }
                     }
                 }
 

@@ -196,6 +196,7 @@ Released on TBD (UTC).
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Coinbase trade aggressor side inverted by using the reported maker side
+- Fixed Databento live MBO subscriptions never emitting trades (#5095), thanks for reporting @invisiblebackhand
 - Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
 - Fixed Deribit order and edit amounts and prices losing digits through `f64` serialization
 - Fixed Deribit and Tardis Machine book parsing panicking on out-of-range prices
