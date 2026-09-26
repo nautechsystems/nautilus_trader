@@ -190,7 +190,7 @@ def test_read_test_data_falls_back_to_develop_when_release_tag_is_missing(
     monkeypatch.setattr(providers, "_DEFAULT_BRANCH", "v9.9.9")
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
-    data = providers._read_test_data("short-term-interest.csv", "v9.9.9")
+    data = TestDataProvider().read("short-term-interest.csv")
 
     assert data == b"develop-bytes"
     assert requested == [
@@ -200,18 +200,20 @@ def test_read_test_data_falls_back_to_develop_when_release_tag_is_missing(
 
 
 @pytest.mark.parametrize(
-    ("default_branch", "branch", "status"),
+    ("default_branch", "branch", "status", "expected_branch"),
     [
-        pytest.param("v9.9.9", "feature", HTTPStatus.NOT_FOUND, id="explicit-branch"),
-        pytest.param("v9.9.9", "v9.9.9", HTTPStatus.INTERNAL_SERVER_ERROR, id="server-error"),
-        pytest.param("develop", "develop", HTTPStatus.NOT_FOUND, id="develop-default"),
+        pytest.param("v9.9.9", "feature", HTTPStatus.NOT_FOUND, "feature", id="explicit-branch"),
+        pytest.param("v9.9.9", "v9.9.9", HTTPStatus.NOT_FOUND, "v9.9.9", id="explicit-default-tag"),
+        pytest.param("v9.9.9", None, HTTPStatus.INTERNAL_SERVER_ERROR, "v9.9.9", id="server-error"),
+        pytest.param("develop", None, HTTPStatus.NOT_FOUND, "develop", id="develop-default"),
     ],
 )
 def test_read_test_data_raises_without_falling_back(
     monkeypatch: pytest.MonkeyPatch,
     default_branch: str,
-    branch: str,
+    branch: str | None,
     status: HTTPStatus,
+    expected_branch: str,
 ) -> None:
     """
     Test only a missing default release tag falls back to develop.
@@ -227,9 +229,9 @@ def test_read_test_data_raises_without_falling_back(
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     with pytest.raises(HTTPError) as exc_info:
-        providers._read_test_data("short-term-interest.csv", branch)
+        TestDataProvider(branch=branch).read("short-term-interest.csv")
 
     assert exc_info.value.code == status
     assert requested == [
-        providers._GITHUB_RAW_URL.format(branch=branch, path="short-term-interest.csv"),
+        providers._GITHUB_RAW_URL.format(branch=expected_branch, path="short-term-interest.csv"),
     ]

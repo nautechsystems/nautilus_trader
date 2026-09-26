@@ -108,15 +108,18 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def _read_test_data(path: str, branch: str = _DEFAULT_BRANCH) -> bytes:
+def _read_test_data(path: str, branch: str | None = None) -> bytes:
     if TEST_DATA_DIR.exists():
         return (TEST_DATA_DIR / path).read_bytes()
 
-    try:
+    if branch is not None:
         return _download_test_data(path, branch)
+
+    try:
+        return _download_test_data(path, _DEFAULT_BRANCH)
     except urllib.error.HTTPError as e:
         # A source build carries its upcoming version before that release is tagged
-        if e.code != HTTPStatus.NOT_FOUND or branch != _DEFAULT_BRANCH or branch == _DEVELOP_BRANCH:
+        if e.code != HTTPStatus.NOT_FOUND or _DEFAULT_BRANCH == _DEVELOP_BRANCH:
             raise
         return _download_test_data(path, _DEVELOP_BRANCH)
 
@@ -325,14 +328,15 @@ class TestDataProvider:
 
     Parameters
     ----------
-    branch : str
-        The NautilusTrader GitHub branch or tag for remote paths.
+    branch : str, optional
+        The NautilusTrader GitHub branch or tag for remote paths, read without falling
+        back to `develop`. If `None`, downloads use the default described above.
 
     """
 
     __test__ = False  # Prevents pytest from collecting this as a test class
 
-    def __init__(self, branch: str = _DEFAULT_BRANCH) -> None:
+    def __init__(self, branch: str | None = None) -> None:
         """
         Initialize the provider with the GitHub branch used for remote paths.
         """
