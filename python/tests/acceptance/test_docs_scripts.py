@@ -98,5 +98,5 @@ def test_sample_data_path_materializes_outside_a_source_checkout(
         remote_only.setattr(providers, "TEST_DATA_DIR", missing_root)
         materialized = orderbook_data.sample_data_path(name)
 
-    assert materialized == tmp_path / "nautilus_sample_data" / name
+    assert materialized == tmp_path / "nautilus_sample_data" / providers._DEFAULT_BRANCH / name
     assert materialized.read_bytes() == expected

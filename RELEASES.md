@@ -165,6 +165,7 @@ Released on TBD (UTC).
 - Fixed Postgres cache loading and overwriting another trader's orders, positions, and fills (#5070), thanks @utx0
 - Fixed inverse option notional and PnL using `1 / price` valuation (#5053), thanks for reporting @Kilvish25
 - Fixed backtest inverse option cash settlement at quote-point intrinsic value (#5053), thanks for reporting @Kilvish25
+- Fixed `TestDataProvider` reading `develop` data in release wheels (#5087), thanks for reporting @bananaunderground
 - Fixed adapter JSON decimal and `UnixNanos` parsing with `serde_json/arbitrary_precision`
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons

@@ -37,17 +37,18 @@ def sample_data_path(name: str) -> Path:
 
     Reads from the `test_data/` directory in a source checkout, and downloads to a
     temporary directory otherwise, so the loaders that only accept a file path work from
-    an installed wheel.
+    an installed wheel. Downloads are cached per GitHub branch or tag.
 
     """
     local = TEST_DATA_DIR / name
     if local.is_file():
         return local
 
-    cached = Path(tempfile.gettempdir()) / "nautilus_sample_data" / name
+    provider = TestDataProvider()
+    cached = Path(tempfile.gettempdir()) / "nautilus_sample_data" / provider.branch / name
     if not cached.is_file():
         cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_bytes(TestDataProvider().read(name))
+        cached.write_bytes(provider.read(name))
 
     return cached
 
