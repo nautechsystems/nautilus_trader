@@ -6021,8 +6021,6 @@ fn validate_bar_sequence(cache: &Rc<RefCell<Cache>>, validate_sequence: bool, ba
         return false;
     }
 
-    // Bar revision overwrite needs a `Bar.is_revision` field on the model;
-    // not present today. Tracked under #8 in the data engine parity plan
     true
 }
 

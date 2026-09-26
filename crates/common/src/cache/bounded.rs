@@ -55,6 +55,15 @@ impl<T> BoundedVecDeque<T> {
         self.inner.push_front(item);
     }
 
+    /// Replaces the front (newest) element in place without changing the length.
+    ///
+    /// Does nothing when the deque is empty.
+    pub(super) fn replace_front(&mut self, item: T) {
+        if let Some(front) = self.inner.front_mut() {
+            *front = item;
+        }
+    }
+
     /// Returns the number of elements.
     #[must_use]
     pub(super) fn len(&self) -> usize {

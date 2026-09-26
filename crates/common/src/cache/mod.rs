@@ -37,7 +37,7 @@ mod tests;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    cmp::Reverse,
+    cmp::{Ordering, Reverse},
     fmt::{Debug, Display},
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
@@ -2400,6 +2400,10 @@ impl Cache {
 
     /// Adds the `bar` to the cache.
     ///
+    /// The per-`bar_type` series is kept newest-first with unique `ts_event` values:
+    /// a bar newer than the current front is pushed, an equal `ts_event` replaces the
+    /// front bar (the later data wins), and an older `ts_event` is skipped.
+    ///
     /// # Errors
     ///
     /// Returns an error if persisting the bar to the backing database fails.
@@ -2416,11 +2420,14 @@ impl Cache {
             .bars
             .entry(bar.bar_type)
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
-        bars.push_front(bar);
+        insert_bar(bars, bar);
         Ok(())
     }
 
     /// Adds the `bars` to the cache.
+    ///
+    /// Each bar follows the same insertion rule as [`Cache::add_bar`], keeping the
+    /// per-`bar_type` series newest-first with unique `ts_event` values.
     ///
     /// # Errors
     ///
@@ -2445,7 +2452,7 @@ impl Cache {
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
 
         for bar in bars {
-            bars_deque.push_front(*bar);
+            insert_bar(bars_deque, *bar);
         }
         Ok(())
     }
@@ -6604,4 +6611,22 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
+}
+
+/// Inserts `bar` into the newest-first bars deque for a `bar_type`.
+///
+/// A bar newer than the current front is pushed, an equal `ts_event` replaces the
+/// front bar (the later data wins), and an older `ts_event` is skipped.
+fn insert_bar(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
+    match bars.front() {
+        None => bars.push_front(bar),
+        Some(front) => match bar.ts_event.cmp(&front.ts_event) {
+            Ordering::Greater => bars.push_front(bar),
+            Ordering::Equal => bars.replace_front(bar),
+            Ordering::Less => log::debug!(
+                "Skipping bar {bar} with `ts_event` older than last bar `ts_event` {}",
+                front.ts_event,
+            ),
+        },
+    }
 }
