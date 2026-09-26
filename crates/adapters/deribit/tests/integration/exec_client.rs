@@ -989,11 +989,11 @@ async fn test_limit_submit_sends_exact_number_tokens() {
 
 #[rstest]
 #[tokio::test]
-async fn test_limit_submit_sends_or_withholds_unrepresentable_amount() {
+async fn test_limit_submit_sends_or_rejects_unrepresentable_amount() {
     let (addr, state) = start_test_server().await.unwrap();
     let request_count = state.command_request_count.clone();
     let command_request_texts = state.command_request_texts.clone();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
     client.connect().await.unwrap();
 
@@ -1017,11 +1017,16 @@ async fn test_limit_submit_sends_or_withholds_unrepresentable_amount() {
 
         assert_eq!(request.params.amount.get(), "100000000.005000001");
     } else {
-        // Without arbitrary precision, an f64 cannot carry the amount, so nothing is sent
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Without arbitrary precision, an f64 cannot carry the amount
+        match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
+            }
+            other => panic!("Expected Rejected event, was {other:?}"),
+        }
 
         assert_eq!(request_count.load(Ordering::Relaxed), 0);
-        assert!(command_request_texts.lock().await.is_empty());
     }
 
     client.disconnect().await.unwrap();
@@ -1052,6 +1057,58 @@ async fn test_modify_sends_exact_number_tokens() {
     assert_eq!(request.params.order_id, "DERIBIT-ORDER-1");
     assert_eq!(request.params.amount.get(), "2");
     assert_eq!(request.params.price.get(), "51000.0");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_sends_or_rejects_unrepresentable_amount() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_request_texts = state.command_request_texts.clone();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("modify-exact-test-002");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.modify_order(sized_modify_order_command(
+        client_order_id,
+        Quantity::from("100000000.005000001"),
+    ));
+
+    if serde_json_keeps_number_text() {
+        result.unwrap();
+        wait_for_command_requests(&request_count, 1).await;
+
+        let texts = command_request_texts.lock().await;
+        let request: RawEditRequest = serde_json::from_str(&texts[0]).unwrap();
+
+        assert_eq!(request.params.order_id, "DERIBIT-ORDER-1");
+        assert_eq!(request.params.amount.get(), "100000000.005000001");
+        assert_eq!(request.params.price.get(), "51000.0");
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            UNREPRESENTABLE_PARAMS_REASON
+        );
+
+        match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::from("DERIBIT-ORDER-1"))
+                );
+                assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
+            }
+            other => panic!("Expected ModifyRejected event, was {other:?}"),
+        }
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    }
 
     client.disconnect().await.unwrap();
 }
@@ -1520,6 +1577,8 @@ struct RawEditParams<'a> {
     price: &'a RawValue,
 }
 
+const UNREPRESENTABLE_PARAMS_REASON: &str = "Cannot serialize order params: exact decimal number serialization requires serde_json/arbitrary_precision";
+
 // `serde_json/arbitrary_precision` keeps a number's text, including trailing zeros
 fn serde_json_keeps_number_text() -> bool {
     serde_json::Number::from_str("0.10").unwrap().to_string() == "0.10"
@@ -1586,6 +1645,10 @@ fn cancel_order_command_without_venue_order_id(client_order_id: ClientOrderId) -
 }
 
 fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
+    sized_modify_order_command(client_order_id, Quantity::from("2"))
+}
+
+fn sized_modify_order_command(client_order_id: ClientOrderId, quantity: Quantity) -> ModifyOrder {
     ModifyOrder::new(
         test_trader_id(),
         Some(*DERIBIT_CLIENT_ID),
@@ -1593,7 +1656,7 @@ fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
         test_instrument_id(),
         client_order_id,
         Some(VenueOrderId::from("DERIBIT-ORDER-1")),
-        Some(Quantity::from("2")),
+        Some(quantity),
         Some(Price::from("51000.0")),
         None,
         UUID4::new(),

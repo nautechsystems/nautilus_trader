@@ -14,22 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Decimal readers for Deribit JSON fields that need Deribit-specific shapes or absence
-//! handling around the core token readers.
+//! handling around the core borrowed token readers.
+//!
+//! Like the core readers, they require borrowed input such as `serde_json::from_str` or
+//! `serde_json::from_slice`, and fail on `serde_json::Value` or `serde_json::from_reader` input.
 
-use nautilus_core::serialization::{deserialize_decimal_token, deserialize_optional_decimal_token};
+use nautilus_core::serialization::{
+    deserialize_decimal_token_borrowed, deserialize_optional_decimal_token_borrowed,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-pub(crate) fn deserialize_decimal_token_or_zero<'de, D>(
+pub(crate) fn deserialize_decimal_token_or_zero_borrowed<'de, D>(
     deserializer: D,
 ) -> Result<Decimal, D::Error>
 where
     D: Deserializer<'de>,
 {
-    deserialize_optional_decimal_token(deserializer).map(Option::unwrap_or_default)
+    deserialize_optional_decimal_token_borrowed(deserializer).map(Option::unwrap_or_default)
 }
 
-pub(crate) fn deserialize_decimal_token_vec<'de, D>(
+pub(crate) fn deserialize_decimal_token_vec_borrowed<'de, D>(
     deserializer: D,
 ) -> Result<Vec<Decimal>, D::Error>
 where
@@ -39,7 +44,7 @@ where
         .map(|values| values.into_iter().map(|value| value.0).collect())
 }
 
-pub(crate) fn deserialize_decimal_token_pairs<'de, D>(
+pub(crate) fn deserialize_decimal_token_pairs_borrowed<'de, D>(
     deserializer: D,
 ) -> Result<Vec<[Decimal; 2]>, D::Error>
 where
@@ -54,7 +59,7 @@ where
 }
 
 #[derive(Deserialize)]
-struct DecimalToken(#[serde(deserialize_with = "deserialize_decimal_token")] Decimal);
+struct DecimalToken(#[serde(deserialize_with = "deserialize_decimal_token_borrowed")] Decimal);
 
 #[cfg(test)]
 mod tests {
@@ -64,7 +69,7 @@ mod tests {
 
     #[derive(Debug, Deserialize)]
     struct DecimalOrZero {
-        #[serde(deserialize_with = "deserialize_decimal_token_or_zero")]
+        #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
         value: Decimal,
     }
 

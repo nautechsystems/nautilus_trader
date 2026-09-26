@@ -1341,7 +1341,7 @@ mod tests {
             "block_rfq_id": block_rfq_id,
             "combo_id": combo_id,
         });
-        serde_json::from_value(raw).unwrap()
+        serde_json::from_str(&raw.to_string()).unwrap()
     }
 
     #[rstest]
@@ -2024,7 +2024,7 @@ mod tests {
             .expect("Test data must have params.data");
 
         let portfolio: DeribitPortfolioMsg =
-            serde_json::from_value(data.clone()).expect("Should deserialize portfolio message");
+            serde_json::from_str(&data.to_string()).expect("Should deserialize portfolio message");
 
         // Verify deserialization
         assert_eq!(portfolio.currency, "USDT");

@@ -76,6 +76,8 @@ Released on TBD (UTC).
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
+- Changed Deribit `DeribitWebSocketClient::modify_order` to take `DeribitEditParams`
+- Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 - Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
@@ -197,6 +199,9 @@ Released on TBD (UTC).
 - Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
 - Fixed Deribit order and edit amounts and prices losing digits through `f64` serialization
 - Fixed Deribit and Tardis Machine book parsing panicking on out-of-range prices
+- Fixed Deribit order books going stale when a book message fails conversion
+- Fixed Deribit book parsing panicking on amounts that round to zero at size precision
+- Fixed Deribit orders and edits emitting no rejection when their values cannot serialize exactly
 - Fixed Derive rejecting valid sub-minimum taker orders (#5045), thanks for reporting @Aviksaikat
 - Fixed Derive instrument `info` dropping fields from the venue response
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
@@ -229,33 +234,34 @@ Released on TBD (UTC).
 
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
+- Added Binance live book stress harness with fault injection and independent book oracles
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Standardized adapter JSON decimal parsing on shared core parsers
+- Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
+- Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
+- Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
 - Extracted `CacheApi` and `CacheView` from the cache module
 - Normalized persistence path separators for Windows
 - Refactored `RiskEngine` validation, funding checks, and batch modification rate limiting
 - Refined persistence backend module layout and removed a duplicated Parquet I/O test module
 - Refined `SharedCell` and `WeakCell` clones to use `Rc::clone` and `Weak::clone` (#5066), thanks @mirooon
+- Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
-- Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
-- Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
-- Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
+- Optimized Deribit WebSocket and HTTP decimal decoding
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
-- Added Binance live book stress harness with fault injection and independent book oracles
-- Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
 - Optimized Tardis Machine decimal decoding
 - Upgraded `cargo-codspeed` tool to v5.0.2
 - Upgraded `cargo-nextest` tool to v0.9.146

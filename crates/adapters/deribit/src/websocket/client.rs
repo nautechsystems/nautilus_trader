@@ -41,7 +41,6 @@ use nautilus_model::{
     enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::create_standard_nautilus_headers,
@@ -1645,12 +1644,9 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
-        order_id: &str,
-        quantity: Quantity,
-        price: Price,
+        params: DeribitEditParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -1663,18 +1659,11 @@ impl DeribitWebSocketClient {
             ));
         }
 
-        let params = DeribitEditParams {
-            order_id: order_id.to_string(),
-            amount: quantity.as_decimal(),
-            price: Some(price.as_decimal()),
-            post_only: None,
-            reject_post_only: None,
-            reduce_only: None,
-            trigger_price: None,
-        };
-
         log::debug!(
-            "Sending modify order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
+            "Sending modify order: order_id={}, amount={}, price={:?}, client_order_id={client_order_id}",
+            params.order_id,
+            params.amount,
+            params.price,
         );
 
         self.command_sender()
