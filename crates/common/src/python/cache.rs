@@ -2145,6 +2145,10 @@ impl Cache {
 
     /// Adds the `bar` to the cache.
     ///
+    /// The per-`bar_type` series is kept newest-first with unique `ts_event` values:
+    /// a bar newer than the current front is pushed, an equal `ts_event` replaces the
+    /// front bar (the later data wins), and an older `ts_event` is skipped.
+    ///
     /// # Errors
     ///
     /// Returns an error if persisting the bar to the backing database fails.

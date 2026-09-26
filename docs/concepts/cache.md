@@ -260,6 +260,12 @@ bar_count = self.cache.bar_count(bar_type)
 has_bars = self.cache.has_bars(bar_type)
 ```
 
+Bars are kept newest-first with unique `ts_event` values per bar type: a newer bar is added, a bar
+with the same `ts_event` replaces the cached one (the later data wins), and older bars are skipped.
+Bars from overlapping historical requests therefore don't enter the cache, but they are still
+delivered in the response. Quotes and trades, in contrast, accumulate all ticks, including those
+sharing a timestamp.
+
 #### Quote ticks
 
 ```python
