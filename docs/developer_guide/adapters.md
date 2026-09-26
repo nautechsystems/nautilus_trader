@@ -874,18 +874,38 @@ emissions are filtered to active subscriptions.
 ### Order book recovery ownership
 
 [`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Lighter, and Binance. Keep venue-specific book synchronization and recovery in each adapter's `src/book/`,
-with WebSocket handlers dispatching commands and frames.
+OKX, Polymarket, Lighter, and Binance. Keep venue-specific book synchronization and recovery in each
+adapter's `src/book/`, with WebSocket handlers dispatching commands and frames.
+
+#### Per-book sync
+
+`BookSync` holds one book's phase (waiting for its first snapshot, synced at a venue position, or
+recovering), its pending snapshot, and its recovery state. It performs no I/O, so the
+[L0 property test](spec_data_testing.md#validation-levels) drives it through arbitrary schedules of
+subscribes, snapshots, gaps, rejections, reconnects, and deadlines.
+
+A book out of sync has exactly one owner: a running recovery or an armed snapshot deadline.
+`BookSync::gap` requests recovery only when neither exists, so repeated gap reports cannot start
+competing recoveries. Arm a deadline only where a monitor checks it, or the book keeps an owner that
+never acts. Stale-feed reports cover every book that no running recovery owns.
+
+OKX, Polymarket, and Binance keep a `BookSync` per book. Lighter keeps a `BookRecoveryState` per
+book inside its handler-owned tracker.
 
 #### Recovery state and retry budgets
 
 Keep one `BookRecoveryState` per subscribed book under the adapter's existing state lock or owning
-task. It admits one recovery owner, rejects stale failure reports, cancels obsolete work, and
-suppresses output after terminal failure.
+task, either directly or inside the shared per-book `BookSync`. It admits one running recovery and
+cancels obsolete work. A book never ends in a failed state.
 
 `BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff,
-and the total retry budget. The adapter supplies its replacement operation and error classifier.
-Keep the same invocation alive across reconnects so reconnect cannot replenish the budget.
+and retry limits. It makes up to eight attempts within 180 seconds, then continues at an interval
+that doubles from one minute to fifteen minutes until a snapshot is accepted or the episode is
+cancelled; an error the classifier rejects moves straight to that interval. The adapter supplies its
+replacement operation and error classifier. Keep a running invocation alive across reconnects so a
+reconnect can neither replenish the budget nor abandon a replacement write. Reconnect wakes an
+invocation that is waiting between attempts after its budget, so it retries on the new connection
+at once.
 
 #### Snapshot acceptance
 
@@ -894,8 +914,8 @@ this order:
 
 1. Close `SnapshotGate` before replacement.
 1. Open the gate after the intended connection confirms the subscription write.
-1. Accept the snapshot under the same ownership boundary that starts and fails recovery, then
-   replace all levels, including for an empty snapshot.
+1. Accept the snapshot under the same ownership boundary that starts recovery, then replace all
+   levels, including for an empty snapshot.
 
 `PendingSnapshot` cancels initial waits when the snapshot is accepted or the pending owner is removed.
 
@@ -906,12 +926,17 @@ snapshot parsing. The shared types describe the result of validation and monitor
 
 - `BookSequenceOutcome`: accept, suppress, or recover. Adapters retain their validation rules and
   gap diagnostics.
-- `BookSyncSignalKind`: stale feeds and missing snapshots.
+- `BookSyncSignal`: a stale feed or missing snapshot for one book.
 
 Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
 its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
-Binance keeps its diff streams subscribed: a replacement attempt fetches a REST snapshot, and the
-adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
+
+Adapters fall into two recovery families, which determine the oracle a stress harness can use:
+
+- Push (OKX, Polymarket, Lighter): a replacement resubscribes, and the venue stream delivers the
+  snapshot.
+- Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
+  adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 
 #### Task lifetime and cancellation
 
@@ -928,9 +953,13 @@ without relearning behavior:
 - Wait for snapshots with `book_snapshot_timeout_secs`, defaulting to the shared
   `DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS` (10 seconds) in `nautilus_live::book`; the value stays
   tunable per deployment.
-- Honor a zero timeout as disabled deadlines on every wait path, including adapter-owned sends
-  and snapshot waits outside the shared runner: with no deadline, waits resolve only on
-  cancellation.
+- Honor a zero timeout as disabled snapshot deadlines on every wait path, including adapter-owned
+  sends and snapshot waits outside the shared runner: with no deadline, those waits resolve only on
+  cancellation. The shared runner still bounds recovery by its 180-second initial budget and by
+  one-minute attempts after it.
+- Keep the live stress harness at `tests/stress/book_stress.rs` as the `<venue>-book-stress` test
+  target. The [order book sync conformance](spec_data_testing.md#order-book-sync-conformance)
+  specification defines the contract it checks and the faults it forces.
 
 ### Execution client
 

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Connection-scoped book writes and bounded recovery futures.
+//! Connection-scoped book writes and recovery futures.
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
@@ -41,8 +41,9 @@ pub(crate) fn recover(
     snapshot_timeout: Duration,
 ) -> BookWork {
     Box::pin(async move {
-        let result = recovery
+        recovery
             .run(
+                format!("market_index={market_index}"),
                 snapshot_timeout,
                 |cancel, gate| {
                     let cmd_tx = cmd_tx.clone();
@@ -68,11 +69,7 @@ pub(crate) fn recover(
             )
             .await;
 
-        BookWorkResult::Recovery {
-            market_index,
-            recovery,
-            result,
-        }
+        BookWorkResult::Recovery
     })
 }
 
@@ -194,11 +191,7 @@ pub(crate) enum BookWorkResult {
         market_index: i64,
         cancel: CancellationToken,
     },
-    Recovery {
-        market_index: i64,
-        recovery: Arc<BookRecovery<LighterWsError>>,
-        result: Result<(), LighterWsError>,
-    },
+    Recovery,
 }
 
 pub(crate) struct BookWrite {

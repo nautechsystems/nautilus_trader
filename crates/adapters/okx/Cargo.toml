@@ -102,6 +102,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -191,8 +192,10 @@ required-features = ["examples"]
 doc = false
 
 # Public market-data validation; explicitly connects to OKX mainnet.
-[[example]]
-name = "okx-book-sync-stress"
-path = "examples/book_sync_stress.rs"
+# Run with `cargo test --package nautilus-okx --features examples --test okx-book-stress -- 10 18`
+[[test]]
+name = "okx-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
 required-features = ["examples"]
-doc = false

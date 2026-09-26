@@ -13,33 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared order book recovery state, sequence decisions, and snapshot coordination.
+//! Shared order book synchronization, recovery, and conformance checks.
 //!
-//! - [`recovery`] owns recovery episodes, retry budgets, cancellation, and terminal failure state.
+//! - [`sync`] holds the per-book synchronization lifecycle and its contract.
+//! - [`recovery`] owns recovery episodes, the retry budget, and the retry ceiling that follows it.
 //! - [`snapshot`] coordinates subscription write confirmation with snapshot acceptance and deadlines.
-//! - [`BookSequenceOutcome`] and [`BookSyncSignalKind`] describe validation decisions and monitoring
+//! - [`BookSequenceOutcome`] and [`BookSyncSignal`] describe validation decisions and monitoring
 //!   signals without carrying venue-specific sequence fields or channel types.
+//! - `conformance` (test support) checks emitted book output against the book stream contract.
 //!
 //! # Recovery Lifecycle
 //!
-//! The adapter validates incoming book frames and claims recovery through
-//! [`BookRecoveryState`](recovery::BookRecoveryState). The recovery runner requests replacement
-//! subscriptions through an adapter-supplied operation. A confirmed write opens the snapshot gate;
-//! only an accepted fresh snapshot completes recovery. The adapter reports terminal failure through
-//! the same recovery state, preventing obsolete work from failing a newer subscription.
+//! The adapter validates incoming book frames and marks gaps through [`BookSync`](sync::BookSync).
+//! The recovery runner requests replacement snapshots through an adapter-supplied operation until
+//! the adapter accepts one or the episode is cancelled; a book never ends in a terminal failure
+//! state. A confirmed write opens the snapshot gate; only an accepted fresh snapshot completes
+//! recovery.
 //!
 //! # Adapters
 //!
-//! Adapters retain sequence rules, cached levels, socket routing, wire commands, acknowledgement
-//! correlation, and error classification. They keep state transitions under their existing lock or
-//! owning task and retain an active recovery across reconnects so its retry budget is not reset.
+//! Adapters retain sequence rules, venue positions, buffers, socket routing, wire commands,
+//! acknowledgement correlation, and error classification. They keep [`BookSync`](sync::BookSync)
+//! under their existing lock or owning task.
 //!
 //! A monitoring signal does not itself start recovery; the adapter decides how to respond.
 
 pub mod recovery;
 pub mod snapshot;
+pub mod sync;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
 
 use nautilus_common::live::dst::time::Duration;
+use nautilus_model::identifiers::InstrumentId;
 
 /// Default wait for an initial, post-reconnect, or recovery order book snapshot, in seconds.
 ///
@@ -65,6 +72,32 @@ pub enum BookSyncSignalKind {
     Stale { elapsed: Duration },
     /// The expected book snapshot did not arrive before its deadline.
     SnapshotMissing,
+}
+
+/// A monitoring signal for one book.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BookSyncSignal {
+    pub instrument_id: InstrumentId,
+    pub kind: BookSyncSignalKind,
+}
+
+impl BookSyncSignal {
+    /// Logs the signal as a warning.
+    pub fn log(&self) {
+        let instrument_id = self.instrument_id;
+
+        match self.kind {
+            BookSyncSignalKind::Stale { elapsed } => {
+                log::warn!(
+                    "Book feed stale for {instrument_id}: no update for {:.3}s",
+                    elapsed.as_secs_f64()
+                );
+            }
+            BookSyncSignalKind::SnapshotMissing => {
+                log::warn!("Book snapshot not received for {instrument_id} after recovery request");
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -165,7 +165,7 @@ Recovery starts when:
 - A sequence gap occurs.
 - An initial subscription send fails.
 - An initial or post-reconnect snapshot times out.
-- The venue rejects a subscription with a retryable error.
+- The venue rejects a book subscription.
 
 On a sequence gap, the client drops the mismatched batch and suppresses further incremental updates.
 `book_snapshot_timeout_secs` sets the snapshot deadline. For initial subscriptions, the deadline
@@ -175,45 +175,51 @@ Reconnecting resets book synchronization on the affected socket. Spread books re
 on the business socket, so their recovery starts from an initial send failure, a missing initial
 or post-reconnect snapshot, or a subscription rejection.
 
-Stale-feed checks only log warnings. They do not start recovery because quiet markets can
-legitimately have no book changes.
+Stale-feed checks only log warnings, and skip books that a running recovery owns. They do not start
+recovery because quiet markets can legitimately have no book changes.
 
 ### Retry loop and limits
 
 The adapter uses the [shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
-Each instrument has one recovery loop. It retries transient transport failures, retryable venue
-rejections, and missing snapshots.
+Each instrument has one recovery loop. It runs until a fresh snapshot is accepted, or until
+unsubscribe or shutdown cancels it; recovery never ends in a failed state.
 
 ```mermaid
 stateDiagram-v2
     state "Recovering: replace subscription and await snapshot" as Recovering
+    state "Retrying at a growing interval" as Ceiling
     state "Book output resumes" as Streaming
-    state "Failed: book output suppressed" as Failed
 
     [*] --> Recovering: Recovery triggered
     Recovering --> Recovering: Retryable failure or snapshot timeout
     Recovering --> Streaming: Fresh snapshot accepted
-    Recovering --> Failed: Permanent rejection or recovery limit reached
+    Recovering --> Ceiling: Non-retryable rejection or retry budget spent
+    Ceiling --> Ceiling: Attempt fails
+    Ceiling --> Streaming: Fresh snapshot accepted
 ```
 
 Sending a subscription request keeps the book in recovery until a fresh snapshot is accepted.
 
-- **Attempts:** At most eight per recovery episode.
-- **Total budget:** 180 seconds, including sends, snapshot waits, and retry delays.
+- **Attempts:** Up to eight within the initial budget.
+- **Initial budget:** 180 seconds, including sends, snapshot waits, and retry delays.
 - **Delay:** The first retry is immediate. Later retries use exponential backoff starting at one
   second, with up to one second of jitter and a ten-second cap.
+- **After the budget:** Attempts continue at an interval that doubles from one minute to fifteen
+  minutes, with up to five seconds of jitter. Each attempt is bounded by one minute, or by the
+  snapshot timeout when that is longer. A non-retryable rejection moves straight to this interval.
 
-An active recovery continues across reconnects with its existing retry budget. This prevents
-cancellation between the replacement unsubscribe and subscribe requests. Replacing a subscription
+A running recovery continues across reconnects with its existing budget. This prevents
+cancellation between the replacement unsubscribe and subscribe requests. A recovery waiting between
+attempts after its budget retries on the new connection at once. Replacing a subscription
 preserves its reconnect intent. Unsubscribe and shutdown cancel recovery.
 
-### Failed recovery
+### Persistent failures
 
-A permanent venue rejection, exhausted retries, or an exhausted time budget logs an error and stops
-book output for that subscription. Subscription intent remains registered for reconnect.
-
-**Late snapshots do not clear the failed state.** Reconnect, or unsubscribe and subscribe again,
-to restart synchronization.
+When the retry budget runs out, the client logs one error, then a warning for each failed attempt.
+Once the interval reaches fifteen minutes, a book that keeps failing, such as an instrument the venue
+no longer serves, sends about eight subscription requests an hour, well under OKX's limit of 480 per
+hour on each connection. A late snapshot completes recovery at any point. Unsubscribe to stop
+recovery.
 
 ### Snapshot correlation limitation
 
@@ -233,19 +239,19 @@ when the venue response identifies only the book channel and instrument.
 ### Disabling snapshot deadlines
 
 Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines, including initial and
-post-reconnect checks. Sequence gaps and retryable subscription rejections still start recovery.
+post-reconnect checks. Sequence gaps and subscription rejections still start recovery.
 
-During recovery, a missing snapshot then leaves the current attempt waiting until a snapshot is
-accepted, a rejection arrives, recovery is cancelled, or the 180-second total budget ends.
-A missing snapshot alone does not trigger another attempt.
+Within the retry budget, a missing snapshot leaves the current attempt waiting until a snapshot is
+accepted, a rejection arrives, recovery is cancelled, or the 180-second initial budget ends.
+Attempts after the budget stay bounded as described above.
 
 ### Mainnet recovery validation
 
-The `okx-book-sync-stress` example connects to OKX mainnet public market data and submits no orders.
-It checks emitted spot, RPI swap, and spread books against an independent reconstruction of the
-venue feed's best 20 levels.
+The `okx-book-stress` harness connects to OKX mainnet public market data and submits no orders.
+It checks emitted spot, RPI swap, and spread books against the book stream contract and against an
+independent reconstruction of the venue feed's best 20 levels.
 
-The example first checks recovery without reconnects, including a dropped replacement snapshot
+The harness first checks recovery without reconnects, including a dropped replacement snapshot
 when deadlines are enabled. It then injects sequence gaps, drops and delays snapshots, forces
 reconnects, and exercises unsubscribe and shutdown during recovery.
 
@@ -253,11 +259,11 @@ From the repository root, run:
 
 ```bash
 CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
-  cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 10 18
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18
 ```
 
 The arguments set the snapshot timeout in seconds and the number of stress rounds. Use `0 18` to
-exercise disabled snapshot deadlines. The example requires access to the public and business
+exercise disabled snapshot deadlines. The harness requires access to the public and business
 WebSocket endpoints and the public instrument and spread APIs. Automated book lifecycle tests use
 local mock servers.
 

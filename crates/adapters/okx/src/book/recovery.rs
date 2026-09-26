@@ -17,12 +17,12 @@
 //!
 //! The tasks here monitor snapshot deadlines and supply OKX replacement operations and error
 //! classification to the shared [`BookRecovery`] runner. The runner owns snapshot waits, backoff,
-//! and attempt and elapsed-time limits. A successful send alone does not complete recovery:
-//! the tracker must accept a snapshot.
+//! the retry budget, and the retry ceiling that follows it. A successful send alone does not
+//! complete recovery: the tracker must accept a snapshot.
 //!
-//! Tasks claim ownership and report failure through [`BookSyncTracker`], which keeps shared state
-//! transitions under its lock. Cancellation stops obsolete work after unsubscribe, replacement,
-//! or shutdown. The data client supplies the selected channel, transport, and task scope.
+//! Tasks claim ownership through [`BookSyncTracker`], which keeps shared state transitions under
+//! its lock. Cancellation stops obsolete work after unsubscribe, replacement, or shutdown. The data
+//! client supplies the selected channel, transport, and task scope.
 
 use std::sync::Arc;
 
@@ -31,10 +31,7 @@ use nautilus_core::AtomicMap;
 use nautilus_live::{book::recovery::BookRecovery as Recovery, task::TaskSpawner};
 use nautilus_model::identifiers::InstrumentId;
 
-use super::{
-    BookChannelScope, BookRecoveryOutcome,
-    sync::{BookSyncTracker, log_sync_signals},
-};
+use super::{BookChannelScope, sync::BookSyncTracker};
 use crate::{
     common::{consts::should_retry_error_code, enums::OKXBookChannel, task::spawn_task},
     websocket::{client::OKXWebSocketClient, error::OKXWsError},
@@ -65,9 +62,9 @@ pub(crate) fn spawn_recovery_monitor(
                     scope,
                     Instant::now(),
                 );
-                log_sync_signals(&expired);
 
                 for signal in expired {
+                    signal.log();
                     start_recovery(
                         signal.instrument_id,
                         &book_channels,
@@ -95,7 +92,6 @@ pub(crate) fn start_recovery(
     };
 
     let Some(ws) = recovery_ws.cloned() else {
-        book_sync.fail_recovery(instrument_id, None);
         log::error!("No websocket available to recover book for {instrument_id}");
         return;
     };
@@ -107,7 +103,6 @@ pub(crate) fn start_recovery(
     spawn_recovery_task(
         instrument_id,
         channel,
-        book_sync.clone(),
         recovery,
         ws,
         snapshot_timeout,
@@ -118,7 +113,6 @@ pub(crate) fn start_recovery(
 pub(crate) fn spawn_recovery_task(
     instrument_id: InstrumentId,
     channel: OKXBookChannel,
-    tracker: BookSyncTracker,
     recovery: Arc<BookRecovery>,
     ws: OKXWebSocketClient,
     snapshot_timeout: Duration,
@@ -130,13 +124,11 @@ pub(crate) fn spawn_recovery_task(
     spawn_task(tasks, async move {
         let _recovery_guard = recovery_guard;
 
-        let result = tokio::select! {
+        tokio::select! {
             biased;
-            () = shutdown.cancelled() => {
-                recovery.cancellation.cancel();
-                return;
-            }
-            result = recovery.run(
+            () = shutdown.cancelled() => recovery.cancellation.cancel(),
+            () = recovery.run(
+                instrument_id,
                 snapshot_timeout,
                 |attempt_cancel, gate| ws.resubscribe_book_channel(
                     instrument_id, channel, attempt_cancel, gate,
@@ -146,18 +138,7 @@ pub(crate) fn spawn_recovery_task(
                 || OKXWsError::OperationTimeout {
                     timeout_ms: snapshot_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
                 },
-            ) => result,
-        };
-
-        if let Err(e) = result {
-            if !recovery.cancellation.is_cancelled() {
-                tracker.fail_recovery(instrument_id, Some(&recovery));
-                log::error!(
-                    "Book recovery failed for {instrument_id}; subscription retained, book output suppressed until reconnect or resubscribe: {e}"
-                );
-            }
-        } else if matches!(*recovery.outcome.borrow(), BookRecoveryOutcome::Accepted) {
-            log::info!("Book recovery completed for {instrument_id}");
+            ) => {}
         }
     });
 }
@@ -173,6 +154,6 @@ fn is_retryable_error(error: &OKXWsError) -> bool {
     }
 }
 
-pub(crate) fn is_retryable_code(code: &str) -> bool {
+fn is_retryable_code(code: &str) -> bool {
     matches!(code, "60014" | "64007") || should_retry_error_code(code)
 }

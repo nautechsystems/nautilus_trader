@@ -15,10 +15,11 @@
 
 //! Adapter-local order book synchronization for Binance diff depth streams.
 //!
-//! [`BookSyncTracker`] buffers diffs until a REST snapshot bridges them, validates each later
-//! diff against the previous update ID, and owns one recovery episode per book. Validation,
-//! snapshot acceptance, and emission share the tracker lock, so a replayed snapshot cannot
-//! interleave with diffs from the stream task.
+//! [`BookSyncTracker`] buffers diffs until a REST snapshot bridges them and validates each later
+//! diff against the previous update ID. Each book's lifecycle and recovery episode live in the
+//! shared [`BookSync`], whose position is the last accepted update ID; the diff buffer stays
+//! local. Validation, snapshot acceptance, and emission share the tracker lock, so a replayed
+//! snapshot cannot interleave with diffs from the stream task.
 //!
 //! # Sequencing
 //!
@@ -31,12 +32,13 @@
 use std::{collections::VecDeque, fmt::Display, sync::Arc};
 
 use ahash::AHashMap;
-use nautilus_common::{live::sender::EventSender, messages::DataEvent};
+use nautilus_common::{
+    live::{dst::time::Instant, sender::EventSender},
+    messages::DataEvent,
+};
 use nautilus_core::UnixNanos;
 use nautilus_live::book::{
-    BookSequenceOutcome,
-    recovery::{BookRecovery, BookRecoveryState},
-    snapshot::SnapshotGate,
+    BookSequenceOutcome, recovery::BookRecovery, snapshot::SnapshotGate, sync::BookSync,
 };
 use nautilus_model::{
     data::{Data, OrderBookDeltas},
@@ -112,7 +114,7 @@ impl BookSyncTracker {
     pub(crate) fn subscribe(&self, instrument_id: InstrumentId) {
         self.books
             .lock()
-            .insert(instrument_id, BookState::default());
+            .insert(instrument_id, BookState::new(Instant::now()));
     }
 
     pub(crate) fn remove(&self, instrument_id: InstrumentId) {
@@ -132,41 +134,43 @@ impl BookSyncTracker {
         let mut books = self.books.lock();
         let book = books.get_mut(&instrument_id)?;
 
-        if book.recovery.is_failed() {
-            return None;
-        }
+        let Some(mut position) = book.sync.position().copied() else {
+            // An unsynced book buffers diffs and claims a snapshot whenever nothing owns it
+            buffer_update(&mut book.buffer, update);
+            let recovery = book.sync.claim();
 
-        match &mut book.phase {
-            BookPhase::Waiting => {
+            if recovery.is_some() {
                 log::debug!("OrderBook snapshot rebuild for {instrument_id} starting");
-                book.phase = BookPhase::Buffering(VecDeque::from([update]));
-                book.recovery.claim()
             }
-            BookPhase::Buffering(updates) => {
-                buffer_update(updates, update);
+
+            return recovery;
+        };
+
+        let last_update_id = position.last_update_id;
+
+        match self.sequencing.validate(&mut position, &update) {
+            BookSequenceOutcome::Accept => {
+                book.sync.advance(position, Instant::now());
+
+                if let Some(deltas) = update.deltas {
+                    self.send(deltas);
+                }
+
                 None
             }
-            BookPhase::Synced(position) => {
-                let last_update_id = position.last_update_id;
-
-                match self.sequencing.validate(position, &update) {
-                    BookSequenceOutcome::Accept => {
-                        if let Some(deltas) = update.deltas {
-                            self.send(deltas);
-                        }
-
-                        None
-                    }
-                    BookSequenceOutcome::Suppress => None,
-                    BookSequenceOutcome::Recover => {
-                        log::warn!(
-                            "Book sequence gap for {instrument_id}: \
-                             last_update_id={last_update_id}, {update}; requesting a fresh snapshot"
-                        );
-                        book.phase = BookPhase::Buffering(VecDeque::from([update]));
-                        book.recovery.claim()
-                    }
-                }
+            BookSequenceOutcome::Suppress => {
+                // A Futures seam diff links the snapshot without changing its levels
+                book.sync.advance(position, Instant::now());
+                None
+            }
+            BookSequenceOutcome::Recover => {
+                log::warn!(
+                    "Book sequence gap for {instrument_id}: \
+                     last_update_id={last_update_id}, {update}; requesting a fresh snapshot"
+                );
+                book.buffer.clear();
+                buffer_update(&mut book.buffer, update);
+                book.sync.claim()
             }
         }
     }
@@ -187,11 +191,10 @@ impl BookSyncTracker {
         let last_update_id = snapshot.last_update_id;
         let mut books = self.books.lock();
 
-        let Some(book) = books.get_mut(&instrument_id).filter(|book| {
-            book.recovery
-                .current()
-                .is_some_and(|current| Arc::ptr_eq(current, recovery))
-        }) else {
+        let Some(book) = books
+            .get_mut(&instrument_id)
+            .filter(|book| book.sync.is_current(recovery))
+        else {
             return Err(BinanceBookError::Permanent(format!(
                 "book recovery for {instrument_id} was superseded"
             )));
@@ -199,17 +202,10 @@ impl BookSyncTracker {
 
         // A recovery kept across a reconnect can finish before the new stream delivers a diff,
         // so the first diff must then continue from the snapshot
-        let no_updates = VecDeque::new();
-
-        let updates = match &book.phase {
-            BookPhase::Buffering(updates) => updates,
-            BookPhase::Waiting | BookPhase::Synced(_) => &no_updates,
-        };
-
         let mut position = DepthPosition::new(last_update_id);
         let mut replayed = Vec::new();
 
-        for (index, update) in updates.iter().enumerate() {
+        for (index, update) in book.buffer.iter().enumerate() {
             match self.sequencing.validate(&mut position, update) {
                 BookSequenceOutcome::Accept => replayed.push(index),
                 BookSequenceOutcome::Suppress => {}
@@ -224,16 +220,13 @@ impl BookSyncTracker {
 
         gate.open();
 
-        if !recovery.accept() {
+        if !recovery.is_running() || !book.sync.accept_snapshot(position, Instant::now()) {
             return Err(BinanceBookError::Permanent(format!(
                 "book recovery for {instrument_id} was cancelled"
             )));
         }
 
-        let mut updates = match std::mem::replace(&mut book.phase, BookPhase::Synced(position)) {
-            BookPhase::Buffering(updates) => updates,
-            BookPhase::Waiting | BookPhase::Synced(_) => VecDeque::new(),
-        };
+        let mut updates = std::mem::take(&mut book.buffer);
 
         let replay = replayed
             .into_iter()
@@ -261,45 +254,16 @@ impl BookSyncTracker {
         Ok(())
     }
 
-    /// Records terminal failure for `recovery`, suppressing book output until reset.
-    ///
-    /// Returns `false` when `recovery` no longer owns the book.
-    pub(crate) fn fail_recovery(
-        &self,
-        instrument_id: InstrumentId,
-        recovery: &Arc<BookRecovery<BinanceBookError>>,
-    ) -> bool {
-        let mut books = self.books.lock();
-
-        let Some(book) = books.get_mut(&instrument_id) else {
-            return false;
-        };
-
-        if !book.recovery.fail(Some(recovery)) {
-            return false;
-        }
-
-        book.phase = BookPhase::Waiting;
-        true
-    }
-
     /// Discards book state after a reconnect so each book resyncs from the new stream.
     ///
-    /// An active recovery keeps running so the reconnect cannot replenish its retry budget;
-    /// a completed or failed one is reset.
+    /// A running recovery keeps running, so the reconnect can neither replenish its retry budget
+    /// nor abandon its snapshot fetch; any other is reset.
     pub(crate) fn reset_on_reconnect(&self) {
         let mut books = self.books.lock();
 
         for book in books.values_mut() {
-            book.phase = BookPhase::Waiting;
-
-            let active = book.recovery.current().is_some_and(|recovery| {
-                !recovery.is_accepted() && !recovery.cancellation.is_cancelled()
-            });
-
-            if !active {
-                book.recovery.reset();
-            }
+            book.sync.reset_on_reconnect();
+            book.buffer.clear();
         }
     }
 
@@ -325,20 +289,20 @@ impl Display for DepthUpdate {
     }
 }
 
-#[derive(Debug, Default)]
+// Diffs are buffered while the book is unsynced; a snapshot that bridges them drains the buffer
+#[derive(Debug)]
 struct BookState {
-    phase: BookPhase,
-    recovery: BookRecoveryState<BinanceBookError>,
+    sync: BookSync<BinanceBookError, DepthPosition>,
+    buffer: VecDeque<DepthUpdate>,
 }
 
-// A book waits for a diff on the current connection before claiming a snapshot, buffers diffs
-// until a snapshot bridges them, then validates each diff against its synced position
-#[derive(Debug, Default)]
-enum BookPhase {
-    #[default]
-    Waiting,
-    Buffering(VecDeque<DepthUpdate>),
-    Synced(DepthPosition),
+impl BookState {
+    fn new(now: Instant) -> Self {
+        Self {
+            sync: BookSync::new(now),
+            buffer: VecDeque::new(),
+        }
+    }
 }
 
 // `linked` records whether a Futures diff has bridged the snapshot
@@ -790,26 +754,27 @@ mod tests {
     }
 
     #[rstest]
-    fn failed_recovery_suppresses_diffs_until_resubscribe() {
+    fn cancelled_recovery_is_replaced_by_next_diff() {
         let (tracker, mut rx) = tracker(DepthSequencing::Spot);
         tracker.subscribe(instrument_id());
-        let recovery = tracker
+        let first = tracker
             .handle_update(instrument_id(), spot_update(101, 101))
             .unwrap();
+        first.cancellation.cancel();
 
-        let failed = tracker.fail_recovery(instrument_id(), &recovery);
-        let suppressed = tracker.handle_update(instrument_id(), spot_update(102, 102));
-        tracker.subscribe(instrument_id());
-        let restarted = tracker.handle_update(instrument_id(), spot_update(103, 103));
+        let second = tracker
+            .handle_update(instrument_id(), spot_update(102, 102))
+            .unwrap();
+        let accepted = accept(&tracker, &second, snapshot(100, false));
 
-        assert!(failed);
-        assert!(suppressed.is_none());
-        assert!(restarted.is_some());
-        assert!(received(&mut rx).is_empty());
+        // The unsynced book never waits on an owner that can no longer run
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(accepted, Ok(()));
+        assert_eq!(sequences(&received(&mut rx)), vec![100, 101, 102]);
     }
 
     #[rstest]
-    fn superseded_recovery_cannot_accept_or_fail() {
+    fn superseded_recovery_cannot_accept() {
         let (tracker, mut rx) = tracker(DepthSequencing::Spot);
         tracker.subscribe(instrument_id());
         let old = tracker
@@ -822,7 +787,6 @@ mod tests {
             .unwrap();
         let accepted =
             tracker.accept_snapshot(instrument_id(), &old, &old.gate, snapshot(101, false));
-        let failed = tracker.fail_recovery(instrument_id(), &old);
 
         assert!(old.cancellation.is_cancelled());
         assert_eq!(
@@ -831,7 +795,6 @@ mod tests {
                 "book recovery for BTCUSDT.BINANCE was superseded".to_string()
             ))
         );
-        assert!(!failed);
         assert!(!current.cancellation.is_cancelled());
         assert!(received(&mut rx).is_empty());
     }
@@ -873,16 +836,16 @@ mod tests {
 
     #[rstest]
     #[case::synced(false)]
-    #[case::failed(true)]
-    fn reconnect_resets_settled_recovery(#[case] failed: bool) {
+    #[case::cancelled(true)]
+    fn reconnect_resets_settled_recovery(#[case] cancelled: bool) {
         let (tracker, mut rx) = tracker(DepthSequencing::Spot);
         tracker.subscribe(instrument_id());
         let first = tracker
             .handle_update(instrument_id(), spot_update(101, 101))
             .unwrap();
 
-        if failed {
-            assert!(tracker.fail_recovery(instrument_id(), &first));
+        if cancelled {
+            first.cancellation.cancel();
         } else {
             accept(&tracker, &first, snapshot(101, false)).unwrap();
         }
@@ -892,7 +855,7 @@ mod tests {
         tracker.reset_on_reconnect();
         let resumed = tracker.handle_update(instrument_id(), spot_update(102, 102));
 
-        assert_eq!(before_reconnect, usize::from(!failed));
+        assert_eq!(before_reconnect, usize::from(!cancelled));
         assert!(resumed.is_some_and(|second| !Arc::ptr_eq(&first, &second)));
         assert!(received(&mut rx).is_empty());
     }

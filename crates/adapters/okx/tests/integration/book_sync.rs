@@ -293,7 +293,10 @@ async fn recovery_retries_missing_snapshot_and_preserves_intent() {
 #[case::late_ack(Duration::from_secs(1), true)]
 #[case::late_ack_disabled_deadline(Duration::ZERO, true)]
 #[tokio::test]
-async fn recovery_stops_on_permanent_rejection(#[case] timeout: Duration, #[case] late_ack: bool) {
+async fn permanent_rejection_moves_recovery_to_ceiling(
+    #[case] timeout: Duration,
+    #[case] late_ack: bool,
+) {
     let (url, venue, server) = venue().await;
     let mut session = BookSession::connect(url, instrument(), timeout).await;
     let instrument_id = instrument().id();
@@ -302,13 +305,14 @@ async fn recovery_stops_on_permanent_rejection(#[case] timeout: Duration, #[case
         .await;
     venue.reject.store(true, Ordering::SeqCst);
     venue.ack_before_rejection.store(late_ack, Ordering::SeqCst);
+    let recovery_tasks = TaskGroup::new();
     start_recovery(
         instrument_id,
         &session.channels,
         &session.tracker,
         Some(&session.ws),
         timeout,
-        &session.tasks.spawner().unwrap(),
+        &recovery_tasks.spawner().unwrap(),
     );
     wait_until_async(
         || async { session.faults.rejections.load(Ordering::SeqCst) == 1 },
@@ -316,22 +320,27 @@ async fn recovery_stops_on_permanent_rejection(#[case] timeout: Duration, #[case
     )
     .await;
 
-    assert_eq!(
-        session.tracker.validate_sequence(
-            instrument_id,
-            true,
-            &[(Some(-1), 20)],
-            Duration::ZERO,
-            Instant::now()
-        ),
-        BookSequenceOutcome::Suppress
-    );
-    assert_eq!(venue.subscriptions.load(Ordering::SeqCst), 2);
+    // A retryable rejection would retry at once; the ceiling holds the next attempt a minute
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let subscriptions = venue.subscriptions.load(Ordering::SeqCst);
+    let second_owner = session.tracker.claim_recovery(instrument_id);
+    let snapshot =
+        session
+            .tracker
+            .validate_sequence(instrument_id, true, &[(Some(-1), 20)], Instant::now());
+    wait_until_async(
+        || async { recovery_tasks.all_finished() },
+        Duration::from_secs(3),
+    )
+    .await;
+
+    assert_eq!(subscriptions, 2);
+    assert!(second_owner.is_none());
+    assert_eq!(snapshot, BookSequenceOutcome::Accept);
     assert_eq!(
         session.ws.get_subscriptions(instrument_id),
         vec![OKXWsChannel::Books]
     );
-    assert!(session.tracker.claim_recovery(instrument_id).is_none());
     session.stop().await;
     server.abort();
 }
@@ -365,7 +374,7 @@ async fn recovery_retries_transient_venue_rejection(#[case] code: u32) {
 }
 
 #[tokio::test]
-async fn recovery_exhaustion_suppresses_late_snapshot() {
+async fn recovery_exhaustion_moves_to_ceiling_and_accepts_late_snapshot() {
     let (url, venue, server) = venue().await;
     let mut session = BookSession::connect(url, instrument(), Duration::from_millis(10)).await;
     let instrument_id = instrument().id();
@@ -385,27 +394,28 @@ async fn recovery_exhaustion_suppresses_late_snapshot() {
         Duration::from_millis(10),
         &recovery_tasks.spawner().unwrap(),
     );
+
+    // The initial subscription plus the eight attempts of the retry budget
     wait_until_async(
-        || async { recovery_tasks.all_finished() },
+        || async { venue.subscriptions.load(Ordering::SeqCst) == 9 },
         Duration::from_secs(90),
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let running_at_ceiling = !recovery_tasks.all_finished();
+    let snapshot =
+        session
+            .tracker
+            .validate_sequence(instrument_id, true, &[(Some(-1), 20)], Instant::now());
+    wait_until_async(
+        || async { recovery_tasks.all_finished() },
+        Duration::from_secs(3),
+    )
+    .await;
 
+    assert!(running_at_ceiling);
+    assert_eq!(snapshot, BookSequenceOutcome::Accept);
     assert_eq!(venue.subscriptions.load(Ordering::SeqCst), 9);
-    assert_eq!(
-        session.tracker.validate_sequence(
-            instrument_id,
-            true,
-            &[(Some(-1), 20)],
-            Duration::ZERO,
-            Instant::now()
-        ),
-        BookSequenceOutcome::Suppress
-    );
-    assert!(matches!(
-        session.events.try_recv(),
-        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-    ));
     assert_eq!(
         session.ws.get_subscriptions(instrument_id),
         vec![OKXWsChannel::Books]

@@ -1061,7 +1061,7 @@ adapter treats the change as a book epoch transition:
    `price_precision`, and tick-relative `min_price`/`max_price` bounds.
 2. Drop the local order book for the instrument.
 3. Gate incremental `price_change` book deltas on a fresh snapshot and request recovery.
-4. Resubscribe the market with bounded retries until the venue replays a snapshot.
+4. Resubscribe the market until the venue replays a snapshot.
 5. Reseed the book from the snapshot and resume normal processing.
 
 Trade ticks and the instrument update flow through unchanged. Quote handling
@@ -1659,10 +1659,9 @@ When a `book` snapshot includes a hash and its full preimage, the adapter reprod
 exact wire values and level order. It logs and rejects a mismatch before the snapshot can update
 local book state, emit snapshot-derived deltas or quotes, or resume gated book deltas. For
 book-delta subscribers, a mismatch also triggers book recovery: the adapter resubscribes the
-market with bounded retries until a valid snapshot arrives, and drops incremental `price_change`
-deltas in the meantime. If recovery
-exhausts its retry budget, the subscription stays open but book output stays suppressed until a
-reconnect or resubscribe clears the failed state.
+market until a valid snapshot arrives and drops incremental `price_change` deltas in the meantime.
+After its retry budget, recovery retries at an interval that doubles from one minute to fifteen
+minutes.
 
 Polymarket also sends hashed book updates that omit fields included in the server's hash preimage,
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash

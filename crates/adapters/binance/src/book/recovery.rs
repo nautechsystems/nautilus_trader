@@ -16,9 +16,9 @@
 //! Recovery tasks that fetch REST depth snapshots for Binance books.
 //!
 //! Each task supplies a snapshot fetch and error classification to the shared [`BookRecovery`]
-//! runner, which owns attempt limits, backoff, and the elapsed-time budget. A fetched snapshot
-//! completes recovery only when [`BookSyncTracker::accept_snapshot`] bridges it to the buffered
-//! diffs. The data client supplies the fetch, its request weight, and the task scope.
+//! runner, which owns backoff, the retry budget, and the retry ceiling that follows it. A fetched
+//! snapshot completes recovery only when [`BookSyncTracker::accept_snapshot`] bridges it to the
+//! buffered diffs. The data client supplies the fetch, its request weight, and the task scope.
 
 use std::{
     future::Future,
@@ -37,13 +37,12 @@ use super::{
     sync::{BookSyncTracker, DepthSnapshot},
 };
 
-/// Spawns a task that fetches snapshots until `tracker` accepts one or the retry budget ends.
+/// Spawns a task that fetches snapshots until `tracker` accepts one or the recovery is cancelled.
 ///
 /// Each fetch first draws `weight` from the tracker's snapshot pacer. The task takes the first
 /// permit before the runner starts, so waiting behind other books spends neither attempts nor
 /// the recovery budget. The snapshot timeout bounds each fetch once paced; zero leaves the fetch
-/// to the HTTP client's timeout. Terminal failure suppresses the book until reconnect or
-/// resubscribe.
+/// to the HTTP client's timeout.
 pub(crate) fn spawn_recovery<F, Fut>(
     instrument_id: InstrumentId,
     recovery: Arc<BookRecovery<BinanceBookError>>,
@@ -71,10 +70,11 @@ pub(crate) fn spawn_recovery<F, Fut>(
 
         let prepaid = AtomicBool::new(true);
 
-        let result = tokio::select! {
+        tokio::select! {
             biased;
-            () = shutdown.cancelled() => return,
-            result = recovery.run(
+            () = shutdown.cancelled() => {}
+            () = recovery.run(
+                instrument_id,
                 snapshot_timeout,
                 |_, gate| {
                     let prepaid = prepaid.swap(false, Ordering::Relaxed);
@@ -100,17 +100,7 @@ pub(crate) fn spawn_recovery<F, Fut>(
                 BinanceBookError::is_retryable,
                 BinanceBookError::Permanent,
                 || BinanceBookError::Retryable("book snapshot deadline expired".to_string()),
-            ) => result,
-        };
-
-        if let Err(e) = result
-            && !recovery.cancellation.is_cancelled()
-            && tracker.fail_recovery(instrument_id, &recovery)
-        {
-            log::error!(
-                "Book recovery failed for {instrument_id}; subscription retained, book output \
-                 suppressed until reconnect or resubscribe: {e}"
-            );
+            ) => {}
         }
     };
 
@@ -270,9 +260,10 @@ mod tests {
         assert_eq!(fetches.load(Ordering::SeqCst), 2);
     }
 
+    // A permanent error skips the retry budget but keeps the book owned for ceiling retries
     #[rstest]
     #[tokio::test]
-    async fn permanent_failure_suppresses_book_until_resubscribe() {
+    async fn permanent_failure_keeps_book_owned() {
         let (tracker, mut rx, tasks) = setup(60_000);
         let recovery = tracker.handle_update(instrument_id(), update(101)).unwrap();
         let fetches = Arc::new(AtomicUsize::new(0));
@@ -293,19 +284,19 @@ mod tests {
 
         wait_until_async(
             || {
-                let finished = recovery.cancellation.is_cancelled();
-                async move { finished }
+                let fetched = fetches.load(Ordering::SeqCst) == 1;
+                async move { fetched }
             },
             Duration::from_secs(5),
         )
         .await;
 
-        let suppressed = tracker.handle_update(instrument_id(), update(102));
-        tracker.subscribe(instrument_id());
-        let restarted = tracker.handle_update(instrument_id(), update(103));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert!(suppressed.is_none());
-        assert!(restarted.is_some());
+        let buffered = tracker.handle_update(instrument_id(), update(102));
+
+        assert!(recovery.is_running());
+        assert!(buffered.is_none());
         assert!(rx.try_recv().is_err());
         assert_eq!(fetches.load(Ordering::SeqCst), 1);
     }

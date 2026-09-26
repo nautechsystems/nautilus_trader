@@ -687,12 +687,9 @@ impl OKXWsFeedHandler {
 
                 match serde_json::from_str(&text) {
                     Ok(ws_event) => match &ws_event {
-                        OKXWsFrame::Error { code, msg, .. } => {
-                            if should_retry_error_code(code) {
-                                log::warn!("WebSocket error: {code} - {msg}");
-                            } else {
-                                log::error!("WebSocket error: {code} - {msg}");
-                            }
+                        OKXWsFrame::Error { arg, code, msg } => {
+                            let level = error_frame_level(arg.as_ref(), code, msg);
+                            log::log!(level, "WebSocket error: {code} - {msg}");
                             Some(ws_event)
                         }
                         OKXWsFrame::Login {
@@ -798,6 +795,20 @@ impl OKXWsFeedHandler {
                 None
             }
         }
+    }
+}
+
+// Book recovery retries a rejected book subscription and reports its own failure
+fn error_frame_level(arg: Option<&OKXWebSocketArg>, code: &str, msg: &str) -> log::Level {
+    let book = match arg {
+        Some(arg) => arg.channel.is_book(),
+        None => subscription_arg_from_error_message(msg).is_some_and(|arg| arg.channel.is_book()),
+    };
+
+    if should_retry_error_code(code) || book {
+        log::Level::Warn
+    } else {
+        log::Level::Error
     }
 }
 
@@ -1258,13 +1269,7 @@ mod tests {
         let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
         assert_eq!(request["op"], "unsubscribe");
         assert_eq!(
-            tracker.validate_sequence(
-                instrument_id,
-                true,
-                &[(Some(-1), 42)],
-                Duration::ZERO,
-                time::Instant::now()
-            ),
+            tracker.validate_sequence(instrument_id, true, &[(Some(-1), 42)], time::Instant::now()),
             BookSequenceOutcome::Suppress
         );
         cancel.cancel();
@@ -1277,13 +1282,7 @@ mod tests {
 
         assert!(recovery.gate.lock().is_closed());
         assert_eq!(
-            tracker.validate_sequence(
-                instrument_id,
-                true,
-                &[(Some(-1), 43)],
-                Duration::ZERO,
-                time::Instant::now()
-            ),
+            tracker.validate_sequence(instrument_id, true, &[(Some(-1), 43)], time::Instant::now()),
             BookSequenceOutcome::Suppress
         );
         cmd_tx.send(HandlerCommand::Disconnect).unwrap();
@@ -1464,7 +1463,6 @@ mod tests {
                         instrument_id,
                         received == OKXBookAction::Snapshot,
                         &[(data[0].prev_seq_id, data[0].seq_id)],
-                        snapshot_timeout,
                         time::Instant::now(),
                     ),
                     BookSequenceOutcome::Accept,
@@ -1590,6 +1588,56 @@ mod tests {
         assert_eq!(arg.inst_type, None);
         assert_eq!(arg.inst_family, None);
         assert_eq!(arg.bar, None);
+    }
+
+    #[rstest]
+    #[case::book_arg(
+        Some(OKXWsChannel::Books),
+        "60018",
+        "Subscription failed",
+        log::Level::Warn
+    )]
+    #[case::book_from_message(
+        None,
+        "60018",
+        "Wrong URL or channel:books,instId:BTC-USDT-SWAP doesn't exist.",
+        log::Level::Warn
+    )]
+    #[case::retryable(
+        Some(OKXWsChannel::Tickers),
+        "50001",
+        "Service unavailable",
+        log::Level::Warn
+    )]
+    #[case::non_book_arg(
+        Some(OKXWsChannel::Tickers),
+        "60018",
+        "Subscription failed",
+        log::Level::Error
+    )]
+    #[case::non_book_from_message(
+        None,
+        "60018",
+        "Wrong URL or channel:tickers,instId:BTC-USDT-SWAP doesn't exist.",
+        log::Level::Error
+    )]
+    fn test_error_frame_level(
+        #[case] channel: Option<OKXWsChannel>,
+        #[case] code: &str,
+        #[case] msg: &str,
+        #[case] expected: log::Level,
+    ) {
+        let arg = channel.map(|channel| OKXWebSocketArg {
+            channel,
+            inst_id: Some(Ustr::from("BTC-USDT-SWAP")),
+            inst_type: None,
+            inst_family: None,
+            bar: None,
+        });
+
+        let level = error_frame_level(arg.as_ref(), code, msg);
+
+        assert_eq!(level, expected);
     }
 
     #[rstest]

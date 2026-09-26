@@ -16,12 +16,16 @@
 //! Mainnet market-data fault injection with an independent decimal order book oracle.
 //!
 //! Run with adapter credentials unset:
-//! `cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 10 18`
+//! `cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18`
 //!
 //! Arguments are snapshot timeout seconds and number of stress rounds. Add `boundaries` as the
 //! third argument to run exhaustion and replacement-boundary probes instead, or `turnover` for
 //! rapid unsubscribe/resubscribe during recovery. Use `initial` for missing first snapshots.
 //! No orders are submitted.
+//!
+//! Every emitted batch passes through the shared `BookStreamChecker` and is verified against a
+//! reference book the proxy rebuilds from raw frames; a run fails unless every snapshot episode
+//! was verified.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -54,12 +58,11 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_live::SocketReconnectRegistry;
+use nautilus_live::{SocketReconnectRegistry, book::conformance::BookStreamChecker};
 use nautilus_model::{
     data::Data,
     enums::{BookType, RecordFlag},
     identifiers::{InstrumentId, TraderId},
-    orderbook::{OrderBook, analysis::book_check_integrity},
 };
 use nautilus_network::mode::ReconnectRequestOutcome;
 use nautilus_okx::{
@@ -97,6 +100,8 @@ async fn main() {
         Default::default(),
     )
     .unwrap();
+
+    check_wire_oracle();
 
     let args = std::env::args().collect::<Vec<_>>();
     let timeout = args.get(1).map_or(10, |v| v.parse::<u64>().unwrap());
@@ -250,7 +255,7 @@ async fn main() {
                     .await;
 
                 for id in &targets {
-                    session.disabled.insert(*id);
+                    session.close(*id);
                     session
                         .wire
                         .control
@@ -478,7 +483,10 @@ async fn turnover(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
         session.subscribe(*id);
     }
 
-    session.observe(Duration::from_secs(10)).await;
+    // The snapshot deadline starts once the subscribe write completes, after this window opens
+    session
+        .observe(Duration::from_secs(10.max(timeout + 5)))
+        .await;
     {
         let mut control = session.wire.control.lock();
 
@@ -630,29 +638,36 @@ async fn boundaries(timeout: u64, ids: &[InstrumentId; 8]) {
         })
         .await;
 
-    let updates = targets.map(|id| session.updates[&id]);
+    let snapshots = targets.map(|id| session.snapshots[&id]);
 
-    // Held snapshots arrive after exhaustion, including the 180-second budget with deadlines disabled
-    session.observe(Duration::from_secs(185)).await;
+    // The retry budget ends within the window, including the 180-second budget with deadlines
+    // disabled; recovery then continues at the one-minute ceiling.
+    let window = Duration::from_secs(185);
+    session.observe(window).await;
     {
         let mut control = session.wire.control.lock();
 
+        let budget = if timeout > 0 { 8 } else { 1 };
+        let ceiling_max = window.as_secs() as usize / 60;
+
         for (id, unsubscribed, _) in before {
-            assert_eq!(
-                control.unsubscribed[id.symbol.as_str()],
-                unsubscribed + if timeout > 0 { 8 } else { 1 }
+            let attempts = control.unsubscribed[id.symbol.as_str()] - unsubscribed;
+            assert!(
+                (budget..=budget + ceiling_max).contains(&attempts),
+                "{id} made {attempts} attempts; expected the budget of {budget} plus at most one \
+                 ceiling attempt per minute"
             );
             control.faults.get_mut(id.symbol.as_str()).unwrap().hold = false;
         }
     }
 
+    for (id, snapshots) in targets.into_iter().zip(snapshots) {
+        session.expected_snapshots.insert(id, snapshots + 1);
+    }
+
+    // Released snapshots complete the exhausted recoveries without a reconnect or resubscribe
     session.wire.flush.send_replace(());
-    session.observe(Duration::from_secs(5)).await;
-    assert_eq!(
-        targets.map(|id| session.updates[&id]),
-        updates,
-        "exhausted books suppress late snapshots and updates"
-    );
+    session.healthy(ids).await;
     assert_eq!(
         session
             .wire
@@ -661,29 +676,25 @@ async fn boundaries(timeout: u64, ids: &[InstrumentId; 8]) {
             .map(|n| n.load(Ordering::SeqCst)),
         connections
     );
-    session
-        .healthy(&[ids[1], ids[2], ids[3], ids[5], ids[6], ids[7]])
-        .await;
-    eprintln!("EXHAUSTION PASS timeout={timeout} books=2 late_frames_suppressed=true reconnects=0");
+    eprintln!("EXHAUSTION PASS timeout={timeout} books=2 recovered_at_ceiling=true reconnects=0");
 
     let id = targets[0];
     let unsubscribed = session.wire.control.lock().unsubscribed[id.symbol.as_str()];
     session.unsubscribe(id);
     session
-        .until(Duration::from_secs(10), "exhausted book unsubscribe", |s| {
+        .until(Duration::from_secs(10), "recovered book unsubscribe", |s| {
             s.wire.control.lock().unsubscribed[id.symbol.as_str()] == unsubscribed + 1
         })
         .await;
 
-    session.disabled.insert(id);
+    session.close(id);
     session.observe(Duration::from_secs(1)).await;
     session.subscribe(id);
     session.healthy(&[id]).await;
-    assert_eq!(session.updates[&targets[1]], updates[1]);
-    eprintln!("EXHAUSTION RESUBSCRIBE PASS instrument={id}");
+    eprintln!("RESUBSCRIBE PASS instrument={id}");
     session.reconnect(false);
     session.healthy(&ids[..6]).await;
-    eprintln!("EXHAUSTION RECONNECT PASS books=6");
+    eprintln!("RECONNECT PASS books=6");
 
     let cuts = session.wire.cuts.load(Ordering::SeqCst);
     session.wire.cuts_remaining.store(10, Ordering::SeqCst);
@@ -951,7 +962,8 @@ struct Session {
     registry: SocketReconnectRegistry,
     events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     server: tokio::task::JoinHandle<()>,
-    books: HashMap<InstrumentId, OrderBook>,
+    checker: BookStreamChecker,
+    requested: HashSet<InstrumentId>,
     snapshots: HashMap<InstrumentId, usize>,
     updates: HashMap<InstrumentId, usize>,
     disabled: HashSet<InstrumentId>,
@@ -1006,7 +1018,9 @@ impl Session {
             registry,
             events,
             server,
-            books: HashMap::new(),
+            // OKX `seqId` can reset within an episode, so the wire oracle verifies content
+            checker: BookStreamChecker::new(BookType::L2_MBP, false),
+            requested: HashSet::new(),
             snapshots: HashMap::new(),
             updates: HashMap::new(),
             disabled: HashSet::new(),
@@ -1024,9 +1038,8 @@ impl Session {
         self.disabled.remove(&id);
         self.expected_snapshots
             .insert(id, self.snapshots.get(&id).copied().unwrap_or(0) + 1);
-        self.books
-            .entry(id)
-            .or_insert_with(|| OrderBook::new(id, BookType::L2_MBP));
+        self.requested.insert(id);
+        self.checker.open(id);
         self.client
             .subscribe_book_deltas(SubscribeBookDeltas::new(
                 id,
@@ -1041,6 +1054,12 @@ impl Session {
                 params,
             ))
             .unwrap();
+    }
+
+    // Marks a settled unsubscribe, after which the book must emit nothing
+    fn close(&mut self, id: InstrumentId) {
+        self.disabled.insert(id);
+        self.checker.close(id);
     }
 
     fn unsubscribe(&mut self, id: InstrumentId) {
@@ -1067,7 +1086,7 @@ impl Session {
                 self.wire.cuts_remaining.load(Ordering::SeqCst)
             };
 
-        for id in self.books.keys().filter(|id| {
+        for id in self.requested.iter().filter(|id| {
             id.symbol.as_str().contains('_') == business && !self.disabled.contains(id)
         }) {
             self.expected_snapshots
@@ -1096,10 +1115,6 @@ impl Session {
         };
 
         let id = deltas.instrument_id;
-        assert!(
-            !self.disabled.contains(&id),
-            "output after settled unsubscribe: {id}"
-        );
         let snapshot = deltas
             .deltas
             .first()
@@ -1108,9 +1123,13 @@ impl Session {
             *self.snapshots.entry(id).or_default() += 1;
         }
 
-        let book = self.books.get_mut(&id).expect("requested book");
-        book.apply_deltas(&deltas).unwrap();
-        book_check_integrity(book).unwrap();
+        if let Err(violation) = self.checker.apply(&deltas) {
+            panic!(
+                "book contract violation {id} seq={} ts={}: {violation}",
+                deltas.sequence, deltas.ts_event
+            );
+        }
+
         let control = self.wire.control.lock();
 
         let view = control
@@ -1123,24 +1142,16 @@ impl Session {
             })
             .expect("wire oracle at emitted sequence and timestamp");
 
-        assert_eq!(
-            book.bids_as_map(Some(20))
-                .into_iter()
-                .collect::<BTreeMap<_, _>>(),
-            view.book.bids,
-            "bid oracle mismatch {id} seq={} ts={}",
-            deltas.sequence,
-            deltas.ts_event
-        );
-        assert_eq!(
-            book.asks_as_map(Some(20))
-                .into_iter()
-                .collect::<BTreeMap<_, _>>(),
-            view.book.asks,
-            "ask oracle mismatch {id} seq={} ts={}",
-            deltas.sequence,
-            deltas.ts_event
-        );
+        if let Err(violation) = self
+            .checker
+            .verify(id, 20, &view.book.bids, &view.book.asks)
+        {
+            panic!(
+                "wire oracle mismatch {id} seq={} ts={}: {violation}",
+                deltas.sequence, deltas.ts_event
+            );
+        }
+
         self.epochs.insert(id, view.epoch);
         *self.updates.entry(id).or_default() += 1;
         self.applied += 1;
@@ -1293,19 +1304,21 @@ impl Session {
             control.faults.values().map(|f| f.held).sum::<usize>(),
             self.wire.cuts.load(Ordering::SeqCst),
         );
+        let (episodes, verified) = self.checker.coverage();
+        eprintln!("episodes={episodes} verified_episodes={verified}");
+        assert_eq!(
+            verified, episodes,
+            "every snapshot episode must be verified against the wire oracle"
+        );
+
         self.server.abort();
         self.applied
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    fn wire_book_applies_updates_and_replaces_snapshots() {
+// Proves the wire oracle before any venue traffic, since a wrong oracle would pass a wrong book
+fn check_wire_oracle() {
+    {
         let mut book = WireBook::default();
         book.apply(
             &json!({"bids": [["10", "2"], ["9", "3"]], "asks": [["11", "4"], ["12", "5"]]}),
@@ -1340,8 +1353,7 @@ mod tests {
         assert_eq!(book, WireBook::default());
     }
 
-    #[rstest]
-    fn wire_book_selects_best_twenty_levels() {
+    {
         let book = WireBook {
             bids: (1..=21)
                 .map(|n| (Decimal::from(n), Decimal::from(n + 40)))

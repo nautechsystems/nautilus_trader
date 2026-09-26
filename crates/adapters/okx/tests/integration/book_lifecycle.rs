@@ -490,8 +490,9 @@ async fn unsubscribe_during_recovery_does_not_replay_book(#[case] timeout: u64) 
     session.stop().await;
 }
 
+// A rejected replacement stays owned by recovery, so a late snapshot restores the book
 #[tokio::test]
-async fn permanent_rejection_suppresses_late_snapshot_until_reconnect() {
+async fn permanent_rejection_accepts_late_snapshot_without_reconnect() {
     let mut session = BookClient::connect(1).await;
     let id = InstrumentId::from("BTC-USD.OKX");
     session.subscribe(id);
@@ -500,21 +501,11 @@ async fn permanent_rejection_suppresses_late_snapshot_until_reconnect() {
     session.wire.late_snapshot.store(true, Ordering::SeqCst);
     session.wire.corrupt_updates.store(1, Ordering::SeqCst);
     session.wire.push.notify_one();
-    wait_until_async(
-        || async { session.wire.subscriptions.load(Ordering::SeqCst) == 2 },
-        Duration::from_secs(5),
-    )
-    .await;
-    assert!(
-        tokio::time::timeout(Duration::from_millis(300), session.events.recv())
-            .await
-            .is_err()
-    );
-    session.wire.reject.store(false, Ordering::SeqCst);
-    session.wire.late_snapshot.store(false, Ordering::SeqCst);
-    session.reconnect();
+
     session.snapshots(&[id], 2).await;
-    assert_eq!(session.wire.subscriptions.load(Ordering::SeqCst), 3);
+
+    assert_eq!(session.wire.subscriptions.load(Ordering::SeqCst), 2);
+    assert_eq!(session.wire.connections.load(Ordering::SeqCst), 1);
     assert_eq!(session.snapshots[&id], 2);
     session.stop().await;
 }

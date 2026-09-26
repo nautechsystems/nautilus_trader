@@ -21,15 +21,10 @@
 //! Polymarket books carry no sequence numbers, so the tracker gates incremental
 //! `price_change` deltas on an accepted `book` snapshot instead of validating linkage.
 //! The data client routes book events through the tracker and starts recovery when needed.
-//! Recovery tasks use the tracker to claim ownership and report failure; incoming snapshots
-//! complete recovery through the same tracker. Outcome types come from [`nautilus_live::book`].
+//! Recovery tasks use the tracker to claim ownership; incoming snapshots complete recovery
+//! through the same tracker. Outcome types come from [`nautilus_live::book`].
 
 pub(crate) mod recovery;
 pub(crate) mod sync;
 
-use nautilus_live::book::recovery::BookRecoveryOutcome as RecoveryOutcome;
-pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignalKind};
-
-use crate::websocket::error::PolymarketWsError;
-
-pub(crate) type BookRecoveryOutcome = RecoveryOutcome<PolymarketWsError>;
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind};

@@ -19,19 +19,14 @@
 //! - [`recovery`] owns recovery tasks and replacement subscriptions, using the shared retry runner.
 //!
 //! The data client routes book events through the tracker and starts recovery when needed.
-//! Recovery tasks use the tracker to claim ownership and report failure; incoming snapshots
-//! complete recovery through the same tracker. Outcome types come from [`nautilus_live::book`];
-//! [`BookChannelScope`] keeps public and business socket routing local to OKX.
+//! Recovery tasks use the tracker to claim ownership; incoming snapshots complete recovery through
+//! the same tracker. Outcome types come from [`nautilus_live::book`]; [`BookChannelScope`] keeps
+//! public and business socket routing local to OKX.
 
 pub(crate) mod recovery;
 pub(crate) mod sync;
 
-use nautilus_live::book::recovery::BookRecoveryOutcome as RecoveryOutcome;
-pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignalKind};
-
-use crate::websocket::error::OKXWsError;
-
-pub(crate) type BookRecoveryOutcome = RecoveryOutcome<OKXWsError>;
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BookChannelScope {

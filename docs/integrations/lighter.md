@@ -362,14 +362,16 @@ clears the book too.
 
 ### Retry limits and reconnects
 
-Each recovery episode permits **at most eight replacement attempts within 180 seconds**, with
-exponential backoff and jitter. Replacement unsubscribe and subscribe writes target the same
+Each recovery episode makes **up to eight replacement attempts within 180 seconds**, with
+exponential backoff and jitter, then continues at an interval that doubles from one minute to
+fifteen minutes until a snapshot is accepted. Replacement unsubscribe and subscribe writes target
+the same connection.
+
+Reconnect retires obsolete subscription generations and keeps a running recovery with its
+remaining budget. A recovery waiting between attempts after its budget retries at once on the new
 connection.
 
-Reconnect retires obsolete subscription generations and preserves an active recovery's remaining
-budget.
-
-### Consumers and terminal failure
+### Consumers and persistent failures
 
 Deltas and depth share a recovery episode for each market:
 
@@ -377,8 +379,10 @@ Deltas and depth share a recovery episode for each market:
 - Removing the final consumer cancels pending writes and snapshot waits.
 - Shutdown cancels all owned work.
 
-Exhaustion or permanent rejection suppresses book output until reconnect or an explicit
-unsubscribe/subscribe cycle. Other markets continue independently.
+Recovery never ends in a failed state. A rejected replacement, or a subscription rejected when
+replayed after reconnect, keeps recovering at the growing interval, so a late snapshot still
+restores the book. A rejected initial subscribe fails the subscribe call instead, and a later
+subscribe starts afresh. Other markets continue independently.
 
 See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
 for the shared recovery machinery and adapter responsibilities.

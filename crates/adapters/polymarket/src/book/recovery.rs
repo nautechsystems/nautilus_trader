@@ -17,12 +17,12 @@
 //!
 //! The tasks here monitor snapshot deadlines and supply Polymarket replacement operations and
 //! error classification to the shared [`BookRecovery`] runner. The runner owns snapshot waits,
-//! backoff, and attempt and elapsed-time limits. A successful send alone does not complete
-//! recovery: the tracker must accept a snapshot.
+//! backoff, the retry budget, and the retry ceiling that follows it. A successful send alone
+//! does not complete recovery: the tracker must accept a snapshot.
 //!
-//! Tasks claim ownership and report failure through [`BookSyncTracker`], which keeps shared state
-//! transitions under its lock. Cancellation stops obsolete work after unsubscribe, replacement,
-//! or shutdown. The data client supplies the pool handle and task scope.
+//! Tasks claim ownership through [`BookSyncTracker`], which keeps shared state transitions under
+//! its lock. Cancellation stops obsolete work after unsubscribe, replacement, or shutdown. The
+//! data client supplies the pool handle and task scope.
 
 use std::sync::Arc;
 
@@ -35,12 +35,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 
-use super::{BookRecoveryOutcome, sync::BookSyncTracker};
-use crate::{
-    book::sync::log_sync_signals,
-    websocket::{
-        error::PolymarketWsError, handler::CycleMarketOutcome, pool::PolymarketMarketPoolHandle,
-    },
+use super::sync::BookSyncTracker;
+use crate::websocket::{
+    error::PolymarketWsError, handler::CycleMarketOutcome, pool::PolymarketMarketPoolHandle,
 };
 
 pub(crate) type BookRecovery = Recovery<PolymarketWsError>;
@@ -70,9 +67,9 @@ pub(crate) fn spawn_recovery_monitor(
             () = time::sleep(snapshot_timeout) => {
                 let filter = instrument_ids.into_iter().collect::<AHashSet<_>>();
                 let expired = book_sync.take_expired_snapshots(&filter, Instant::now());
-                log_sync_signals(&expired);
 
                 for signal in expired {
+                    signal.log();
                     let token_id = instruments
                         .get_cloned(&signal.instrument_id)
                         .map(|instrument| instrument.raw_symbol().as_str().to_string());
@@ -111,7 +108,6 @@ pub(crate) fn start_recovery(
     }
 
     let Some(token_id) = token_id else {
-        book_sync.fail_recovery_if_subscribed(active_delta_subs, instrument_id, None);
         log::error!("No token available to recover book for {instrument_id}");
         return;
     };
@@ -124,7 +120,6 @@ pub(crate) fn start_recovery(
     spawn_recovery_task(
         instrument_id,
         token_id,
-        book_sync.clone(),
         recovery,
         pool.clone(),
         snapshot_timeout,
@@ -132,14 +127,9 @@ pub(crate) fn start_recovery(
     );
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "recovery task needs shared adapter state"
-)]
 pub(crate) fn spawn_recovery_task(
     instrument_id: InstrumentId,
     token_id: String,
-    tracker: BookSyncTracker,
     recovery: Arc<BookRecovery>,
     pool: PolymarketMarketPoolHandle,
     snapshot_timeout: Duration,
@@ -151,13 +141,11 @@ pub(crate) fn spawn_recovery_task(
     if let Err(e) = tasks.spawn(async move {
         let _recovery_guard = recovery_guard;
 
-        let result = tokio::select! {
+        tokio::select! {
             biased;
-            () = shutdown.cancelled() => {
-                recovery.cancellation.cancel();
-                return;
-            }
-            result = recovery.run(
+            () = shutdown.cancelled() => recovery.cancellation.cancel(),
+            () = recovery.run(
+                instrument_id,
                 snapshot_timeout,
                 |attempt_cancel, gate| {
                     let pool = pool.clone();
@@ -183,18 +171,7 @@ pub(crate) fn spawn_recovery_task(
                 || PolymarketWsError::OperationTimeout {
                     timeout_ms: snapshot_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
                 },
-            ) => result,
-        };
-
-        if let Err(e) = result {
-            if !recovery.cancellation.is_cancelled() {
-                tracker.fail_recovery(instrument_id, Some(&recovery));
-                log::error!(
-                    "Book recovery failed for {instrument_id}; subscription retained, book output suppressed until reconnect or resubscribe: {e}"
-                );
-            }
-        } else if matches!(*recovery.outcome.borrow(), BookRecoveryOutcome::Accepted) {
-            log::info!("Book recovery completed for {instrument_id}");
+            ) => {}
         }
     }) {
         log::debug!("Skipping Polymarket book recovery task after shutdown began: {e}");
@@ -277,13 +254,13 @@ mod tests {
     }
 
     #[rstest]
-    fn start_recovery_without_token_fails_and_suppresses() {
+    fn start_recovery_without_token_leaves_book_unowned() {
         let book_sync = BookSyncTracker::default();
         let active_delta_subs = Arc::new(AtomicSet::new());
         active_delta_subs.insert(instrument_id());
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
-        let (_tasks, spawner) = test_tasks();
+        let (tasks, spawner) = test_tasks();
         let instrument_id = instrument_id();
 
         start_recovery(
@@ -296,16 +273,17 @@ mod tests {
             &spawner,
         );
 
-        assert!(book_sync.book_gated(instrument_id));
-        assert!(book_sync.claim_recovery(instrument_id).is_none());
+        // No owner is stranded: a later event can claim recovery, and a snapshot restores the book
+        assert!(tasks.is_empty());
         assert!(
-            !book_sync.record_snapshot_if_subscribed(
+            book_sync.record_snapshot_if_subscribed(
                 &active_delta_subs,
                 instrument_id,
                 Instant::now()
             ),
-            "missing token must terminally suppress book output"
+            "missing token must not suppress book output"
         );
+        assert!(book_sync.claim_recovery(instrument_id).is_some());
     }
 
     #[rstest]
@@ -348,22 +326,21 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn recovery_task_reports_terminal_failure_when_resubscribe_fails() {
+    async fn recovery_task_keeps_ownership_after_non_retryable_failure() {
         let book_sync = BookSyncTracker::default();
         let active_delta_subs = AtomicSet::new();
         active_delta_subs.insert(instrument_id());
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         // The token is unowned, so the replacement send fails fast with a
-        // non-retryable error instead of consuming the retry budget.
+        // non-retryable error, moving the recovery straight to its ceiling.
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
-        let (_tasks, spawner) = test_tasks();
+        let (tasks, spawner) = test_tasks();
         let instrument_id = instrument_id();
         let recovery = book_sync.claim_recovery(instrument_id).unwrap();
 
         spawn_recovery_task(
             instrument_id,
             "0xTOKEN".to_string(),
-            book_sync.clone(),
             recovery.clone(),
             pool,
             Duration::from_secs(10),
@@ -371,25 +348,30 @@ mod tests {
         );
 
         wait_until_async(
-            || async { recovery.cancellation.is_cancelled() },
+            || async { recovery.gate.lock().is_closed() },
             StdDuration::from_secs(5),
         )
         .await;
+        tokio::time::sleep(StdDuration::from_millis(200)).await;
 
-        // Terminal failure must hold even if the send gate later opens: only the
-        // failed flag suppresses acceptance with an open gate.
+        let running = recovery.is_running();
+        let second_owner = book_sync.claim_recovery(instrument_id);
         recovery.gate.open();
-
-        assert!(book_sync.book_gated(instrument_id));
-        assert!(book_sync.claim_recovery(instrument_id).is_none());
-        assert!(
-            !book_sync.record_snapshot_if_subscribed(
-                &active_delta_subs,
-                instrument_id,
-                Instant::now()
-            ),
-            "failed recovery must suppress snapshots with an open gate"
+        let accepted = book_sync.record_snapshot_if_subscribed(
+            &active_delta_subs,
+            instrument_id,
+            Instant::now(),
         );
+        wait_until_async(|| async { tasks.all_finished() }, StdDuration::from_secs(5)).await;
+
+        assert!(running, "a failed attempt must not end the recovery");
+        assert!(second_owner.is_none());
+        assert!(
+            accepted,
+            "a snapshot with the gate open completes the recovery"
+        );
+        assert!(recovery.is_accepted());
+        assert!(!book_sync.book_gated(instrument_id));
     }
 
     #[rstest]

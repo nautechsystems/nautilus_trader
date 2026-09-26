@@ -62,10 +62,9 @@ impl BookSyncTracker {
         }
 
         if self.recovery.get(&market_index).is_some_and(|state| {
-            state.is_failed()
-                || state.current().is_some_and(|recovery| {
-                    !recovery.is_accepted() && (!is_snapshot || recovery.gate.lock().is_closed())
-                })
+            state.current().is_some_and(|recovery| {
+                !recovery.is_accepted() && (!is_snapshot || recovery.gate.lock().is_closed())
+            })
         }) {
             return BookSequenceOutcome::Suppress;
         }
@@ -175,16 +174,15 @@ impl BookSyncTracker {
 
         for state in self.recovery.values_mut() {
             if let Some(recovery) = state.current()
-                && !recovery.is_accepted()
-                && !recovery.cancellation.is_cancelled()
+                && recovery.is_running()
             {
                 recovery.gate.lock().close();
                 recovery.outcome.send_replace(BookRecoveryOutcome::Rejected(
                     LighterWsError::Network("socket reconnected during book recovery".into()),
                 ));
-            } else {
-                state.reset();
             }
+
+            state.reset_on_reconnect();
         }
     }
 

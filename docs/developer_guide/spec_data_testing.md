@@ -92,31 +92,66 @@ case that produced the message.
 
 ---
 
-## Live validation levels
+## Order book sync conformance
 
-Unit and integration suites cannot reproduce venue timing, so changes to book
-sync and recovery machinery also need live validation against a real venue.
-Validation here means market-data-only observation: subscribe, request, and
-fault-inject, never place orders. A dark book is a subscribed book that never
-receives data. Match the level to the riskiest aspect of the change; higher
-levels include the bars of every level below.
+Adapters that maintain order books from a venue stream must keep their output valid through venue
+and network faults. Unit and integration suites cannot reproduce venue timing,
+so changes to book sync and recovery machinery need a deterministic model check and live
+validation against a real venue. Live validation here means market-data-only observation:
+subscribe, request, and fault-inject, never place orders. A dark book is a subscribed book that
+never receives data.
 
-| Level              | Trigger                                                                                          | Method                                                           | Acceptance                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| L1 Conformance     | Any change to previously validated sync/recovery code                                            | Rerun the established oracle for the venue                       | PASS at the documented bar, zero dark books, zero unexplained errors                                            |
-| L2 Edge probe      | Boundary behavior changes (timeouts, disabled paths, exhaustion, terminal suppression)           | Targeted boundary scenarios, including each new tuning extreme   | Every scenario passes; disabled paths stay quiet; exhaustion suppresses and resubscribes cleanly                |
-| L3 Race probe      | Concurrency or ordering changes (gates, epochs, reconnect interplay), or any live-found race fix | Fault injection plus subscribe churn under an independent oracle | Dozens of forced recoveries complete with zero dark books; the reported race scenario passes with no recurrence |
-| L4 Full validation | New sync/recovery implementation                                                                 | L1-L3 plus a sustained churn and reconnect-fault soak            | All lower bars hold for the full soak; recovery latencies stay bounded                                          |
+### Book stream contract
 
-Record the level, venue, oracle, and result with the change. A fix that live
-validation finds restarts at the level that found it: the rerun must clear the
-same bar, not a lighter one.
+`BookStreamChecker` in `nautilus_live::book::conformance`, enabled by the `nautilus-live`
+`test-support` feature, applies the contract to every emitted `OrderBookDeltas` batch:
+
+- A batch ends with `F_LAST`. Each `F_LAST` closes an event group, and the book must pass its
+  integrity check after every group because consumers observe it at those boundaries.
+- A snapshot group is a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`. A lone `Clear`
+  is an empty snapshot.
+- An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
+- Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic
+  within a snapshot episode. OKX `seqId` can reset, so its checker skips this rule and relies on
+  the oracle.
+- A book emits nothing after its unsubscribe settles.
+
+### Validation levels
+
+Match the level to the riskiest aspect of the change; higher levels include the bars of every level
+below.
+
+| Level              | Trigger                                                                                          | Method                                                                                          | Acceptance                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| L0 Model           | Any change to `BookSync`, `BookRecovery`, or an adapter's use of them                            | Property test of the per-book state machine against a reference model, plus planted regressions | The property test passes, and reverting a known fix, such as the gap ownership rule, makes it fail                                    |
+| L1 Conformance     | Any change to previously validated sync/recovery code                                            | Rerun the venue's stress harness or established oracle                                          | PASS at the documented bar, zero checker violations, zero dark books, zero unexplained errors                                         |
+| L2 Edge probe      | Boundary behavior changes (timeouts, disabled paths, budget exhaustion, the retry ceiling)       | Targeted boundary scenarios, including each new tuning extreme                                  | Every scenario passes; disabled paths stay quiet; an exhausted budget reaches the ceiling and a late snapshot still restores the book |
+| L3 Race probe      | Concurrency or ordering changes (gates, epochs, reconnect interplay), or any live-found race fix | Fault injection plus subscribe churn under an independent oracle                                | Dozens of forced recoveries complete with zero dark books; the reported race scenario passes with no recurrence                       |
+| L4 Full validation | New sync/recovery implementation                                                                 | L1-L3 plus a sustained churn and reconnect-fault soak                                           | All lower bars hold for the full soak; recovery latencies stay bounded                                                                |
+
+The L0 property test is `schedule_keeps_sync_contract` in `crates/live/src/book/sync.rs`.
+Record the level, venue, oracle, and result with the change. A fix that live validation finds
+restarts at the level that found it: the rerun must clear the same bar, not a lighter one.
+
+### Fault catalog
+
+Every adapter must produce these outcomes, whichever
+[recovery family](adapters.md#order-book-recovery-ownership) it belongs to:
+
+| Fault                       | Required outcome                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Sequence gap                | Output stops at the gap and resumes only after a fresh snapshot replaces the book.                                |
+| Missing or late snapshot    | The snapshot deadline starts or retries recovery; a snapshot accepted between attempts ends it.                   |
+| Rejected replacement        | Recovery retries; an error the classifier marks permanent skips the budget and retries at the ceiling.            |
+| Retry budget exhausted      | One error log, then retries at the ceiling until a snapshot is accepted.                                          |
+| Reconnect mid-recovery      | The running recovery keeps its budget and ownership and retries at once; other books resync from fresh snapshots. |
+| Unsubscribe during recovery | Recovery and its pending writes stop, and the book emits nothing further.                                         |
 
 ### Forcing techniques
 
-Prefer distinct orderings over raw volume: a probe earns its place by forcing
-an ordering the suite cannot produce (reconnect mid-recovery, a snapshot racing
-gate-open, an unsubscribe racing an in-flight subscribe), not by message count.
+Prefer distinct orderings over raw volume: a probe earns its place by forcing an ordering the suite
+cannot produce (reconnect mid-recovery, a snapshot racing gate-open, an unsubscribe racing an
+in-flight subscribe), not by message count.
 
 | Technique                                                                   | Stresses                                                             | Figures that proved effective                                                           | Caught in practice                                                        |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -127,11 +162,61 @@ gate-open, an unsubscribe racing an in-flight subscribe), not by message count.
 | Client-issued reconnect (public reconnect command, then exercise)           | Reconnect recovery without touching host networking                  | 5+ consecutive reconnect/reconcile passes                                               | Proves recovery without host faults; no defect caught yet                 |
 | Serial repetition of the race scenario                                      | Scheduler sensitivity                                                | 5+ consecutive live passes; 100x repetition for deterministic harnesses                 | Flakes that pass once and fail rarely                                     |
 
-Route each venue the way it accepts: Polymarket requires the HK tunnel exit
-(see the agent-ops runbook); OKX, Lighter, and Binance validate direct. Confirm the route
-delivers venue data before a long run: sockets can connect while the venue
-stays silent. Branches the venue never produces live belong in a captured-wire
-deterministic harness, not in the live run.
+Route each venue through a network location it serves: Polymarket restricts access by region, while
+OKX, Lighter, and Binance validate direct. Confirm the route delivers venue data before a long run:
+sockets can connect while the venue stays silent. Branches the venue never produces live belong in
+a captured-wire deterministic harness, not in the live run.
+
+### Oracles
+
+An oracle is an independent reconstruction of venue truth, compared with the emitted book through
+`BookStreamChecker::verify`:
+
+- Build it from a separate connection or a REST snapshot, never from the adapter's own state.
+- Compare at an aligned venue sequence. Skip a sample that cannot be aligned; it does not count as
+  a pass.
+- Count a snapshot episode verified once a comparison after its snapshot succeeds. A push-family
+  harness asserts that every episode is verified. The Binance harness matches its oracle by update
+  ID after the fact, so it reports oracle checks and unmatched samples instead of episode coverage.
+
+### Stress harnesses
+
+An adapter that uses the shared book machinery keeps its live harness at
+`crates/adapters/<venue>/tests/stress/book_stress.rs`, registered as a test target named
+`<venue>-book-stress`:
+
+```toml
+[[test]]
+name = "okx-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]
+```
+
+`harness = false` lets the target own its runtime and arguments, and `test = false` keeps it out of
+default `cargo test` and nextest runs. Add `nautilus-live` with the `test-support` feature to the crate's
+dev-dependencies. Run the harness explicitly, with adapter environment variables stripped:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18
+```
+
+A harness passes every emitted batch through `BookStreamChecker`, forces the fault catalog, and
+prints one `PASS` or `FAIL` line per scenario. A `harness = false` target cannot run `#[test]`
+functions, so check the harness's own oracle logic in a self-check at startup. Document the
+arguments and required endpoints in the adapter's integration guide. OKX and Binance provide
+harnesses.
+
+### In-band verification
+
+When a venue publishes a book checksum or hash, validate it and treat a mismatch as a gap. It
+catches corruption in the data it covers that sequence checks miss, without an external oracle.
+Kraken validates the CRC32 checksum on each L3 update when `validate_l3_checksum` is enabled, which
+is the default. Polymarket validates the hash on each book snapshot that carries a hash and its full
+preimage (see [book snapshot validation](../integrations/polymarket.md#book-snapshot-validation)).
+OKX `books` frames carry a zero `checksum`, so OKX relies on its oracle instead.
 
 ---
 

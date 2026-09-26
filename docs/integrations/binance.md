@@ -802,13 +802,15 @@ the next diff.
 
 - **Snapshot timeout**: `book_snapshot_timeout_secs` (default **10 seconds**) bounds each snapshot
   request. Set it to `0` to leave requests to the HTTP client timeout.
-- **Retry budget**: Each recovery permits **at most eight snapshot attempts within 180 seconds**,
-  with exponential backoff and jitter.
-- **Reconnects**: A reconnect restarts synchronization from the new stream and preserves an active
-  recovery's remaining budget. That recovery's next snapshot can seed the book before the new
-  stream delivers a diff; the first diff must then continue from the snapshot.
-- **Terminal failure**: Exhausted attempts or a permanent request failure suppress the book's output
-  until reconnect or an explicit unsubscribe/subscribe cycle. Other books continue independently.
+- **Retry budget**: Each recovery makes **up to eight snapshot attempts within 180 seconds**, with
+  exponential backoff and jitter, then continues at an interval that doubles from one minute to
+  fifteen minutes. A permanent request failure moves straight to that interval.
+- **Reconnects**: A reconnect restarts synchronization from the new stream and keeps a running
+  recovery with its remaining budget. A recovery waiting between attempts after its budget retries
+  at once. That recovery's next snapshot can seed the book before the new stream delivers a diff;
+  the first diff must then continue from the snapshot.
+- **Persistent failures**: Recovery continues until a snapshot bridges the buffered diffs or the
+  book is unsubscribed. Other books continue independently.
 
 #### Snapshot pacing
 

@@ -258,14 +258,14 @@ fn handle_book_reconnect(ctx: &WsMessageContext, shard_id: Option<usize>) {
         ctx.order_books.remove(instrument_id);
     }
 
+    let now = Instant::now();
     ctx.book_sync
-        .reset_for_instruments(&ctx.active_delta_subs, &instrument_ids);
+        .reset_for_instruments(&ctx.active_delta_subs, &instrument_ids, now);
 
     if ctx.book_snapshot_timeout.is_zero() {
         return;
     }
 
-    let now = Instant::now();
     let seeded = ctx.book_sync.seed_pending_snapshots(
         &ctx.active_delta_subs,
         &instrument_ids,
@@ -286,7 +286,7 @@ fn handle_book_reconnect(ctx: &WsMessageContext, shard_id: Option<usize>) {
     }
 }
 
-/// Starts a bounded recovery task for `instrument_id` if none is currently owned.
+/// Starts a recovery task for `instrument_id` if none is currently owned.
 fn start_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
     let token_id = ctx
         .instruments
@@ -305,13 +305,12 @@ fn start_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
     );
 }
 
-/// Requests a fresh book snapshot for `instrument_id`, starting a bounded
-/// recovery task when this call wins the request.
+/// Requests a fresh book snapshot for `instrument_id`, starting a recovery
+/// task when this call wins the request.
 fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
     let outcome = ctx.book_sync.request_recovery_if_subscribed(
         &ctx.active_delta_subs,
         instrument_id,
-        ctx.book_snapshot_timeout,
         Instant::now(),
     );
 
@@ -422,10 +421,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
                 match staged {
                     Some((emit, baseline)) => {
-                        // An obsolete snapshot (failed recovery or a send
-                        // still in flight) must not seed the book or emit
-                        // deltas, but quote handling below still runs: quotes
-                        // are an independent subscription.
+                        // An obsolete snapshot (a send still in flight) must
+                        // not seed the book or emit deltas, but quote handling
+                        // below still runs: quotes are an independent
+                        // subscription.
                         if ctx.book_sync.record_snapshot_if_subscribed(
                             &ctx.active_delta_subs,
                             instrument_id,
@@ -536,7 +535,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     match ctx.book_sync.validate_incremental_if_subscribed(
                         &ctx.active_delta_subs,
                         instrument_id,
-                        ctx.book_snapshot_timeout,
                         Instant::now(),
                     ) {
                         BookSequenceOutcome::Accept => {
@@ -1249,6 +1247,7 @@ mod tests {
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::book::recovery::BookRecoveryOutcome;
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
         enums::{
@@ -5008,7 +5007,7 @@ mod tests {
         client.active_trade_subs.insert(sibling_id);
         client
             .book_sync
-            .request_recovery(sibling_id, Duration::ZERO, Instant::now());
+            .request_recovery(sibling_id, Instant::now());
         client
             .order_books
             .insert(sibling_id, OrderBook::new(sibling_id, BookType::L2_MBP));
@@ -9438,7 +9437,7 @@ mod tests {
             &ctx,
         );
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
         ctx.last_quotes.insert(
             instrument_id,
             QuoteTick::new(
@@ -9861,7 +9860,7 @@ mod tests {
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         let pc = make_price_change(market, asset_id_str, "0.50", "20");
         handle_market_message(pc, &ctx);
@@ -10236,7 +10235,7 @@ mod tests {
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         let snap = MarketWsMessage::Book(PolymarketBookSnapshot {
             market: Ustr::from("0xMARKET"),
@@ -10283,7 +10282,7 @@ mod tests {
         ctx.active_quote_subs.insert(instrument_id);
         if already_pending {
             ctx.book_sync
-                .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+                .request_recovery(instrument_id, Instant::now());
         }
 
         // The mismatch-triggered recovery resubscribes the token; keep it owned
@@ -10386,7 +10385,7 @@ mod tests {
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
 
@@ -10919,7 +10918,7 @@ mod tests {
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         let prior = QuoteTick::new(
             instrument_id,
@@ -11057,7 +11056,7 @@ mod tests {
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         // An empty book is a usable snapshot; use an unparsable level so the
         // snapshot still fails to seed.
@@ -11448,7 +11447,7 @@ mod tests {
         // Simulate a recovery in flight: the replayed snapshot diffs to
         // nothing, but it is still the current book and must open the gate.
         ctx.book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
 
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
 
@@ -11554,9 +11553,9 @@ mod tests {
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
 
-        // Fail recovery so every later snapshot is rejected for deltas.
+        // A replacement write in flight rejects the snapshot for deltas
         let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
-        ctx.book_sync.fail_recovery(instrument_id, Some(&recovery));
+        assert!(recovery.begin_replacement());
 
         let levels = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
@@ -12003,9 +12002,10 @@ mod tests {
 
         // Pre-claim recovery so the tick below cannot spawn its async task: the
         // task runs on the shared runtime and would race this synchronous reseed
-        // (the default test handle owns no tokens, so a scheduled task fails the
-        // book terminally and drops the reseed). The tick still gates through the
-        // owned claim, and the reseed below completes that same episode.
+        // (the default test handle owns no tokens, so a scheduled task's failed
+        // resubscribe leaves the snapshot gate closed and rejects the reseed). The
+        // tick still gates through the owned claim, and the reseed below completes
+        // that same episode.
         ctx.book_sync
             .claim_recovery(instrument_id)
             .expect("pre-claim recovery");
@@ -12207,7 +12207,7 @@ mod tests {
         assert!(ctx.book_sync.book_gated(instrument_id));
         assert!(matches!(
             *recovery.outcome.borrow(),
-            crate::book::BookRecoveryOutcome::Pending
+            BookRecoveryOutcome::Pending
         ));
     }
 

@@ -446,9 +446,9 @@ impl PolymarketDataClient {
                         break;
                     }
                     _ = interval.tick() => {
-                        crate::book::sync::log_sync_signals(
-                            &book_sync.stale_books(threshold, Instant::now())
-                        );
+                        for signal in book_sync.stale_books(threshold, Instant::now()) {
+                            signal.log();
+                        }
                     }
                 }
             }
@@ -924,7 +924,7 @@ mod tests {
             .insert(Ustr::from(inst.raw_symbol().as_str()));
         client
             .book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
         client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,
@@ -961,7 +961,7 @@ mod tests {
             .insert("btc-updown-5m-1".to_string(), ());
         client
             .book_sync
-            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+            .request_recovery(instrument_id, Instant::now());
         client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,

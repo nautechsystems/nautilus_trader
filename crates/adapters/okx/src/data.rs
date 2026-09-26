@@ -68,10 +68,8 @@ use ustr::Ustr;
 use crate::{
     book::{
         BookChannelScope, BookSequenceOutcome,
-        recovery::{
-            is_retryable_code, spawn_recovery_monitor, spawn_recovery_task, start_recovery,
-        },
-        sync::{BookSyncTracker, log_sync_signals},
+        recovery::{spawn_recovery_monitor, spawn_recovery_task, start_recovery},
+        sync::BookSyncTracker,
     },
     common::{
         consts::{
@@ -491,15 +489,7 @@ impl OKXDataClient {
             }
 
             if let Some(recovery) = tracker.claim_subscription_recovery(instrument_id, &cancel) {
-                spawn_recovery_task(
-                    instrument_id,
-                    channel,
-                    tracker,
-                    recovery,
-                    ws,
-                    timeout,
-                    &spawner,
-                );
+                spawn_recovery_task(instrument_id, channel, recovery, ws, timeout, &spawner);
             }
         });
 
@@ -567,9 +557,9 @@ impl OKXDataClient {
                         break;
                     }
                     _ = interval.tick() => {
-                        log_sync_signals(
-                            &book_sync.stale_books(threshold, Instant::now())
-                        );
+                        for signal in book_sync.stale_books(threshold, Instant::now()) {
+                            signal.log();
+                        }
                     }
                 }
             }
@@ -668,7 +658,6 @@ impl OKXDataClient {
                             instrument.id(),
                             action == OKXBookAction::Snapshot,
                             &sequences,
-                            snapshot_timeout,
                             Instant::now(),
                         );
 
@@ -740,7 +729,6 @@ impl OKXDataClient {
                             instrument.id(),
                             action == OKXBookAction::Snapshot,
                             &sequences,
-                            snapshot_timeout,
                             Instant::now(),
                         );
 
@@ -932,10 +920,9 @@ impl OKXDataClient {
                         ts_init,
                     ) {
                         Ok(data_vec) => {
-                            if !book_sync.record_update_if_subscribed(
+                            if !book_sync.record_snapshot_if_subscribed(
                                 book_channels,
                                 instrument_id,
-                                true,
                                 Instant::now(),
                             ) {
                                 return;
@@ -1111,48 +1098,49 @@ impl OKXDataClient {
                 code,
                 msg,
             } => {
-                log::error!(
-                    "OKX rejected {channel:?} subscription for {inst_id:?} \
-                     (code={code}, msg={msg}); no data will flow for this subscription"
+                let book_instrument_id = inst_id
+                    .filter(|_| channel.is_book())
+                    .and_then(|inst_id| instruments_by_symbol.get_cloned(&inst_id))
+                    .map(|instrument| instrument.id())
+                    .filter(|instrument_id| {
+                        book_channels
+                            .get_cloned(instrument_id)
+                            .is_some_and(|selected| {
+                                crate::websocket::client::ws_channel_for_book(selected) == channel
+                            })
+                    });
+
+                // Book recovery retries a rejected book subscription and reports its own failure
+                let Some(instrument_id) = book_instrument_id else {
+                    log::error!(
+                        "OKX rejected {channel:?} subscription for {inst_id:?} \
+                         (code={code}, msg={msg}); no data will flow for this subscription"
+                    );
+                    return;
+                };
+
+                log::warn!(
+                    "OKX rejected {channel:?} subscription for {instrument_id} (code={code}, \
+                     msg={msg}); recovering the book"
                 );
 
-                if let Some(inst_id) = inst_id
-                    && channel.is_book()
-                    && let Some(instrument) = instruments_by_symbol.get_cloned(&inst_id)
-                {
-                    let instrument_id = instrument.id();
-                    if book_channels
-                        .get_cloned(&instrument_id)
-                        .is_none_or(|selected| {
-                            crate::websocket::client::ws_channel_for_book(selected) != channel
-                        })
-                    {
-                        return;
-                    }
+                let error = OKXWsError::OkxError {
+                    error_code: code,
+                    message: msg,
+                };
 
-                    let error = OKXWsError::OkxError {
-                        error_code: code.clone(),
-                        message: msg,
-                    };
-
-                    if !is_retryable_code(&code) {
-                        book_sync.fail_recovery(instrument_id, None);
-                        return;
-                    }
-
-                    if book_sync.reject_recovery(instrument_id, error) {
-                        return;
-                    }
-
-                    start_recovery(
-                        instrument.id(),
-                        book_channels,
-                        book_sync,
-                        recovery_ws,
-                        snapshot_timeout,
-                        tasks,
-                    );
+                if book_sync.reject_recovery(instrument_id, error) {
+                    return;
                 }
+
+                start_recovery(
+                    instrument_id,
+                    book_channels,
+                    book_sync,
+                    recovery_ws,
+                    snapshot_timeout,
+                    tasks,
+                );
             }
             OKXWsMessage::Error(e) => {
                 if should_retry_error_code(&e.code) {
@@ -3432,21 +3420,15 @@ mod tests {
             1,
             "rejected subscription must keep book synchronization state for recovery"
         );
-        assert_eq!(cancel.is_cancelled(), !sending);
+        assert!(
+            !cancel.is_cancelled(),
+            "the initial snapshot wait keeps ownership until its deadline starts recovery"
+        );
         gate.open();
         assert_eq!(
-            book_sync.validate_sequence(
-                instrument_id,
-                true,
-                &[(Some(-1), 42)],
-                Duration::ZERO,
-                Instant::now()
-            ),
-            if sending {
-                BookSequenceOutcome::Accept
-            } else {
-                BookSequenceOutcome::Suppress
-            },
+            book_sync.validate_sequence(instrument_id, true, &[(Some(-1), 42)], Instant::now()),
+            BookSequenceOutcome::Accept,
+            "a rejected subscription never suppresses a later snapshot"
         );
     }
 
@@ -3712,7 +3694,7 @@ mod tests {
     }
 
     #[rstest]
-    fn rpi_missing_recovery_transport_requires_reconnect_before_snapshot() {
+    fn rpi_missing_recovery_transport_restores_on_next_snapshot() {
         let instrument_id = InstrumentId::from("OMI-USD.OKX");
         let mut pair = currency_pair_btcusdt();
         pair.id = instrument_id;
@@ -3792,6 +3774,7 @@ mod tests {
         };
         data[0].seq_id = 2_000;
         handle(rpi_book_message("ws_books_rpi_snapshot.json"));
+        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Data(_))));
         assert!(matches!(
             receiver.try_recv(),
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)

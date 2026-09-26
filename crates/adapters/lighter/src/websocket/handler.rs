@@ -553,19 +553,8 @@ impl FeedHandler {
                                 self.start_book_recovery(market_index);
                             }
                         }
-                        BookWorkResult::Recovery { market_index, recovery, result } => {
-                            if let Err(e) = result
-                                && !recovery.cancellation.is_cancelled()
-                                && let Some(state) = self.book.recovery.get_mut(&market_index)
-                                && state.fail(Some(&recovery))
-                            {
-                                self.book.clear_cached_order_book(market_index);
-                                self.book.writes.remove(&market_index);
-                                let topic = LighterWsChannel::OrderBook(market_index).topic_key();
-                                self.cancel_subscription_attempt(&topic, &e.to_string());
-                                log::error!("Lighter book recovery failed for market_index={market_index}; output suppressed until reconnect or resubscribe: {e}");
-                            }
-                        }
+                        // Recovery ends once a snapshot is accepted or the episode is cancelled
+                        BookWorkResult::Recovery => {}
                     }
                 }
                 Some(cmd) = self.cmd_rx.recv() => {
@@ -805,13 +794,6 @@ impl FeedHandler {
         response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     ) {
         let topic = Ustr::from(channel.topic_key().as_str());
-        if let LighterWsChannel::OrderBook(market_index) = channel
-            && response_tx.is_some()
-            && let Some(state) = self.book.recovery.get_mut(&market_index)
-            && state.is_failed()
-        {
-            state.reset();
-        }
 
         if let LighterWsChannel::OrderBook(market_index) = channel
             && !self.book.writes.contains_key(&market_index)
@@ -1586,6 +1568,11 @@ impl FeedHandler {
     fn reject_book(&mut self, market_index: i64, error: LighterWsError) {
         self.book.expected.remove(&market_index);
         self.book.clear_cached_order_book(market_index);
+        let topic = Ustr::from(
+            LighterWsChannel::OrderBook(market_index)
+                .topic_key()
+                .as_str(),
+        );
 
         if let Some(recovery) = self
             .book
@@ -1594,17 +1581,23 @@ impl FeedHandler {
             .and_then(BookRecoveryState::current)
             && !recovery.is_accepted()
         {
+            // Frees the slot during backoff; the next replacement takes a new generation
+            self.inflight_subs.remove(&topic);
             recovery.gate.lock().close();
             recovery
                 .outcome
                 .send_replace(BookRecoveryOutcome::Rejected(error));
-        } else if matches!(error, LighterWsError::Client(_)) {
-            self.book
-                .recovery
-                .entry(market_index)
-                .or_default()
-                .fail(None);
-            let topic = LighterWsChannel::OrderBook(market_index).topic_key();
+        } else if matches!(error, LighterWsError::Client(_))
+            && self
+                .subscription_attempts
+                .get(&topic)
+                .is_some_and(|attempt| {
+                    !attempt.response_txs.is_empty() || !attempt.pending_response_txs.is_empty()
+                })
+        {
+            // The waiting subscriber owns the failure and releases its stream reference; an expired
+            // initial wait must not start recovery before that release.
+            self.book.initial.remove(&market_index);
             self.cancel_subscription_attempt(&topic, &error.to_string());
             log::error!(
                 "Lighter book subscription rejected for market_index={market_index}: {error}"
@@ -1753,6 +1746,8 @@ impl FeedHandler {
             }
             Err(e) => {
                 if let Some(write) = write {
+                    // Frees the slot during backoff; the next replacement takes a new generation
+                    self.inflight_subs.remove(&topic);
                     let _ = write.completion.send(Err(e));
                 } else {
                     self.reject_book(market_index, e);
@@ -2488,74 +2483,27 @@ mod tests {
         handler
     }
 
+    // A recovery past its retry budget keeps running, so a late snapshot still restores the book
     #[rstest]
-    #[case::cached_book(false)]
-    #[case::queued_replacement(true)]
-    #[tokio::test]
-    async fn book_terminal_recovery_failure_clears_cache_and_suppresses_late_snapshot(
-        #[case] queued: bool,
-    ) {
+    fn book_late_snapshot_completes_running_recovery() {
         let mut handler = make_handler_with_account();
         handler.book.delta_subs.insert(0);
         let frame: LighterWsFrame = serde_json::from_str(include_str!(
             "../../test_data/ws_order_book_subscribed.json"
         ))
         .unwrap();
-        assert_eq!(
-            handler
-                .handle_frame(frame.clone(), UnixNanos::from(1))
-                .len(),
-            1
-        );
         let recovery = handler.book.recovery.entry(0).or_default().claim().unwrap();
         handler.subscriptions.add_reference("order_book:0");
-        let (completion, mut completed) = tokio::sync::oneshot::channel();
+        assert!(recovery.begin_replacement());
 
-        if queued {
-            saturate_subscription_gate(&mut handler);
-            handler.queue_book_replacement(
-                0,
-                BookWrite {
-                    cancel: recovery.cancellation.child_token(),
-                    gate: recovery.gate.clone(),
-                    completion,
-                },
-            );
-        } else {
-            drop(completion);
-        }
+        let during_write = handler.handle_frame(frame.clone(), UnixNanos::from(1));
+        recovery.gate.open();
+        let after_write = handler.handle_frame(frame, UnixNanos::from(2));
 
-        handler
-            .book
-            .work
-            .push(Box::pin(std::future::ready(BookWorkResult::Recovery {
-                market_index: 0,
-                recovery: recovery.clone(),
-                result: Err(LighterWsError::Client("retry budget exhausted".into())),
-            })));
-
-        assert!(handler.next().await.is_none());
-        let messages = handler.handle_frame(frame, UnixNanos::from(2));
-
-        assert!(handler.book.recovery[&0].is_failed());
-        assert!(recovery.cancellation.is_cancelled());
-        assert!(!handler.book.states.contains_key(&0));
-        assert!(!handler.book.snapshots_seen.contains(&0));
-        assert!(messages.is_empty());
-        assert!(!handler.book.writes.contains_key(&0));
-        assert_eq!(
-            completed.try_recv().unwrap_err(),
-            tokio::sync::oneshot::error::TryRecvError::Closed
-        );
-
-        handler.inflight_subs.clear();
-        let (response, _result) = tokio::sync::oneshot::channel();
-        handler.queue_subscribe(LighterWsChannel::OrderBook(0), None, Some(response));
-        handler.pump_pending_subscribes().await;
-
-        assert!(!handler.book.recovery[&0].is_failed());
-        assert!(handler.book.initial.contains_key(&0));
-        assert!(!handler.book.initial[&0].cancel.is_cancelled());
+        assert!(during_write.is_empty());
+        assert_eq!(after_write.len(), 1);
+        assert!(recovery.is_accepted());
+        assert!(handler.book.snapshots_seen.contains(&0));
     }
 
     #[rstest]
@@ -2590,8 +2538,11 @@ mod tests {
             handler.fail_inflight_subscriptions("venue rejection");
         }
 
-        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
-        assert!(!handler.book.recovery[&0].is_failed());
+        let rejected = confirmed && gate_open;
+        assert_eq!(
+            handler.inflight_subs.get(&topic),
+            (!rejected).then_some(&generation)
+        );
         assert!(!recovery.cancellation.is_cancelled());
         assert!(recovery.gate.lock().is_closed());
 
@@ -2609,29 +2560,130 @@ mod tests {
         }
     }
 
+    // A waiting subscriber owns a rejection and releases the stream; a replayed subscription
+    // recovers instead of failing the book.
     #[rstest]
-    fn book_explicit_subscribe_restarts_after_failed_initial_subscription() {
+    #[case::waiting_subscriber(true)]
+    #[case::replayed(false)]
+    fn book_client_rejection_recovers_only_without_waiting_subscriber(#[case] waiting: bool) {
         let mut handler = make_handler_with_account();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_tx = Some(cmd_tx);
         handler.book.delta_subs.insert(0);
-        handler.book.recovery.entry(0).or_default().fail(None);
+        handler.subscriptions.add_reference("order_book:0");
         let (response, mut result) = tokio::sync::oneshot::channel();
         let (topic, generation) = mark_subscription_inflight(
             &mut handler,
             LighterWsChannel::OrderBook(0),
-            Some(response),
+            waiting.then_some(response),
         );
-        assert!(handler.complete_typed_subscription(topic.as_str(), 0));
-        let frame: LighterWsFrame = serde_json::from_str(include_str!(
-            "../../test_data/ws_order_book_subscribed.json"
-        ))
-        .unwrap();
-        let messages = handler.handle_frame(frame, UnixNanos::from(1));
+        let initial = CancellationToken::new();
+        handler.book.initial.insert(
+            0,
+            PendingSnapshot {
+                deadline: None,
+                cancel: initial.clone(),
+                gate: SnapshotGate::default(),
+            },
+        );
 
-        assert_eq!(result.try_recv(), Ok(Ok(())));
-        assert!(!handler.book.recovery[&0].is_failed());
-        assert_eq!(handler.book.expected[&0], (generation, 0));
-        assert_eq!(messages.len(), 1);
-        assert!(handler.book.snapshots_seen.contains(&0));
+        handler.reject_book_subscription(
+            0,
+            generation,
+            LighterWsError::Client("invalid market".into()),
+        );
+
+        let recovering = handler
+            .book
+            .recovery
+            .get(&0)
+            .is_some_and(BookRecoveryState::is_running);
+
+        if waiting {
+            assert!(
+                matches!(result.try_recv(), Ok(Err(message)) if message.contains("invalid market"))
+            );
+        } else {
+            assert_eq!(
+                result.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed)
+            );
+        }
+
+        assert_eq!(recovering, !waiting);
+        assert_eq!(handler.book.work.len(), usize::from(!waiting));
+        assert_eq!(handler.subscription_attempts.contains_key(&topic), !waiting);
+        assert!(!handler.inflight_subs.contains_key(&topic));
+        assert!(!handler.book.initial.contains_key(&0));
+        assert!(initial.is_cancelled());
+    }
+
+    // A failed replacement frees its slot during backoff so other subscriptions can proceed
+    #[rstest]
+    #[case::rejected(true)]
+    #[case::send_failed(false)]
+    #[tokio::test]
+    async fn book_failed_replacement_releases_subscription_slot(#[case] rejected: bool) {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        handler.subscriptions.add_reference("order_book:0");
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX - 1 {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()), i as u64 + 1);
+        }
+
+        handler.queue_subscribe(LighterWsChannel::OrderBook(1), None, None);
+        let other = Ustr::from("order_book:1");
+        handler.pump_pending_subscribes().await;
+        let blocked = !handler.inflight_subs.contains_key(&other);
+        let recovery = handler.book.recovery.entry(0).or_default().claim().unwrap();
+        assert!(recovery.begin_replacement());
+        recovery.gate.open();
+        let (completion, completed) = tokio::sync::oneshot::channel();
+
+        if rejected {
+            handler.reject_book_subscription(
+                0,
+                generation,
+                LighterWsError::Client("venue rejection".into()),
+            );
+        } else {
+            handler.complete_book_send(
+                0,
+                generation,
+                recovery.cancellation.child_token(),
+                Some(BookWrite {
+                    cancel: recovery.cancellation.child_token(),
+                    gate: recovery.gate.clone(),
+                    completion,
+                }),
+                Err(LighterWsError::Network("send failed".into())),
+            );
+        }
+
+        handler.pump_pending_subscribes().await;
+
+        assert!(blocked);
+        assert!(!handler.inflight_subs.contains_key(&topic));
+        assert!(handler.inflight_subs.contains_key(&other));
+        assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
+        assert!(recovery.is_running());
+
+        if rejected {
+            assert!(matches!(
+                &*recovery.outcome.borrow(),
+                BookRecoveryOutcome::Rejected(LighterWsError::Client(message))
+                    if message == "venue rejection"
+            ));
+        } else {
+            assert!(
+                matches!(completed.await, Ok(Err(LighterWsError::Network(message))) if message == "send failed")
+            );
+        }
     }
 
     #[tokio::test]

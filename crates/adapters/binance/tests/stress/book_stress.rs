@@ -25,7 +25,7 @@
 //! - Products: `spot` (Spot mainnet JSON streams), `spot-sbe` (Spot mainnet SBE streams),
 //!   `futures` (USD-M testnet), and `coinm` (COIN-M testnet).
 //! - Modes: the default rotates gap, reconnect, churn, cut, and freeze faults; `boundaries` probes
-//!   deadlines, exhaustion, and terminal suppression; `resubscribe` races an unsubscribe with an
+//!   deadlines and recovery at the retry ceiling; `resubscribe` races an unsubscribe with an
 //!   immediate resubscribe once per round; `quiet` watches `count` thinly traded books for
 //!   `rounds` minutes; `crowd` subscribes `count` liquid books and reconnects `rounds` times so
 //!   snapshot pacing engages.
@@ -34,7 +34,8 @@
 //! requests before venue request weight nears its limit. Two oracles check every emitted book:
 //! `<symbol>@depth20@100ms` read directly from the venue compares the top 20 levels at matching
 //! update IDs, and a reference book the proxy rebuilds from every raw diff and the REST snapshots
-//! it forwards compares a checksum of the top levels. No orders are submitted.
+//! it forwards compares a checksum of the top levels. Every emitted batch also passes through the
+//! shared `BookStreamChecker`. No orders are submitted.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -82,13 +83,12 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::SocketReconnectRegistry;
+use nautilus_live::{SocketReconnectRegistry, book::conformance::BookStreamChecker};
 use nautilus_model::{
     data::Data,
-    enums::{BookAction, BookType, RecordFlag},
+    enums::{BookAction, BookType},
     identifiers::{InstrumentId, TraderId},
     instruments::Instrument,
-    orderbook::{OrderBook, analysis::book_check_integrity},
 };
 use nautilus_network::{
     http::{HttpClient, Method},
@@ -409,7 +409,7 @@ async fn boundaries(product: &'static Product, timeout: u64, ids: &[InstrumentId
     assert_eq!(session.snapshot_requests(&[target])[0], before + expected);
     eprintln!("DEADLINE PASS timeout={timeout} attempts={expected}");
 
-    // Exhaustion suppresses output until resubscribe
+    // An exhausted budget moves to the retry ceiling, which restores the book once the venue does
     let target = ids[1];
     let before = session.snapshot_requests(&[target])[0];
     {
@@ -431,12 +431,12 @@ async fn boundaries(product: &'static Product, timeout: u64, ids: &[InstrumentId
     assert_eq!(session.snapshot_requests(&[target])[0], before + 8);
     session.suppressed.remove(&target);
     session.release(&[target]);
-    session.unsubscribe(target);
-    session.subscribe(target);
+    session.expect_snapshot(target);
     session.healthy(ids).await;
-    eprintln!("EXHAUSTION PASS attempts=8 resubscribed");
+    assert_eq!(session.snapshot_requests(&[target])[0], before + 9);
+    eprintln!("EXHAUSTION PASS attempts=8 recovered_at_ceiling=true");
 
-    // A permanent rejection suppresses output until reconnect
+    // A permanent rejection moves straight to the retry ceiling, which restores the book
     let target = ids[2];
     let before = session.snapshot_requests(&[target])[0];
     {
@@ -458,9 +458,14 @@ async fn boundaries(product: &'static Product, timeout: u64, ids: &[InstrumentId
     assert_eq!(session.snapshot_requests(&[target])[0], before + 1);
     session.suppressed.remove(&target);
     session.release(&[target]);
+    session.expect_snapshot(target);
+    session.healthy(ids).await;
+    assert_eq!(session.snapshot_requests(&[target])[0], before + 2);
+    eprintln!("REJECTION PASS attempts=1 recovered_at_ceiling=true");
+
     session.reconnect();
     session.healthy(ids).await;
-    eprintln!("REJECTION PASS attempts=1 reconnected");
+    eprintln!("RECONNECT PASS books={}", ids.len());
 
     let totals = session.stop().await;
     eprintln!(
@@ -1423,8 +1428,8 @@ struct Session {
     events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     server: tokio::task::JoinHandle<()>,
     loaded: HashSet<InstrumentId>,
-    books: HashMap<InstrumentId, OrderBook>,
-    sequences: HashMap<InstrumentId, u64>,
+    checker: BookStreamChecker,
+    requested: HashSet<InstrumentId>,
     snapshots: HashMap<InstrumentId, usize>,
     expected_snapshots: HashMap<InstrumentId, usize>,
     updates: HashMap<InstrumentId, usize>,
@@ -1534,8 +1539,8 @@ impl Session {
             events,
             server,
             loaded: HashSet::new(),
-            books: HashMap::new(),
-            sequences: HashMap::new(),
+            checker: BookStreamChecker::new(BookType::L2_MBP, true),
+            requested: HashSet::new(),
             snapshots: HashMap::new(),
             expected_snapshots: HashMap::new(),
             updates: HashMap::new(),
@@ -1614,9 +1619,8 @@ impl Session {
     fn subscribe(&mut self, id: InstrumentId) {
         self.disabled.remove(&id);
         self.expect_snapshot(id);
-        self.books
-            .entry(id)
-            .or_insert_with(|| OrderBook::new(id, BookType::L2_MBP));
+        self.requested.insert(id);
+        self.checker.open(id);
         self.client
             .subscribe_book_deltas(SubscribeBookDeltas::new(
                 id,
@@ -1647,6 +1651,7 @@ impl Session {
             .unwrap();
         self.drain();
         self.disabled.insert(id);
+        self.checker.close(id);
     }
 
     fn expect_snapshot(&mut self, id: InstrumentId) {
@@ -1656,8 +1661,8 @@ impl Session {
 
     fn expect_all(&mut self) {
         let ids = self
-            .books
-            .keys()
+            .requested
+            .iter()
             .filter(|id| !self.disabled.contains(id))
             .copied()
             .collect::<Vec<_>>();
@@ -1762,67 +1767,30 @@ impl Session {
 
         let id = deltas.instrument_id;
         assert!(
-            !self.disabled.contains(&id),
-            "output after settled unsubscribe: {id}"
-        );
-        assert!(
             !self.suppressed.contains(&id),
-            "output from a terminally failed book: {id}"
+            "output while the probe expects the book suppressed: {id}"
         );
         let snapshot = deltas
             .deltas
             .first()
             .is_some_and(|delta| delta.action == BookAction::Clear);
-        let (last, rest) = deltas.deltas.split_last().expect("non-empty batch");
 
-        // Flag contract: F_LAST ends each batch, and only snapshots carry F_SNAPSHOT
-        assert!(
-            RecordFlag::F_LAST.matches(last.flags),
-            "batch without F_LAST: {id}"
-        );
-        assert!(
-            rest.iter()
-                .all(|delta| !RecordFlag::F_LAST.matches(delta.flags)),
-            "F_LAST before the end of a batch: {id}"
-        );
-        assert!(
-            deltas
-                .deltas
-                .iter()
-                .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags) == snapshot),
-            "F_SNAPSHOT disagrees with the batch kind: {id}"
-        );
+        if let Err(violation) = self.checker.apply(&deltas) {
+            panic!(
+                "book contract violation {id} seq={}: {violation}",
+                deltas.sequence
+            );
+        }
 
         if snapshot {
             *self.snapshots.entry(id).or_default() += 1;
             self.updates.insert(id, 0);
         } else {
-            assert!(
-                deltas
-                    .deltas
-                    .iter()
-                    .all(|delta| delta.action != BookAction::Clear),
-                "Clear inside an incremental batch: {id}"
-            );
-            let last = self
-                .sequences
-                .get(&id)
-                .copied()
-                .unwrap_or_else(|| panic!("incremental before snapshot: {id}"));
-            assert!(
-                deltas.sequence > last,
-                "non-increasing sequence {id}: {} after {last}",
-                deltas.sequence
-            );
             *self.updates.entry(id).or_default() += 1;
         }
 
-        self.sequences.insert(id, deltas.sequence);
         *self.emitted.entry(id).or_default() += 1;
-
-        let book = self.books.get_mut(&id).expect("requested book");
-        book.apply_deltas(&deltas).unwrap();
-        book_check_integrity(book).unwrap();
+        let book = self.checker.book(id).expect("requested book");
 
         let view = View {
             update_id: deltas.sequence,

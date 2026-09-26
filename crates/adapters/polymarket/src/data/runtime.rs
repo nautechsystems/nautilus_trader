@@ -499,7 +499,7 @@ mod tests {
     use ahash::AHashSet;
     use dashmap::DashMap;
     use log::{Level, LevelFilter, Log, Metadata, Record};
-    use nautilus_common::live::dst::time::{Duration, Instant};
+    use nautilus_common::live::dst::time::Instant;
     use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
@@ -631,7 +631,7 @@ mod tests {
         active_quote_subs.insert(instrument_id);
         active_delta_subs.insert(instrument_id);
         active_trade_subs.insert(instrument_id);
-        book_sync.request_recovery(instrument_id, Duration::ZERO, Instant::now());
+        book_sync.request_recovery(instrument_id, Instant::now());
         pending_auto_loads.lock().insert(instrument_id);
         ws_open_tokens.insert(Ustr::from(instrument.raw_symbol().as_str()));
         order_books.insert(

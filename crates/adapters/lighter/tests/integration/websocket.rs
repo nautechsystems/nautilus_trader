@@ -45,7 +45,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_lighter::{
     common::{
-        consts::LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED,
+        consts::{LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED},
         enums::{LighterCandleResolution, LighterEnvironment, LighterProductType, LighterTxType},
         symbol::MarketRegistry,
     },
@@ -245,10 +245,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
 
                         state.subscribes.lock().await.push(value.clone());
 
-                        let ack = if mode == 2 {
-                            json!({"type":"error", "code": LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, "message": format!("Already Subscribed to : {channel}")})
-                        } else {
-                            json!({"type":"subscribed", "channel": channel})
+                        let ack = match mode {
+                            2 => {
+                                json!({"type":"error", "code": LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, "message": format!("Already Subscribed to : {channel}")})
+                            }
+                            3 => {
+                                json!({"type":"error", "code": LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED, "message": "failed to subscribe"})
+                            }
+                            _ => json!({"type":"subscribed", "channel": channel}),
                         };
 
                         if mode != 1
@@ -961,6 +965,53 @@ async fn book_missing_initial_snapshot_recovers(#[case] mode: usize) {
     assert_eq!(state.subscribes().await.len(), replacements + 1);
     assert_eq!(state.unsubscribes().await.len(), replacements);
     harness.client.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn book_rejected_subscription_allows_resubscribe() {
+    let state = Arc::new(TestServerState::default());
+    state.book_ack_mode.store(3, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+
+    let error = harness
+        .client
+        .subscribe_book(id)
+        .await
+        .expect_err("venue rejection must fail the subscribe");
+    // The rejected caller releases the stream, so nothing may resubscribe it on its behalf
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let subscribes_after_rejection = state.subscribes().await.len();
+
+    state.book_ack_mode.store(0, Ordering::SeqCst);
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+    harness
+        .client
+        .subscribe_book(id)
+        .await
+        .expect("resubscribe after rejection");
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("snapshot deltas");
+
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected snapshot Deltas, was {event:?}");
+    };
+
+    assert!(
+        error.to_string().contains("30012"),
+        "unexpected rejection: {error}"
+    );
+    assert_eq!(subscribes_after_rejection, 1);
+    assert_eq!(deltas.instrument_id, id);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(state.subscribes().await.len(), 2);
+    assert!(state.unsubscribes().await.is_empty());
+
+    harness.client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]
