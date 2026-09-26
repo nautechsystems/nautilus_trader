@@ -361,6 +361,49 @@ Ownership does not exclude these orders from position tracking or portfolio calc
 fills still follow the [bounded history safety](#bounded-history-safety) rules when applicable.
 :::
 
+### Submission recovery diagnostics
+
+`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` currently
+enables submission identity tracking, exhaustion diagnostics, and recovery-budget preservation.
+Both policies still resolve locally, but the opt-in changes when resolution occurs. A partial fill
+report during a pending cancel preserves the command budget and can lead to a synthetic `Canceled`
+where `ResolveLocally` stops the timeout. A cancel on an unconfirmed submission uses the submission's
+remaining budget. Retention after recovery exhaustion is not implemented yet.
+
+With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
+`reconciliation.SubmissionRecoveryExhausted` when an unacknowledged submission reaches an existing
+recovery limit. The diagnostic carries the original submission identity, recovery source, check
+count, and event timestamp. It is published after processing the local resolution events, once per
+tracked submission. It is not an order event and does not establish a venue outcome.
+
+A matching `Submitted` report with a venue order ID retires the original submission's recovery.
+With `RetainUnresolved`, an already-dispatched cancel or modify keeps its own budget measured from
+dispatch, even if its pending event has not arrived. Repeated matching reports preserve that budget,
+including after native confirmation retires the submission registry entry. Incoming reports and
+bulk or targeted query responses use the same confirmation checks.
+The budget also keeps its native event boundary after transfer. Applied command completion retires
+that budget before a callback-created pending state can inherit it; a queued command starts its own
+budget only when it dispatches.
+Before native dispatch, incoming events and reports preserve actual command recovery so partial
+fills and a modify rejection during pending cancellation cannot erase its remaining budget.
+Generic in-flight registration keeps its existing report cleanup behavior, and
+`ResolveLocally` is unchanged.
+
+The registry remembers report-only confirmation so duplicate submission registration cannot
+restart the timeout. An applied `OrderUpdated` with venue identity also confirms the submission;
+local updates without venue identity do not. Missing-order bookkeeping does not register an
+already acknowledged submission again. Later cancel or modify commands use their own recovery
+budget, without a submission-exhaustion diagnostic.
+Matching confirmation is remembered even for a cached order not yet registered for recovery.
+A delayed rejection of an older cancel does not complete a newer modify whose pending event
+has not arrived.
+
+The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
+of `N` permits `N - 1` intermediate order queries before local resolution. Missing-order checks use
+`open_check_missing_retries` and require completed, matching client coverage plus a successful
+targeted query with no order found before reporting exhaustion. Failed or deferred targeted queries
+do not produce that diagnostic.
+
 ### Instrument availability
 
 Adapters parse reconciliation reports using the instrument, so every instrument a report references
@@ -716,7 +759,9 @@ When the open-order loop exhausts retries, the engine issues one targeted
 `GenerateOrderStatusReport` probe before applying a terminal state or leaving an ambiguous
 pending cancel/update unresolved. If the venue returns the order, reconciliation proceeds and
 missing-order tracking clears. If a pending state remains unresolved, the engine also resets the
-in-flight count before checking again after the configured threshold.
+in-flight count before checking again after the configured threshold. With `RetainUnresolved`
+selected, a tracked submission that has not been acknowledged keeps its original in-flight
+budget instead. Repeated missing-order checks therefore cannot postpone its timeout indefinitely.
 
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for

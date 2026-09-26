@@ -264,11 +264,21 @@ impl ReconciliationFillQueue {
 /// Information about an inflight order check.
 #[derive(Debug, Clone)]
 pub(super) struct InflightCheck {
+    pub is_command: bool,
+    pub pending_command: Option<PendingCommand>,
     pub submitted_at: dst::time::Instant,
     pub retry_count: u32,
     // `Instant` debug output is runtime-specific and intentionally only useful
     // as an opaque monotonic offset.
     pub last_query_at: Option<dst::time::Instant>,
+}
+
+/// Applied native event boundary belonging to a command recovery budget.
+#[derive(Debug, Clone)]
+pub(super) struct PendingCommand {
+    pub pending_status: OrderStatus,
+    pub pending_event_id: Option<UUID4>,
+    pub next_event_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
