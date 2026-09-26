@@ -7282,6 +7282,294 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
 }
 
 #[rstest]
+#[case("Stop Market", OrderType::StopMarket)]
+#[case("Stop Limit", OrderType::StopLimit)]
+#[case("Take Profit Market", OrderType::MarketIfTouched)]
+#[case("Take Profit Limit", OrderType::LimitIfTouched)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frontend_open_order_keeps_its_trigger_semantics(
+    #[case] order_type_label: &str,
+    #[case] expected_order_type: OrderType,
+) {
+    // The frontend REST rows describe a conditional order with `orderType`, `isTrigger` and
+    // `triggerPx`, not the WebSocket `tpsl` and `isMarket`, so without normalization the row
+    // reports as an ordinary limit and its trigger is lost.
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "99.0",
+        "sz": "1.0",
+        "oid": 1u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "triggerCondition": "Price below 100.0",
+        "isTrigger": true,
+        "triggerPx": "100.0",
+        "children": [],
+        "isPositionTpsl": false,
+        "reduceOnly": true,
+        "orderType": order_type_label,
+        "tif": null,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.order_type, expected_order_type);
+    assert_eq!(report.trigger_price, Some(Price::from("100.0")));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frontend_open_order_market_label_reports_a_market_order() {
+    // The venue labels a frontend market order "Market" with `tif: FrontendMarket`. Reading only
+    // the WebSocket fields left it reported as a limit, disagreeing with the historical endpoint.
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 3u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "isTrigger": false,
+        "triggerPx": "0.0",
+        "triggerCondition": "N/A",
+        "orderType": "Market",
+        "reduceOnly": false,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].order_type, OrderType::Market);
+    assert_eq!(reports[0].trigger_price, None);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frontend_open_order_zero_trigger_price_is_not_a_trigger() {
+    // The venue sends `triggerPx: "0.0"` on rows that have no trigger. Taken literally that is a
+    // stop that triggers at zero, and a conditional report with no real trigger price cannot be
+    // rebuilt into an order at all, so the engine would drop a live order during reconciliation.
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 4u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "isTrigger": false,
+        "triggerPx": "0.0",
+        "triggerCondition": "N/A",
+        "orderType": "Stop Market",
+        "reduceOnly": false,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].trigger_price, None);
+    assert_eq!(
+        reports[0].order_type,
+        OrderType::Limit,
+        "a row with no usable trigger price must not be reported as a stop",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frontend_open_order_trailing_stop_label_is_left_alone() {
+    // "Trailing Stop Market" is a real venue label this adapter cannot express: prefix matching
+    // would have read it as a stop, and its suffix as a plain market order.
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 5u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "isTrigger": true,
+        "triggerPx": "94000.0",
+        "orderType": "Trailing Stop Market",
+        "reduceOnly": false,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_ne!(reports[0].order_type, OrderType::Market);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_single_order_lookup_keeps_its_trigger_semantics() {
+    // The mass query and the single-order lookup read the same venue rows, so a stop must not be
+    // a stop in one and a limit in the other: reconciliation of one order uses this path.
+    let coid = ClientOrderId::new("O-20240101-000099");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "99.0",
+        "sz": "1.0",
+        "oid": 222222u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex,
+        "isTrigger": true,
+        "triggerPx": "100.0",
+        "triggerCondition": "Price below 100.0",
+        "orderType": "Stop Market",
+        "reduceOnly": true,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let by_cloid = client
+        .generate_order_status_report(&make_status_report_cmd(Some(coid), None))
+        .await
+        .unwrap()
+        .expect("cloid lookup should resolve the live order");
+    assert_eq!(by_cloid.order_type, OrderType::StopMarket);
+    assert_eq!(by_cloid.trigger_price, Some(Price::from("100.0")));
+
+    let by_oid = client
+        .generate_order_status_report(&make_status_report_cmd(
+            None,
+            Some(VenueOrderId::from("222222")),
+        ))
+        .await
+        .unwrap()
+        .expect("oid lookup should resolve the live order");
+    assert_eq!(by_oid.order_type, OrderType::StopMarket);
+    assert_eq!(by_oid.trigger_price, Some(Price::from("100.0")));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frontend_open_order_without_a_trigger_label_stays_a_limit() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 2u64,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "isTrigger": false,
+        "orderType": "Limit",
+        "reduceOnly": false,
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].order_type, OrderType::Limit);
+    assert_eq!(reports[0].trigger_price, None);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_order_status_reports_retains_open_reports_outside_time_range() {
     // Mock a frontendOpenOrders payload with three orders so time bounds can prove that every
