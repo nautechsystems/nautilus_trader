@@ -765,7 +765,8 @@ impl BinanceSpotExecutionClient {
                     &task_spawner,
                 );
             }
-            log::warn!("Binance US user data dispatch loop ended");
+
+            log::debug!("Data dispatch loop ended");
         };
         let dispatch = self
             .session_tasks
@@ -1100,7 +1101,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                     );
                                 }
                                 None => {
-                                    log::warn!("WS trading dispatch loop ended");
+                                    log::debug!("WS trading dispatch loop ended");
                                     break;
                                 }
                             }
