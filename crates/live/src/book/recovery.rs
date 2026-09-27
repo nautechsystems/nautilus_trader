@@ -32,19 +32,22 @@
 //! Attempts back off within a retry budget of eight attempts in 180 seconds. An exhausted budget,
 //! or an error the adapter classifies as not retryable, moves the episode to attempts at a jittered
 //! interval that doubles from one minute to fifteen minutes, which bounds subscription traffic for
-//! a book that keeps failing. Each such attempt is bounded, so a stalled write or a disabled
-//! snapshot deadline cannot end the retries. The runner logs the transition as an error, each later
-//! failed attempt as a warning, and completion as info.
+//! a book that keeps failing. Each such attempt is bounded by `max(snapshot_timeout, 60 seconds)`,
+//! so a stalled write or a disabled snapshot deadline cannot end the retries. The runner logs the
+//! transition as an error, each later failed attempt as a warning, and completion as info.
 //!
 //! # Adapters
 //!
 //! The adapter serializes claims and snapshot acceptance under its state lock or owning task. A
 //! reconnect keeps a running episode, whose replacement may be in flight, so the reconnect can
-//! neither replenish its budget nor abandon a write halfway. Removing or resetting a
-//! [`BookRecoveryState`] cancels its episode; dropping an attempt cancels that attempt's child
+//! neither replenish its budget nor abandon a write halfway; it wakes only a wait between attempts
+//! after the budget, as [`BookRecoveryState::reset_on_reconnect`] describes. Removing or resetting
+//! a [`BookRecoveryState`] cancels its episode; dropping an attempt cancels that attempt's child
 //! token.
 //!
-//! Task spawning, subscription correlation, and book cache updates remain adapter-owned.
+//! Task spawning, subscription correlation, and book cache updates remain adapter-owned. Claim an
+//! episode only once the replacement has what it needs, and cancel the episode if its task cannot
+//! start: a running episode without a task keeps its book owned with nothing running.
 
 use std::{fmt::Display, future::Future, sync::Arc};
 
@@ -145,8 +148,10 @@ impl<E: Clone + std::error::Error> BookRecovery<E> {
     ///
     /// Each send receives a child cancellation token. Dropping an attempt cancels queued
     /// transport work. Keeping this future alive across reconnects preserves the retry budget.
-    /// A zero snapshot timeout disables only the individual snapshot deadline. Errors that
-    /// `should_retry` rejects skip the rest of the budget.
+    /// A zero snapshot timeout disables only the individual snapshot deadline: the budget still
+    /// ends a pending attempt, and each attempt after it is bounded by
+    /// `max(snapshot_timeout, 60 seconds)`. Errors that `should_retry` rejects skip the rest of
+    /// the budget.
     #[allow(
         clippy::missing_panics_doc,
         reason = "the ceiling backoff configuration is static and valid"
@@ -338,10 +343,13 @@ impl<E: Clone> BookRecoveryState<E> {
         self.recovery.as_ref().is_some_and(|r| r.is_running())
     }
 
-    /// Keeps a running episode, whose replacement may be in flight, and restarts any other.
+    /// Keeps a running episode, whose replacement may be in flight, and cancels any other so the
+    /// next claim starts fresh.
     ///
-    /// A kept episode waiting between retries after its budget attempts again at once; a reconnect
-    /// during an attempt ends the next wait instead.
+    /// The kept episode keeps its budget. The reconnect never interrupts an attempt or shortens a
+    /// backoff inside the budget. An episode waiting between attempts after its budget attempts
+    /// again at once; a reconnect during an attempt or before the budget runs out ends the next
+    /// such wait instead.
     pub fn reset_on_reconnect(&mut self) {
         if let Some(recovery) = self
             .recovery

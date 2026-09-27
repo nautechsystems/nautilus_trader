@@ -107,7 +107,6 @@ fn main() {
 }
 
 async fn churn(args: &StressArgs, ids: &[InstrumentId]) -> String {
-    let timeout = args.timeout_secs();
     let mut total = 0;
     let mut session = PolymarketSession::connect(args).await;
     subscribe_all(&mut session, ids);
@@ -161,10 +160,10 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId]) -> String {
                 reconnect_all(&mut session);
                 session.healthy(ids).await;
             }
-            // Replayed dumps lost after a reconnect
+            // Replayed dumps lost after a reconnect; without deadlines the next update recovers
             3 => {
                 for id in ids {
-                    session.fault(id).drop_snapshots = usize::from(timeout > 0);
+                    session.fault(id).drop_snapshots = 1;
                 }
 
                 reconnect_all(&mut session);

@@ -29,8 +29,9 @@
 //! `docs/integrations/polymarket.md` for the full description.
 //!
 //! A snapshot hash mismatch reuses the same book-delta gate and triggers recovery
-//! until a later valid snapshot arrives. The mismatched snapshot is not parsed,
-//! applied, or emitted as a quote.
+//! until a later valid snapshot arrives. During recovery it fails the waiting
+//! replacement attempt, so the runner retries without waiting for the snapshot
+//! deadline. The mismatched snapshot is not parsed, applied, or emitted as a quote.
 
 use std::sync::Arc;
 
@@ -79,6 +80,7 @@ use crate::{
     },
     rtds::PolymarketRtdsFeed,
     websocket::{
+        error::PolymarketWsError,
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuote, PolymarketWsMessage},
         parse::{
             parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
@@ -319,6 +321,23 @@ fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
     }
 }
 
+fn reject_book_snapshot(
+    ctx: &WsMessageContext,
+    instrument_id: InstrumentId,
+    error: PolymarketWsError,
+) {
+    let outcome = ctx.book_sync.reject_snapshot_if_subscribed(
+        &ctx.active_delta_subs,
+        instrument_id,
+        error,
+        Instant::now(),
+    );
+
+    if outcome == BookSequenceOutcome::Recover {
+        start_book_recovery(ctx, instrument_id);
+    }
+}
+
 fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
     match message {
         MarketWsMessage::Book(snap) => {
@@ -358,7 +377,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
             {
                 log::error!("Rejected book snapshot for {instrument_id}: {e}");
-                request_book_recovery(ctx, instrument_id);
+                reject_book_snapshot(
+                    ctx,
+                    instrument_id,
+                    PolymarketWsError::InvalidSnapshot(e.to_string()),
+                );
+
                 return;
             }
 
@@ -5099,6 +5123,93 @@ mod tests {
         assert_eq!(state.market_payloads.lock().await.len(), payload_count);
         assert!(!client.active_quote_subs.contains(&requested_id));
         assert!(!client.active_quote_subs.contains(&sibling_id));
+    }
+
+    // The venue ignores a duplicate subscribe, so a token quotes already hold needs a cycle to
+    // send the delta subscription its `book`.
+    #[rstest]
+    #[case::fresh_token(false, false)]
+    #[case::back_to_back(true, false)]
+    #[case::open_token(true, true)]
+    #[tokio::test]
+    async fn book_delta_subscription_cycles_only_an_open_token(
+        #[case] quotes_first: bool,
+        #[case] quotes_settled: bool,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        let instrument_id = instrument.id();
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
+
+        let payload_count = |count: usize| {
+            let state = state.clone();
+            async move { state.market_payloads.lock().await.len() == count }
+        };
+
+        if quotes_first {
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    Some(*POLYMARKET_VENUE),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .expect("subscribe quotes");
+        }
+
+        if quotes_settled {
+            wait_until_async(|| payload_count(1), StdDuration::from_secs(3)).await;
+        }
+
+        client
+            .subscribe_book_deltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            ))
+            .expect("subscribe book deltas");
+
+        let expected_count = if quotes_settled { 3 } else { 1 };
+        wait_until_async(|| payload_count(expected_count), StdDuration::from_secs(3)).await;
+
+        // Quiet period: a fresh or back-to-back subscription must not also cycle its token
+        tokio::time::sleep(StdDuration::from_millis(200)).await;
+        let payloads = state.market_payloads.lock().await.clone();
+        client
+            .ws_client
+            .disconnect()
+            .await
+            .expect("disconnect failed");
+
+        let operations = payloads
+            .iter()
+            .map(|payload| payload["operation"].as_str())
+            .collect::<Vec<_>>();
+
+        let expected_operations = if quotes_settled {
+            vec![None, Some("unsubscribe"), Some("subscribe")]
+        } else {
+            vec![None]
+        };
+
+        assert_eq!(operations, expected_operations);
+        assert!(
+            payloads
+                .iter()
+                .all(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
+        );
     }
 
     #[rstest]
@@ -9859,8 +9970,7 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
-        ctx.book_sync
-            .request_recovery(instrument_id, Instant::now());
+        let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
 
         let pc = make_price_change(market, asset_id_str, "0.50", "20");
         handle_market_message(pc, &ctx);
@@ -9879,6 +9989,7 @@ mod tests {
         );
         handle_market_message(snap, &ctx);
 
+        assert!(recovery.is_accepted());
         assert!(!ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
     }
@@ -10357,6 +10468,52 @@ mod tests {
                 .count(),
             1,
         );
+    }
+
+    // A replacement attempt waiting on its snapshot fails at once instead of at its deadline
+    #[rstest]
+    fn snapshot_hash_mismatch_rejects_waiting_recovery_attempt() {
+        let valid: PolymarketBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_book_snapshot_captured.json"
+        ))
+        .expect("captured snapshot should deserialize");
+        let asset_id = valid.asset_id.as_str();
+        let (ctx, mut data_rx) = make_ws_ctx();
+
+        let inst = seed_instrument_with_context(
+            &ctx,
+            asset_id,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: Some("5"),
+                neg_risk: Some(false),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
+        assert!(recovery.begin_replacement());
+        recovery.gate.open();
+        let mut divergent = valid.clone();
+        divergent.bids[0].size = "3149725.71".to_string();
+        let expected_message = verify_book_snapshot_hash(&divergent, Some("5"), Some(false))
+            .unwrap_err()
+            .to_string();
+
+        handle_market_message(MarketWsMessage::Book(divergent), &ctx);
+
+        assert!(matches!(
+            &*recovery.outcome.borrow(),
+            BookRecoveryOutcome::Rejected(PolymarketWsError::InvalidSnapshot(message))
+            if *message == expected_message
+        ));
+        assert!(recovery.is_running());
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(data_rx.try_recv().is_err());
     }
 
     #[rstest]

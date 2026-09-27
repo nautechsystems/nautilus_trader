@@ -59,4 +59,7 @@ pub enum PolymarketWsError {
 
     #[error("Operation timed out after {timeout_ms}ms")]
     OperationTimeout { timeout_ms: u64 },
+
+    #[error("Invalid book snapshot: {0}")]
+    InvalidSnapshot(String),
 }

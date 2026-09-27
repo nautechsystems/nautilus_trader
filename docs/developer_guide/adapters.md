@@ -884,13 +884,42 @@ recovering), its pending snapshot, and its recovery state. It performs no I/O, s
 [L0 property test](spec_data_testing.md#validation-levels) drives it through arbitrary schedules of
 subscribes, snapshots, gaps, rejections, reconnects, and deadlines.
 
-A book out of sync has exactly one owner: a running recovery or an armed snapshot deadline.
-`BookSync::gap` requests recovery only when neither exists, so repeated gap reports cannot start
-competing recoveries. Arm a deadline only where a monitor checks it, or the book keeps an owner that
-never acts. Stale-feed reports cover every book that no running recovery owns.
+A book out of sync needs an owner: a running recovery or an armed snapshot deadline.
+`BookSync::gap` requests recovery only when neither exists, and `BookSync::claim` admits one running
+recovery at a time, so repeated gap reports cannot start competing recoveries. Arm a deadline only
+where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
+every book that no running recovery owns.
 
 OKX, Polymarket, and Binance keep a `BookSync` per book. Lighter keeps a `BookRecoveryState` per
 book inside its handler-owned tracker.
+
+#### Starting recovery
+
+Recovery for a `BookSync` book moves through four steps, and a book can stop between any two:
+
+1. **Mark**: `BookSync::gap` moves the book to `Recovering`, where it emits nothing.
+1. **Request**: the same call returns `BookSequenceOutcome::Recover` only when no running recovery
+   or armed snapshot deadline owns the book. A request grants no ownership, so later calls return
+   `Recover` again until an episode is claimed.
+1. **Claim**: `BookSync::claim` admits one episode, which then owns the book and retires any pending
+   snapshot wait.
+1. **Run**: the adapter spawns `BookRecovery::run` for the claimed episode in its task scope.
+
+Binance claims in the same step that detects the gap: every diff for an unsynced book tries
+`claim`, which refuses while an episode runs.
+
+When recovery cannot start, keep the book able to ask again:
+
+- Check what the replacement needs, such as a socket, channel, or token, before claiming. An early
+  return then leaves the book unowned.
+- Pass every incremental update for an unsynced book through `BookSync::gap`, including updates
+  that arrive while it is already recovering. Suppressing an update on phase alone strands a book
+  that nothing owns: its output stays dark until a snapshot happens to arrive.
+- Cancel a claimed episode when the task scope refuses its task, for example with a drop guard on
+  the episode's cancellation token that the task takes over. A running episode without a task owns
+  the book and refuses every later claim.
+- Start nothing after unsubscribe or shutdown. Removing the book cancels its episode, and a closed
+  task scope refuses the task, so the drop guard cancels a late claim.
 
 #### Recovery state and retry budgets
 
@@ -901,11 +930,16 @@ cancels obsolete work. A book never ends in a failed state.
 `BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff,
 and retry limits. It makes up to eight attempts within 180 seconds, then continues at an interval
 that doubles from one minute to fifteen minutes until a snapshot is accepted or the episode is
-cancelled; an error the classifier rejects moves straight to that interval. The adapter supplies its
-replacement operation and error classifier. Keep a running invocation alive across reconnects so a
-reconnect can neither replenish the budget nor abandon a replacement write. Reconnect wakes an
-invocation that is waiting between attempts after its budget, so it retries on the new connection
-at once.
+cancelled; an error the classifier rejects moves straight to that interval. Each attempt after the
+budget is bounded by `max(snapshot_timeout, 60 seconds)`, so a stalled write or a disabled snapshot
+deadline cannot stop the retries. The adapter supplies its replacement operation and error
+classifier.
+
+Keep a running invocation alive across reconnects so a reconnect can neither replenish the budget
+nor abandon a replacement write. A reconnect never interrupts an attempt or shortens a backoff
+inside the budget. It wakes an invocation that is waiting between attempts after its budget, so the
+next attempt uses the new connection at once. A reconnect that lands during an attempt, or before
+the budget runs out, instead ends the next wait between attempts after the budget.
 
 #### Snapshot acceptance
 

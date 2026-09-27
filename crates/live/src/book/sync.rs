@@ -22,9 +22,11 @@
 //! # Sync Contract
 //!
 //! - Output happens only in [`BookPhase::Synced`], which starts with an accepted snapshot.
-//! - A book out of sync has one owner: a running recovery or an armed snapshot deadline.
+//! - A book out of sync needs an owner: a running recovery or an armed snapshot deadline.
 //!   [`BookSync::gap`] returns [`BookSequenceOutcome::Recover`] when it has neither, and the adapter
-//!   then claims a recovery.
+//!   then claims a recovery once it has what the replacement needs.
+//! - The adapter passes every incremental update for an unsynced book through [`BookSync::gap`],
+//!   so a book whose recovery could not start asks again on its next update.
 //! - [`BookSync::stale`] reports a book that stops advancing without a running recovery.
 //!
 //! # Adapters
@@ -156,11 +158,12 @@ impl<E: Clone, P> BookSync<E, P> {
         true
     }
 
-    /// Marks the book out of sync after a gap, an incremental before any snapshot, or an invalid
+    /// Marks the book out of sync after a gap, an incremental while unsynced, or an invalid
     /// snapshot.
     ///
     /// Returns [`BookSequenceOutcome::Recover`] when neither a running recovery nor an armed
-    /// snapshot deadline owns the book; the adapter then claims a recovery.
+    /// snapshot deadline owns the book; the adapter then claims a recovery. The result grants no
+    /// ownership, so later calls return `Recover` again until the adapter claims one.
     pub fn gap(&mut self) -> BookSequenceOutcome {
         self.phase = BookPhase::Recovering;
 
@@ -177,6 +180,9 @@ impl<E: Clone, P> BookSync<E, P> {
     }
 
     /// Claims a recovery episode, refusing while another is running.
+    ///
+    /// The claimed episode owns the book and retires any pending snapshot wait. Cancel it if its
+    /// task cannot start, or it keeps the book owned with nothing running.
     pub fn claim(&mut self) -> Option<Arc<BookRecovery<E>>> {
         let recovery = self.recovery.claim()?;
         self.phase = BookPhase::Recovering;
@@ -200,7 +206,8 @@ impl<E: Clone, P> BookSync<E, P> {
     /// Restarts synchronization after the book's connection reconnects.
     ///
     /// An initial subscription write still in flight keeps its snapshot wait, since reconnect
-    /// replay may not include it yet. A running recovery keeps running.
+    /// replay may not include it yet. A running recovery keeps running with its budget;
+    /// [`BookRecoveryState::reset_on_reconnect`] describes when the reconnect wakes it.
     pub fn reset_on_reconnect(&mut self) {
         if !self.has_initial_wait() {
             self.pending = None;

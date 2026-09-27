@@ -226,7 +226,9 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
                 session.healthy(&ids[..6]).await;
             }
             4 => {
-                let before = ids[6..]
+                // Without deadlines, sequenced books recover from their next update and spread
+                // books, which carry no updates, from another reconnect.
+                let before = ids
                     .iter()
                     .map(|id| {
                         let mut fault = session.fault(id);
@@ -238,15 +240,11 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
                 reconnect(&mut session, PUBLIC);
                 reconnect(&mut session, BUSINESS);
                 session
-                    .until(
-                        Duration::from_secs(60),
-                        "business replay snapshots dropped",
-                        |s| {
-                            before
-                                .iter()
-                                .all(|(id, dropped)| s.fault(id).dropped > *dropped)
-                        },
-                    )
+                    .until(Duration::from_secs(60), "replay snapshots dropped", |s| {
+                        before
+                            .iter()
+                            .all(|(id, dropped)| s.fault(id).dropped > *dropped)
+                    })
                     .await;
 
                 if timeout == 0 {

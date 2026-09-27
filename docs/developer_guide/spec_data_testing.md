@@ -138,14 +138,15 @@ restarts at the level that found it: the rerun must clear the same bar, not a li
 Every adapter must produce these outcomes, whichever
 [recovery family](adapters.md#order-book-recovery-ownership) it belongs to:
 
-| Fault                       | Required outcome                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Sequence gap                | Output stops at the gap and resumes only after a fresh snapshot replaces the book.                                |
-| Missing or late snapshot    | The snapshot deadline starts or retries recovery; a snapshot accepted between attempts ends it.                   |
-| Rejected replacement        | Recovery retries; an error the classifier marks permanent skips the budget and retries at the ceiling.            |
-| Retry budget exhausted      | One error log, then retries at the ceiling until a snapshot is accepted.                                          |
-| Reconnect mid-recovery      | The running recovery keeps its budget and ownership and retries at once; other books resync from fresh snapshots. |
-| Unsubscribe during recovery | Recovery and its pending writes stop, and the book emits nothing further.                                         |
+| Fault                       | Required outcome                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sequence gap                | Output stops at the gap and resumes only after a fresh snapshot replaces the book.                                                                      |
+| Missing or late snapshot    | The snapshot deadline starts or retries recovery; a snapshot accepted between attempts ends it.                                                         |
+| Recovery cannot start       | The book stays unowned and requests recovery again on its next frame; a refused task cancels its claimed episode.                                       |
+| Rejected replacement        | Recovery retries; an error the classifier marks permanent skips the budget and retries at the ceiling.                                                  |
+| Retry budget exhausted      | One error log, then retries at the ceiling until a snapshot is accepted.                                                                                |
+| Reconnect mid-recovery      | The running recovery keeps its budget, ownership, and in-flight write, and its next ceiling wait ends at once; other books resync from fresh snapshots. |
+| Unsubscribe during recovery | Recovery and its pending writes stop, and the book emits nothing further.                                                                               |
 
 ### Forcing techniques
 

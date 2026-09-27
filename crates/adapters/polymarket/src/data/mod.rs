@@ -38,7 +38,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{runner::get_data_event_sender, sender::EventSender},
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -84,7 +84,7 @@ use self::{
     subscriptions::resolve_token_id_from,
 };
 use crate::{
-    book::sync::BookSyncTracker,
+    book::{BookSequenceOutcome, recovery::start_recovery, sync::BookSyncTracker},
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
@@ -525,6 +525,59 @@ impl PolymarketDataClient {
             log::debug!("Skipping Polymarket data task after shutdown began: {e}");
         }
     }
+
+    // The venue ignores a duplicate subscribe, so a token another subscription already holds
+    // sends no `book` for this one; a recovery cycle requests it instead.
+    fn sync_book_subscription(&self, instrument_id: InstrumentId) {
+        let Ok(token_id) = self.resolve_token_id(instrument_id) else {
+            return;
+        };
+
+        let spawner = match self.tasks.spawner() {
+            Ok(spawner) => spawner,
+            Err(e) => {
+                log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+                return;
+            }
+        };
+
+        // Read on arrival so a subscription still queued behind the subscription lock does not
+        // look open; its `book` reaches this one.
+        let was_open = self.ws_open_tokens.contains(&Ustr::from(token_id.as_str()));
+        let resolve_ctx = self.resolution_context();
+        let book_sync = self.book_sync.clone();
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
+        // The sync waits out any subscribe write in flight, so recovery cycles an owned token
+        let future = async move {
+            resolve_ctx
+                .sync_ws_subscription(instrument_id, token_id.clone())
+                .await;
+
+            if was_open
+                && book_sync.request_snapshot_if_subscribed(
+                    &resolve_ctx.active_delta_subs,
+                    instrument_id,
+                    Instant::now(),
+                ) == BookSequenceOutcome::Recover
+            {
+                log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
+                start_recovery(
+                    instrument_id,
+                    Some(token_id),
+                    &resolve_ctx.active_delta_subs,
+                    &book_sync,
+                    &resolve_ctx.ws,
+                    snapshot_timeout,
+                    &spawner,
+                );
+            }
+        };
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -673,7 +726,7 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.sync_ws_subscription(instrument_id);
+        self.sync_book_subscription(instrument_id);
         Ok(())
     }
 

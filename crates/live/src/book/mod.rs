@@ -24,11 +24,12 @@
 //!
 //! # Recovery Lifecycle
 //!
-//! The adapter validates incoming book frames and marks gaps through [`BookSync`](sync::BookSync).
-//! The recovery runner requests replacement snapshots through an adapter-supplied operation until
-//! the adapter accepts one or the episode is cancelled; a book never ends in a terminal failure
-//! state. A confirmed write opens the snapshot gate; only an accepted fresh snapshot completes
-//! recovery.
+//! The adapter validates incoming book frames and marks gaps through [`BookSync`](sync::BookSync),
+//! which requests recovery while nothing owns the book. A request grants no ownership: the adapter
+//! then claims an episode and runs it. The recovery runner requests replacement snapshots through
+//! an adapter-supplied operation until the adapter accepts one or the episode is cancelled; a book
+//! never ends in a terminal failure state. A confirmed write opens the snapshot gate; only an
+//! accepted fresh snapshot completes recovery.
 //!
 //! # Adapters
 //!

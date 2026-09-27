@@ -28,13 +28,18 @@
 //! The `*_if_subscribed` checks run under the state lock. Clearing paths remove the
 //! subscription before acquiring the lock, so a message that observed a live subscription
 //! cannot insert tracking state after the clearing path's locked removal.
+//!
+//! Every `price_change` for an unsynced book goes through [`BookSync::gap`], so a book that no
+//! running recovery or armed deadline owns keeps requesting recovery. The data client claims only
+//! after it has a token to recover with; an early return leaves the book unowned for the next
+//! update.
 
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::live::dst::time::{Duration, Instant};
 use nautilus_core::AtomicSet;
-use nautilus_live::book::sync::{BookPhase, BookSync};
+use nautilus_live::book::sync::BookSync;
 use nautilus_model::identifiers::InstrumentId;
 use parking_lot::Mutex;
 
@@ -127,6 +132,57 @@ impl BookSyncTracker {
         }
 
         request_recovery(&mut books, instrument_id, now)
+    }
+
+    /// Requests recovery for a book with no accepted snapshot, suppressing once a snapshot is
+    /// accepted or an owner holds the book.
+    pub(crate) fn request_snapshot_if_subscribed(
+        &self,
+        active_delta_subs: &AtomicSet<InstrumentId>,
+        instrument_id: InstrumentId,
+        now: Instant,
+    ) -> BookSequenceOutcome {
+        // Checked under the state lock, as in `record_snapshot_if_subscribed`
+        let mut books = self.books.lock();
+
+        if !active_delta_subs.contains(&instrument_id) {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
+
+        if book.position().is_some() {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        book.gap()
+    }
+
+    /// Marks the book gated after a snapshot fails validation and delivers `error` to the running
+    /// recovery, so its replacement attempt retries without waiting for the snapshot deadline.
+    pub(crate) fn reject_snapshot_if_subscribed(
+        &self,
+        active_delta_subs: &AtomicSet<InstrumentId>,
+        instrument_id: InstrumentId,
+        error: PolymarketWsError,
+        now: Instant,
+    ) -> BookSequenceOutcome {
+        // Checked under the state lock, as in `record_snapshot_if_subscribed`
+        let mut books = self.books.lock();
+
+        if !active_delta_subs.contains(&instrument_id) {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        let outcome = request_recovery(&mut books, instrument_id, now);
+
+        if outcome == BookSequenceOutcome::Suppress
+            && let Some(book) = books.get(&instrument_id)
+        {
+            book.reject(error);
+        }
+
+        outcome
     }
 
     pub(crate) fn reset_for_instruments(
@@ -266,10 +322,6 @@ fn validate_incremental(
         return BookSequenceOutcome::Accept;
     }
 
-    if *book.phase() == BookPhase::Recovering || book.has_pending_snapshot() {
-        return BookSequenceOutcome::Suppress;
-    }
-
     let outcome = book.gap();
 
     if outcome == BookSequenceOutcome::Recover {
@@ -326,14 +378,123 @@ mod tests {
         let now = Instant::now();
 
         let first = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
-        let repeated = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
+
+        // Gated but unowned: a repeated incremental asks again instead of suppressing forever
+        let unowned = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
+        let recovery = tracker
+            .claim_recovery_if_subscribed(&subs, instrument_id)
+            .unwrap();
+        let owned = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
         assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
         let steady = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
 
         assert_eq!(first, BookSequenceOutcome::Recover);
-        assert_eq!(repeated, BookSequenceOutcome::Suppress);
+        assert_eq!(unowned, BookSequenceOutcome::Recover);
+        assert_eq!(owned, BookSequenceOutcome::Suppress);
         assert_eq!(steady, BookSequenceOutcome::Accept);
+        assert!(recovery.is_accepted());
         assert!(!tracker.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    #[case::disabled_deadline(Duration::ZERO, BookSequenceOutcome::Recover)]
+    #[case::armed_deadline(Duration::from_secs(3), BookSequenceOutcome::Suppress)]
+    fn incremental_after_reconnect_requests_owner_only_without_deadline(
+        #[case] timeout: Duration,
+        #[case] expected: BookSequenceOutcome,
+    ) {
+        let (tracker, subs) = subscribed_tracker();
+        let instrument_id = instrument_id();
+        let now = Instant::now();
+        assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        tracker.reset_for_instruments(&subs, &[instrument_id], now);
+
+        if !timeout.is_zero() {
+            tracker.seed_pending_snapshots(&subs, &[instrument_id], timeout, now);
+        }
+
+        let outcome = tracker.validate_incremental_if_subscribed(&subs, instrument_id, now);
+
+        assert_eq!(outcome, expected);
+        assert!(tracker.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    fn snapshot_request_recovers_only_unsynced_unowned_book() {
+        let (tracker, subs) = subscribed_tracker();
+        let instrument_id = instrument_id();
+        let now = Instant::now();
+
+        let unsynced = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
+        let recovery = tracker
+            .claim_recovery_if_subscribed(&subs, instrument_id)
+            .unwrap();
+        let owned = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
+        assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        let synced = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
+        let unsubscribed = tracker.request_snapshot_if_subscribed(
+            &AtomicSet::new(),
+            InstrumentId::from("0xCOND-0xOTHER.POLYMARKET"),
+            now,
+        );
+
+        assert_eq!(unsynced, BookSequenceOutcome::Recover);
+        assert_eq!(owned, BookSequenceOutcome::Suppress);
+        assert_eq!(synced, BookSequenceOutcome::Suppress);
+        assert_eq!(unsubscribed, BookSequenceOutcome::Suppress);
+        assert!(recovery.is_accepted());
+        assert!(!tracker.book_gated(instrument_id));
+        assert_eq!(tracker.books.lock().len(), 1);
+    }
+
+    #[rstest]
+    fn rejected_snapshot_fails_running_attempt_or_requests_owner() {
+        let (tracker, subs) = subscribed_tracker();
+        let instrument_id = instrument_id();
+        let now = Instant::now();
+        let error = || PolymarketWsError::InvalidSnapshot("hash mismatch".into());
+
+        let unowned = tracker.reject_snapshot_if_subscribed(&subs, instrument_id, error(), now);
+        let recovery = tracker
+            .claim_recovery_if_subscribed(&subs, instrument_id)
+            .unwrap();
+        let owned = tracker.reject_snapshot_if_subscribed(&subs, instrument_id, error(), now);
+        let unsubscribed =
+            tracker.reject_snapshot_if_subscribed(&AtomicSet::new(), instrument_id, error(), now);
+
+        assert_eq!(unowned, BookSequenceOutcome::Recover);
+        assert_eq!(owned, BookSequenceOutcome::Suppress);
+        assert_eq!(unsubscribed, BookSequenceOutcome::Suppress);
+        assert!(matches!(
+            &*recovery.outcome.borrow(),
+            BookRecoveryOutcome::Rejected(PolymarketWsError::InvalidSnapshot(message))
+            if message == "hash mismatch"
+        ));
+        assert!(recovery.is_running());
+        assert!(tracker.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    fn rejected_snapshot_leaves_reconnect_deadline_owner_untouched() {
+        let (tracker, subs) = subscribed_tracker();
+        let instrument_id = instrument_id();
+        let now = Instant::now();
+        tracker.seed_pending_snapshots(&subs, &[instrument_id], Duration::from_secs(3), now);
+
+        let outcome = tracker.reject_snapshot_if_subscribed(
+            &subs,
+            instrument_id,
+            PolymarketWsError::InvalidSnapshot("hash mismatch".into()),
+            now,
+        );
+
+        assert_eq!(outcome, BookSequenceOutcome::Suppress);
+        assert!(has_pending_snapshot(&tracker, instrument_id));
+        assert!(
+            tracker
+                .claim_recovery_if_subscribed(&subs, instrument_id)
+                .is_some()
+        );
     }
 
     #[rstest]
@@ -604,7 +765,8 @@ mod tests {
         tracker.seed_pending_snapshots(&subs, &[instrument_id], Duration::from_secs(3), now);
         tracker.reset_for_instruments(&subs, &[instrument_id], now);
 
-        // The reset drops the armed deadline and gates on the replayed snapshot.
+        // The reset drops the armed deadline and gates on the replayed snapshot; with nothing
+        // owning the book, an incremental asks for recovery instead of waiting on the replay.
         let filter = AHashSet::from_iter([instrument_id]);
         assert!(
             tracker
@@ -614,7 +776,7 @@ mod tests {
         assert!(tracker.book_gated(instrument_id));
         assert_eq!(
             tracker.validate_incremental(instrument_id, now),
-            BookSequenceOutcome::Suppress
+            BookSequenceOutcome::Recover
         );
 
         assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));

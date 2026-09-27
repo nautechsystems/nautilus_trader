@@ -186,6 +186,7 @@ fn is_retryable_error(error: &PolymarketWsError) -> bool {
             | PolymarketWsError::TungsteniteError(_)
             | PolymarketWsError::Connection(_)
             | PolymarketWsError::OperationTimeout { .. }
+            | PolymarketWsError::InvalidSnapshot(_)
     )
 }
 
@@ -383,6 +384,7 @@ mod tests {
         PolymarketWsError::OperationTimeout { timeout_ms: 10 },
         true
     )]
+    #[case::invalid_snapshot(PolymarketWsError::InvalidSnapshot("e".to_string()), true)]
     #[case::url_parsing(PolymarketWsError::UrlParsing("e".to_string()), false)]
     #[case::message_serialization(
         PolymarketWsError::MessageSerialization("e".to_string()),

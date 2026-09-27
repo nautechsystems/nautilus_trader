@@ -23,13 +23,18 @@
 //! events cannot independently change ownership. Snapshot gates coordinate acceptance with
 //! transport sends. This module performs state transitions; [`super::recovery`] runs the
 //! asynchronous subscription and retry work.
+//!
+//! Every incremental batch for an unsynced book goes through [`BookSync::gap`] once the initial
+//! subscription write completes, so a book that no running recovery or armed deadline owns keeps
+//! requesting recovery. The data client claims only after it has a channel and socket to recover
+//! with; an early return leaves the book unowned for the next batch.
 
 use std::sync::Arc;
 
 use ahash::AHashMap;
 use nautilus_common::live::dst::time::{Duration, Instant};
 use nautilus_core::AtomicMap;
-use nautilus_live::book::sync::{BookPhase, BookSync};
+use nautilus_live::book::sync::BookSync;
 use nautilus_model::identifiers::InstrumentId;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -141,10 +146,6 @@ impl BookSyncTracker {
             } else {
                 BookSequenceOutcome::Suppress
             };
-        }
-
-        if *book.phase() == BookPhase::Recovering {
-            return BookSequenceOutcome::Suppress;
         }
 
         let mut expected = book.position().copied().flatten();
@@ -1138,11 +1139,19 @@ mod tests {
             &[(Some(1_225), 1_230)],
             now,
         );
-        let repeated = tracker.validate_sequence_if_subscribed(
+        let unowned = tracker.validate_sequence_if_subscribed(
             &book_channels,
             instrument_id,
             false,
             &[(Some(1_230), 1_231)],
+            now,
+        );
+        let recovery = tracker.claim_recovery(instrument_id).unwrap();
+        let owned = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(1_231), 1_232)],
             now,
         );
         let snapshot = tracker.validate_sequence_if_subscribed(
@@ -1161,15 +1170,23 @@ mod tests {
         );
 
         assert_eq!(gap, BookSequenceOutcome::Recover);
-        assert_eq!(repeated, BookSequenceOutcome::Suppress);
+        assert_eq!(unowned, BookSequenceOutcome::Recover);
+        assert_eq!(owned, BookSequenceOutcome::Suppress);
         assert_eq!(snapshot, BookSequenceOutcome::Accept);
         assert_eq!(linked, BookSequenceOutcome::Accept);
+        assert!(recovery.is_accepted());
         assert_eq!(last_sequence(&tracker, instrument_id), Some(2_004));
         assert!(!has_pending_snapshot(&tracker, instrument_id));
     }
 
+    // Without a deadline after reconnect, nothing owns the book, so an incremental asks for one
     #[rstest]
-    fn sequence_reset_suppresses_updates_until_fresh_snapshot() {
+    #[case::disabled_deadline(Duration::ZERO, BookSequenceOutcome::Recover)]
+    #[case::armed_deadline(Duration::from_secs(3), BookSequenceOutcome::Suppress)]
+    fn sequence_reset_suppresses_updates_until_fresh_snapshot(
+        #[case] timeout: Duration,
+        #[case] expected: BookSequenceOutcome,
+    ) {
         let book_channels = AtomicMap::new();
         let tracker = BookSyncTracker::default();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
@@ -1189,6 +1206,11 @@ mod tests {
         );
 
         tracker.reset_sequences(&book_channels, BookChannelScope::Public);
+
+        if !timeout.is_zero() {
+            tracker.seed_pending_snapshots(&book_channels, BookChannelScope::Public, timeout, now);
+        }
+
         let update = tracker.validate_sequence_if_subscribed(
             &book_channels,
             instrument_id,
@@ -1204,7 +1226,7 @@ mod tests {
             now,
         );
 
-        assert_eq!(update, BookSequenceOutcome::Suppress);
+        assert_eq!(update, expected);
         assert_eq!(snapshot, BookSequenceOutcome::Accept);
         assert_eq!(last_sequence(&tracker, instrument_id), Some(200));
     }

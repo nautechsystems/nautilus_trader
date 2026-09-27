@@ -1598,6 +1598,12 @@ replays only its own assets on reconnect. A shard reconnect also drops that shar
 gates its book deltas (and book-derived `best_bid_ask` tops) until fresh snapshots arrive; a
 one-shot monitor starts recovery if a snapshot is still missing after `book_snapshot_timeout_secs`.
 
+The venue sends a `book` snapshot when an asset is first subscribed and ignores a duplicate
+subscribe. When a book delta subscription joins an asset that a quote, trade, or resolution
+subscription already holds, and the book has no accepted snapshot, the adapter starts book
+recovery unless recovery or a post-reconnect snapshot wait already covers the book. Recovery cycles
+the asset's subscription until a valid snapshot arrives.
+
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
@@ -1660,8 +1666,9 @@ exact wire values and level order. It logs and rejects a mismatch before the sna
 local book state, emit snapshot-derived deltas or quotes, or resume gated book deltas. For
 book-delta subscribers, a mismatch also triggers book recovery: the adapter resubscribes the
 market until a valid snapshot arrives and drops incremental `price_change` deltas in the meantime.
-After its retry budget, recovery retries at an interval that doubles from one minute to fifteen
-minutes.
+A mismatch during recovery fails the current attempt, so the next resubscribe follows without
+waiting for the snapshot deadline. After its retry budget, recovery retries at an interval that
+doubles from one minute to fifteen minutes.
 
 Polymarket also sends hashed book updates that omit fields included in the server's hash preimage,
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
