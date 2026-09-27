@@ -77,6 +77,8 @@ Released on TBD (UTC).
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
+- Changed logging init to fail on an unusable log file; lazy Rust init keeps console logging
+- Changed Rust `FileWriter::new` to return `anyhow::Result` instead of `Option`
 - Changed Betfair, Binance, and Tardis crates to gate Arrow support behind an opt-in `arrow` feature
 - Changed Deribit `DeribitWebSocketClient::modify_order` to take `DeribitEditParams`
 - Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
@@ -110,9 +112,11 @@ Released on TBD (UTC).
 - Fixed adapter HTTP redirect leaks of credentials and signed payloads, thanks for reporting @seungpyoson
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
+- Hardened TLS `certs_dir` loading to fail on unreadable files instead of silently skipping them
 - Hardened WebSocket transport client close-reason logging against server-injected line breaks and terminal escapes
 - Fixed Parquet catalog storage errors read as missing files, which could delete data during period consolidation
 - Fixed Parquet period consolidation stopping after 10,000 periods, duplicating rows or deleting unconsolidated data
+- Fixed logging thread panics when stderr is a closed pipe, which aborted release builds
 
 ### Fixes
 
@@ -175,6 +179,10 @@ Released on TBD (UTC).
 - Fixed backtest inverse option cash settlement at quote-point intrinsic value (#5053), thanks for reporting @Kilvish25
 - Fixed `TestDataProvider` reading `develop` data in release wheels (#5087), thanks for reporting @bananaunderground
 - Fixed adapter JSON decimal and `UnixNanos` parsing with `serde_json/arbitrary_precision`
+- Fixed log file rotation for trader IDs or file names containing dots
+- Fixed failed log file rotations retrying with a disk sync on every line
+- Fixed file logs lagging until the write buffer filled; lines now flush within about 100 ms
+- Fixed `nautilus` CLI dropping buffered log lines at exit
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Architect AX market data subscriptions not resuming after an explicit reconnect
@@ -253,6 +261,7 @@ Released on TBD (UTC).
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
+- Improved testkit data downloads with atomic checksum manifest writes and stale partial cleanup
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage

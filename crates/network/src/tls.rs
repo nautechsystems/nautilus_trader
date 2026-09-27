@@ -25,8 +25,14 @@
 //! added this way is logged at INFO with its SHA-256 fingerprint so operators can audit exactly
 //! what became trusted.
 
-use std::{convert::TryFrom, fs::File, path::Path, sync::Arc};
+use std::{
+    convert::TryFrom,
+    fs::File,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
+use anyhow::Context;
 use aws_lc_rs::digest::{SHA256, digest};
 use nautilus_core::hex;
 use nautilus_cryptography::{providers::install_cryptographic_provider, tls::create_tls_config};
@@ -34,7 +40,8 @@ use rustls::{
     ClientConfig,
     pki_types::{
         CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer,
-        ServerName, pem::PemObject,
+        ServerName,
+        pem::{self, PemObject},
     },
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -116,24 +123,15 @@ pub(crate) fn create_tls_config_from_certs_dir(
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    // Sort entries for deterministic cert/key selection across platforms
-    let mut entries: Vec<_> = std::fs::read_dir(certs_dir)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(std::fs::DirEntry::path);
-
-    for entry in entries {
-        let path = entry.path();
-
-        if client_key.is_none()
-            && let Ok(key) = load_private_key(&path)
-        {
-            client_key = Some(key);
+    for path in list_files(certs_dir)? {
+        if client_key.is_none() {
             // No early continue: a combined PEM carries the certificate alongside
             // the key, so this file is still scanned for certificates below.
+            client_key = load_private_key(&path)?;
         }
 
-        if let Ok(certs) = load_certs(&path)
-            && !certs.is_empty()
-        {
+        let certs = load_certs(&path)?;
+        if !certs.is_empty() {
             all_certs.push((path, certs));
         }
     }
@@ -202,31 +200,65 @@ pub(crate) fn create_tls_config_from_certs_dir(
     Ok(builder.with_no_client_auth())
 }
 
-fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
-    let file = File::open(path)?;
-    if let Some(key) = PrivatePkcs8KeyDer::pem_reader_iter(file).find_map(Result::ok) {
-        return Ok(key.into());
+// Sorted for deterministic selection; unreadable metadata errors rather than reading as absent
+fn list_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let metadata = std::fs::metadata(&path)
+            .with_context(|| format!("failed to read metadata for {}", path.display()))?;
+
+        if metadata.is_file() {
+            paths.push(path);
+        }
     }
 
-    let file = File::open(path)?;
-    if let Some(key) = PrivatePkcs1KeyDer::pem_reader_iter(file).find_map(Result::ok) {
-        return Ok(key.into());
+    paths.sort();
+    Ok(paths)
+}
+
+fn load_private_key(path: &Path) -> anyhow::Result<Option<PrivateKeyDer<'static>>> {
+    if let Some(key) = read_pem_items::<PrivatePkcs8KeyDer>(path)?
+        .into_iter()
+        .next()
+    {
+        return Ok(Some(key.into()));
     }
 
-    let file = File::open(path)?;
-    if let Some(key) = PrivateSec1KeyDer::pem_reader_iter(file).find_map(Result::ok) {
-        return Ok(key.into());
+    if let Some(key) = read_pem_items::<PrivatePkcs1KeyDer>(path)?
+        .into_iter()
+        .next()
+    {
+        return Ok(Some(key.into()));
     }
 
-    anyhow::bail!("No valid private key found in {}", path.display());
+    let key = read_pem_items::<PrivateSec1KeyDer>(path)?
+        .into_iter()
+        .next();
+    Ok(key.map(Into::into))
 }
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
-    let file = File::open(path)?;
-    let certs = CertificateDer::pem_reader_iter(file)
-        .filter_map(std::result::Result::ok)
-        .collect();
-    Ok(certs)
+    read_pem_items(path)
+}
+
+// Skips malformed PEM blocks but propagates I/O errors so unreadable is not read as empty
+fn read_pem_items<T: PemObject>(path: &Path) -> anyhow::Result<Vec<T>> {
+    let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut items = Vec::new();
+
+    for item in T::pem_reader_iter(file) {
+        match item {
+            Ok(item) => items.push(item),
+            Err(pem::Error::Io(e)) => {
+                return Err(e).with_context(|| format!("failed to read {}", path.display()));
+            }
+            Err(_) => {}
+        }
+    }
+
+    Ok(items)
 }
 
 fn fingerprint_sha256(cert: &CertificateDer<'_>) -> String {
@@ -546,7 +578,7 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 
             let key = load_private_key(&path).unwrap();
 
-            assert_eq!(key, expected);
+            assert_eq!(key, Some(expected));
         }
     }
 
@@ -564,7 +596,10 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 
         let key = load_private_key(&path).unwrap();
 
-        assert_eq!(key, PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![3])));
+        assert_eq!(
+            key,
+            Some(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![3])))
+        );
     }
 
     #[rstest]
@@ -582,21 +617,91 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 
         assert_eq!(
             key,
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![5, 6, 7]))
+            Some(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![
+                5, 6, 7
+            ])))
         );
     }
 
     #[rstest]
-    fn test_load_private_key_rejects_file_without_key() {
+    fn test_load_private_key_returns_none_for_file_without_key() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("cert.pem");
         std::fs::write(&path, pem_block("CERTIFICATE", "AQ==")).unwrap();
 
-        let error = load_private_key(&path).unwrap_err();
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(key, None);
+    }
+
+    #[rstest]
+    fn test_load_certs_fails_on_read_error() {
+        // A directory fails on read (Unix) or on open (Windows)
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let error = load_certs(temp_dir.path()).unwrap_err();
+
+        let expected_prefix = if cfg!(windows) {
+            "failed to open"
+        } else {
+            "failed to read"
+        };
 
         assert_eq!(
             error.to_string(),
-            format!("No valid private key found in {}", path.display())
+            format!("{expected_prefix} {}", temp_dir.path().display())
+        );
+    }
+
+    #[rstest]
+    fn test_certs_directory_skips_subdirectories() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("ca.pem"), TEST_CERT).unwrap();
+        std::fs::create_dir(temp_dir.path().join("archive")).unwrap();
+
+        let config = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap();
+
+        assert!(!config.client_auth_cert_resolver.has_certs());
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn test_certs_directory_fails_on_dangling_symlink() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("ca.pem"), TEST_CERT).unwrap();
+        let link_path = temp_dir.path().join("client.key");
+        std::os::unix::fs::symlink(temp_dir.path().join("missing.key"), &link_path).unwrap();
+
+        let error = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("failed to read metadata for {}", link_path.display())
+        );
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn test_certs_directory_fails_on_unreadable_key_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let identity = generate_identity();
+        std::fs::write(temp_dir.path().join("client.crt"), &identity.cert_pem).unwrap();
+        let key_path = temp_dir.path().join("client.key");
+        std::fs::write(&key_path, &identity.key_pem).unwrap();
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // Privileged users bypass file permissions, so the failure cannot be simulated
+        if File::open(&key_path).is_ok() {
+            return;
+        }
+
+        let error = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("failed to open {}", key_path.display())
         );
     }
 
