@@ -335,6 +335,7 @@ impl OrderMatchingEngine {
         order_side: OrderSide,
         leaves_qty: Quantity,
         book_prices: Option<&[Price]>,
+        mut journal: Option<&mut ConsumptionJournal>,
     ) -> Vec<(Price, Quantity)> {
         if !self.config.liquidity_consumption {
             return fills;
@@ -366,6 +367,12 @@ impl OrderMatchingEngine {
                 .book
                 .get_quantity_at_level(book_price, order_side, qty.precision);
 
+            if let Some(journal) = journal.as_deref_mut() {
+                journal
+                    .levels
+                    .push((book_price_raw, consumption.get(&book_price_raw).copied()));
+            }
+
             let (original_size, consumed) = consumption
                 .entry(book_price_raw)
                 .or_insert((level_size.raw(), 0));
@@ -396,6 +403,67 @@ impl OrderMatchingEngine {
 
         fills.truncate(adjusted_len);
         fills
+    }
+
+    /// Starts a journal of the liquidity consumption a FOK fill attempt changes.
+    ///
+    /// Consumption is applied while fills are determined, before FOK completeness
+    /// is known, so a canceled FOK must revert the journal to leave the liquidity
+    /// available for subsequent orders. The journal records only the levels the
+    /// attempt crosses, so its cost does not grow with the consumption maps.
+    fn fok_consumption_journal(&self, order: &OrderAny) -> Option<ConsumptionJournal> {
+        if !self.config.liquidity_consumption || order.time_in_force() != TimeInForce::Fok {
+            return None;
+        }
+
+        Some(ConsumptionJournal {
+            order_side: order.order_side(),
+            trade_consumption: self.trade_consumption,
+            levels: Vec::new(),
+        })
+    }
+
+    fn revert_consumption_journal(&mut self, journal: ConsumptionJournal) {
+        self.trade_consumption = journal.trade_consumption;
+
+        let consumption = match journal.order_side {
+            OrderSide::Buy => &mut self.ask_consumption,
+            OrderSide::Sell => &mut self.bid_consumption,
+        };
+
+        // Undo in reverse so the earliest prior value of each level wins, and levels
+        // the attempt inserted are removed from the end, restoring the original order
+        for (price_raw, prior) in journal.levels.into_iter().rev() {
+            match prior {
+                Some(prior) => {
+                    consumption.insert(price_raw, prior);
+                }
+                None => {
+                    consumption.shift_remove(&price_raw);
+                }
+            }
+        }
+    }
+
+    /// Returns whether `fills` cannot fill a FOK order's entire leaves quantity.
+    fn is_fok_unfillable(&self, order: &OrderAny, fills: &[(Price, Quantity)]) -> bool {
+        if order.time_in_force() != TimeInForce::Fok {
+            return false;
+        }
+
+        let mut total_size = Quantity::zero(order.quantity().precision);
+
+        for &(fill_px, fill_qty) in fills {
+            if self
+                .normalize_price_for_current_instrument(fill_px)
+                .is_some()
+                && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
+            {
+                total_size = total_size.add(fill_qty);
+            }
+        }
+
+        order.leaves_qty() > total_size
     }
 
     fn seed_trade_consumption(
@@ -4301,7 +4369,11 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn determine_limit_price_and_volume(&mut self, order: &OrderAny) -> Vec<(Price, Quantity)> {
+    fn determine_limit_price_and_volume(
+        &mut self,
+        order: &OrderAny,
+        journal: Option<&mut ConsumptionJournal>,
+    ) -> Vec<(Price, Quantity)> {
         match order.price() {
             Some(order_price) => {
                 // When liquidity consumption is enabled, get ALL crossed levels so that
@@ -4453,6 +4525,7 @@ impl OrderMatchingEngine {
                     order.order_side(),
                     order.leaves_qty(),
                     book_prices_ref,
+                    journal,
                 )
             }
             None => panic!("Limit order must have a price"),
@@ -4537,6 +4610,7 @@ impl OrderMatchingEngine {
     fn determine_limit_fill_model_price_and_volume(
         &mut self,
         order: &OrderAny,
+        journal: Option<&mut ConsumptionJournal>,
     ) -> anyhow::Result<Vec<(Price, Quantity)>> {
         if let Some(book) = self.fill_model.get_orderbook_for_fill_simulation(
             &self.instrument,
@@ -4548,7 +4622,7 @@ impl OrderMatchingEngine {
             let book_order = BookOrder::new(order.order_side(), limit_price, order.quantity(), 0);
             return Ok(book.simulate_fills(&book_order));
         }
-        Ok(self.determine_limit_price_and_volume(order))
+        Ok(self.determine_limit_price_and_volume(order, journal))
     }
 
     /// Fills a market order against the current order book.
@@ -4650,12 +4724,21 @@ impl OrderMatchingEngine {
             && order.trigger_price().is_some();
 
         if !from_synthetic && !is_trigger_price_fill {
+            let mut journal = self.fok_consumption_journal(&order);
+
             fills = self.apply_liquidity_consumption(
                 fills,
                 order.order_side(),
                 order.leaves_qty(),
                 None,
+                journal.as_mut(),
             );
+
+            if let Some(journal) = journal
+                && self.is_fok_unfillable(&order, &fills)
+            {
+                self.revert_consumption_journal(journal);
+            }
         }
 
         if let Err(e) = self.apply_fills(
@@ -4808,8 +4891,11 @@ impl OrderMatchingEngine {
                     return;
                 }
 
+                let mut journal = self.fok_consumption_journal(&order);
                 let tc_before = self.trade_consumption;
-                let mut fills = match self.determine_limit_fill_model_price_and_volume(&order) {
+                let mut fills = match self
+                    .determine_limit_fill_model_price_and_volume(&order, journal.as_mut())
+                {
                     Ok(fills) => fills,
                     Err(e) => {
                         log::error!(
@@ -4843,6 +4929,12 @@ impl OrderMatchingEngine {
                         *excess = excess.saturating_sub(consumed);
                     }
                     self.trade_consumption = tc_before + consumed;
+                }
+
+                if let Some(journal) = journal
+                    && self.is_fok_unfillable(&order, &fills)
+                {
+                    self.revert_consumption_journal(journal);
                 }
 
                 if fills.is_empty() {
@@ -4961,23 +5053,9 @@ impl OrderMatchingEngine {
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
-        if order.time_in_force() == TimeInForce::Fok {
-            let mut total_size = Quantity::zero(order.quantity().precision);
-
-            for &(fill_px, fill_qty) in fills {
-                if self
-                    .normalize_price_for_current_instrument(fill_px)
-                    .is_some()
-                    && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
-                {
-                    total_size = total_size.add(fill_qty);
-                }
-            }
-
-            if order.leaves_qty() > total_size {
-                self.cancel_order(order, None);
-                return Ok(());
-            }
+        if self.is_fok_unfillable(order, fills) {
+            self.cancel_order(order, None);
+            return Ok(());
         }
 
         if fills.is_empty() {
@@ -6909,6 +6987,15 @@ struct PendingFill {
     position_id: Option<PositionId>,
     opening_trade_id: Option<TradeId>,
     quantity_change: Decimal,
+}
+
+/// Liquidity consumption changed by a FOK fill attempt, recorded so it can be reverted.
+#[derive(Debug)]
+struct ConsumptionJournal {
+    order_side: OrderSide,
+    trade_consumption: QuantityRaw,
+    /// Level price and its prior `(original_size, consumed)`, or `None` if absent.
+    levels: Vec<(PriceRaw, Option<(QuantityRaw, QuantityRaw)>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10427,6 +10514,71 @@ mod tests {
         }));
 
         (engine, events)
+    }
+
+    #[rstest]
+    fn test_canceled_fok_reverts_only_crossed_consumption_levels(
+        #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+    ) {
+        let (mut engine, events) = custom_book_engine(BookType::L2_MBP, true, false);
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("1502.00"),
+                    Quantity::from("5.000"),
+                    0,
+                ),
+                RecordFlag::F_LAST as u8,
+                2,
+                UnixNanos::from(2),
+                UnixNanos::from(2),
+            ))
+            .unwrap();
+
+        // Prior consumption leaves 6 of 10 at 1501, and 1600 is never crossed
+        let size = |qty: &str| Quantity::from(qty).raw();
+        engine
+            .ask_consumption
+            .insert(Price::from("1600.00").raw(), (size("7.000"), size("3.000")));
+        engine.ask_consumption.insert(
+            Price::from("1501.00").raw(),
+            (size("10.000"), size("4.000")),
+        );
+        let levels_before: Vec<_> = engine.ask_consumption.clone().into_iter().collect();
+
+        // Crossing 1501 and 1502 gives 11 of the 15 required, so the FOK is canceled
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(engine.instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("15.000"))
+            .time_in_force(TimeInForce::Fok)
+            .submit(true);
+
+        if order_type == OrderType::Limit {
+            builder.price(Price::from("1502.00"));
+        }
+        let mut order = builder.build();
+        engine
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        assert!(
+            !events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_)))
+        );
+        let levels_after: Vec<_> = engine.ask_consumption.clone().into_iter().collect();
+        assert_eq!(levels_after, levels_before);
+        assert!(engine.bid_consumption.is_empty());
+        assert_eq!(engine.trade_consumption, 0);
     }
 
     #[rstest]

@@ -8471,6 +8471,100 @@ fn test_fok_order_canceled_when_liquidity_consumption_exhausts_fills(
 #[rstest]
 #[case(OrderSide::Buy)]
 #[case(OrderSide::Sell)]
+fn test_canceled_fok_order_does_not_consume_liquidity(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+    #[values(OrderType::Market, OrderType::Limit)] fok_order_type: OrderType,
+) {
+    let config = OrderMatchingEngineConfig {
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    // Book has 10 units of liquidity on the side the orders take from
+    let (far_side, far_price, near_side) = match order_side {
+        OrderSide::Buy => (OrderSide::Buy, "900.00", OrderSide::Sell),
+        OrderSide::Sell => (OrderSide::Sell, "1100.00", OrderSide::Buy),
+    };
+    let far_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            far_side,
+            Price::from(far_price),
+            Quantity::from("1000.000"),
+            100,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&far_delta).unwrap();
+
+    let near_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            near_side,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&near_delta).unwrap();
+
+    // FOK for more than the available liquidity is canceled without filling
+    let mut fok_builder = OrderTestBuilder::new(fok_order_type);
+    fok_builder
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("15.000"))
+        .time_in_force(TimeInForce::Fok)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true);
+
+    if fok_order_type == OrderType::Limit {
+        fok_builder.price(Price::from("1000.00"));
+    }
+    let mut fok_order = fok_builder.build();
+    engine_l2.process_order(&mut fok_order, account_id);
+
+    // Without new market data, an IOC can still take the untouched liquidity
+    let mut ioc_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("10.000"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut ioc_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fok_canceled = saved_messages.iter().any(|event| {
+        matches!(event, OrderEventAny::Canceled(canceled)
+            if canceled.client_order_id == fok_order.client_order_id())
+    });
+    let filled_events: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert!(fok_canceled, "FOK order should be canceled");
+    assert_eq!(filled_events.len(), 1);
+    assert_eq!(
+        filled_events[0].client_order_id,
+        ioc_order.client_order_id()
+    );
+    assert_eq!(filled_events[0].last_qty, Quantity::from("10.000"));
+}
+
+#[rstest]
+#[case(OrderSide::Buy)]
+#[case(OrderSide::Sell)]
 fn test_ioc_order_canceled_when_liquidity_consumption_exhausts_fills(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
