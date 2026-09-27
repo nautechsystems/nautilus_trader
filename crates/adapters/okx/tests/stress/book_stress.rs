@@ -16,53 +16,36 @@
 //! Mainnet market-data fault injection with an independent decimal order book oracle.
 //!
 //! Run with adapter credentials unset:
-//! `cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18`
+//! `cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18`
 //!
-//! Arguments are snapshot timeout seconds and number of stress rounds. Add `boundaries` as the
-//! third argument to run exhaustion and replacement-boundary probes instead, or `turnover` for
-//! rapid unsubscribe/resubscribe during recovery. Use `initial` for missing first snapshots.
-//! No orders are submitted.
+//! Scenarios, selected with `--scenario`:
 //!
-//! Every emitted batch passes through the shared `BookStreamChecker` and is verified against a
-//! reference book the proxy rebuilds from raw frames; a run fails unless every snapshot episode
-//! was verified.
+//! - `churn` (default): rotates six fault phases over `--rounds` rounds.
+//! - `initial`: drops first snapshots in each of `--rounds` fresh sessions.
+//! - `turnover`: unsubscribes and resubscribes during recovery at three boundaries.
+//! - `boundaries`: probes replacement cuts, retry exhaustion, and shutdown during reconnect.
+//!
+//! No orders are submitted. Every emitted batch passes through the shared `BookStreamChecker` and
+//! is verified against a reference book rebuilt from the raw frames the proxy relays; a session
+//! fails unless every snapshot episode was verified.
+
+#[path = "../../../../live/tests/book/stress/mod.rs"]
+mod stress;
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
+    net::SocketAddr,
     str::FromStr,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use axum::{
-    Router,
-    extract::{
-        State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
-    },
-    response::IntoResponse,
-    routing::get,
-};
-use futures_util::{SinkExt, StreamExt};
-use nautilus_common::{
-    clients::DataClient,
-    live::runner::replace_data_event_sender,
-    logging::{init_logging, logger::LoggerConfig},
-    messages::{
-        DataEvent,
-        data::{SubscribeBookDeltas, UnsubscribeBookDeltas},
-    },
-    testing::wait_until_async,
-};
-use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_live::{SocketReconnectRegistry, book::conformance::BookStreamChecker};
+use nautilus_common::clients::DataClient;
+use nautilus_core::Params;
+use nautilus_live::book::conformance::BookStreamChecker;
 use nautilus_model::{
-    data::Data,
-    enums::{BookType, RecordFlag},
-    identifiers::{InstrumentId, TraderId},
+    data::OrderBookDeltas,
+    identifiers::{ClientId, InstrumentId},
 };
 use nautilus_network::mode::ReconnectRequestOutcome;
 use nautilus_okx::{
@@ -73,8 +56,11 @@ use nautilus_okx::{
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use tokio_tungstenite::tungstenite::Message as UpstreamMessage;
-use ustr::Ustr;
+use stress::{
+    BookProgress, Coverage, FrameKind, Route, Session, StressArgs, StressVenue, Upstream, WireBook,
+    WireCodec, WireConnection,
+};
+use tokio_tungstenite::tungstenite::Message;
 
 const SYMBOLS: [&str; 8] = [
     "BTC-USDT",
@@ -87,122 +73,94 @@ const SYMBOLS: [&str; 8] = [
     "ETH-USDT_ETH-USDT-SWAP",
 ];
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
-    let _log_guard = init_logging(
-        TraderId::from("STRESS-001"),
-        UUID4::new(),
-        LoggerConfig {
-            stdout_level: log::LevelFilter::Info,
-            is_colored: false,
-            ..LoggerConfig::default()
-        },
-        Default::default(),
-    )
-    .unwrap();
+const PUBLIC: &str = "public";
+const BUSINESS: &str = "business";
+const PUBLIC_ENDPOINT: &str = "okx-public-data-streams";
+const BUSINESS_ENDPOINT: &str = "okx-business-data-streams";
+const BOOK_CHANNELS: [&str; 3] = ["books", "books-rpi", "sprd-books5"];
+const DEPTH: usize = 20;
+const VIEWS_MAX: usize = 2048;
 
-    check_wire_oracle();
+type OkxSession = Session<Okx>;
 
-    let args = std::env::args().collect::<Vec<_>>();
-    let timeout = args.get(1).map_or(10, |v| v.parse::<u64>().unwrap());
-    let rounds = args.get(2).map_or(18, |v| v.parse::<usize>().unwrap());
-    let ids = SYMBOLS.map(|s| InstrumentId::from(format!("{s}.OKX")));
-    if args.get(3).is_some_and(|arg| arg == "initial") {
-        initial(timeout, rounds, &ids).await;
-        return;
-    }
+fn main() {
+    stress::run::<Okx, _, _>(|args| async move {
+        let ids = SYMBOLS.map(|s| InstrumentId::from(format!("{s}.OKX")));
 
-    if args.get(3).is_some_and(|arg| arg == "turnover") {
-        turnover(timeout, rounds, &ids).await;
-        return;
-    }
+        match args.scenario() {
+            "churn" => churn(&args, &ids).await,
+            "initial" => initial(&args, &ids).await,
+            "turnover" => turnover(&args, &ids).await,
+            "boundaries" => boundaries(&args, &ids).await,
+            other => unreachable!("argument parsing admits only declared scenarios, was {other}"),
+        }
+    });
+}
 
-    if args.get(3).is_some_and(|arg| arg == "boundaries") {
-        boundaries(timeout, &ids).await;
-        return;
-    }
+async fn churn(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
+    let timeout = args.timeout_secs();
+    let mut total = 0;
+    let mut session = OkxSession::connect(args).await;
 
-    let started = Instant::now();
-    let mut total_applied = 0;
-    let mut session = Session::connect(timeout).await;
     for id in ids {
-        session.subscribe(id);
+        session.subscribe(*id);
     }
 
-    session.healthy(&ids).await;
-    session
-        .recover_without_reconnect(&ids[..6], usize::from(timeout > 0))
-        .await;
+    session.healthy(ids).await;
+    recover_without_reconnect(&mut session, &ids[..6], usize::from(timeout > 0)).await;
 
-    for round in 0..rounds {
+    for round in 0..args.rounds() {
         let phase = round % 6;
         let phase_started = Instant::now();
 
         match phase {
             0 => {
-                let before = {
-                    let mut control = session.wire.control.lock();
-                    ids[..6]
-                        .iter()
-                        .map(|id| {
-                            let fault = control.faults.entry(id.symbol.to_string()).or_default();
-                            fault.corrupt = 1;
-                            fault.drop = 1;
-                            (id.symbol.to_string(), fault.dropped)
-                        })
-                        .collect::<Vec<_>>()
-                };
+                let before = ids[..6]
+                    .iter()
+                    .map(|id| {
+                        let mut fault = session.fault(id);
+                        fault.corrupt = 1;
+                        fault.drop_snapshots = 1;
+                        (*id, fault.dropped)
+                    })
+                    .collect::<Vec<_>>();
 
                 session
                     .until(
                         Duration::from_secs(20),
                         "simultaneous recoveries lose snapshots",
                         |s| {
-                            let control = s.wire.control.lock();
                             before
                                 .iter()
-                                .all(|(id, dropped)| control.faults[id].dropped > *dropped)
+                                .all(|(id, dropped)| s.fault(id).dropped > *dropped)
                         },
                     )
                     .await;
 
-                session.reconnect(false);
+                reconnect(&mut session, PUBLIC);
                 session.healthy(&ids[..6]).await;
             }
             1 => {
                 for id in &ids[..6] {
-                    session
-                        .wire
-                        .control
-                        .lock()
-                        .faults
-                        .entry(id.symbol.to_string())
-                        .or_default()
-                        .hold = true;
+                    session.fault(id).hold = true;
                 }
 
                 session.observe(Duration::from_secs(2)).await;
-                session.reconnect(false);
+                reconnect(&mut session, PUBLIC);
                 session.observe(Duration::from_secs(4)).await;
+
                 for id in &ids[..6] {
-                    session
-                        .wire
-                        .control
-                        .lock()
-                        .faults
-                        .get_mut(id.symbol.as_str())
-                        .unwrap()
-                        .hold = false;
+                    session.fault(id).hold = false;
                 }
 
-                session.wire.flush.send_replace(());
+                session.proxy().release();
                 session.healthy(&ids[..6]).await;
             }
             2 => {
                 let targets = [ids[round / 6 % 2], ids[4 + round / 6 % 2]];
+
                 for id in &targets {
-                    let mut control = session.wire.control.lock();
-                    let fault = control.faults.entry(id.symbol.to_string()).or_default();
+                    let mut fault = session.fault(id);
                     fault.corrupt = 1;
                     fault.hold_snapshot = true;
                 }
@@ -211,31 +169,14 @@ async fn main() {
                     .until(
                         Duration::from_secs(20),
                         "replacement snapshots held before unsubscribe",
-                        |s| {
-                            let control = s.wire.control.lock();
-                            targets
-                                .iter()
-                                .all(|id| control.faults[id.symbol.as_str()].hold)
-                        },
+                        |s| targets.iter().all(|id| s.fault(id).hold),
                     )
                     .await;
 
-                let before = {
-                    let control = session.wire.control.lock();
-                    targets
-                        .iter()
-                        .map(|id| {
-                            (
-                                id.symbol.to_string(),
-                                control
-                                    .unsubscribed
-                                    .get(id.symbol.as_str())
-                                    .copied()
-                                    .unwrap_or(0),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                };
+                let before = targets
+                    .iter()
+                    .map(|id| (*id, session.fault(id).unsubscribes))
+                    .collect::<Vec<_>>();
 
                 for id in &targets {
                     session.unsubscribe(*id);
@@ -246,34 +187,27 @@ async fn main() {
                         Duration::from_secs(10),
                         "explicit unsubscribe acknowledged",
                         |s| {
-                            let control = s.wire.control.lock();
-                            before.iter().all(|(id, count)| {
-                                control.unsubscribed.get(id).copied().unwrap_or(0) > *count
-                            })
+                            before
+                                .iter()
+                                .all(|(id, count)| s.fault(id).unsubscribes > *count)
                         },
                     )
                     .await;
 
                 for id in &targets {
                     session.close(*id);
-                    session
-                        .wire
-                        .control
-                        .lock()
-                        .faults
-                        .get_mut(id.symbol.as_str())
-                        .unwrap()
-                        .hold = false;
+                    session.fault(id).hold = false;
                 }
 
-                session.wire.flush.send_replace(());
-                session.reconnect(false);
+                session.proxy().release();
+                reconnect(&mut session, PUBLIC);
                 let remaining = ids[..6]
                     .iter()
                     .copied()
                     .filter(|id| !targets.contains(id))
                     .collect::<Vec<_>>();
                 session.healthy(&remaining).await;
+
                 for id in &targets {
                     session.subscribe(*id);
                 }
@@ -281,125 +215,110 @@ async fn main() {
                 session.healthy(&targets).await;
             }
             3 => {
-                session.wire.cuts_remaining.store(2, Ordering::SeqCst);
-                let cuts = session.wire.cuts.load(Ordering::SeqCst);
-                session.reconnect(false);
+                session.proxy().cut(Some(PUBLIC), FrameKind::Snapshot, 2);
+                let cuts = session.proxy().cuts();
+                reconnect(&mut session, PUBLIC);
                 session
                     .until(
                         Duration::from_secs(120),
                         "two reconnects cut before snapshots",
-                        |s| s.wire.cuts.load(Ordering::SeqCst) == cuts + 2,
+                        |s| s.proxy().cuts() == cuts + 2,
                     )
                     .await;
                 session.healthy(&ids[..6]).await;
             }
             4 => {
-                let before = {
-                    let mut control = session.wire.control.lock();
-                    ids[6..]
-                        .iter()
-                        .map(|id| {
-                            let fault = control.faults.entry(id.symbol.to_string()).or_default();
-                            fault.drop = 1;
-                            (id.symbol.to_string(), fault.dropped)
-                        })
-                        .collect::<Vec<_>>()
-                };
+                let before = ids[6..]
+                    .iter()
+                    .map(|id| {
+                        let mut fault = session.fault(id);
+                        fault.drop_snapshots = 1;
+                        (*id, fault.dropped)
+                    })
+                    .collect::<Vec<_>>();
 
-                session.reconnect(false);
-                session.reconnect(true);
+                reconnect(&mut session, PUBLIC);
+                reconnect(&mut session, BUSINESS);
                 session
                     .until(
                         Duration::from_secs(60),
                         "business replay snapshots dropped",
                         |s| {
-                            let control = s.wire.control.lock();
                             before
                                 .iter()
-                                .all(|(id, dropped)| control.faults[id].dropped > *dropped)
+                                .all(|(id, dropped)| s.fault(id).dropped > *dropped)
                         },
                     )
                     .await;
 
                 if timeout == 0 {
-                    session.reconnect(true);
+                    reconnect(&mut session, BUSINESS);
                 }
 
-                session.healthy(&ids).await;
+                session.healthy(ids).await;
             }
             5 => {
-                let before = {
-                    let mut control = session.wire.control.lock();
-                    ids[..6]
-                        .iter()
-                        .map(|id| {
-                            let fault = control.faults.entry(id.symbol.to_string()).or_default();
-                            fault.corrupt = 1;
-                            fault.drop = 3;
-                            (id.symbol.to_string(), fault.dropped)
-                        })
-                        .collect::<Vec<_>>()
-                };
+                let before = ids[..6]
+                    .iter()
+                    .map(|id| {
+                        let mut fault = session.fault(id);
+                        fault.corrupt = 1;
+                        fault.drop_snapshots = 3;
+                        (*id, fault.dropped)
+                    })
+                    .collect::<Vec<_>>();
 
                 session
                     .until(
                         Duration::from_secs(20),
                         "shutdown with recovery snapshots missing",
                         |s| {
-                            let control = s.wire.control.lock();
                             before
                                 .iter()
-                                .all(|(id, dropped)| control.faults[id].dropped > *dropped)
+                                .all(|(id, dropped)| s.fault(id).dropped > *dropped)
                         },
                     )
                     .await;
 
-                total_applied += session.stop().await;
-                session = Session::connect(timeout).await;
+                total += session.batches();
+                session = session.restart().await;
+
                 for id in ids {
-                    session.subscribe(id);
+                    session.subscribe(*id);
                 }
 
-                session.healthy(&ids).await;
+                session.healthy(ids).await;
             }
             _ => unreachable!(),
         }
 
         session.observe(Duration::from_secs(5)).await;
-        let control = session.wire.control.lock();
-        let gaps: usize = control.faults.values().map(|f| f.gaps).sum();
-        let dropped: usize = control.faults.values().map(|f| f.dropped).sum();
-        let held: usize = control.faults.values().map(|f| f.held).sum();
-        eprintln!(
-            "timeout={timeout} round={} phase={phase} phase_ms={} public_connections={} business_connections={} gaps={gaps} dropped={dropped} held={held} cuts={} oracle_batches={} elapsed_s={}",
-            round + 1,
-            phase_started.elapsed().as_millis(),
-            session.wire.connections[0].load(Ordering::SeqCst),
-            session.wire.connections[1].load(Ordering::SeqCst),
-            session.wire.cuts.load(Ordering::SeqCst),
-            total_applied + session.applied,
-            started.elapsed().as_secs()
+        session.round(
+            round,
+            &format!(
+                "phase={phase} phase_ms={} batches_total={}",
+                phase_started.elapsed().as_millis(),
+                total + session.batches()
+            ),
         );
     }
 
-    total_applied += session.stop().await;
-    eprintln!(
-        "PASS timeout={timeout} rounds={rounds} instruments={} oracle_batches={total_applied} elapsed_s={}",
-        ids.len(),
-        started.elapsed().as_secs()
-    );
+    total += session.batches();
+    session.stop().await;
+    format!("books={} batches_total={total}", ids.len())
 }
 
-async fn initial(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
-    let mut applied = 0;
+async fn initial(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
+    let timeout = args.timeout_secs();
+    let mut total = 0;
 
-    for round in 0..rounds {
-        let mut session = Session::connect(timeout).await;
+    for round in 0..args.rounds() {
+        let mut session = OkxSession::connect(args).await;
+
         for id in ids {
-            let mut control = session.wire.control.lock();
-            let fault = control.faults.entry(id.symbol.to_string()).or_default();
-            fault.drop = 1;
-            fault.await_snapshot = true;
+            let mut fault = session.fault(id);
+            fault.drop_snapshots = 1;
+            fault.silence = true;
         }
 
         for id in ids {
@@ -408,75 +327,56 @@ async fn initial(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
 
         session
             .until(Duration::from_secs(20), "initial snapshots dropped", |s| {
-                let control = s.wire.control.lock();
-                ids.iter()
-                    .all(|id| control.faults[id.symbol.as_str()].dropped == 1)
+                ids.iter().all(|id| s.fault(id).dropped == 1)
             })
             .await;
 
         if timeout == 0 {
             session.observe(Duration::from_secs(5)).await;
-            assert_eq!(session.applied, 0);
-            assert!(session.wire.control.lock().unsubscribed.is_empty());
-            session.reconnect(false);
-            session.reconnect(true);
+            assert_eq!(session.batches(), 0);
+            assert!(
+                session
+                    .proxy()
+                    .faults()
+                    .values()
+                    .all(|fault| fault.unsubscribes == 0)
+            );
+            reconnect(&mut session, PUBLIC);
+            reconnect(&mut session, BUSINESS);
         }
 
         session.healthy(ids).await;
-        {
-            let control = session.wire.control.lock();
 
-            for id in ids {
-                assert_eq!(control.faults[id.symbol.as_str()].gaps, 0);
-                assert_eq!(control.faults[id.symbol.as_str()].dropped, 1);
-                assert_eq!(
-                    control
-                        .unsubscribed
-                        .get(id.symbol.as_str())
-                        .copied()
-                        .unwrap_or(0),
-                    usize::from(timeout > 0)
-                );
+        for id in ids {
+            let fault = session.fault(id).clone();
+            assert_eq!(fault.corrupted, 0);
+            assert_eq!(fault.dropped, 1);
+            assert_eq!(fault.unsubscribes, usize::from(timeout > 0));
 
-                if id.symbol.as_str().contains('_') {
-                    assert!(session.snapshots[id] >= 1);
-                } else {
-                    assert_eq!(session.snapshots[id], 1);
-                }
+            if is_spread(id) {
+                assert!(session.book(id).snapshots >= 1);
+            } else {
+                assert_eq!(session.book(id).snapshots, 1);
             }
         }
 
-        assert_eq!(
-            session
-                .wire
-                .connections
-                .each_ref()
-                .map(|n| n.load(Ordering::SeqCst)),
-            [if timeout > 0 { 1 } else { 2 }; 2]
-        );
+        assert_eq!(connections(&session), [if timeout > 0 { 1 } else { 2 }; 2]);
         session.observe(Duration::from_secs(2)).await;
-        applied += session.stop().await;
-        eprintln!(
-            "INITIAL PASS timeout={timeout} round={} books=8 gaps=0",
-            round + 1
-        );
+        total += session.batches();
+        session.stop().await;
+        stress::check("initial", format!("round={} books=8", round + 1));
     }
 
-    eprintln!("INITIAL COMPLETE timeout={timeout} rounds={rounds} oracle_batches={applied}");
+    format!("batches_total={total}")
 }
 
-async fn turnover(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
-    let mut session = Session::connect(timeout).await;
+async fn turnover(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
+    let timeout = args.timeout_secs();
+    let mut session = OkxSession::connect(args).await;
     let quiet = [ids[0], ids[4], ids[6]];
-    for id in quiet {
-        session
-            .wire
-            .control
-            .lock()
-            .faults
-            .entry(id.symbol.to_string())
-            .or_default()
-            .hold = true;
+
+    for id in &quiet {
+        session.fault(id).hold = true;
     }
 
     for id in ids {
@@ -487,51 +387,46 @@ async fn turnover(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
     session
         .observe(Duration::from_secs(10.max(timeout + 5)))
         .await;
-    {
-        let mut control = session.wire.control.lock();
 
-        for id in quiet {
-            assert!(control.faults[id.symbol.as_str()].held > 0);
-            assert_eq!(session.updates.get(&id).copied().unwrap_or(0), 0);
-            let replacements = control
-                .unsubscribed
-                .get(id.symbol.as_str())
-                .copied()
-                .unwrap_or(0);
+    for id in &quiet {
+        let mut fault = session.fault(id);
+        assert!(fault.held > 0);
+        assert_eq!(session.book(id).batches, 0);
 
-            if timeout == 0 {
-                assert_eq!(replacements, 0);
-            } else {
-                assert!(replacements > 0, "initial silence starts recovery for {id}");
-            }
-
-            control.faults.get_mut(id.symbol.as_str()).unwrap().hold = false;
+        if timeout == 0 {
+            assert_eq!(fault.unsubscribes, 0);
+        } else {
+            assert!(
+                fault.unsubscribes > 0,
+                "initial silence starts recovery for {id}"
+            );
         }
+
+        fault.hold = false;
     }
 
-    eprintln!("INITIAL SILENCE PASS timeout={timeout} books=3");
-    session.wire.flush.send_replace(());
+    stress::check("initial_silence", "books=3");
+    session.proxy().release();
     session.healthy(ids).await;
 
-    for round in 0..rounds {
+    for round in 0..args.rounds() {
         let id = ids[if round % 2 == 0 { 0 } else { 4 }];
 
         let drops = if timeout > 0 { 3 } else { 1 };
 
-        let (gaps, dropped) = {
-            let mut control = session.wire.control.lock();
-            let fault = control.faults.entry(id.symbol.to_string()).or_default();
+        let (corrupted, dropped) = {
+            let mut fault = session.fault(&id);
             fault.corrupt = 1;
-            fault.drop = drops;
-            (fault.gaps, fault.dropped)
+            fault.drop_snapshots = drops;
+            (fault.corrupted, fault.dropped)
         };
 
         session
             .until(Duration::from_secs(30), "turnover recovery boundary", |s| {
-                let control = s.wire.control.lock();
-                let fault = &control.faults[id.symbol.as_str()];
+                let fault = s.fault(&id);
+
                 if round % 3 == 0 {
-                    fault.gaps > gaps
+                    fault.corrupted > corrupted
                 } else {
                     fault.dropped == dropped + drops
                 }
@@ -544,146 +439,116 @@ async fn turnover(timeout: u64, rounds: usize, ids: &[InstrumentId; 8]) {
                 .await;
         }
 
-        session
-            .wire
-            .control
-            .lock()
-            .faults
-            .get_mut(id.symbol.as_str())
-            .unwrap()
-            .drop = 0;
+        session.fault(&id).drop_snapshots = 0;
         session.unsubscribe(id);
         session.subscribe(id);
         session.healthy(&[id]).await;
-        let unsubscribed = session.wire.control.lock().unsubscribed[id.symbol.as_str()];
+        let unsubscribes = session.fault(&id).unsubscribes;
+        assert!(unsubscribes > 0, "venue acknowledged the unsubscribe");
         session.observe(Duration::from_secs(5)).await;
         assert_eq!(
-            session.wire.control.lock().unsubscribed[id.symbol.as_str()],
-            unsubscribed,
+            session.fault(&id).unsubscribes,
+            unsubscribes,
             "old recovery does not replace new subscription"
         );
-        eprintln!(
-            "TURNOVER PASS timeout={timeout} round={} boundary={} instrument={id}",
-            round + 1,
-            round % 3
-        );
+        session.round(round, &format!("boundary={} instrument={id}", round % 3));
     }
 
     session.healthy(ids).await;
-    let applied = session.stop().await;
-    eprintln!("TURNOVER COMPLETE timeout={timeout} rounds={rounds} oracle_batches={applied}");
+    let batches = session.batches();
+    session.stop().await;
+    format!("batches_total={batches}")
 }
 
-async fn boundaries(timeout: u64, ids: &[InstrumentId; 8]) {
-    let mut session = Session::connect(timeout).await;
+async fn boundaries(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
+    let timeout = args.timeout_secs();
+    let mut session = OkxSession::connect(args).await;
+
     for id in ids {
         session.subscribe(*id);
     }
 
     session.healthy(ids).await;
-    session
-        .recover_without_reconnect(&ids[..6], if timeout > 0 { 3 } else { 0 })
-        .await;
+    recover_without_reconnect(&mut session, &ids[..6], if timeout > 0 { 3 } else { 0 }).await;
 
     let targets = [ids[0], ids[4]];
+
     for id in targets {
-        let connections = session.wire.connections[0].load(Ordering::SeqCst);
-        let cuts = session.wire.cuts.load(Ordering::SeqCst);
+        let connections = session.proxy().connections(PUBLIC);
+        let cuts = session.proxy().cuts();
         {
-            let mut control = session.wire.control.lock();
-            let fault = control.faults.entry(id.symbol.to_string()).or_default();
+            let mut fault = session.fault(&id);
             fault.corrupt = 1;
             fault.cut_unsubscribe = true;
         }
 
-        session.expected_epochs[0] = connections + 1;
+        session.venue_mut().expected_epochs[0] = connections + 1;
+
         for public_id in &ids[..6] {
-            session
-                .expected_snapshots
-                .insert(*public_id, session.snapshots[public_id] + 1);
+            session.expect_snapshot(*public_id);
         }
 
         session.healthy(&ids[..6]).await;
-        assert_eq!(session.wire.cuts.load(Ordering::SeqCst), cuts + 1);
-        assert_eq!(
-            session.wire.connections[0].load(Ordering::SeqCst),
-            connections + 1
-        );
-        eprintln!("REPLACEMENT CUT PASS instrument={id}");
+        assert_eq!(session.proxy().cuts(), cuts + 1);
+        assert_eq!(session.proxy().connections(PUBLIC), connections + 1);
+        stress::check("replacement_cut", format!("instrument={id}"));
     }
 
-    let connections = session
-        .wire
-        .connections
-        .each_ref()
-        .map(|n| n.load(Ordering::SeqCst));
+    let connections_before = connections(&session);
 
-    let before = {
-        let mut control = session.wire.control.lock();
-        targets.map(|id| {
-            let unsubscribed = control.unsubscribed[id.symbol.as_str()];
-            let fault = control.faults.entry(id.symbol.to_string()).or_default();
-            fault.corrupt = 1;
-            fault.hold_snapshot = true;
-            (id, unsubscribed, fault.held)
-        })
-    };
+    let before = targets.map(|id| {
+        let mut fault = session.fault(&id);
+        let unsubscribes = fault.unsubscribes;
+        fault.corrupt = 1;
+        fault.hold_snapshot = true;
+        (id, unsubscribes, fault.held)
+    });
 
     session
         .until(Duration::from_secs(20), "replacement snapshots held", |s| {
-            let control = s.wire.control.lock();
-            before
-                .iter()
-                .all(|(id, _, held)| control.faults[id.symbol.as_str()].held > *held)
+            before.iter().all(|(id, _, held)| s.fault(id).held > *held)
         })
         .await;
-
-    let snapshots = targets.map(|id| session.snapshots[&id]);
 
     // The retry budget ends within the window, including the 180-second budget with deadlines
     // disabled; recovery then continues at the one-minute ceiling.
     let window = Duration::from_secs(185);
     session.observe(window).await;
-    {
-        let mut control = session.wire.control.lock();
 
-        let budget = if timeout > 0 { 8 } else { 1 };
-        let ceiling_max = window.as_secs() as usize / 60;
+    let budget = if timeout > 0 { 8 } else { 1 };
+    let ceiling_max = window.as_secs() as usize / 60;
 
-        for (id, unsubscribed, _) in before {
-            let attempts = control.unsubscribed[id.symbol.as_str()] - unsubscribed;
-            assert!(
-                (budget..=budget + ceiling_max).contains(&attempts),
-                "{id} made {attempts} attempts; expected the budget of {budget} plus at most one \
-                 ceiling attempt per minute"
-            );
-            control.faults.get_mut(id.symbol.as_str()).unwrap().hold = false;
-        }
+    for (id, unsubscribes, _) in before {
+        let mut fault = session.fault(&id);
+        let attempts = fault.unsubscribes - unsubscribes;
+        assert!(
+            (budget..=budget + ceiling_max).contains(&attempts),
+            "{id} made {attempts} attempts; expected the budget of {budget} plus at most one \
+             ceiling attempt per minute"
+        );
+        fault.hold = false;
     }
 
-    for (id, snapshots) in targets.into_iter().zip(snapshots) {
-        session.expected_snapshots.insert(id, snapshots + 1);
+    // Held replacement snapshots never reached the adapter, so each target needs one more
+    for id in targets {
+        session.expect_snapshot(id);
     }
 
     // Released snapshots complete the exhausted recoveries without a reconnect or resubscribe
-    session.wire.flush.send_replace(());
+    session.proxy().release();
     session.healthy(ids).await;
-    assert_eq!(
-        session
-            .wire
-            .connections
-            .each_ref()
-            .map(|n| n.load(Ordering::SeqCst)),
-        connections
+    assert_eq!(connections(&session), connections_before);
+    stress::check(
+        "exhaustion",
+        "books=2 recovered_at_ceiling=true reconnects=0",
     );
-    eprintln!("EXHAUSTION PASS timeout={timeout} books=2 recovered_at_ceiling=true reconnects=0");
 
     let id = targets[0];
-    let unsubscribed = session.wire.control.lock().unsubscribed[id.symbol.as_str()];
+    let unsubscribes = session.fault(&id).unsubscribes;
     session.unsubscribe(id);
     session
         .until(Duration::from_secs(10), "recovered book unsubscribe", |s| {
-            s.wire.control.lock().unsubscribed[id.symbol.as_str()] == unsubscribed + 1
+            s.fault(&id).unsubscribes == unsubscribes + 1
         })
         .await;
 
@@ -691,449 +556,199 @@ async fn boundaries(timeout: u64, ids: &[InstrumentId; 8]) {
     session.observe(Duration::from_secs(1)).await;
     session.subscribe(id);
     session.healthy(&[id]).await;
-    eprintln!("RESUBSCRIBE PASS instrument={id}");
-    session.reconnect(false);
+    stress::check("resubscribe", format!("instrument={id}"));
+    reconnect(&mut session, PUBLIC);
     session.healthy(&ids[..6]).await;
-    eprintln!("RECONNECT PASS books=6");
+    stress::check("reconnect", "books=6");
 
-    let cuts = session.wire.cuts.load(Ordering::SeqCst);
-    session.wire.cuts_remaining.store(10, Ordering::SeqCst);
-    session.reconnect(false);
+    let cuts = session.proxy().cuts();
+    session.proxy().cut(Some(PUBLIC), FrameKind::Snapshot, 10);
+    reconnect(&mut session, PUBLIC);
     session
         .until(
             Duration::from_secs(30),
             "reconnect interrupted by shutdown",
-            |s| s.wire.cuts.load(Ordering::SeqCst) > cuts,
+            |s| s.proxy().cuts() > cuts,
         )
         .await;
-    let applied = session.stop().await;
-    eprintln!("BOUNDARIES PASS timeout={timeout} oracle_batches={applied}");
+    let batches = session.batches();
+    session.stop().await;
+    format!("batches_total={batches}")
 }
 
-#[derive(Default)]
-struct Fault {
-    corrupt: usize,
-    drop: usize,
-    hold: bool,
-    hold_snapshot: bool,
-    await_snapshot: bool,
-    cut_unsubscribe: bool,
-    gaps: usize,
-    dropped: usize,
-    held: usize,
-}
+// Forces gaps whose replacement snapshots are dropped `drops` times, then checks that each book
+// recovered through its own resubscribes without a reconnect
+async fn recover_without_reconnect(session: &mut OkxSession, ids: &[InstrumentId], drops: usize) {
+    let connections_before = connections(session);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct WireBook {
-    bids: BTreeMap<Decimal, Decimal>,
-    asks: BTreeMap<Decimal, Decimal>,
-}
+    let before = ids
+        .iter()
+        .map(|id| {
+            let snapshots = session.book(id).snapshots;
+            let mut fault = session.fault(id);
+            fault.corrupt = 1;
+            fault.drop_snapshots = drops;
+            (
+                *id,
+                fault.corrupted,
+                fault.dropped,
+                fault.unsubscribes,
+                snapshots,
+            )
+        })
+        .collect::<Vec<_>>();
 
-struct View {
-    epoch: usize,
-    sequence: u64,
-    timestamp: u64,
-    book: WireBook,
-}
-
-#[derive(Default)]
-struct Control {
-    faults: HashMap<String, Fault>,
-    unsubscribed: HashMap<String, usize>,
-    views: HashMap<String, VecDeque<View>>,
-}
-
-#[derive(Default)]
-struct Wire {
-    connections: [AtomicUsize; 2],
-    active: AtomicUsize,
-    cuts_remaining: AtomicUsize,
-    cuts: AtomicUsize,
-    flush: tokio::sync::watch::Sender<()>,
-    control: Mutex<Control>,
-}
-
-struct ProxyConnection(Arc<Wire>);
-
-impl Drop for ProxyConnection {
-    fn drop(&mut self) {
-        self.0.active.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
-async fn public(ws: WebSocketUpgrade, State(wire): State<Arc<Wire>>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy(socket, wire, false))
-}
-
-async fn business(ws: WebSocketUpgrade, State(wire): State<Arc<Wire>>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy(socket, wire, true))
-}
-
-async fn proxy(mut socket: WebSocket, wire: Arc<Wire>, business: bool) {
-    let endpoint = if business { "business" } else { "public" };
-    let (mut upstream, _) =
-        tokio_tungstenite::connect_async(format!("wss://ws.okx.com:8443/ws/v5/{endpoint}"))
-            .await
-            .expect("mainnet websocket");
-    wire.active.fetch_add(1, Ordering::SeqCst);
-    let _connection = ProxyConnection(Arc::clone(&wire));
-    let epoch = wire.connections[usize::from(business)].fetch_add(1, Ordering::SeqCst) + 1;
-    let mut books = HashMap::<String, WireBook>::new();
-    let mut held = VecDeque::<(String, String)>::new();
-    let mut flush = wire.flush.subscribe();
-
-    loop {
-        tokio::select! {
-            Ok(()) = flush.changed() => {
-                let mut remaining = VecDeque::new();
-
-                while let Some((id, text)) = held.pop_front() {
-                    let holding = wire.control.lock().faults.get(&id).is_some_and(|f| f.hold);
-                    if holding {
-                        remaining.push_back((id, text));
-                    } else if socket.send(Message::Text(text.into())).await.is_err() {
-                        return;
-                    }
-                }
-                held = remaining;
-            }
-            message = socket.recv() => match message {
-                Some(Ok(Message::Text(text))) => {
-                    if upstream.send(UpstreamMessage::Text(text.to_string().into())).await.is_err() { break; }
-                    let cut = serde_json::from_str::<Value>(&text).is_ok_and(|frame| {
-                        frame["op"] == "unsubscribe" && frame["args"].as_array().is_some_and(|args| {
-                            let mut control = wire.control.lock();
-                            let mut cut = false;
-
-                            for id in args.iter().filter_map(symbol) {
-                                if let Some(fault) = control.faults.get_mut(id) {
-                                    fault.await_snapshot = false;
-                                    cut |= std::mem::take(&mut fault.cut_unsubscribe);
-                                }
-                            }
-                            cut
-                        })
-                    });
-
-                    if cut {
-                        wire.cuts.fetch_add(1, Ordering::SeqCst);
-                        break;
-                    }
-                }
-                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
-                _ => {}
-            },
-            message = upstream.next() => match message {
-                Some(Ok(UpstreamMessage::Text(text))) => {
-                    let mut frame: Value = match serde_json::from_str(&text) {
-                        Ok(frame) => frame,
-                        Err(_) => {
-                            if socket.send(Message::Text(text.to_string().into())).await.is_err() { break; }
-                            continue;
-                        }
-                    };
-
-                    if frame["event"] == "error" {
-                        eprintln!("venue error endpoint={endpoint}: {frame}");
-                    }
-
-                    if frame["event"] == "unsubscribe"
-                        && let Some(id) = symbol(&frame["arg"])
-                    {
-                        *wire.control.lock().unsubscribed.entry(id.to_string()).or_default() += 1;
-                    }
-                    let channel = frame["arg"]["channel"].as_str().unwrap_or("");
-                    let is_book = ["books", "books-rpi", "sprd-books5"].contains(&channel) && frame["data"].is_array();
-                    if is_book {
-                        let snapshot = frame["action"] == "snapshot" || channel == "sprd-books5";
-                        if !business && snapshot && wire.cuts_remaining.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
-                            wire.cuts.fetch_add(1, Ordering::SeqCst);
-                            break;
-                        }
-                        let id = symbol(&frame["arg"]).unwrap().to_string();
-                        let book = books.entry(id.clone()).or_default();
-                        let mut drop_frame = false;
-                        let holding;
-                        {
-                            let mut control = wire.control.lock();
-
-                            for data in frame["data"].as_array().unwrap() {
-                                book.apply(data, snapshot);
-                                let view = View {
-                                    epoch,
-                                    sequence: data["seqId"].as_u64().unwrap_or(0),
-                                    timestamp: data["ts"].as_str().unwrap().parse::<u64>().unwrap() * 1_000_000,
-                                    book: book.top(),
-                                };
-                                let views = control.views.entry(id.clone()).or_default();
-                                views.push_back(view);
-                                if views.len() > 2048 { views.pop_front(); }
-                            }
-                            let fault = control.faults.entry(id.clone()).or_default();
-                            if !snapshot && fault.corrupt > 0 {
-                                frame["data"][0]["prevSeqId"] = json!(i64::MAX);
-                                fault.corrupt -= 1;
-                                fault.gaps += 1;
-                            }
-
-                            if snapshot && fault.drop > 0 {
-                                fault.drop -= 1;
-                                fault.dropped += 1;
-                                drop_frame = true;
-                            }
-
-                            if epoch > 1 {
-                                fault.await_snapshot = false;
-                            }
-
-                            if fault.await_snapshot {
-                                drop_frame = true;
-                            }
-
-                            if snapshot && fault.hold_snapshot {
-                                fault.hold = true;
-                                fault.hold_snapshot = false;
-                            }
-                            holding = fault.hold || held.iter().any(|(held_id, _)| held_id == &id);
-                            if holding { fault.held += 1; }
-                        }
-
-                        if drop_frame { continue; }
-
-                        if holding {
-                            held.push_back((id, frame.to_string()));
-                            assert!(held.len() < 20_000, "bounded delayed-frame queue");
-                            continue;
-                        }
-                    }
-
-                    if socket.send(Message::Text(frame.to_string().into())).await.is_err() { break; }
-                }
-                Some(Ok(UpstreamMessage::Close(_)) | Err(_)) | None => break,
-                _ => {}
-            }
-        }
+    for (id, ..) in &before {
+        session.expect_snapshot(*id);
     }
 
-    let _ = tokio::time::timeout(Duration::from_secs(1), upstream.close(None)).await;
-}
+    session.healthy(ids).await;
+    session.observe(Duration::from_secs(5)).await;
 
-fn symbol(arg: &Value) -> Option<&str> {
-    arg["instId"].as_str().or_else(|| arg["sprdId"].as_str())
-}
-
-impl WireBook {
-    fn apply(&mut self, data: &Value, snapshot: bool) {
-        if snapshot {
-            self.bids.clear();
-            self.asks.clear();
-        }
-
-        for (side, levels) in [("bids", &mut self.bids), ("asks", &mut self.asks)] {
-            for row in data[side].as_array().unwrap() {
-                let price = Decimal::from_str(row[0].as_str().unwrap()).unwrap();
-                let size = Decimal::from_str(row[1].as_str().unwrap()).unwrap();
-                if size.is_zero() {
-                    levels.remove(&price);
-                } else {
-                    levels.insert(price, size);
-                }
-            }
-        }
+    for (id, corrupted, dropped, unsubscribes, snapshots) in before {
+        let fault = session.fault(&id).clone();
+        assert_eq!(fault.corrupted, corrupted + 1);
+        assert_eq!(fault.dropped, dropped + drops);
+        assert_eq!(fault.unsubscribes, unsubscribes + 1 + drops);
+        assert_eq!(session.book(&id).snapshots, snapshots + 1);
     }
 
-    fn top(&self) -> Self {
-        Self {
-            bids: self
-                .bids
-                .iter()
-                .rev()
-                .take(20)
-                .map(|(p, q)| (*p, *q))
-                .collect(),
-            asks: self.asks.iter().take(20).map(|(p, q)| (*p, *q)).collect(),
-        }
-    }
+    assert_eq!(connections(session), connections_before);
+    stress::check(
+        "autonomous",
+        format!(
+            "books={} dropped={} reconnects=0",
+            ids.len(),
+            ids.len() * drops
+        ),
+    );
 }
 
-struct Session {
-    client: OKXDataClient,
-    wire: Arc<Wire>,
-    registry: SocketReconnectRegistry,
-    events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    server: tokio::task::JoinHandle<()>,
-    checker: BookStreamChecker,
-    requested: HashSet<InstrumentId>,
-    snapshots: HashMap<InstrumentId, usize>,
-    updates: HashMap<InstrumentId, usize>,
-    disabled: HashSet<InstrumentId>,
-    applied: usize,
+// Reconnects one socket, requiring every book on it to resync from that socket's successor, or
+// from the connection after any pending cuts
+fn reconnect(session: &mut OkxSession, route: &'static str) {
+    let business = route == BUSINESS;
+
+    let pending = if business {
+        0
+    } else {
+        session.proxy().cuts_pending()
+    };
+
+    let expected = session.proxy().connections(route) + 1 + pending;
+    session.venue_mut().expected_epochs[usize::from(business)] = expected;
+
+    let endpoint = if business {
+        BUSINESS_ENDPOINT
+    } else {
+        PUBLIC_ENDPOINT
+    };
+
+    assert_eq!(
+        session.reconnect(endpoint),
+        ReconnectRequestOutcome::Accepted
+    );
+}
+
+fn connections(session: &OkxSession) -> [usize; 2] {
+    [
+        session.proxy().connections(PUBLIC),
+        session.proxy().connections(BUSINESS),
+    ]
+}
+
+fn is_spread(id: &InstrumentId) -> bool {
+    id.symbol.as_str().contains('_')
+}
+
+struct Okx {
+    wire: OkxWire,
     expected_epochs: [usize; 2],
     epochs: HashMap<InstrumentId, usize>,
-    expected_snapshots: HashMap<InstrumentId, usize>,
 }
 
-impl Session {
-    async fn connect(snapshot_timeout: u64) -> Self {
-        let wire = Arc::new(Wire::default());
-        let router = Router::new()
-            .route("/public", get(public))
-            .route("/business", get(business))
-            .with_state(Arc::clone(&wire));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+impl StressVenue for Okx {
+    const NAME: &'static str = "okx";
+    const SCENARIOS: &'static [&'static str] = &["churn", "initial", "turnover", "boundaries"];
+    const ROUNDS: usize = 18;
+    // OKX `seqId` can reset within an episode, so the wire oracle verifies content
+    const SEQUENCED: bool = false;
+    const COVERAGE: Coverage = Coverage::Episodes;
+    const HEALTHY_LIMIT: Duration = Duration::from_secs(90);
 
-        let serve = async move {
-            axum::serve(listener, router).await.unwrap();
-        };
+    fn self_check() {
+        check_wire_oracle();
+    }
 
-        let server = tokio::spawn(serve); // tokio-import-ok: Standalone runtime
+    fn new(_args: &StressArgs) -> Self {
+        Self {
+            wire: OkxWire::default(),
+            expected_epochs: [1, 1],
+            epochs: HashMap::new(),
+        }
+    }
 
-        let (sender, events) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let registry = SocketReconnectRegistry::default();
+    fn client_id(&self) -> ClientId {
+        *OKX_CLIENT_ID
+    }
 
+    fn routes(&self) -> Vec<Route> {
+        [
+            (PUBLIC, "/public", PUBLIC_ENDPOINT),
+            (BUSINESS, "/business", BUSINESS_ENDPOINT),
+        ]
+        .into_iter()
+        .map(|(name, path, endpoint)| Route {
+            name,
+            path,
+            upstream: format!("wss://ws.okx.com:8443/ws/v5/{name}"),
+            endpoint,
+            headers: &[],
+        })
+        .collect()
+    }
+
+    fn codec(&self) -> Arc<dyn WireCodec> {
+        Arc::new(self.wire.clone())
+    }
+
+    fn client(&self, proxy: SocketAddr, args: &StressArgs) -> anyhow::Result<Box<dyn DataClient>> {
         let config = OKXDataClientConfig {
             instrument_types: vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap],
             load_spreads: true,
-            base_url_ws_public: Some(format!("ws://{addr}/public")),
-            base_url_ws_business: Some(format!("ws://{addr}/business")),
+            base_url_ws_public: Some(format!("ws://{proxy}/public")),
+            base_url_ws_business: Some(format!("ws://{proxy}/business")),
             update_instruments_interval_mins: 0,
             book_stale_check_interval_secs: 0,
-            book_snapshot_timeout_secs: snapshot_timeout,
+            book_snapshot_timeout_secs: args.timeout_secs(),
             ..OKXDataClientConfig::default()
         };
 
-        let mut client = registry.scope(|| OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap());
-        eprintln!("Connecting mainnet market data, snapshot_timeout={snapshot_timeout}");
-        tokio::time::timeout(Duration::from_secs(60), client.connect())
-            .await
-            .expect("bounded connect")
-            .unwrap();
-        eprintln!("Connected public and business sockets");
-
-        Self {
-            client,
-            wire,
-            registry,
-            events,
-            server,
-            // OKX `seqId` can reset within an episode, so the wire oracle verifies content
-            checker: BookStreamChecker::new(BookType::L2_MBP, false),
-            requested: HashSet::new(),
-            snapshots: HashMap::new(),
-            updates: HashMap::new(),
-            disabled: HashSet::new(),
-            applied: 0,
-            expected_epochs: [1, 1],
-            epochs: HashMap::new(),
-            expected_snapshots: HashMap::new(),
-        }
+        Ok(Box::new(OKXDataClient::new(*OKX_CLIENT_ID, config)?))
     }
 
-    fn subscribe(&mut self, id: InstrumentId) {
-        let rpi = id.symbol.as_str().ends_with("-SWAP") && !id.symbol.as_str().contains('_');
-        let params: Option<Params> =
-            rpi.then(|| serde_json::from_value(json!({"rpi": true})).unwrap());
-        self.disabled.remove(&id);
-        self.expected_snapshots
-            .insert(id, self.snapshots.get(&id).copied().unwrap_or(0) + 1);
-        self.requested.insert(id);
-        self.checker.open(id);
-        self.client
-            .subscribe_book_deltas(SubscribeBookDeltas::new(
-                id,
-                BookType::L2_MBP,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                true,
-                None,
-                params,
-            ))
-            .unwrap();
+    fn key(&self, instrument_id: &InstrumentId) -> String {
+        instrument_id.symbol.to_string()
     }
 
-    // Marks a settled unsubscribe, after which the book must emit nothing
-    fn close(&mut self, id: InstrumentId) {
-        self.disabled.insert(id);
-        self.checker.close(id);
-    }
-
-    fn unsubscribe(&mut self, id: InstrumentId) {
-        self.client
-            .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
-                id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-    }
-
-    fn reconnect(&mut self, business: bool) {
-        self.expected_epochs[usize::from(business)] = self.wire.connections[usize::from(business)]
-            .load(Ordering::SeqCst)
-            + 1
-            + if business {
-                0
-            } else {
-                self.wire.cuts_remaining.load(Ordering::SeqCst)
-            };
-
-        for id in self.requested.iter().filter(|id| {
-            id.symbol.as_str().contains('_') == business && !self.disabled.contains(id)
-        }) {
-            self.expected_snapshots
-                .insert(*id, self.snapshots.get(id).copied().unwrap_or(0) + 1);
-        }
-
-        let endpoint = if business {
-            "okx-business-data-streams"
+    fn endpoint(&self, instrument_id: &InstrumentId) -> &'static str {
+        if is_spread(instrument_id) {
+            BUSINESS_ENDPOINT
         } else {
-            "okx-public-data-streams"
-        };
-
-        let handle = self
-            .registry
-            .handle(*OKX_CLIENT_ID, Ustr::from(endpoint))
-            .unwrap();
-        assert_eq!(
-            handle.request_reconnect(),
-            ReconnectRequestOutcome::Accepted
-        );
+            PUBLIC_ENDPOINT
+        }
     }
 
-    fn apply(&mut self, event: DataEvent) {
-        let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
-            return;
-        };
+    fn params(&self, instrument_id: &InstrumentId) -> Option<Params> {
+        let rpi = instrument_id.symbol.as_str().ends_with("-SWAP") && !is_spread(instrument_id);
+        rpi.then(|| serde_json::from_value(json!({"rpi": true})).unwrap())
+    }
 
+    fn verify(&mut self, checker: &mut BookStreamChecker, deltas: &OrderBookDeltas) {
         let id = deltas.instrument_id;
-        let snapshot = deltas
-            .deltas
-            .first()
-            .is_some_and(|d| RecordFlag::F_SNAPSHOT.matches(d.flags));
-        if snapshot {
-            *self.snapshots.entry(id).or_default() += 1;
-        }
+        let views = self.wire.views.lock();
 
-        if let Err(violation) = self.checker.apply(&deltas) {
-            panic!(
-                "book contract violation {id} seq={} ts={}: {violation}",
-                deltas.sequence, deltas.ts_event
-            );
-        }
-
-        let control = self.wire.control.lock();
-
-        let view = control
-            .views
+        let view = views
             .get(id.symbol.as_str())
             .and_then(|views| {
                 views.iter().rev().find(|v| {
@@ -1142,10 +757,7 @@ impl Session {
             })
             .expect("wire oracle at emitted sequence and timestamp");
 
-        if let Err(violation) = self
-            .checker
-            .verify(id, 20, &view.book.bids, &view.book.asks)
-        {
+        if let Err(violation) = checker.verify(id, DEPTH, &view.book.bids, &view.book.asks) {
             panic!(
                 "wire oracle mismatch {id} seq={} ts={}: {violation}",
                 deltas.sequence, deltas.ts_event
@@ -1153,178 +765,175 @@ impl Session {
         }
 
         self.epochs.insert(id, view.epoch);
-        *self.updates.entry(id).or_default() += 1;
-        self.applied += 1;
     }
 
-    async fn until(&mut self, limit: Duration, label: &str, predicate: impl Fn(&Self) -> bool) {
-        let result = tokio::time::timeout(limit, async {
-            while !predicate(self) {
-                tokio::select! {
-                    event = self.events.recv() => self.apply(event.expect("data stream stays open")),
-                    () = tokio::time::sleep(Duration::from_millis(10)) => {},
-                }
-            }
-        }).await;
-
-        assert!(
-            result.is_ok(),
-            "deadline exceeded: {label}, updates={:?}, snapshots={:?}",
-            self.updates,
-            self.snapshots
-        );
-        self.drain();
+    // A healthy book resynced on the expected socket; public books must also stream updates,
+    // while spread books stream snapshots only
+    fn streaming(&self, id: &InstrumentId, book: &BookProgress, start: &BookProgress) -> bool {
+        let business = is_spread(id);
+        self.epochs.get(id).copied().unwrap_or(0) >= self.expected_epochs[usize::from(business)]
+            && (business || book.batches >= start.batches + 5)
     }
+}
 
-    fn drain(&mut self) {
-        while let Ok(event) = self.events.try_recv() {
-            self.apply(event);
-        }
-    }
+#[derive(Clone, Default)]
+struct OkxWire {
+    views: Arc<Mutex<HashMap<String, VecDeque<View>>>>,
+}
 
-    async fn observe(&mut self, duration: Duration) {
-        let end = Instant::now() + duration;
-        self.until(
-            duration + Duration::from_secs(2),
-            "observation window",
-            |_| Instant::now() >= end,
-        )
-        .await;
-    }
-
-    async fn healthy(&mut self, ids: &[InstrumentId]) {
-        let before = ids
-            .iter()
-            .map(|id| (*id, self.updates.get(id).copied().unwrap_or(0)))
-            .collect::<Vec<_>>();
-        self.until(Duration::from_secs(90), "all intended books recover", |s| {
-            before.iter().all(|(id, updates)| {
-                let business = id.symbol.as_str().contains('_');
-                s.epochs.get(id).copied().unwrap_or(0) >= s.expected_epochs[usize::from(business)]
-                    && (business || s.updates.get(id).copied().unwrap_or(0) >= updates + 5)
-                    && s.snapshots.get(id).copied().unwrap_or(0) >= s.expected_snapshots[id]
-            })
+impl WireCodec for OkxWire {
+    fn open(&self, route: &Route, number: usize) -> Box<dyn WireConnection> {
+        Box::new(OkxConnection {
+            views: Arc::clone(&self.views),
+            route: route.name,
+            epoch: number,
+            books: HashMap::new(),
         })
-        .await;
     }
+}
 
-    async fn recover_without_reconnect(&mut self, ids: &[InstrumentId], drops: usize) {
-        let connections = self
-            .wire
-            .connections
-            .each_ref()
-            .map(|n| n.load(Ordering::SeqCst));
+// The top of the reference book after one raw frame
+struct View {
+    epoch: usize,
+    sequence: u64,
+    timestamp: u64,
+    book: WireBook,
+}
 
-        let before = {
-            let mut control = self.wire.control.lock();
-            ids.iter()
-                .map(|id| {
-                    let unsubscribed = control
-                        .unsubscribed
-                        .get(id.symbol.as_str())
-                        .copied()
-                        .unwrap_or(0);
-                    let fault = control.faults.entry(id.symbol.to_string()).or_default();
-                    fault.corrupt = 1;
-                    fault.drop = drops;
-                    (
-                        *id,
-                        fault.gaps,
-                        fault.dropped,
-                        unsubscribed,
-                        self.snapshots[id],
-                    )
-                })
-                .collect::<Vec<_>>()
+struct OkxConnection {
+    views: Arc<Mutex<HashMap<String, VecDeque<View>>>>,
+    route: &'static str,
+    epoch: usize,
+    books: HashMap<String, WireBook>,
+}
+
+impl WireConnection for OkxConnection {
+    fn upstream(&mut self, message: &Message) -> Upstream {
+        let Message::Text(text) = message else {
+            return Upstream::Other;
         };
 
-        for (id, _, _, _, snapshots) in &before {
-            self.expected_snapshots.insert(*id, snapshots + 1);
+        let Ok(frame) = serde_json::from_str::<Value>(text) else {
+            return Upstream::Other;
+        };
+
+        if frame["event"] == "error" {
+            eprintln!("Venue error on route {}: {frame}", self.route);
         }
 
-        self.healthy(ids).await;
-        self.observe(Duration::from_secs(5)).await;
-        let control = self.wire.control.lock();
-
-        for (id, gaps, dropped, unsubscribed, snapshots) in before {
-            let fault = &control.faults[id.symbol.as_str()];
-            assert_eq!(fault.gaps, gaps + 1);
-            assert_eq!(fault.dropped, dropped + drops);
-            assert_eq!(
-                control.unsubscribed[id.symbol.as_str()],
-                unsubscribed + 1 + drops
-            );
-            assert_eq!(self.snapshots[&id], snapshots + 1);
+        if frame["event"] == "unsubscribe"
+            && let Some(key) = symbol(&frame["arg"])
+        {
+            return Upstream::Unsubscribed(key.to_string());
         }
 
-        assert_eq!(
-            self.wire
-                .connections
-                .each_ref()
-                .map(|n| n.load(Ordering::SeqCst)),
-            connections
-        );
-        eprintln!(
-            "AUTONOMOUS PASS books={} dropped={} reconnects=0",
-            ids.len(),
-            ids.len() * drops
-        );
+        let channel = frame["arg"]["channel"].as_str().unwrap_or("");
+
+        if !BOOK_CHANNELS.contains(&channel) || !frame["data"].is_array() {
+            return Upstream::Other;
+        }
+
+        let snapshot = frame["action"] == "snapshot" || channel == "sprd-books5";
+        let key = symbol(&frame["arg"]).unwrap().to_string();
+        let book = self.books.entry(key.clone()).or_default();
+        let mut views = self.views.lock();
+        let views = views.entry(key.clone()).or_default();
+
+        for data in frame["data"].as_array().unwrap() {
+            apply(book, data, snapshot);
+            views.push_back(View {
+                epoch: self.epoch,
+                sequence: data["seqId"].as_u64().unwrap_or(0),
+                timestamp: data["ts"].as_str().unwrap().parse::<u64>().unwrap() * 1_000_000,
+                book: book.top(DEPTH),
+            });
+
+            if views.len() > VIEWS_MAX {
+                views.pop_front();
+            }
+        }
+
+        let kind = if snapshot {
+            FrameKind::Snapshot
+        } else {
+            FrameKind::Update
+        };
+
+        Upstream::Book { key, kind }
     }
 
-    async fn stop(mut self) -> usize {
-        let started = Instant::now();
-        tokio::time::timeout(Duration::from_secs(10), self.client.disconnect())
-            .await
-            .expect("bounded disconnect")
-            .unwrap();
-        assert!(self.client.is_disconnected());
-        wait_until_async(
-            || async { self.wire.active.load(Ordering::SeqCst) == 0 },
-            Duration::from_secs(5),
-        )
-        .await;
+    fn client(&mut self, message: &Message) -> Vec<String> {
+        let Message::Text(text) = message else {
+            return Vec::new();
+        };
 
-        for endpoint in ["okx-public-data-streams", "okx-business-data-streams"] {
-            assert!(
-                self.registry
-                    .handle(*OKX_CLIENT_ID, Ustr::from(endpoint))
-                    .is_none()
-            );
+        serde_json::from_str::<Value>(text)
+            .ok()
+            .filter(|frame| frame["op"] == "unsubscribe")
+            .and_then(|frame| {
+                frame["args"].as_array().map(|args| {
+                    args.iter()
+                        .filter_map(symbol)
+                        .map(ToString::to_string)
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    // Breaks the `prevSeqId` link of an incremental frame, which the adapter must treat as a gap
+    fn corrupt(&mut self, message: &mut Message, _key: &str, kind: FrameKind) -> bool {
+        let Message::Text(text) = message else {
+            return false;
+        };
+
+        if kind == FrameKind::Snapshot {
+            return false;
         }
 
-        let control = self.wire.control.lock();
-        eprintln!(
-            "shutdown_ms={} active_proxies=0 applied={} public_connections={} business_connections={} gaps={} dropped={} held={} cuts={}",
-            started.elapsed().as_millis(),
-            self.applied,
-            self.wire.connections[0].load(Ordering::SeqCst),
-            self.wire.connections[1].load(Ordering::SeqCst),
-            control.faults.values().map(|f| f.gaps).sum::<usize>(),
-            control.faults.values().map(|f| f.dropped).sum::<usize>(),
-            control.faults.values().map(|f| f.held).sum::<usize>(),
-            self.wire.cuts.load(Ordering::SeqCst),
-        );
-        let (episodes, verified) = self.checker.coverage();
-        eprintln!("episodes={episodes} verified_episodes={verified}");
-        assert_eq!(
-            verified, episodes,
-            "every snapshot episode must be verified against the wire oracle"
-        );
-
-        self.server.abort();
-        self.applied
+        let mut frame = serde_json::from_str::<Value>(text).unwrap();
+        frame["data"][0]["prevSeqId"] = json!(i64::MAX);
+        *message = Message::Text(frame.to_string().into());
+        true
     }
+}
+
+fn symbol(arg: &Value) -> Option<&str> {
+    arg["instId"].as_str().or_else(|| arg["sprdId"].as_str())
+}
+
+fn apply(book: &mut WireBook, data: &Value, snapshot: bool) {
+    if snapshot {
+        *book = WireBook::default();
+    }
+
+    book.apply(&levels(&data["bids"]), &levels(&data["asks"]));
+}
+
+fn levels(rows: &Value) -> Vec<(Decimal, Decimal)> {
+    rows.as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                Decimal::from_str(row[0].as_str().unwrap()).unwrap(),
+                Decimal::from_str(row[1].as_str().unwrap()).unwrap(),
+            )
+        })
+        .collect()
 }
 
 // Proves the wire oracle before any venue traffic, since a wrong oracle would pass a wrong book
 fn check_wire_oracle() {
     {
         let mut book = WireBook::default();
-        book.apply(
+        apply(
+            &mut book,
             &json!({"bids": [["10", "2"], ["9", "3"]], "asks": [["11", "4"], ["12", "5"]]}),
             true,
         );
-        book.apply(
+        apply(
+            &mut book,
             &json!({"bids": [["10", "0"], ["9", "7"]], "asks": [["11", "8"], ["13", "6"]]}),
             false,
         );
@@ -1341,38 +950,120 @@ fn check_wire_oracle() {
             }
         );
 
-        book.apply(&json!({"bids": [["8", "9"]], "asks": []}), true);
+        apply(&mut book, &json!({"bids": [["8", "9"]], "asks": []}), true);
         assert_eq!(
             book,
             WireBook {
                 bids: [(Decimal::from(8), Decimal::from(9))].into(),
-                asks: BTreeMap::new(),
+                asks: [].into(),
             }
         );
-        book.apply(&json!({"bids": [], "asks": []}), true);
+        apply(&mut book, &json!({"bids": [], "asks": []}), true);
         assert_eq!(book, WireBook::default());
     }
 
     {
-        let book = WireBook {
-            bids: (1..=21)
-                .map(|n| (Decimal::from(n), Decimal::from(n + 40)))
-                .collect(),
-            asks: (22..=42)
-                .map(|n| (Decimal::from(n), Decimal::from(n + 70)))
-                .collect(),
+        let wire = OkxWire::default();
+
+        let route = Route {
+            name: PUBLIC,
+            path: "/public",
+            upstream: String::new(),
+            endpoint: PUBLIC_ENDPOINT,
+            headers: &[],
+        };
+
+        let mut connection = wire.open(&route, 3);
+        let text = |value: Value| Message::Text(value.to_string().into());
+
+        let snapshot = text(json!({
+            "arg": {"channel": "books", "instId": "BTC-USDT"},
+            "action": "snapshot",
+            "data": [{"bids": [["10", "2"]], "asks": [["11", "4"]], "ts": "5", "seqId": 7}],
+        }));
+        let mut update = text(json!({
+            "arg": {"channel": "books", "instId": "BTC-USDT"},
+            "action": "update",
+            "data": [{"bids": [["10", "0"]], "asks": [], "ts": "6", "seqId": 8, "prevSeqId": 7}],
+        }));
+        let spread = text(json!({
+            "arg": {"channel": "sprd-books5", "sprdId": "BTC-USDT_BTC-USDT-SWAP"},
+            "data": [{"bids": [], "asks": [["1", "1"]], "ts": "7"}],
+        }));
+        let ack = text(
+            json!({"event": "unsubscribe", "arg": {"channel": "books", "instId": "BTC-USDT"}}),
+        );
+        let command = text(json!({
+            "op": "unsubscribe",
+            "args": [
+                {"channel": "books", "instId": "BTC-USDT"},
+                {"channel": "sprd-books5", "sprdId": "BTC-USDT_BTC-USDT-SWAP"},
+            ],
+        }));
+
+        let book = |key: &str, kind| Upstream::Book {
+            key: key.to_string(),
+            kind,
         };
 
         assert_eq!(
-            book.top(),
-            WireBook {
-                bids: (2..=21)
-                    .map(|n| (Decimal::from(n), Decimal::from(n + 40)))
-                    .collect(),
-                asks: (22..=41)
-                    .map(|n| (Decimal::from(n), Decimal::from(n + 70)))
-                    .collect(),
-            }
+            connection.upstream(&snapshot),
+            book("BTC-USDT", FrameKind::Snapshot)
         );
+        assert_eq!(
+            connection.upstream(&update),
+            book("BTC-USDT", FrameKind::Update)
+        );
+        assert_eq!(
+            connection.upstream(&spread),
+            book("BTC-USDT_BTC-USDT-SWAP", FrameKind::Snapshot)
+        );
+        assert_eq!(
+            connection.upstream(&ack),
+            Upstream::Unsubscribed("BTC-USDT".to_string())
+        );
+        assert_eq!(connection.upstream(&command), Upstream::Other);
+        assert_eq!(
+            connection.client(&command),
+            ["BTC-USDT", "BTC-USDT_BTC-USDT-SWAP"]
+        );
+        assert!(connection.client(&snapshot).is_empty());
+
+        let views = wire.views.lock();
+        let recorded = views["BTC-USDT"]
+            .iter()
+            .map(|view| (view.epoch, view.sequence, view.timestamp, view.book.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            recorded,
+            [
+                (
+                    3,
+                    7,
+                    5_000_000,
+                    WireBook {
+                        bids: [(Decimal::from(10), Decimal::from(2))].into(),
+                        asks: [(Decimal::from(11), Decimal::from(4))].into(),
+                    }
+                ),
+                (
+                    3,
+                    8,
+                    6_000_000,
+                    WireBook {
+                        bids: [].into(),
+                        asks: [(Decimal::from(11), Decimal::from(4))].into(),
+                    }
+                ),
+            ]
+        );
+        drop(views);
+
+        let mut unchanged = snapshot.clone();
+        assert!(!connection.corrupt(&mut unchanged, "BTC-USDT", FrameKind::Snapshot));
+        assert_eq!(unchanged, snapshot);
+        assert!(connection.corrupt(&mut update, "BTC-USDT", FrameKind::Update));
+        let corrupted = serde_json::from_str::<Value>(update.to_text().unwrap()).unwrap();
+        assert_eq!(corrupted["data"][0]["prevSeqId"], json!(i64::MAX));
     }
 }

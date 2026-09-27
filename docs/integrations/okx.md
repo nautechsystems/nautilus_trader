@@ -245,27 +245,39 @@ Within the retry budget, a missing snapshot leaves the current attempt waiting u
 accepted, a rejection arrives, recovery is cancelled, or the 180-second initial budget ends.
 Attempts after the budget stay bounded as described above.
 
-### Mainnet recovery validation
+### Live recovery validation
 
-The `okx-book-stress` harness connects to OKX mainnet public market data and submits no orders.
-It checks emitted spot, RPI swap, and spread books against the book stream contract and against an
-independent reconstruction of the venue feed's best 20 levels.
+The `okx-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to OKX mainnet public market data, submits no orders, and checks emitted spot,
+RPI swap, and spread books against the book stream contract and an independent reconstruction of the
+venue feed's best 20 levels.
 
-The harness first checks recovery without reconnects, including a dropped replacement snapshot
-when deadlines are enabled. It then injects sequence gaps, drops and delays snapshots, forces
-reconnects, and exercises unsubscribe and shutdown during recovery.
+The harness checks recovery without reconnects, including a dropped replacement snapshot when
+deadlines are enabled. It then injects sequence gaps, drops and delays snapshots, forces reconnects,
+and exercises unsubscribe and shutdown during recovery.
 
 From the repository root, run:
 
 ```bash
 CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
-  cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18
 ```
 
-The arguments set the snapshot timeout in seconds and the number of stress rounds. Use `0 18` to
-exercise disabled snapshot deadlines. The harness requires access to the public and business
-WebSocket endpoints and the public instrument and spread APIs. Automated book lifecycle tests use
-local mock servers.
+`--scenario` selects the run:
+
+- `churn` (default): the fault rounds described above.
+- `initial`: drops each book's first snapshot, once per round in a fresh session.
+- `turnover`: unsubscribes and resubscribes books during recovery.
+- `boundaries`: probes replacement cuts, retry exhaustion into the retry ceiling, and shutdown
+  during a reconnect.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (18 by default).
+
+The harness requires access to the public and business WebSocket endpoints and the public instrument
+and spread APIs. Automated book lifecycle tests use local mock servers. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
 
 ## Symbology
 

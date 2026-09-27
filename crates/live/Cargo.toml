@@ -129,6 +129,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
 
+axum = { workspace = true }
 bytes = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
@@ -136,6 +137,7 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
+tokio-tungstenite = { workspace = true }
 toml = { workspace = true }
 ustr = { workspace = true }
 
@@ -154,3 +156,8 @@ required-features = ["node"]
 name = "integration"
 path = "tests/integration/main.rs"
 required-features = ["node"]
+
+[[test]]
+name = "book"
+path = "tests/book/main.rs"
+required-features = ["test-support"]

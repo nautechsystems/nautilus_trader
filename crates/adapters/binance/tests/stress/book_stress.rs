@@ -17,30 +17,33 @@
 //!
 //! Run with adapter credentials unset, except `spot-sbe`, which reads an Ed25519 key from
 //! `BINANCE_API_KEY` and `BINANCE_API_SECRET`:
-//! `cargo test -p nautilus-binance --features examples --test binance-book-stress -- spot 10 14`
+//! `cargo test -p nautilus-binance --features examples --test binance-book-stress -- --product futures`
 //!
-//! Arguments are the product, snapshot timeout seconds, rounds, an optional mode, and an optional
-//! book count:
+//! Select the product with `--product`: `spot` (default, Spot mainnet JSON streams), `spot-sbe`
+//! (Spot mainnet SBE streams), `futures` (USD-M testnet), or `coinm` (COIN-M testnet). Scenarios,
+//! selected with `--scenario`:
 //!
-//! - Products: `spot` (Spot mainnet JSON streams), `spot-sbe` (Spot mainnet SBE streams),
-//!   `futures` (USD-M testnet), and `coinm` (COIN-M testnet).
-//! - Modes: the default rotates gap, reconnect, churn, cut, and freeze faults; `boundaries` probes
-//!   deadlines and recovery at the retry ceiling; `resubscribe` races an unsubscribe with an
-//!   immediate resubscribe once per round; `quiet` watches `count` thinly traded books for
-//!   `rounds` minutes; `crowd` subscribes `count` liquid books and reconnects `rounds` times so
-//!   snapshot pacing engages.
+//! - `churn` (default): rotates gap, reconnect, churn, cut, and freeze faults over `--rounds`.
+//! - `boundaries`: probes deadlines and recovery at the retry ceiling.
+//! - `resubscribe`: races an unsubscribe with an immediate resubscribe once per round.
+//! - `quiet`: watches `--books` thinly traded books for `--rounds` minutes.
+//! - `crowd`: subscribes `--books` liquid books and reconnects `--rounds` times so snapshot pacing
+//!   engages.
 //!
-//! A local proxy carries the adapter's WebSocket and REST traffic to inject faults, and refuses REST
-//! requests before venue request weight nears its limit. Two oracles check every emitted book:
-//! `<symbol>@depth20@100ms` read directly from the venue compares the top 20 levels at matching
-//! update IDs, and a reference book the proxy rebuilds from every raw diff and the REST snapshots
-//! it forwards compares a checksum of the top levels. Every emitted batch also passes through the
-//! shared `BookStreamChecker`. No orders are submitted.
+//! The shared fault proxy carries the adapter's WebSocket traffic, and a REST proxy carries its
+//! snapshot requests, refusing them before venue request weight nears its limit. Two oracles check
+//! every emitted book: `<symbol>@depth20@100ms` read directly from the venue compares the top 20
+//! levels at matching update IDs, and a reference book rebuilt from every raw diff and the REST
+//! snapshots the proxy forwards compares a checksum of the top levels. Every emitted batch also
+//! passes through the shared `BookStreamChecker`. No orders are submitted.
+
+#[path = "../../../../live/tests/book/stress/mod.rs"]
+mod stress;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
-    fmt::Display,
     hash::{DefaultHasher, Hash, Hasher},
+    net::SocketAddr,
     str::FromStr,
     sync::{
         Arc,
@@ -51,15 +54,11 @@ use std::{
 
 use axum::{
     Router,
-    extract::{
-        State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
-    },
+    extract::State,
     http::{HeaderMap, StatusCode, Uri, header},
     response::{IntoResponse, Response},
-    routing::get,
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use nautilus_binance::{
     common::{
         consts::BINANCE_CLIENT_ID,
@@ -73,34 +72,21 @@ use nautilus_binance::{
         sbe::stream::{DepthDiffStreamEvent, MessageHeader, PriceLevel, template_id},
     },
 };
-use nautilus_common::{
-    clients::DataClient,
-    live::runner::replace_data_event_sender,
-    logging::{init_logging, logger::LoggerConfig},
-    messages::{
-        DataEvent,
-        data::{SubscribeBookDeltas, UnsubscribeBookDeltas},
-    },
-};
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::{SocketReconnectRegistry, book::conformance::BookStreamChecker};
+use nautilus_common::clients::DataClient;
+use nautilus_live::book::conformance::BookStreamChecker;
 use nautilus_model::{
-    data::Data,
-    enums::{BookAction, BookType},
-    identifiers::{InstrumentId, TraderId},
-    instruments::Instrument,
+    data::OrderBookDeltas,
+    identifiers::{ClientId, InstrumentId},
 };
-use nautilus_network::{
-    http::{HttpClient, Method},
-    mode::ReconnectRequestOutcome,
-};
-use parking_lot::Mutex;
+use nautilus_network::http::{HttpClient, Method};
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use tokio_tungstenite::tungstenite::{
-    Message as UpstreamMessage, client::IntoClientRequest, http::HeaderValue,
+use stress::{
+    BookProgress, Coverage, Flag, FrameKind, Route, Session, StressArgs, StressVenue, Upstream,
+    WireBook, WireCodec, WireConnection,
 };
-use ustr::Ustr;
+use tokio_tungstenite::tungstenite::Message;
 
 const VIEWS_MAX: usize = 8_192;
 const CHECKSUMS_MAX: usize = 32_768;
@@ -197,50 +183,29 @@ const COINM: Product = Product {
     ..FUTURES
 };
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
-    let _log_guard = init_logging(
-        TraderId::from("STRESS-001"),
-        UUID4::new(),
-        LoggerConfig {
-            stdout_level: log::LevelFilter::Info,
-            is_colored: false,
-            ..LoggerConfig::default()
-        },
-        Default::default(),
-    )
-    .unwrap();
+const PRODUCTS: [&Product; 4] = [&SPOT, &SPOT_SBE, &FUTURES, &COINM];
 
-    let args = std::env::args().collect::<Vec<_>>();
+type BinanceSession = Session<Binance>;
 
-    let product = match args.get(1).map(String::as_str) {
-        Some("spot") | None => &SPOT,
-        Some("spot-sbe") => &SPOT_SBE,
-        Some("futures") => &FUTURES,
-        Some("coinm") => &COINM,
-        Some(other) => panic!("unknown product {other}; use spot, spot-sbe, futures, or coinm"),
-    };
+fn main() {
+    stress::run::<Binance, _, _>(|args| async move {
+        let product = product(&args);
+        let ids = product.symbols.map(|s| instrument_id(product, s));
 
-    let timeout = args.get(2).map_or(10, |v| v.parse::<u64>().unwrap());
-    let rounds = args.get(3).map_or(14, |v| v.parse::<usize>().unwrap());
-    let mode = args.get(4).map_or("churn", String::as_str);
-    let count = args.get(5).map_or(4, |v| v.parse::<usize>().unwrap());
-    let ids = product.symbols.map(|s| instrument_id(product, s));
-
-    match mode {
-        "churn" => churn(product, timeout, rounds, &ids).await,
-        "boundaries" => boundaries(product, timeout, &ids).await,
-        "resubscribe" => resubscribe(product, timeout, rounds, &ids).await,
-        "quiet" => quiet(product, timeout, rounds, count).await,
-        "crowd" => crowd(product, timeout, rounds, count).await,
-        other => panic!("unknown mode {other}"),
-    }
+        match args.scenario() {
+            "churn" => churn(&args, &ids).await,
+            "boundaries" => boundaries(&args, &ids).await,
+            "resubscribe" => resubscribe(&args, &ids).await,
+            "quiet" => quiet(&args).await,
+            "crowd" => crowd(&args).await,
+            other => unreachable!("argument parsing admits only declared scenarios, was {other}"),
+        }
+    });
 }
 
-async fn churn(product: &'static Product, timeout: u64, rounds: usize, ids: &[InstrumentId; 4]) {
-    let started = Instant::now();
-    let mut session = Session::connect(product, timeout, None).await;
-    session.watch(ids);
+async fn churn(args: &StressArgs, ids: &[InstrumentId; 4]) -> String {
+    let mut session = BinanceSession::connect(args).await;
+    session.venue().watch(ids);
 
     for id in ids {
         session.subscribe(*id);
@@ -248,49 +213,44 @@ async fn churn(product: &'static Product, timeout: u64, rounds: usize, ids: &[In
 
     session.healthy(ids).await;
 
-    for round in 0..rounds {
+    for round in 0..args.rounds() {
         let phase = round % 7;
         let phase_started = Instant::now();
-        session.weight_guard().await;
+        session.venue().weight_guard().await;
 
         run_phase(&mut session, phase, round, ids).await;
 
         session.observe(Duration::from_secs(5)).await;
-        eprintln!(
-            "product={} timeout={timeout} round={} phase={phase} phase_ms={} {} elapsed_s={}",
-            product.name,
-            round + 1,
-            phase_started.elapsed().as_millis(),
-            session.stats(),
-            started.elapsed().as_secs()
+        session.round(
+            round,
+            &format!(
+                "phase={phase} phase_ms={}",
+                phase_started.elapsed().as_millis()
+            ),
         );
     }
 
-    let totals = session.stop().await;
-    eprintln!(
-        "PASS product={} timeout={timeout} rounds={rounds} instruments={} {totals} elapsed_s={}",
-        product.name,
-        ids.len(),
-        started.elapsed().as_secs()
-    );
+    let stats = session.stop().await;
+    format!("books={} {stats}", ids.len())
 }
 
 // Runs one churn round's fault scenario, leaving every book healthy
-async fn run_phase(session: &mut Session, phase: usize, round: usize, ids: &[InstrumentId; 4]) {
+async fn run_phase(
+    session: &mut BinanceSession,
+    phase: usize,
+    round: usize,
+    ids: &[InstrumentId; 4],
+) {
     match phase {
         0 => {
             // Forced gaps recover through REST without reconnecting
             let targets = [ids[round / 7 % 2], ids[2 + round / 7 % 2]];
-            let connections = session.wire.connections.load(Ordering::SeqCst);
-            let requests = session.snapshot_requests(&targets);
-            {
-                let mut control = session.wire.control.lock();
+            let connections = session.proxy().connections_total();
+            let requests = session.venue().snapshot_requests(&targets);
 
-                for id in &targets {
-                    let fault = control.faults.entry(symbol(id)).or_default();
-                    fault.drop = 1;
-                    fault.fail = usize::from(round % 2 == 1);
-                }
+            for id in &targets {
+                session.venue().depth(id).fail = usize::from(round % 2 == 1);
+                session.fault(id).drop_updates = 1;
             }
 
             for id in &targets {
@@ -299,24 +259,25 @@ async fn run_phase(session: &mut Session, phase: usize, round: usize, ids: &[Ins
 
             session.healthy(ids).await;
             assert_eq!(
-                session.wire.connections.load(Ordering::SeqCst),
+                session.proxy().connections_total(),
                 connections,
                 "gap recovery must not reconnect"
             );
 
             for (id, before) in targets.iter().zip(requests) {
-                assert!(session.snapshot_requests(&[*id])[0] > before);
+                assert!(session.venue().snapshot_requests(&[*id])[0] > before);
             }
         }
         1 => {
-            session.reconnect();
+            reconnect(session);
             session.healthy(ids).await;
         }
         2 => {
             // Subscribe churn: settled unsubscribe must stay quiet until resubscribed
             let targets = [ids[round / 7 % 4], ids[(round / 7 + 1) % 4]];
+
             for id in &targets {
-                session.unsubscribe(*id);
+                unsubscribe(session, *id);
             }
 
             session.observe(Duration::from_secs(3)).await;
@@ -330,12 +291,10 @@ async fn run_phase(session: &mut Session, phase: usize, round: usize, ids: &[Ins
         3 => {
             // Unsubscribe while a recovery snapshot is in flight
             let target = ids[round / 7 % 4];
-            let held = session
-                .hold_recovery(&[target], Duration::from_secs(3))
-                .await;
-            session.unsubscribe(target);
+            let held = hold_recovery(session, &[target], Duration::from_secs(3)).await;
+            unsubscribe(session, target);
             session.observe(Duration::from_secs(4)).await;
-            session.release(&[target]);
+            release(session, &[target]);
             assert!(held[0] >= 1);
             session.subscribe(target);
             session.healthy(ids).await;
@@ -343,46 +302,44 @@ async fn run_phase(session: &mut Session, phase: usize, round: usize, ids: &[Ins
         4 => {
             // Connection cut while recoveries wait on held snapshots
             let targets = [ids[0], ids[3]];
-            session
-                .hold_recovery(&targets, Duration::from_secs(3))
-                .await;
-            let cuts = session.wire.cuts.load(Ordering::SeqCst);
-            session.wire.control.lock().cut = true;
+            hold_recovery(session, &targets, Duration::from_secs(3)).await;
+            let cuts = session.proxy().cuts();
+            session.proxy().cut(None, FrameKind::Update, 1);
             session
                 .until(Duration::from_secs(30), "connection cut", |s| {
-                    s.wire.cuts.load(Ordering::SeqCst) > cuts
+                    s.proxy().cuts() > cuts
                 })
                 .await;
 
-            session.release(&targets);
+            release(session, &targets);
             session.expect_all();
             session.healthy(ids).await;
         }
         5 => {
             // Client reconnect while snapshots are held, then again mid-recovery
-            session.delay(ids, Duration::from_secs(2));
-            session.reconnect();
+            delay(session, ids, Duration::from_secs(2));
+            reconnect(session);
             session.observe(Duration::from_secs(1)).await;
-            session.reconnect();
+            reconnect(session);
             session.observe(Duration::from_secs(1)).await;
-            session.release(ids);
+            release(session, ids);
             session.healthy(ids).await;
         }
         6 => {
             // Traffic freeze without closing either socket
             let freeze = Duration::from_secs(40);
-            *session.wire.freeze_until.lock() = Some(Instant::now() + freeze);
+            session.proxy().freeze(freeze);
             session.observe(freeze + Duration::from_secs(2)).await;
-            session.healthy_updates(ids).await;
+            healthy_updates(session, ids).await;
         }
         _ => unreachable!(),
     }
 }
 
-async fn boundaries(product: &'static Product, timeout: u64, ids: &[InstrumentId; 4]) {
-    let started = Instant::now();
-    let mut session = Session::connect(product, timeout, Some(0)).await;
-    session.watch(ids);
+async fn boundaries(args: &StressArgs, ids: &[InstrumentId; 4]) -> String {
+    let timeout = args.timeout_secs();
+    let mut session = BinanceSession::connect(args).await;
+    session.venue().watch(ids);
 
     for id in ids {
         session.subscribe(*id);
@@ -392,99 +349,81 @@ async fn boundaries(product: &'static Product, timeout: u64, ids: &[InstrumentId
 
     // Held snapshots expire the deadline twice before a third attempt succeeds
     let target = ids[0];
-    let delay = Duration::from_secs(timeout + 1);
-    let before = session.snapshot_requests(&[target])[0];
+    let before = session.venue().snapshot_requests(&[target])[0];
     {
-        let mut control = session.wire.control.lock();
-        let fault = control.faults.entry(symbol(&target)).or_default();
-        fault.delay = Some(delay);
-        fault.delays = 2;
-        fault.drop = 1;
+        let mut depth = session.venue().depth(&target);
+        depth.delay = Some(Duration::from_secs(timeout + 1));
+        depth.delays = 2;
     }
 
+    session.fault(&target).drop_updates = 1;
     session.expect_snapshot(target);
     session.healthy(ids).await;
 
     let expected = if timeout == 0 { 1 } else { 3 };
-    assert_eq!(session.snapshot_requests(&[target])[0], before + expected);
-    eprintln!("DEADLINE PASS timeout={timeout} attempts={expected}");
+    assert_eq!(
+        session.venue().snapshot_requests(&[target])[0],
+        before + expected
+    );
+    stress::check("deadline", format!("attempts={expected}"));
 
     // An exhausted budget moves to the retry ceiling, which restores the book once the venue does
     let target = ids[1];
-    let before = session.snapshot_requests(&[target])[0];
-    {
-        let mut control = session.wire.control.lock();
-        let fault = control.faults.entry(symbol(&target)).or_default();
-        fault.fail = usize::MAX;
-        fault.drop = 1;
-    }
+    let before = session.venue().snapshot_requests(&[target])[0];
+    session.venue().depth(&target).fail = usize::MAX;
+    session.fault(&target).drop_updates = 1;
 
     session
         .until(Duration::from_secs(240), "eight failed attempts", |s| {
-            s.snapshot_requests(&[target])[0] >= before + 8
+            s.venue().snapshot_requests(&[target])[0] >= before + 8
         })
         .await;
 
     session.observe(Duration::from_secs(2)).await;
-    session.suppressed.insert(target);
+    session.venue_mut().suppressed.insert(target);
     session.observe(Duration::from_secs(10)).await;
-    assert_eq!(session.snapshot_requests(&[target])[0], before + 8);
-    session.suppressed.remove(&target);
-    session.release(&[target]);
+    assert_eq!(session.venue().snapshot_requests(&[target])[0], before + 8);
+    session.venue_mut().suppressed.remove(&target);
+    release(&session, &[target]);
     session.expect_snapshot(target);
     session.healthy(ids).await;
-    assert_eq!(session.snapshot_requests(&[target])[0], before + 9);
-    eprintln!("EXHAUSTION PASS attempts=8 recovered_at_ceiling=true");
+    assert_eq!(session.venue().snapshot_requests(&[target])[0], before + 9);
+    stress::check("exhaustion", "attempts=8 recovered_at_ceiling=true");
 
     // A permanent rejection moves straight to the retry ceiling, which restores the book
     let target = ids[2];
-    let before = session.snapshot_requests(&[target])[0];
-    {
-        let mut control = session.wire.control.lock();
-        let fault = control.faults.entry(symbol(&target)).or_default();
-        fault.reject = true;
-        fault.drop = 1;
-    }
+    let before = session.venue().snapshot_requests(&[target])[0];
+    session.venue().depth(&target).reject = true;
+    session.fault(&target).drop_updates = 1;
 
     session
         .until(Duration::from_secs(30), "permanent rejection", |s| {
-            s.snapshot_requests(&[target])[0] > before
+            s.venue().snapshot_requests(&[target])[0] > before
         })
         .await;
 
     session.observe(Duration::from_secs(2)).await;
-    session.suppressed.insert(target);
+    session.venue_mut().suppressed.insert(target);
     session.observe(Duration::from_secs(10)).await;
-    assert_eq!(session.snapshot_requests(&[target])[0], before + 1);
-    session.suppressed.remove(&target);
-    session.release(&[target]);
+    assert_eq!(session.venue().snapshot_requests(&[target])[0], before + 1);
+    session.venue_mut().suppressed.remove(&target);
+    release(&session, &[target]);
     session.expect_snapshot(target);
     session.healthy(ids).await;
-    assert_eq!(session.snapshot_requests(&[target])[0], before + 2);
-    eprintln!("REJECTION PASS attempts=1 recovered_at_ceiling=true");
+    assert_eq!(session.venue().snapshot_requests(&[target])[0], before + 2);
+    stress::check("rejection", "attempts=1 recovered_at_ceiling=true");
 
-    session.reconnect();
+    reconnect(&mut session);
     session.healthy(ids).await;
-    eprintln!("RECONNECT PASS books={}", ids.len());
+    stress::check("reconnect", format!("books={}", ids.len()));
 
-    let totals = session.stop().await;
-    eprintln!(
-        "PASS product={} timeout={timeout} boundaries {totals} elapsed_s={}",
-        product.name,
-        started.elapsed().as_secs()
-    );
+    session.stop().await
 }
 
 // Resubscribes before the unsubscribe settles, racing the two pool commands
-async fn resubscribe(
-    product: &'static Product,
-    timeout: u64,
-    rounds: usize,
-    ids: &[InstrumentId; 4],
-) {
-    let started = Instant::now();
-    let mut session = Session::connect(product, timeout, None).await;
-    session.watch(ids);
+async fn resubscribe(args: &StressArgs, ids: &[InstrumentId; 4]) -> String {
+    let mut session = BinanceSession::connect(args).await;
+    session.venue().watch(ids);
 
     for id in ids {
         session.subscribe(*id);
@@ -492,127 +431,250 @@ async fn resubscribe(
 
     session.healthy(ids).await;
 
-    for round in 0..rounds {
-        session.weight_guard().await;
+    for round in 0..args.rounds() {
+        session.venue().weight_guard().await;
         let target = ids[round % ids.len()];
-        session.unsubscribe(target);
+        unsubscribe(&mut session, target);
         session.subscribe(target);
         session.healthy(&[target]).await;
-        eprintln!(
-            "product={} round={} target={target} {}",
-            product.name,
-            round + 1,
-            session.stats()
-        );
+        session.round(round, &format!("target={target}"));
     }
 
-    let totals = session.stop().await;
-    eprintln!(
-        "PASS product={} timeout={timeout} resubscribe rounds={rounds} {totals} elapsed_s={}",
-        product.name,
-        started.elapsed().as_secs()
-    );
+    session.stop().await
 }
 
 // Thin books must sync once their first diff arrives and never fetch a snapshot before it
-async fn quiet(product: &'static Product, timeout: u64, minutes: usize, count: usize) {
-    let started = Instant::now();
-    let mut session = Session::connect(product, timeout, None).await;
-    let ids = session.select(count, true).await;
-    session.watch(&ids);
+async fn quiet(args: &StressArgs) -> String {
+    let mut session = BinanceSession::connect(args).await;
+    let ids = select(&session, books(args), true).await;
+    session.venue().watch(&ids);
 
     for id in &ids {
         session.subscribe(*id);
     }
 
-    let end = Instant::now() + Duration::from_secs(minutes as u64 * 60);
-    while Instant::now() < end {
+    // Each round observes one minute
+    for round in 0..args.rounds() {
         session.observe(Duration::from_secs(60)).await;
-        eprintln!(
-            "product={} quiet elapsed_s={} {}",
-            product.name,
-            started.elapsed().as_secs(),
-            session.stats()
-        );
+        session.round(round, "");
     }
 
     let mut synced = 0;
-    {
-        let control = session.wire.control.lock();
 
-        for id in &ids {
-            let fault = control.faults.get(&symbol(id));
-            let forwarded = fault.map_or(0, |f| f.forwarded);
-            let requests = fault.map_or(0, |f| f.requests);
-            let first = fault.and_then(|f| f.first_forwarded);
-            let snapshots = session.snapshots.get(id).copied().unwrap_or(0);
-            eprintln!(
-                "quiet book {id}: forwarded_diffs={forwarded} snapshot_requests={requests} \
-                 snapshots={snapshots} updates={}",
-                session.updates.get(id).copied().unwrap_or(0)
-            );
+    for id in &ids {
+        let fault = session.fault(id).clone();
+        let requests = session.venue().snapshot_requests(&[*id])[0];
+        let book = session.book(id);
 
-            if forwarded == 0 {
-                assert_eq!(requests, 0, "snapshot requested before any diff: {id}");
-            } else if first.is_some_and(|first| first.elapsed() >= Duration::from_secs(30)) {
-                assert!(snapshots >= 1, "dark quiet book: {id}");
-                synced += 1;
-            }
+        if fault.forwarded == 0 {
+            assert_eq!(requests, 0, "snapshot requested before any diff: {id}");
+        } else if fault
+            .first_forwarded
+            .is_some_and(|first| first.elapsed() >= Duration::from_secs(30))
+        {
+            assert!(book.snapshots >= 1, "dark quiet book: {id}");
+            synced += 1;
         }
+
+        stress::check(
+            "quiet_book",
+            format!(
+                "instrument={id} forwarded_diffs={} snapshot_requests={requests} snapshots={} \
+                 updates={}",
+                fault.forwarded, book.snapshots, book.updates
+            ),
+        );
     }
 
-    let totals = session.stop().await;
-    eprintln!(
-        "PASS product={} timeout={timeout} quiet minutes={minutes} books={} synced={synced} \
-         {totals} elapsed_s={}",
-        product.name,
-        ids.len(),
-        started.elapsed().as_secs()
-    );
+    let stats = session.stop().await;
+    format!("books={} synced={synced} {stats}", ids.len())
 }
 
 // Many books resync at once, so snapshot pacing must hold venue weight under its limit
-async fn crowd(product: &'static Product, timeout: u64, rounds: usize, count: usize) {
-    let started = Instant::now();
-    let mut session = Session::connect(product, timeout, None).await;
-    let ids = session.select(count, false).await;
-    session.watch(&ids);
+async fn crowd(args: &StressArgs) -> String {
+    let mut session = BinanceSession::connect(args).await;
+    let ids = select(&session, books(args), false).await;
+    session.venue().watch(&ids);
     let limit = Duration::from_secs(600);
 
     for id in &ids {
         session.subscribe(*id);
     }
 
+    let sync_started = Instant::now();
     session.healthy_within(&ids, limit).await;
-    eprintln!(
-        "product={} crowd books={} initial_sync_ms={} {}",
-        product.name,
-        ids.len(),
-        session.heal_ms_max,
-        session.stats()
+    stress::check(
+        "initial_sync",
+        format!(
+            "books={} initial_sync_ms={}",
+            ids.len(),
+            sync_started.elapsed().as_millis()
+        ),
     );
 
-    for round in 0..rounds {
-        session.weight_guard().await;
+    for round in 0..args.rounds() {
+        session.venue().weight_guard().await;
         let resync_started = Instant::now();
-        session.reconnect();
+        reconnect(&mut session);
         session.healthy_within(&ids, limit).await;
-        eprintln!(
-            "product={} crowd round={} resync_ms={} {}",
-            product.name,
-            round + 1,
-            resync_started.elapsed().as_millis(),
-            session.stats()
+        session.round(
+            round,
+            &format!("resync_ms={}", resync_started.elapsed().as_millis()),
         );
     }
 
-    let totals = session.stop().await;
-    eprintln!(
-        "PASS product={} timeout={timeout} crowd books={} rounds={rounds} {totals} elapsed_s={}",
-        product.name,
-        ids.len(),
-        started.elapsed().as_secs()
-    );
+    let stats = session.stop().await;
+    format!("books={} {stats}", ids.len())
+}
+
+// Picks loaded instruments by 24h trade count: the least active or the most liquid
+async fn select(session: &BinanceSession, count: usize, quiet: bool) -> Vec<InstrumentId> {
+    let venue = session.venue();
+    let product = venue.product;
+    let url = format!("{}{}", product.rest_upstream, product.ticker_path);
+    let response = venue
+        .wire
+        .http
+        .request(Method::GET, url, None, None, None, Some(30), None)
+        .await
+        .unwrap();
+    venue.wire.record_weight(&response.headers);
+    let tickers = serde_json::from_slice::<Vec<Value>>(&response.body).unwrap();
+
+    let number = |ticker: &Value, field: &str| {
+        ticker[field]
+            .as_str()
+            .and_then(|value| f64::from_str(value).ok())
+            .or_else(|| ticker[field].as_f64())
+            .unwrap_or_default()
+    };
+
+    let mut candidates = tickers
+        .iter()
+        .filter_map(|ticker| {
+            let raw = ticker["symbol"].as_str()?;
+            let id = instrument_id(product, raw);
+            let trades = ticker["count"].as_u64().unwrap_or_default();
+            (raw.ends_with(product.ticker_suffix)
+                && session.instruments().contains(&id)
+                && number(ticker, "lastPrice") > 0.0
+                && (!quiet || (100..=3_000).contains(&trades)))
+            .then_some((id, trades))
+        })
+        .collect::<Vec<_>>();
+
+    if quiet {
+        candidates.sort_by_key(|(_, trades)| *trades);
+    } else {
+        candidates.sort_by_key(|(_, trades)| std::cmp::Reverse(*trades));
+    }
+
+    let ids = candidates
+        .into_iter()
+        .take(count)
+        .map(|(id, _)| id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), count, "not enough candidate books");
+    eprintln!("Selected books: {ids:?}");
+    ids
+}
+
+// Unsubscribes and treats the unsubscribe as settled once queued output is applied
+fn unsubscribe(session: &mut BinanceSession, id: InstrumentId) {
+    session.unsubscribe(id);
+    session.close(id);
+}
+
+fn reconnect(session: &mut BinanceSession) {
+    let endpoint = session.venue().product.endpoint;
+    session.reconnect(endpoint);
+}
+
+// Starts a recovery whose snapshot is held so later actions race it
+async fn hold_recovery(
+    session: &mut BinanceSession,
+    ids: &[InstrumentId],
+    delay: Duration,
+) -> Vec<usize> {
+    let before = ids
+        .iter()
+        .map(|id| {
+            let mut depth = session.venue().depth(id);
+            depth.delay = Some(delay);
+            depth.delays = usize::MAX;
+            depth.held
+        })
+        .collect::<Vec<_>>();
+
+    // The REST hold is armed before the dropped diff forces the gap that requests a snapshot
+    for id in ids {
+        session.fault(id).drop_updates = 1;
+        session.expect_snapshot(*id);
+    }
+
+    // Snapshot pacing can queue a recovery behind several other books' snapshots
+    session
+        .until(Duration::from_secs(120), "recovery snapshots held", |s| {
+            ids.iter()
+                .zip(&before)
+                .all(|(id, held)| s.venue().depth(id).held > *held)
+        })
+        .await;
+
+    ids.iter()
+        .zip(before)
+        .map(|(id, held)| session.venue().depth(id).held - held)
+        .collect()
+}
+
+fn delay(session: &BinanceSession, ids: &[InstrumentId], delay: Duration) {
+    for id in ids {
+        let mut depth = session.venue().depth(id);
+        depth.delay = Some(delay);
+        depth.delays = usize::MAX;
+    }
+}
+
+fn release(session: &BinanceSession, ids: &[InstrumentId]) {
+    for id in ids {
+        {
+            let mut depth = session.venue().depth(id);
+            depth.delay = None;
+            depth.delays = 0;
+            depth.fail = 0;
+            depth.reject = false;
+        }
+
+        session.fault(id).drop_updates = 0;
+    }
+}
+
+async fn healthy_updates(session: &mut BinanceSession, ids: &[InstrumentId]) {
+    let before = ids
+        .iter()
+        .map(|id| (*id, session.book(id).batches))
+        .collect::<Vec<_>>();
+    session
+        .until(Duration::from_secs(120), "books stream after freeze", |s| {
+            before
+                .iter()
+                .all(|(id, batches)| s.book(id).batches >= batches + 3)
+        })
+        .await;
+}
+
+fn product(args: &StressArgs) -> &'static Product {
+    let name = args.flag("product");
+    PRODUCTS
+        .into_iter()
+        .find(|product| product.name == name)
+        .unwrap_or_else(|| panic!("unknown product {name}; use spot, spot-sbe, futures, or coinm"))
+}
+
+fn books(args: &StressArgs) -> usize {
+    args.flag("books")
+        .parse()
+        .unwrap_or_else(|_| panic!("--books takes a count, was {}", args.flag("books")))
 }
 
 fn instrument_id(product: &Product, symbol: &str) -> InstrumentId {
@@ -623,12 +685,334 @@ fn symbol(id: &InstrumentId) -> String {
     id.symbol.as_str().trim_end_matches("-PERP").to_string()
 }
 
+struct Binance {
+    product: &'static Product,
+    wire: Arc<BinanceWire>,
+    oracle: Arc<Oracle>,
+    managed: HashMap<String, VecDeque<View>>,
+    pending: HashMap<String, VecDeque<View>>,
+    deep_pending: HashMap<String, VecDeque<(u64, u64)>>,
+    suppressed: HashSet<InstrumentId>,
+    checks: usize,
+    unmatched: usize,
+    deep_checks: usize,
+    deep_unmatched: usize,
+}
+
+impl Binance {
+    fn watch(&self, ids: &[InstrumentId]) {
+        self.oracle.watch(self.product, ids);
+    }
+
+    fn depth(&self, id: &InstrumentId) -> MappedMutexGuard<'_, DepthFault> {
+        MutexGuard::map(self.wire.control.lock(), |control| {
+            control.depth.entry(symbol(id)).or_default()
+        })
+    }
+
+    fn snapshot_requests(&self, ids: &[InstrumentId]) -> Vec<usize> {
+        let control = self.wire.control.lock();
+        ids.iter()
+            .map(|id| control.depth.get(&symbol(id)).map_or(0, |f| f.requests))
+            .collect()
+    }
+
+    // Keeps venue REST weight well inside the per-minute limit before forcing snapshots
+    async fn weight_guard(&self) {
+        loop {
+            let url = format!("{}{}", self.product.rest_upstream, self.product.ping_path);
+
+            if let Ok(response) = self
+                .wire
+                .http
+                .request(Method::GET, url, None, None, None, Some(10), None)
+                .await
+            {
+                self.wire.record_weight(&response.headers);
+            }
+
+            let weight = self.wire.used_weight();
+            if weight < self.product.weight_guard {
+                return;
+            }
+
+            eprintln!("Weight guard: used_weight_1m={weight}, waiting");
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    }
+}
+
+impl StressVenue for Binance {
+    const NAME: &'static str = "binance";
+    const SCENARIOS: &'static [&'static str] =
+        &["churn", "boundaries", "resubscribe", "quiet", "crowd"];
+    const ROUNDS: usize = 14;
+    const FLAGS: &'static [Flag] = &[
+        Flag {
+            name: "product",
+            default: "spot",
+            help: "spot, spot-sbe, futures, or coinm",
+        },
+        Flag {
+            name: "books",
+            default: "4",
+            help: "Books the quiet and crowd scenarios select",
+        },
+    ];
+    const SEQUENCED: bool = true;
+    // The oracles match emitted books by update ID after the fact
+    const COVERAGE: Coverage = Coverage::Samples;
+    const HEALTHY_LIMIT: Duration = Duration::from_secs(120);
+
+    fn self_check() {
+        check_oracles();
+    }
+
+    fn new(args: &StressArgs) -> Self {
+        let product = product(args);
+
+        Self {
+            product,
+            wire: Arc::new(BinanceWire {
+                product,
+                http: HttpClient::builder()
+                    .header_keys(vec![
+                        "content-type".to_string(),
+                        "x-mbx-used-weight-1m".to_string(),
+                    ])
+                    .timeout_secs(30)
+                    .build()
+                    .unwrap(),
+                weight: Mutex::new((0, Instant::now())),
+                weight_peak: AtomicU64::new(0),
+                weight_refusals: AtomicUsize::new(0),
+                throttled: AtomicUsize::new(0),
+                control: Mutex::new(Control::default()),
+            }),
+            oracle: Arc::new(Oracle {
+                views: Mutex::new(HashMap::new()),
+                frames: AtomicUsize::new(0),
+            }),
+            managed: HashMap::new(),
+            pending: HashMap::new(),
+            deep_pending: HashMap::new(),
+            suppressed: HashSet::new(),
+            checks: 0,
+            unmatched: 0,
+            deep_checks: 0,
+            deep_unmatched: 0,
+        }
+    }
+
+    fn client_id(&self) -> ClientId {
+        *BINANCE_CLIENT_ID
+    }
+
+    // The Spot JSON client normalizes its URL to the combined `/stream` endpoint
+    fn routes(&self) -> Vec<Route> {
+        [("ws", "/ws"), ("stream", "/stream")]
+            .into_iter()
+            .map(|(name, path)| Route {
+                name,
+                path,
+                upstream: format!("{}{path}", self.product.ws_upstream),
+                endpoint: self.product.endpoint,
+                // SBE streams authenticate the handshake with the API key
+                headers: &["x-mbx-apikey"],
+            })
+            .collect()
+    }
+
+    fn codec(&self) -> Arc<dyn WireCodec> {
+        Arc::new(BinanceCodec(Arc::clone(&self.wire)))
+    }
+
+    fn router(&self) -> Option<Router> {
+        Some(
+            Router::new()
+                .fallback(rest)
+                .with_state(Arc::clone(&self.wire)),
+        )
+    }
+
+    fn client(&self, proxy: SocketAddr, args: &StressArgs) -> anyhow::Result<Box<dyn DataClient>> {
+        let defaults = BinanceDataClientConfig::default();
+
+        let config = BinanceDataClientConfig {
+            product_type: self.product.product_type,
+            environment: self.product.environment,
+            base_url_http: Some(format!("http://{proxy}")),
+            base_url_ws: Some(format!("ws://{proxy}/ws")),
+            spot_market_data_mode: self.product.market_data_mode,
+            instrument_refresh_interval_secs: 0,
+            instrument_status_poll_secs: 0,
+            book_snapshot_timeout_secs: args.timeout_secs(),
+            // Boundary probes count recovery attempts by REST requests, so requests must not retry
+            max_retries: if args.scenario() == "boundaries" {
+                0
+            } else {
+                defaults.max_retries
+            },
+            ..defaults
+        };
+
+        Ok(match self.product.product_type {
+            BinanceProductType::Spot => {
+                Box::new(BinanceSpotDataClient::new(*BINANCE_CLIENT_ID, config)?)
+            }
+            product_type => Box::new(BinanceFuturesDataClient::new(
+                *BINANCE_CLIENT_ID,
+                config,
+                product_type,
+            )?),
+        })
+    }
+
+    fn key(&self, instrument_id: &InstrumentId) -> String {
+        symbol(instrument_id)
+    }
+
+    fn verify(&mut self, checker: &mut BookStreamChecker, deltas: &OrderBookDeltas) {
+        let id = deltas.instrument_id;
+        assert!(
+            !self.suppressed.contains(&id),
+            "output while the probe expects the book suppressed: {id}"
+        );
+        let book = checker.book(id).expect("requested book");
+
+        let view = View {
+            update_id: deltas.sequence,
+            bids: book.bids_as_map(Some(20)).into_iter().collect(),
+            asks: book.asks_as_map(Some(20)).into_iter().collect(),
+        };
+
+        let sum = checksum(
+            book.bids_as_map(Some(self.product.deep_levels)).into_iter(),
+            book.asks_as_map(Some(self.product.deep_levels)).into_iter(),
+        );
+        push_bounded(
+            self.deep_pending.entry(symbol(&id)).or_default(),
+            (deltas.sequence, sum),
+            CHECKSUMS_MAX,
+        );
+        push_bounded(
+            self.managed.entry(symbol(&id)).or_default(),
+            view,
+            VIEWS_MAX,
+        );
+    }
+
+    fn streaming(&self, _id: &InstrumentId, book: &BookProgress, _start: &BookProgress) -> bool {
+        book.updates >= 3
+    }
+
+    // Compares emitted books with both oracles at matching update IDs
+    fn poll(&mut self) {
+        {
+            let mut views = self.oracle.views.lock();
+            for (symbol, views) in views.iter_mut() {
+                let pending = self.pending.entry(symbol.clone()).or_default();
+                pending.extend(views.drain(..));
+                while pending.len() > VIEWS_MAX {
+                    pending.pop_front();
+                }
+            }
+        }
+
+        for (symbol, pending) in &mut self.pending {
+            let Some(managed) = self.managed.get(symbol) else {
+                pending.clear();
+                continue;
+            };
+
+            let (checks, unmatched) = match_pending(
+                pending,
+                managed,
+                |view| view.update_id,
+                |view, emitted| {
+                    assert_eq!(
+                        emitted.bids, view.bids,
+                        "bid oracle mismatch {symbol} update_id={}",
+                        view.update_id
+                    );
+                    assert_eq!(
+                        emitted.asks, view.asks,
+                        "ask oracle mismatch {symbol} update_id={}",
+                        view.update_id
+                    );
+                },
+            );
+
+            self.checks += checks;
+            self.unmatched += unmatched;
+        }
+
+        let control = self.wire.control.lock();
+
+        for (symbol, pending) in &mut self.deep_pending {
+            let Some(history) = control.checksums.get(symbol) else {
+                continue;
+            };
+
+            let (checks, unmatched) = match_pending(
+                pending,
+                history,
+                |(update_id, _)| *update_id,
+                |(update_id, sum), (_, expected)| {
+                    assert_eq!(
+                        sum, expected,
+                        "reference book mismatch {symbol} update_id={update_id}"
+                    );
+                },
+            );
+
+            self.deep_checks += checks;
+            self.deep_unmatched += unmatched;
+        }
+    }
+
+    fn stats(&self) -> String {
+        let control = self.wire.control.lock();
+
+        format!(
+            "oracle_checks={} oracle_unmatched={} deep_checks={} deep_unmatched={} \
+             reference_gaps={} snapshot_requests={} weight_peak={} used_weight_1m={} \
+             oracle_frames={}",
+            self.checks,
+            self.unmatched,
+            self.deep_checks,
+            self.deep_unmatched,
+            control.reference_gaps,
+            control.depth.values().map(|f| f.requests).sum::<usize>(),
+            self.wire.weight_peak.load(Ordering::SeqCst),
+            self.wire.used_weight(),
+            self.oracle.frames.load(Ordering::Relaxed),
+        )
+    }
+
+    fn finish(&mut self) {
+        assert_eq!(
+            self.wire.weight_refusals.load(Ordering::SeqCst),
+            0,
+            "proxy refused requests at the weight cap"
+        );
+        assert_eq!(
+            self.wire.throttled.load(Ordering::SeqCst),
+            0,
+            "venue throttled REST requests"
+        );
+        assert!(self.wire.weight_peak.load(Ordering::SeqCst) < self.product.weight_limit);
+        assert!(self.checks > 0, "depth20 oracle compared no emitted books");
+        assert!(
+            self.deep_checks > 0,
+            "reference oracle compared no emitted books"
+        );
+    }
+}
+
+// Faults and counters for one book's REST depth snapshot requests
 #[derive(Default)]
-struct Fault {
-    drop: usize,
-    dropped: usize,
-    forwarded: usize,
-    first_forwarded: Option<Instant>,
+struct DepthFault {
     fail: usize,
     reject: bool,
     delay: Option<Duration>,
@@ -639,29 +1023,25 @@ struct Fault {
 
 #[derive(Default)]
 struct Control {
-    faults: HashMap<String, Fault>,
-    cut: bool,
+    depth: HashMap<String, DepthFault>,
     rest_snapshots: HashMap<String, WireSnapshot>,
     references: HashMap<String, Reference>,
     checksums: HashMap<String, VecDeque<(u64, u64)>>,
     reference_gaps: usize,
 }
 
-struct Wire {
+// The REST proxy and the reference books the WebSocket relay feeds
+struct BinanceWire {
     product: &'static Product,
     http: HttpClient,
-    connections: AtomicUsize,
-    active: AtomicUsize,
-    cuts: AtomicUsize,
     weight: Mutex<(u64, Instant)>,
     weight_peak: AtomicU64,
     weight_refusals: AtomicUsize,
     throttled: AtomicUsize,
-    freeze_until: Mutex<Option<Instant>>,
     control: Mutex<Control>,
 }
 
-impl Wire {
+impl BinanceWire {
     fn record_weight(&self, headers: &HashMap<String, String>) {
         if let Some(used) = headers
             .iter()
@@ -678,7 +1058,7 @@ impl Wire {
     }
 
     // Applies a raw diff to the reference book before any fault drops it
-    fn reference(&self, connection: usize, symbol: &str, diff: WireDiff) {
+    fn reference(&self, connection: ConnectionId, symbol: &str, diff: WireDiff) {
         let mut control = self.control.lock();
         let Control {
             rest_snapshots,
@@ -727,7 +1107,7 @@ impl Wire {
     async fn inject_depth_faults(&self, symbol: &str) -> Option<Response> {
         let (reject, fail, delay) = {
             let mut control = self.control.lock();
-            let fault = control.faults.entry(symbol.to_string()).or_default();
+            let fault = control.depth.entry(symbol.to_string()).or_default();
             fault.requests += 1;
             let fail = fault.fail > 0;
             if fail {
@@ -767,124 +1147,73 @@ impl Wire {
     }
 }
 
-struct ProxyConnection(Arc<Wire>);
+type ConnectionId = (&'static str, usize);
 
-impl Drop for ProxyConnection {
-    fn drop(&mut self) {
-        self.0.active.fetch_sub(1, Ordering::SeqCst);
+struct BinanceCodec(Arc<BinanceWire>);
+
+impl WireCodec for BinanceCodec {
+    fn open(&self, route: &Route, number: usize) -> Box<dyn WireConnection> {
+        Box::new(BinanceConnection {
+            wire: Arc::clone(&self.0),
+            connection: (route.path, number),
+            depth_requests: HashSet::new(),
+        })
     }
 }
 
-async fn ws(
-    ws: WebSocketUpgrade,
-    State(wire): State<Arc<Wire>>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    let url = format!("{}{}", wire.product.ws_upstream, uri.path());
-    let api_key = headers
-        .get("x-mbx-apikey")
-        .and_then(|value| HeaderValue::from_bytes(value.as_bytes()).ok());
-    ws.on_upgrade(move |socket| proxy(socket, wire, url, api_key))
+struct BinanceConnection {
+    wire: Arc<BinanceWire>,
+    connection: ConnectionId,
+    depth_requests: HashSet<u64>,
 }
 
-async fn proxy(mut socket: WebSocket, wire: Arc<Wire>, url: String, api_key: Option<HeaderValue>) {
-    let mut request = url.as_str().into_client_request().unwrap();
+impl WireConnection for BinanceConnection {
+    fn upstream(&mut self, message: &Message) -> Upstream {
+        let diff = match message {
+            Message::Text(text) => {
+                let frame = serde_json::from_str::<Value>(text).ok();
 
-    // SBE streams authenticate the handshake with the API key
-    if let Some(api_key) = api_key {
-        request.headers_mut().insert("X-MBX-APIKEY", api_key);
-    }
+                if let Some(frame) = &frame
+                    && let Some(id) = frame["id"].as_u64()
+                    && self.depth_requests.remove(&id)
+                {
+                    eprintln!("wire: venue response id={id} {frame}");
+                }
 
-    let (mut upstream, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .expect("venue websocket");
-    wire.active.fetch_add(1, Ordering::SeqCst);
-    let connection = wire.connections.fetch_add(1, Ordering::SeqCst) + 1;
-    let _connection = ProxyConnection(Arc::clone(&wire));
-    let mut depth_requests = HashSet::new();
-
-    loop {
-        let freeze = *wire.freeze_until.lock();
-        if let Some(until) = freeze {
-            if Instant::now() < until {
-                tokio::time::sleep_until(until.into()).await;
+                frame.as_ref().and_then(json_diff)
             }
+            Message::Binary(bytes) => sbe_diff(bytes),
+            _ => None,
+        };
 
-            *wire.freeze_until.lock() = None;
-        }
+        let Some((key, diff)) = diff else {
+            return Upstream::Other;
+        };
 
-        tokio::select! {
-            message = socket.recv() => match message {
-                Some(Ok(Message::Text(text))) => {
-                    if let Ok(frame) = serde_json::from_str::<Value>(&text)
-                        && let Some(method) = frame["method"].as_str()
-                        && frame["params"].to_string().contains("@depth")
-                    {
-                        let id = frame["id"].as_u64().unwrap_or_default();
-                        depth_requests.insert(id);
-                        eprintln!("wire: client {method} {} id={id}", frame["params"]);
-                    }
+        self.wire.reference(self.connection, &key, diff);
 
-                    if upstream.send(UpstreamMessage::Text(text.to_string().into())).await.is_err() {
-                        break;
-                    }
-                }
-                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
-                _ => {}
-            },
-            message = upstream.next() => {
-                let (diff, forward) = match message {
-                    Some(Ok(UpstreamMessage::Text(text))) => {
-                        let frame = serde_json::from_str::<Value>(&text).ok();
-
-                        if let Some(id) = frame.as_ref().and_then(|frame| frame["id"].as_u64())
-                            && depth_requests.remove(&id)
-                        {
-                            eprintln!("wire: venue response id={id} {}", frame.as_ref().unwrap());
-                        }
-
-                        let diff = frame.as_ref().and_then(json_diff);
-                        (diff, Message::Text(text.to_string().into()))
-                    }
-                    Some(Ok(UpstreamMessage::Binary(bytes))) => {
-                        (sbe_diff(&bytes), Message::Binary(bytes))
-                    }
-                    Some(Ok(UpstreamMessage::Close(_)) | Err(_)) | None => break,
-                    _ => continue,
-                };
-
-                if let Some((id, diff)) = diff {
-                    wire.reference(connection, &id, diff);
-                    let mut control = wire.control.lock();
-
-                    if std::mem::take(&mut control.cut) {
-                        wire.cuts.fetch_add(1, Ordering::SeqCst);
-                        break;
-                    }
-
-                    let fault = control.faults.entry(id).or_default();
-                    if fault.drop > 0 {
-                        fault.drop -= 1;
-                        fault.dropped += 1;
-                        continue;
-                    }
-
-                    fault.forwarded += 1;
-                    fault.first_forwarded.get_or_insert_with(Instant::now);
-                }
-
-                if socket.send(forward).await.is_err() {
-                    break;
-                }
-            }
+        Upstream::Book {
+            key,
+            kind: FrameKind::Update,
         }
     }
 
-    let _ = tokio::time::timeout(Duration::from_secs(1), upstream.close(None)).await;
+    fn client(&mut self, message: &Message) -> Vec<String> {
+        if let Message::Text(text) = message
+            && let Ok(frame) = serde_json::from_str::<Value>(text)
+            && let Some(method) = frame["method"].as_str()
+            && frame["params"].to_string().contains("@depth")
+        {
+            let id = frame["id"].as_u64().unwrap_or_default();
+            self.depth_requests.insert(id);
+            eprintln!("wire: client {method} {} id={id}", frame["params"]);
+        }
+
+        Vec::new()
+    }
 }
 
-async fn rest(State(wire): State<Arc<Wire>>, uri: Uri, headers: HeaderMap) -> Response {
+async fn rest(State(wire): State<Arc<BinanceWire>>, uri: Uri, headers: HeaderMap) -> Response {
     let path_and_query = uri.path_and_query().map_or(uri.path(), |p| p.as_str());
 
     let depth_symbol = (uri.path() == wire.product.depth_path).then(|| {
@@ -907,7 +1236,7 @@ async fn rest(State(wire): State<Arc<Wire>>, uri: Uri, headers: HeaderMap) -> Re
     let (used, seen) = *wire.weight.lock();
     if used >= wire.product.weight_cap && seen.elapsed() < Duration::from_secs(10) {
         wire.weight_refusals.fetch_add(1, Ordering::SeqCst);
-        eprintln!("weight cap: refusing {path_and_query} at used_weight_1m={used}");
+        eprintln!("Weight cap: refusing {path_and_query} at used_weight_1m={used}");
         return (
             StatusCode::TOO_MANY_REQUESTS,
             [(header::RETRY_AFTER, "10")],
@@ -947,7 +1276,7 @@ async fn rest(State(wire): State<Arc<Wire>>, uri: Uri, headers: HeaderMap) -> Re
 
     if status == 429 || status == 418 {
         wire.throttled.fetch_add(1, Ordering::SeqCst);
-        eprintln!("venue throttled {path_and_query}: status={status}");
+        eprintln!("Venue throttled {path_and_query}: status={status}");
     }
 
     let content_type = response
@@ -976,6 +1305,7 @@ async fn rest(State(wire): State<Arc<Wire>>, uri: Uri, headers: HeaderMap) -> Re
 }
 
 // One raw diff as the venue sent it, before adapter parsing
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WireDiff {
     first: u64,
     last: u64,
@@ -1120,31 +1450,11 @@ impl WireSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct WireBook {
-    bids: BTreeMap<Decimal, Decimal>,
-    asks: BTreeMap<Decimal, Decimal>,
-}
-
-impl WireBook {
-    fn apply(&mut self, bids: &[(Decimal, Decimal)], asks: &[(Decimal, Decimal)]) {
-        for (levels, updates) in [(&mut self.bids, bids), (&mut self.asks, asks)] {
-            for (price, size) in updates {
-                if size.is_zero() {
-                    levels.remove(price);
-                } else {
-                    levels.insert(*price, *size);
-                }
-            }
-        }
-    }
-
-    fn checksum(&self, depth: usize) -> u64 {
-        checksum(
-            self.bids.iter().rev().take(depth).map(|(p, s)| (*p, *s)),
-            self.asks.iter().take(depth).map(|(p, s)| (*p, *s)),
-        )
-    }
+fn book_checksum(book: &WireBook, depth: usize) -> u64 {
+    checksum(
+        book.bids.iter().rev().take(depth).map(|(p, s)| (*p, *s)),
+        book.asks.iter().take(depth).map(|(p, s)| (*p, *s)),
+    )
 }
 
 fn checksum(
@@ -1167,13 +1477,13 @@ fn checksum(
 
 // A book rebuilt from raw diffs with the venue's documented rules, independent of the adapter
 struct Reference {
-    connection: usize,
+    connection: ConnectionId,
     buffer: VecDeque<WireDiff>,
     synced: Option<(WireBook, u64)>,
 }
 
 impl Reference {
-    fn new(connection: usize) -> Self {
+    fn new(connection: ConnectionId) -> Self {
         Self {
             connection,
             buffer: VecDeque::new(),
@@ -1199,7 +1509,7 @@ impl Reference {
                 *last = diff.last;
                 push_bounded(
                     history,
-                    (diff.last, book.checksum(product.deep_levels)),
+                    (diff.last, book_checksum(book, product.deep_levels)),
                     CHECKSUMS_MAX,
                 );
                 return false;
@@ -1260,7 +1570,7 @@ impl Reference {
         }
 
         let mut book = snapshot.book.clone();
-        let mut entries = vec![(l, book.checksum(product.deep_levels))];
+        let mut entries = vec![(l, book_checksum(&book, product.deep_levels))];
         let mut last = l;
 
         for (index, diff) in self.buffer.iter().enumerate().skip(start) {
@@ -1273,7 +1583,7 @@ impl Reference {
 
             book.apply(&diff.bids, &diff.asks);
             last = diff.last;
-            entries.push((last, book.checksum(product.deep_levels)));
+            entries.push((last, book_checksum(&book, product.deep_levels)));
         }
 
         for (update_id, sum) in entries {
@@ -1322,14 +1632,14 @@ impl Oracle {
                 match tokio_tungstenite::connect_async(url.as_str()).await {
                     Ok((mut stream, _)) => {
                         while let Some(Ok(message)) = stream.next().await {
-                            if let UpstreamMessage::Text(text) = message {
+                            if let Message::Text(text) = message {
                                 oracle.record(&text);
                             }
                         }
 
-                        eprintln!("oracle stream closed, reconnecting");
+                        eprintln!("Oracle stream closed, reconnecting");
                     }
-                    Err(e) => eprintln!("oracle connect failed: {e}"),
+                    Err(e) => eprintln!("Oracle connect failed: {e}"),
                 }
 
                 tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1382,707 +1692,6 @@ impl Oracle {
     }
 }
 
-#[derive(Default)]
-struct Totals {
-    applied: usize,
-    snapshots: usize,
-    checks: usize,
-    unmatched: usize,
-    deep_checks: usize,
-    deep_unmatched: usize,
-    reference_gaps: usize,
-    dropped: usize,
-    requests: usize,
-    connections: usize,
-    weight_peak: u64,
-}
-
-impl Display for Totals {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "applied={} snapshots={} oracle_checks={} oracle_unmatched={} deep_checks={} \
-             deep_unmatched={} reference_gaps={} dropped_diffs={} snapshot_requests={} \
-             connections={} weight_peak={}",
-            self.applied,
-            self.snapshots,
-            self.checks,
-            self.unmatched,
-            self.deep_checks,
-            self.deep_unmatched,
-            self.reference_gaps,
-            self.dropped,
-            self.requests,
-            self.connections,
-            self.weight_peak,
-        )
-    }
-}
-
-struct Session {
-    product: &'static Product,
-    client: Box<dyn DataClient>,
-    wire: Arc<Wire>,
-    oracle: Arc<Oracle>,
-    registry: SocketReconnectRegistry,
-    events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    server: tokio::task::JoinHandle<()>,
-    loaded: HashSet<InstrumentId>,
-    checker: BookStreamChecker,
-    requested: HashSet<InstrumentId>,
-    snapshots: HashMap<InstrumentId, usize>,
-    expected_snapshots: HashMap<InstrumentId, usize>,
-    updates: HashMap<InstrumentId, usize>,
-    emitted: HashMap<InstrumentId, usize>,
-    managed: HashMap<String, VecDeque<View>>,
-    pending: HashMap<String, VecDeque<View>>,
-    deep_pending: HashMap<String, VecDeque<(u64, u64)>>,
-    disabled: HashSet<InstrumentId>,
-    suppressed: HashSet<InstrumentId>,
-    applied: usize,
-    checks: usize,
-    unmatched: usize,
-    deep_checks: usize,
-    deep_unmatched: usize,
-    heal_ms_max: u128,
-}
-
-impl Session {
-    async fn connect(
-        product: &'static Product,
-        snapshot_timeout: u64,
-        max_retries: Option<u32>,
-    ) -> Self {
-        let wire = Arc::new(Wire {
-            product,
-            http: HttpClient::builder()
-                .header_keys(vec![
-                    "content-type".to_string(),
-                    "x-mbx-used-weight-1m".to_string(),
-                ])
-                .timeout_secs(30)
-                .build()
-                .unwrap(),
-            connections: AtomicUsize::new(0),
-            active: AtomicUsize::new(0),
-            cuts: AtomicUsize::new(0),
-            weight: Mutex::new((0, Instant::now())),
-            weight_peak: AtomicU64::new(0),
-            weight_refusals: AtomicUsize::new(0),
-            throttled: AtomicUsize::new(0),
-            freeze_until: Mutex::new(None),
-            control: Mutex::new(Control::default()),
-        });
-
-        let router = Router::new()
-            .route("/ws", get(ws))
-            .route("/stream", get(ws))
-            .fallback(rest)
-            .with_state(Arc::clone(&wire));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let serve = async move {
-            axum::serve(listener, router).await.unwrap();
-        };
-
-        let server = tokio::spawn(serve); // tokio-import-ok: Standalone runtime
-
-        let (sender, events) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let registry = SocketReconnectRegistry::default();
-
-        let defaults = BinanceDataClientConfig::default();
-
-        let config = BinanceDataClientConfig {
-            product_type: product.product_type,
-            environment: product.environment,
-            base_url_http: Some(format!("http://{addr}")),
-            base_url_ws: Some(format!("ws://{addr}/ws")),
-            spot_market_data_mode: product.market_data_mode,
-            instrument_refresh_interval_secs: 0,
-            instrument_status_poll_secs: 0,
-            book_snapshot_timeout_secs: snapshot_timeout,
-            max_retries: max_retries.unwrap_or(defaults.max_retries),
-            ..defaults
-        };
-
-        let mut client: Box<dyn DataClient> = registry.scope(|| match product.product_type {
-            BinanceProductType::Spot => {
-                Box::new(BinanceSpotDataClient::new(*BINANCE_CLIENT_ID, config).unwrap())
-                    as Box<dyn DataClient>
-            }
-            _ => Box::new(
-                BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, product.product_type)
-                    .unwrap(),
-            ),
-        });
-
-        eprintln!(
-            "Connecting {} market data, snapshot_timeout={snapshot_timeout}",
-            product.name
-        );
-        tokio::time::timeout(Duration::from_secs(60), client.connect())
-            .await
-            .expect("bounded connect")
-            .unwrap();
-
-        let mut session = Self {
-            product,
-            client,
-            wire,
-            oracle: Arc::new(Oracle {
-                views: Mutex::new(HashMap::new()),
-                frames: AtomicUsize::new(0),
-            }),
-            registry,
-            events,
-            server,
-            loaded: HashSet::new(),
-            checker: BookStreamChecker::new(BookType::L2_MBP, true),
-            requested: HashSet::new(),
-            snapshots: HashMap::new(),
-            expected_snapshots: HashMap::new(),
-            updates: HashMap::new(),
-            emitted: HashMap::new(),
-            managed: HashMap::new(),
-            pending: HashMap::new(),
-            deep_pending: HashMap::new(),
-            disabled: HashSet::new(),
-            suppressed: HashSet::new(),
-            applied: 0,
-            checks: 0,
-            unmatched: 0,
-            deep_checks: 0,
-            deep_unmatched: 0,
-            heal_ms_max: 0,
-        };
-
-        session.drain();
-        session
-    }
-
-    fn watch(&self, ids: &[InstrumentId]) {
-        self.oracle.watch(self.product, ids);
-    }
-
-    // Picks loaded instruments by 24h trade count: the least active or the most liquid
-    async fn select(&self, count: usize, quiet: bool) -> Vec<InstrumentId> {
-        let url = format!("{}{}", self.product.rest_upstream, self.product.ticker_path);
-        let response = self
-            .wire
-            .http
-            .request(Method::GET, url, None, None, None, Some(30), None)
-            .await
-            .unwrap();
-        self.wire.record_weight(&response.headers);
-        let tickers = serde_json::from_slice::<Vec<Value>>(&response.body).unwrap();
-
-        let number = |ticker: &Value, field: &str| {
-            ticker[field]
-                .as_str()
-                .and_then(|value| f64::from_str(value).ok())
-                .or_else(|| ticker[field].as_f64())
-                .unwrap_or_default()
-        };
-
-        let mut candidates = tickers
-            .iter()
-            .filter_map(|ticker| {
-                let raw = ticker["symbol"].as_str()?;
-                let id = instrument_id(self.product, raw);
-                let trades = ticker["count"].as_u64().unwrap_or_default();
-                (raw.ends_with(self.product.ticker_suffix)
-                    && self.loaded.contains(&id)
-                    && number(ticker, "lastPrice") > 0.0
-                    && (!quiet || (100..=3_000).contains(&trades)))
-                .then_some((id, trades))
-            })
-            .collect::<Vec<_>>();
-
-        if quiet {
-            candidates.sort_by_key(|(_, trades)| *trades);
-        } else {
-            candidates.sort_by_key(|(_, trades)| std::cmp::Reverse(*trades));
-        }
-
-        let ids = candidates
-            .into_iter()
-            .take(count)
-            .map(|(id, _)| id)
-            .collect::<Vec<_>>();
-        assert_eq!(ids.len(), count, "not enough candidate books");
-        eprintln!("selected books: {ids:?}");
-        ids
-    }
-
-    fn subscribe(&mut self, id: InstrumentId) {
-        self.disabled.remove(&id);
-        self.expect_snapshot(id);
-        self.requested.insert(id);
-        self.checker.open(id);
-        self.client
-            .subscribe_book_deltas(SubscribeBookDeltas::new(
-                id,
-                BookType::L2_MBP,
-                Some(*BINANCE_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                true,
-                None,
-                None,
-            ))
-            .unwrap();
-    }
-
-    fn unsubscribe(&mut self, id: InstrumentId) {
-        self.client
-            .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
-                id,
-                Some(*BINANCE_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        self.drain();
-        self.disabled.insert(id);
-        self.checker.close(id);
-    }
-
-    fn expect_snapshot(&mut self, id: InstrumentId) {
-        let snapshots = self.snapshots.get(&id).copied().unwrap_or(0);
-        self.expected_snapshots.insert(id, snapshots + 1);
-    }
-
-    fn expect_all(&mut self) {
-        let ids = self
-            .requested
-            .iter()
-            .filter(|id| !self.disabled.contains(id))
-            .copied()
-            .collect::<Vec<_>>();
-
-        for id in ids {
-            self.expect_snapshot(id);
-        }
-    }
-
-    fn reconnect(&mut self) {
-        self.expect_all();
-        let handle = self
-            .registry
-            .handle(*BINANCE_CLIENT_ID, Ustr::from(self.product.endpoint))
-            .unwrap();
-        // A request during an in-flight reconnect joins it
-        let outcome = handle.request_reconnect();
-        assert!(
-            matches!(
-                outcome,
-                ReconnectRequestOutcome::Accepted | ReconnectRequestOutcome::AlreadyReconnecting
-            ),
-            "reconnect request refused: {outcome:?}"
-        );
-    }
-
-    // Starts a recovery whose snapshot is held so later actions race it
-    async fn hold_recovery(&mut self, ids: &[InstrumentId], delay: Duration) -> Vec<usize> {
-        let before = {
-            let mut control = self.wire.control.lock();
-            ids.iter()
-                .map(|id| {
-                    let fault = control.faults.entry(symbol(id)).or_default();
-                    fault.delay = Some(delay);
-                    fault.delays = usize::MAX;
-                    fault.drop = 1;
-                    fault.held
-                })
-                .collect::<Vec<_>>()
-        };
-
-        for id in ids {
-            self.expect_snapshot(*id);
-        }
-
-        // Snapshot pacing can queue a recovery behind several other books' snapshots
-        self.until(Duration::from_secs(120), "recovery snapshots held", |s| {
-            let control = s.wire.control.lock();
-            ids.iter()
-                .zip(&before)
-                .all(|(id, held)| control.faults[&symbol(id)].held > *held)
-        })
-        .await;
-
-        let control = self.wire.control.lock();
-        ids.iter()
-            .zip(before)
-            .map(|(id, held)| control.faults[&symbol(id)].held - held)
-            .collect()
-    }
-
-    fn delay(&self, ids: &[InstrumentId], delay: Duration) {
-        let mut control = self.wire.control.lock();
-
-        for id in ids {
-            let fault = control.faults.entry(symbol(id)).or_default();
-            fault.delay = Some(delay);
-            fault.delays = usize::MAX;
-        }
-    }
-
-    fn release(&self, ids: &[InstrumentId]) {
-        let mut control = self.wire.control.lock();
-
-        for id in ids {
-            if let Some(fault) = control.faults.get_mut(&symbol(id)) {
-                fault.delay = None;
-                fault.delays = 0;
-                fault.fail = 0;
-                fault.reject = false;
-                fault.drop = 0;
-            }
-        }
-    }
-
-    fn snapshot_requests(&self, ids: &[InstrumentId]) -> Vec<usize> {
-        let control = self.wire.control.lock();
-        ids.iter()
-            .map(|id| control.faults.get(&symbol(id)).map_or(0, |f| f.requests))
-            .collect()
-    }
-
-    fn apply(&mut self, event: DataEvent) {
-        let deltas = match event {
-            DataEvent::Instrument(instrument) => {
-                self.loaded.insert(instrument.id());
-                return;
-            }
-            DataEvent::Data(Data::BookDeltas(deltas)) => deltas,
-            _ => return,
-        };
-
-        let id = deltas.instrument_id;
-        assert!(
-            !self.suppressed.contains(&id),
-            "output while the probe expects the book suppressed: {id}"
-        );
-        let snapshot = deltas
-            .deltas
-            .first()
-            .is_some_and(|delta| delta.action == BookAction::Clear);
-
-        if let Err(violation) = self.checker.apply(&deltas) {
-            panic!(
-                "book contract violation {id} seq={}: {violation}",
-                deltas.sequence
-            );
-        }
-
-        if snapshot {
-            *self.snapshots.entry(id).or_default() += 1;
-            self.updates.insert(id, 0);
-        } else {
-            *self.updates.entry(id).or_default() += 1;
-        }
-
-        *self.emitted.entry(id).or_default() += 1;
-        let book = self.checker.book(id).expect("requested book");
-
-        let view = View {
-            update_id: deltas.sequence,
-            bids: book.bids_as_map(Some(20)).into_iter().collect(),
-            asks: book.asks_as_map(Some(20)).into_iter().collect(),
-        };
-
-        let sum = checksum(
-            book.bids_as_map(Some(self.product.deep_levels)).into_iter(),
-            book.asks_as_map(Some(self.product.deep_levels)).into_iter(),
-        );
-        push_bounded(
-            self.deep_pending.entry(symbol(&id)).or_default(),
-            (deltas.sequence, sum),
-            CHECKSUMS_MAX,
-        );
-        push_bounded(
-            self.managed.entry(symbol(&id)).or_default(),
-            view,
-            VIEWS_MAX,
-        );
-
-        self.applied += 1;
-    }
-
-    // Compares emitted books with both oracles at matching update IDs
-    fn reconcile(&mut self) {
-        {
-            let mut views = self.oracle.views.lock();
-            for (symbol, views) in views.iter_mut() {
-                let pending = self.pending.entry(symbol.clone()).or_default();
-                pending.extend(views.drain(..));
-                while pending.len() > VIEWS_MAX {
-                    pending.pop_front();
-                }
-            }
-        }
-
-        for (symbol, pending) in &mut self.pending {
-            let Some(managed) = self.managed.get(symbol) else {
-                pending.clear();
-                continue;
-            };
-
-            let (checks, unmatched) = match_pending(
-                pending,
-                managed,
-                |view| view.update_id,
-                |view, emitted| {
-                    assert_eq!(
-                        emitted.bids, view.bids,
-                        "bid oracle mismatch {symbol} update_id={}",
-                        view.update_id
-                    );
-                    assert_eq!(
-                        emitted.asks, view.asks,
-                        "ask oracle mismatch {symbol} update_id={}",
-                        view.update_id
-                    );
-                },
-            );
-
-            self.checks += checks;
-            self.unmatched += unmatched;
-        }
-
-        let control = self.wire.control.lock();
-
-        for (symbol, pending) in &mut self.deep_pending {
-            let Some(history) = control.checksums.get(symbol) else {
-                continue;
-            };
-
-            let (checks, unmatched) = match_pending(
-                pending,
-                history,
-                |(update_id, _)| *update_id,
-                |(update_id, sum), (_, expected)| {
-                    assert_eq!(
-                        sum, expected,
-                        "reference book mismatch {symbol} update_id={update_id}"
-                    );
-                },
-            );
-
-            self.deep_checks += checks;
-            self.deep_unmatched += unmatched;
-        }
-    }
-
-    async fn until(&mut self, limit: Duration, label: &str, predicate: impl Fn(&Self) -> bool) {
-        let result = tokio::time::timeout(limit, async {
-            let mut reconciled = Instant::now();
-
-            while !predicate(self) {
-                tokio::select! {
-                    event = self.events.recv() => self.apply(event.expect("data stream stays open")),
-                    () = tokio::time::sleep(Duration::from_millis(10)) => {}
-                }
-
-                // Busy streams must not starve the oracle comparisons
-                if reconciled.elapsed() >= Duration::from_millis(50) {
-                    self.reconcile();
-                    reconciled = Instant::now();
-                }
-            }
-        })
-        .await;
-
-        if result.is_err() {
-            self.reconcile();
-            let control = self.wire.control.lock();
-
-            let faults = control
-                .faults
-                .iter()
-                .map(|(id, f)| {
-                    format!(
-                        "{id}: forwarded={} dropped={} requests={} held={}",
-                        f.forwarded, f.dropped, f.requests, f.held
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            panic!(
-                "deadline exceeded: {label}, updates={:?}, snapshots={:?}, expected={:?}, \
-                 wire={faults:?}",
-                self.updates, self.snapshots, self.expected_snapshots
-            );
-        }
-
-        self.drain();
-    }
-
-    fn drain(&mut self) {
-        while let Ok(event) = self.events.try_recv() {
-            self.apply(event);
-        }
-
-        self.reconcile();
-    }
-
-    async fn observe(&mut self, duration: Duration) {
-        let end = Instant::now() + duration;
-        self.until(
-            duration + Duration::from_secs(2),
-            "observation window",
-            |_| Instant::now() >= end,
-        )
-        .await;
-    }
-
-    async fn healthy(&mut self, ids: &[InstrumentId]) {
-        self.healthy_within(ids, Duration::from_secs(120)).await;
-    }
-
-    // Every intended book reaches its expected snapshot and then streams updates
-    async fn healthy_within(&mut self, ids: &[InstrumentId], limit: Duration) {
-        let started = Instant::now();
-        let ids = ids
-            .iter()
-            .filter(|id| !self.disabled.contains(id))
-            .copied()
-            .collect::<Vec<_>>();
-        self.until(limit, "all intended books recover", |s| {
-            ids.iter().all(|id| {
-                s.snapshots.get(id).copied().unwrap_or(0) >= s.expected_snapshots[id]
-                    && s.updates.get(id).copied().unwrap_or(0) >= 3
-            })
-        })
-        .await;
-
-        self.heal_ms_max = self.heal_ms_max.max(started.elapsed().as_millis());
-    }
-
-    async fn healthy_updates(&mut self, ids: &[InstrumentId]) {
-        let before = ids
-            .iter()
-            .map(|id| (*id, self.emitted.get(id).copied().unwrap_or(0)))
-            .collect::<Vec<_>>();
-        self.until(Duration::from_secs(120), "books stream after freeze", |s| {
-            before
-                .iter()
-                .all(|(id, emitted)| s.emitted.get(id).copied().unwrap_or(0) >= emitted + 3)
-        })
-        .await;
-    }
-
-    // Keeps venue REST weight well inside the per-minute limit before forcing snapshots
-    async fn weight_guard(&self) {
-        loop {
-            let url = format!("{}{}", self.product.rest_upstream, self.product.ping_path);
-
-            if let Ok(response) = self
-                .wire
-                .http
-                .request(Method::GET, url, None, None, None, Some(10), None)
-                .await
-            {
-                self.wire.record_weight(&response.headers);
-            }
-
-            let weight = self.wire.used_weight();
-            if weight < self.product.weight_guard {
-                return;
-            }
-
-            eprintln!("weight guard: used_weight_1m={weight}, waiting");
-            tokio::time::sleep(Duration::from_secs(10)).await;
-        }
-    }
-
-    fn totals(&self) -> Totals {
-        let control = self.wire.control.lock();
-
-        Totals {
-            applied: self.applied,
-            snapshots: self.snapshots.values().sum(),
-            checks: self.checks,
-            unmatched: self.unmatched,
-            deep_checks: self.deep_checks,
-            deep_unmatched: self.deep_unmatched,
-            reference_gaps: control.reference_gaps,
-            dropped: control.faults.values().map(|f| f.dropped).sum(),
-            requests: control.faults.values().map(|f| f.requests).sum(),
-            connections: self.wire.connections.load(Ordering::SeqCst),
-            weight_peak: self.wire.weight_peak.load(Ordering::SeqCst),
-        }
-    }
-
-    fn stats(&self) -> String {
-        format!(
-            "{} cuts={} heal_ms_max={} used_weight_1m={} oracle_frames={}",
-            self.totals(),
-            self.wire.cuts.load(Ordering::SeqCst),
-            self.heal_ms_max,
-            self.wire.used_weight(),
-            self.oracle.frames.load(Ordering::Relaxed),
-        )
-    }
-
-    async fn stop(mut self) -> Totals {
-        let started = Instant::now();
-        tokio::time::timeout(Duration::from_secs(10), self.client.disconnect())
-            .await
-            .expect("bounded disconnect")
-            .unwrap();
-        assert!(self.client.is_disconnected());
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-
-        while self.wire.active.load(Ordering::SeqCst) > 0 {
-            assert!(Instant::now() < deadline, "proxied sockets closed");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-
-        assert!(
-            self.registry
-                .handle(*BINANCE_CLIENT_ID, Ustr::from(self.product.endpoint))
-                .is_none()
-        );
-
-        let totals = self.totals();
-        eprintln!(
-            "shutdown_ms={} active_proxies=0 {}",
-            started.elapsed().as_millis(),
-            self.stats()
-        );
-        assert_eq!(
-            self.wire.weight_refusals.load(Ordering::SeqCst),
-            0,
-            "proxy refused requests at the weight cap"
-        );
-        assert_eq!(
-            self.wire.throttled.load(Ordering::SeqCst),
-            0,
-            "venue throttled REST requests"
-        );
-        assert!(totals.weight_peak < self.product.weight_limit);
-        assert!(
-            totals.checks > 0,
-            "depth20 oracle compared no emitted books"
-        );
-        assert!(
-            totals.deep_checks > 0,
-            "reference oracle compared no emitted books"
-        );
-        self.server.abort();
-        totals
-    }
-}
-
 // Pops each pending entry once the history reaches its update ID: an entry the history holds is
 // checked against it, and one the history passed without holding counts as unmatched
 fn match_pending<T>(
@@ -2114,4 +1723,197 @@ fn match_pending<T>(
     }
 
     (checks, unmatched)
+}
+
+// Proves the oracles before any venue traffic, since a wrong oracle would pass a wrong book
+fn check_oracles() {
+    let d = |value: &str| Decimal::from_str(value).unwrap();
+
+    let book = |bids: &[(&str, &str)], asks: &[(&str, &str)]| WireBook {
+        bids: bids.iter().map(|(p, s)| (d(p), d(s))).collect(),
+        asks: asks.iter().map(|(p, s)| (d(p), d(s))).collect(),
+    };
+
+    let diff = |first, last, prev, bids: &[(&str, &str)], asks: &[(&str, &str)]| WireDiff {
+        first,
+        last,
+        prev,
+        bids: bids.iter().map(|(p, s)| (d(p), d(s))).collect(),
+        asks: asks.iter().map(|(p, s)| (d(p), d(s))).collect(),
+    };
+
+    // Raw diffs parse from combined-stream frames, and other events are ignored
+    assert_eq!(
+        json_diff(&json!({"stream": "btcusdt@depth", "data": {
+            "e": "depthUpdate", "s": "BTCUSDT", "U": 5, "u": 7, "pu": 4,
+            "b": [["10.5", "1"]], "a": [["11", "0"]],
+        }})),
+        Some((
+            "BTCUSDT".to_string(),
+            diff(5, 7, Some(4), &[("10.5", "1")], &[("11", "0")])
+        ))
+    );
+    assert_eq!(json_diff(&json!({"e": "trade", "s": "BTCUSDT"})), None);
+
+    assert_eq!(mantissa_decimal(12_345, -2), d("123.45"));
+    assert_eq!(mantissa_decimal(7, 2), d("700"));
+    assert_eq!(mantissa_decimal(5, 0), d("5"));
+
+    let snapshot = WireSnapshot::parse(
+        "application/json",
+        json!({"lastUpdateId": 10, "bids": [["10", "1"], ["9", "2"]], "asks": [["11", "3"]]})
+            .to_string()
+            .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(snapshot.last_update_id, 10);
+    assert_eq!(
+        snapshot.book,
+        book(&[("10", "1"), ("9", "2")], &[("11", "3")])
+    );
+
+    // Checksums ignore trailing zeros and see every level on both sides
+    assert_eq!(
+        book_checksum(&book(&[("10.0", "1.50")], &[("11", "2")]), 10),
+        book_checksum(&book(&[("10", "1.5")], &[("11.00", "2")]), 10)
+    );
+    assert_ne!(
+        book_checksum(&book(&[("10", "1")], &[("11", "2")]), 10),
+        book_checksum(&book(&[("10", "1")], &[("11", "3")]), 10)
+    );
+
+    // Spot: the first diff after the snapshot spans `lastUpdateId + 1`, later diffs continue at
+    // `u + 1`, and an early stale diff is dropped
+    {
+        let mut reference = Reference::new(("/ws", 1));
+        let mut history = VecDeque::new();
+        assert!(!reference.push(
+            diff(8, 9, None, &[("9", "5")], &[]),
+            None,
+            &SPOT,
+            &mut history
+        ));
+        assert!(!reference.push(
+            diff(10, 12, None, &[("10", "4")], &[]),
+            None,
+            &SPOT,
+            &mut history
+        ));
+        reference.seed(&snapshot, &SPOT, &mut history);
+        assert!(!reference.push(
+            diff(13, 14, None, &[], &[("11", "0"), ("12", "1")]),
+            None,
+            &SPOT,
+            &mut history
+        ));
+
+        let seeded = book(&[("10", "1"), ("9", "2")], &[("11", "3")]);
+        let bridged = book(&[("10", "4"), ("9", "2")], &[("11", "3")]);
+        let linked = book(&[("10", "4"), ("9", "2")], &[("12", "1")]);
+        assert_eq!(
+            history,
+            [
+                (10, book_checksum(&seeded, SPOT.deep_levels)),
+                (12, book_checksum(&bridged, SPOT.deep_levels)),
+                (14, book_checksum(&linked, SPOT.deep_levels)),
+            ]
+        );
+        assert!(reference.push(diff(16, 17, None, &[], &[]), None, &SPOT, &mut history));
+        assert!(reference.synced.is_none());
+    }
+
+    // Futures: the first diff spans `lastUpdateId`, and later diffs link through `pu`
+    {
+        let mut reference = Reference::new(("/ws", 1));
+        let mut history = VecDeque::new();
+        assert!(!reference.push(
+            diff(9, 11, Some(8), &[("10", "4")], &[]),
+            Some(&snapshot),
+            &FUTURES,
+            &mut history
+        ));
+        assert!(!reference.push(
+            diff(12, 13, Some(11), &[("9", "0")], &[]),
+            None,
+            &FUTURES,
+            &mut history
+        ));
+        assert_eq!(
+            reference
+                .synced
+                .as_ref()
+                .map(|(book, last)| (book.clone(), *last)),
+            Some((book(&[("10", "4")], &[("11", "3")]), 13))
+        );
+        assert!(reference.push(
+            diff(15, 16, Some(14), &[], &[]),
+            None,
+            &FUTURES,
+            &mut history
+        ));
+    }
+
+    // A snapshot no buffered diff bridges leaves the reference unsynced
+    {
+        let mut reference = Reference::new(("/ws", 1));
+        let mut history = VecDeque::new();
+        reference.push(
+            diff(20, 21, None, &[], &[]),
+            Some(&snapshot),
+            &SPOT,
+            &mut history,
+        );
+        assert!(reference.synced.is_none());
+        assert!(history.is_empty());
+    }
+
+    // The depth20 oracle keeps nonzero levels from either payload shape
+    {
+        let oracle = Oracle {
+            views: Mutex::new(HashMap::new()),
+            frames: AtomicUsize::new(0),
+        };
+
+        oracle.record(
+            &json!({"stream": "btcusdt@depth20@100ms", "data": {
+                "lastUpdateId": 5, "bids": [["10", "1"], ["9", "0"]], "asks": [["11", "2"]],
+            }})
+            .to_string(),
+        );
+        oracle.record(
+            &json!({"stream": "ethusdt@depth20@100ms", "data": {
+                "u": 6, "b": [["20", "1"]], "a": [["21", "2"]],
+            }})
+            .to_string(),
+        );
+        let views = oracle.views.lock();
+        let snapshot_book = book(&[("10", "1")], &[("11", "2")]);
+        assert_eq!(
+            views["BTCUSDT"],
+            [View {
+                update_id: 5,
+                bids: snapshot_book.bids,
+                asks: snapshot_book.asks,
+            }]
+        );
+        assert_eq!(views["ETHUSDT"][0].update_id, 6);
+        assert_eq!(oracle.frames.load(Ordering::Relaxed), 2);
+    }
+
+    // Pending samples are checked when the history holds them, count as unmatched when the
+    // history passed them, and wait when the history has not reached them
+    {
+        let history = VecDeque::from([(1, 10), (2, 20), (4, 40)]);
+        let mut pending = VecDeque::from([(1, 10), (3, 30), (4, 40), (5, 50)]);
+        let mut compared = Vec::new();
+        let counts = match_pending(
+            &mut pending,
+            &history,
+            |(update_id, _)| *update_id,
+            |entry, expected| compared.push((*entry, *expected)),
+        );
+        assert_eq!(counts, (2, 1));
+        assert_eq!(compared, [((1, 10), (1, 10)), ((4, 40), (4, 40))]);
+        assert_eq!(pending, [(5, 50)]);
+    }
 }

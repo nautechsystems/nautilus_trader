@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod emitter;
 mod manager;
 mod node;
 #[cfg(feature = "streaming")]

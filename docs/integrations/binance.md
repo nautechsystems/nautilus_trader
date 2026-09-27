@@ -826,6 +826,54 @@ resyncs, such as after a reconnect, waits for budget instead of exceeding it:
 - Explicit snapshot requests draw on the same budget.
 - The HTTP client's retries of a failed snapshot request are not paced.
 
+### Live recovery validation
+
+The `binance-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to the selected product's market data, submits no orders, and checks emitted
+books against the book stream contract and two independent oracles: the venue's
+`<symbol>@depth20@100ms` stream at matching update IDs, and a reference book rebuilt from raw diffs
+and forwarded REST snapshots.
+
+The harness drops diffs to force gaps, fails, delays, and rejects REST snapshots, cuts and freezes
+connections, requests reconnects, and churns subscriptions. Its REST proxy refuses snapshot requests
+before venue request weight nears its limit, and a run fails if the venue throttles it.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-binance --features examples --test binance-book-stress -- --product futures
+```
+
+`--product` selects the venue:
+
+| Product          | Venue                                                                       |
+| ---------------- | --------------------------------------------------------------------------- |
+| `spot` (default) | Spot mainnet JSON streams.                                                  |
+| `spot-sbe`       | Spot mainnet SBE streams; reads `BINANCE_API_KEY` and `BINANCE_API_SECRET`. |
+| `futures`        | USD-M testnet.                                                              |
+| `coinm`          | COIN-M testnet.                                                             |
+
+Run `spot-sbe` without `strip-adapter-env.bash`, which unsets the API key it needs.
+
+`--scenario` selects the run:
+
+- `churn` (default): rotates gap, reconnect, subscription churn, cut, and freeze faults.
+- `boundaries`: probes snapshot deadlines, retry exhaustion into the retry ceiling, and a
+  permanent rejection.
+- `resubscribe`: races an unsubscribe with an immediate resubscribe once per round.
+- `quiet`: watches thinly traded books, one round per minute.
+- `crowd`: subscribes liquid books and reconnects once per round so snapshot pacing engages.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (14 by default). `--books` sets how many books `quiet` and
+`crowd` select by 24-hour trade count (4 by default).
+
+The harness requires access to the selected product's REST API and WebSocket market data streams.
+Automated book lifecycle tests use local mock servers. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
+
 ## Quote timestamps
 
 The `ts_event` field on `QuoteTick` differs between transports. Spot SBE uses the

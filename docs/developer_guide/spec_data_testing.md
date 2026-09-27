@@ -175,11 +175,17 @@ An oracle is an independent reconstruction of venue truth, compared with the emi
 - Build it from a separate connection or a REST snapshot, never from the adapter's own state.
 - Compare at an aligned venue sequence. Skip a sample that cannot be aligned; it does not count as
   a pass.
-- Count a snapshot episode verified once a comparison after its snapshot succeeds. A push-family
-  harness asserts that every episode is verified. The Binance harness matches its oracle by update
-  ID after the fact, so it reports oracle checks and unmatched samples instead of episode coverage.
+- Count a snapshot episode verified once a comparison after its snapshot succeeds. A harness with
+  `Coverage::Episodes`, such as OKX, verifies each batch as it arrives and fails a session unless
+  every episode is verified. A harness with `Coverage::Samples`, such as Binance, matches oracle
+  samples by update ID after the fact, so it reports oracle checks and unmatched samples instead of
+  episode coverage.
 
 ### Stress harnesses
+
+Stress harnesses are development tools for changes to book sync and recovery code. They are not
+part of the published crates and do not run in CI. The `BookStreamChecker` they use ships with
+`nautilus-live` under the `test-support` feature, so other tests can apply the same contract.
 
 An adapter that uses the shared book machinery keeps its live harness at
 `crates/adapters/<venue>/tests/stress/book_stress.rs`, registered as a test target named
@@ -196,18 +202,67 @@ required-features = ["examples"]
 
 `harness = false` lets the target own its runtime and arguments, and `test = false` keeps it out of
 default `cargo test` and nextest runs. Add `nautilus-live` with the `test-support` feature to the crate's
-dev-dependencies. Run the harness explicitly, with adapter environment variables stripped:
+dev-dependencies.
+
+The shared machinery is test source at `crates/live/tests/book/stress/`, which each harness compiles
+in with a path include:
+
+```rust
+#[path = "../../../../live/tests/book/stress/mod.rs"]
+mod stress;
+```
+
+The shared module runs the harness, and the venue supplies only its own pieces by implementing
+`StressVenue`:
+
+- A `WireCodec` that classifies each venue frame as a book snapshot, a book update, or an
+  unsubscribe acknowledgement, recording it in the oracle before any fault applies. It can also
+  rewrite a frame to plant a sequence gap or an in-band mismatch.
+- The proxy routes, the data client configuration, and any extra proxy routes, such as a REST
+  snapshot proxy.
+- The oracle comparison for each emitted batch, the condition for a healthy book, and a startup
+  self-check.
+- The scenarios, written against `Session`.
+
+`FaultProxy` relays the adapter's WebSocket traffic to the venue. It applies per-book `Fault` rules
+(drop snapshots or updates, corrupt, hold, silence, cut on unsubscribe) and connection-wide cuts and
+freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
+books to heal, and checks at shutdown that every socket and reconnect handle is released.
+
+Every harness accepts the same flags, and venues add their own; `--help` lists them:
+
+| Flag              | Meaning                                                        | Default                     |
+| ----------------- | -------------------------------------------------------------- | --------------------------- |
+| `--scenario NAME` | Scenario to run.                                               | `churn` for OKX and Binance |
+| `--timeout SECS`  | `book_snapshot_timeout_secs`; `0` disables snapshot deadlines. | `10`                        |
+| `--rounds N`      | Stress rounds.                                                 | Venue default               |
+
+Run the harness explicitly, with adapter environment variables stripped:
 
 ```bash
 CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
-  cargo test -p nautilus-okx --features examples --test okx-book-stress -- 10 18
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18
 ```
 
-A harness passes every emitted batch through `BookStreamChecker`, forces the fault catalog, and
-prints one `PASS` or `FAIL` line per scenario. A `harness = false` target cannot run `#[test]`
-functions, so check the harness's own oracle logic in a self-check at startup. Document the
-arguments and required endpoints in the adapter's integration guide. OKX and Binance provide
-harnesses.
+The harness writes one line per event to stderr, each led by a fixed word:
+
+| Line       | Meaning                                                                 |
+| ---------- | ----------------------------------------------------------------------- |
+| `START`    | The venue and arguments.                                                |
+| `CHECK`    | The startup self-check or a scenario probe passed.                      |
+| `ROUND`    | A stress round finished, with its counters.                             |
+| `SHUTDOWN` | A session stopped cleanly, with its counters and oracle coverage.       |
+| `PASS`     | The run finished; always the last line of a passing run.                |
+| `FAIL`     | A check failed or any thread panicked; the process exits with status 1. |
+
+A deadline failure reports the venue frames each proxy route received, which separates a silent
+route from an adapter failure. A `harness = false` target cannot run `#[test]` functions, so the
+venue proves its wire parsing and oracle in `StressVenue::self_check`, which runs before any venue
+traffic. The shared proxy, argument parsing, and wire book carry unit tests in the `nautilus-live`
+`book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
+Document the harness in the adapter's integration guide under a `Live recovery validation` heading
+that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
+endpoints it requires. OKX and Binance provide harnesses.
 
 ### In-band verification
 
