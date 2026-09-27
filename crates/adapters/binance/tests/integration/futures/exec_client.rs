@@ -6174,8 +6174,8 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(short_position.avg_px_open, 52000.0);
 
         if expected_fill_count > 0 {
-            assert_eq!(long_position.trade_ids()[0], TradeId::from("12345678"));
-            assert_eq!(short_position.trade_ids()[0], TradeId::from("12345679"));
+            assert_eq!(long_position.events[0].trade_id, TradeId::from("12345678"));
+            assert_eq!(short_position.events[0].trade_id, TradeId::from("12345679"));
         }
     }
 

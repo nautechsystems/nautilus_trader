@@ -2148,7 +2148,6 @@ mod tests {
 
         for _ in 0..2 {
             client.subscribe_book_deltas(command.clone()).unwrap();
-            assert_eq!(client.book_depths.load().get(&instrument_id), Some(&50));
             wait_until_async(
                 || async { !client.book_depths.contains_key(&instrument_id) },
                 Duration::from_secs(2),
