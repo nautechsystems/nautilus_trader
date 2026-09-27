@@ -309,44 +309,64 @@ exact project version within that range, update Nautilus Engineering's `[uv].ver
 shared catalog, then update the `rev` in `.pre-commit-config.yaml` and each digest-pinned uv Docker
 image. Run `make update-uv` to install the project version locally.
 
-### Rust dependency cooldown before compilation
+### Rust dependency cooldown
 
-Repository builds must check every resolved registry dependency before Cargo can execute dependency
-build scripts or procedural macros. `make check-cargo-cooldown` checks all tracked `Cargo.lock`
-files against `[workspace.metadata.cooldown]` in `Cargo.toml`, including versions already committed
-or pulled from another branch. It does not need a Git comparison base or full checkout history.
+The Cargo cooldown check rejects resolved registry versions published within the window set by
+`[workspace.metadata.cooldown]` in `Cargo.toml`. It checks every tracked `Cargo.lock` file,
+including versions already committed or pulled from another branch, before dependency build scripts
+or procedural macros can run.
 
-The Rust build, stub, check, Clippy, test, coverage, documentation, benchmark, and local CLI install
-targets require this check. Stub generation counts as compilation because it runs the Rust
-`python-stub-gen` binary through Cargo. Each compilation target waits for the gate, including under
-parallel Make. Compilation uses the checked lockfile without resolving replacements. Pre-flight
-also checks early, and CI common setup checks before repository compilation begins.
+The check runs at these points:
+
+- **Builds**: every Make target that can compile Rust depends on `check-cargo-cooldown`. That
+  covers the build, stub, check, Clippy, test, coverage, documentation, benchmark, Docker, and
+  local CLI install targets. Compilation waits for the check, including under parallel Make.
+- **Pre-commit**: the `cargo-cooldown` hook runs when a commit stages a `Cargo.toml` or
+  `Cargo.lock` file, `.supply-chain/crate-dates.json`, or `scripts/check-cargo-cooldown.sh`.
+- **CI**: the pre-commit job runs `prek run --all-files`, and jobs that build through Make targets
+  run the check first.
+- **On demand**: `make check-cargo-cooldown` runs the same full check.
+- **Dependency updates**: `make cargo-update` restores the prior version of each fresh upgrade that
+  is not allowed.
+
+Make compilation targets also pass `--locked`, so Cargo fails rather than resolve versions the
+check has not seen.
 
 A version inside the cooldown window requires both an exact entry in
 `[workspace.metadata.cooldown.allow]` and a matching cargo-vet audit. Unsupported registries fail
 the check. Publication dates come from the committed database at
 `.supply-chain/crate-dates.json`. Recorded dates are trusted offline; versions missing from the
-database are looked up on crates.io and fail closed when the registry is unreachable. The
-pre-commit hook checks all resolved versions using these recorded dates, including entries added
-since the comparison base. A clean Git diff does not establish that dependencies are old enough.
+database are looked up on crates.io and fail closed when the registry is unreachable. A clean Git
+diff does not establish that dependencies are old enough.
+
+A branch could add a backdated database entry beside the version it introduces. The
+`trusted-base = "origin/develop"` setting closes that gap: the check re-verifies against crates.io
+each database entry that `origin/develop` lacks, then caches the pass. A branch therefore repeats
+those requests only when it or `origin/develop` changes, not on every build. A clone without
+`origin/develop` fails the check until you fetch it. Shallow CI checkouts cannot resolve it and
+trust recorded dates instead, while the full-history pre-commit job verifies against it.
 
 `make cargo-update` records dates for every change it accepts. After a manual lockfile edit, run
 `bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database, which also prunes
 entries no tracked lock resolves. The dependency-update command separately re-verifies newly added
 dates against crates.io; routine pre-commit and full checks use the committed database offline.
 
-Successful full checks are cached as `.cargo-cooldown.json` in `CARGO_TARGET_DIR`, or the Make
-`TARGET_DIR` when no Cargo target directory is set. CI uses its configured Cargo target directory
-so persistent runners retain the cache between jobs. Changes to any checked lockfile,
-the policy, audits, database, or the check script invalidate the cache. Failed checks are not
-cached. Treat this file as local verification state; do not restore it from an untrusted source.
+The pre-commit hook and `make check-cargo-cooldown` cache successful full checks as
+`.cargo-cooldown.json` in `CARGO_TARGET_DIR`. When no Cargo target directory is set, the hook uses
+`target/` at the repository root and Make uses its `TARGET_DIR`. CI uses its configured Cargo
+target directory so persistent runners retain the cache between jobs. Changes to any checked
+lockfile, the policy, audits, database, check script, or the trusted base's database and lockfiles
+invalidate the cache. Failed checks are not cached. Treat this file as local verification state; do
+not restore it from an untrusted source.
 
 This gate reduces exposure to newly published malicious registry releases. It does not establish
 that older releases are safe, sandbox build scripts, or vet Git and local path dependencies.
 Development-tool bootstrap commands such as `make install-tools` install external packages with
 separate dependency resolutions and are outside this repository-lockfile gate. Direct Cargo and
-Maturin invocations also bypass Make: run the full check first and pass `--locked` when building
-repository code. Keep manifests and lockfiles unchanged between the check and compilation.
+Maturin invocations bypass Make, and editor integrations such as rust-analyzer can run build scripts
+as soon as a lockfile changes. Run `make check-cargo-cooldown` before opening an untrusted branch in
+an editor, and pass `--locked` when building repository code directly. Keep manifests and lockfiles
+unchanged between the check and compilation.
 
 ## Builds
 

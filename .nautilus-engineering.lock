@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "908f9bdcbf47e57fc3843066e9e9924696c78d1e"
+revision = "9b88cc276a86f2d0c3991de9fa328d5c3c1dc5e2"
 manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -80,7 +80,7 @@ executable = true
 [[file]]
 artifact = "cargo-cooldown-check"
 path = "scripts/check-cargo-cooldown.sh"
-sha256 = "dd36ed72236b3fc1e4e94793a6d6c9aa54bc9dd209d2a1bf3d7b2c6c2d99d95b"
+sha256 = "4972e595ec3c014a05bb9d00fef77b2dc5b507e2f4de3832076681677cfcbdb9"
 executable = true
 
 [[file]]

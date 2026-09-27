@@ -37,6 +37,7 @@ graph, preserving historical local certifications. Run `make security-audit` aga
 
 The generator `scripts/check-cargo-cooldown.sh --update-db` maintains [crate-dates.json](crate-dates.json)
 from all tracked Cargo lockfiles. Recorded publication dates are immutable; an older verification timestamp
-alone does not make an entry stale. Advisory exceptions live in [deny.toml](../deny.toml),
+alone does not make an entry stale. The full check re-verifies entries that `origin/develop` lacks against
+crates.io, so a branch cannot vouch for dates it adds. Advisory exceptions live in [deny.toml](../deny.toml),
 [cargo-audit configuration](../.cargo/audit.toml), and [OSV configuration](../osv-scanner.toml),
 separately from cargo-vet exemptions.

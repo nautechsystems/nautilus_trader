@@ -414,6 +414,7 @@ store = { path = '.supply-chain' }
 # `exclude-newer` for Cargo. Enforced by scripts/check-cargo-cooldown.sh.
 [workspace.metadata.cooldown]
 days = 3
+trusted-base = "origin/develop"
 
 [workspace.metadata.cooldown.allow]
 databento = "0.62.0" # Adopts DBN 0.70 record accessors and soundness fixes

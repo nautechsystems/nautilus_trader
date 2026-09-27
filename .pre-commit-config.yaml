@@ -454,7 +454,9 @@ repos:
       - id: cargo-cooldown
         name: cargo cooldown
         description: Blocks crate versions published inside the cooldown window
-        entry: bash scripts/check-cargo-cooldown.sh --all
+        entry: >-
+          bash -c 'bash scripts/check-cargo-cooldown.sh --all
+          --cache "${CARGO_TARGET_DIR:-target}/.cargo-cooldown.json"'
         language: system
         files: >-
           (?x)^(

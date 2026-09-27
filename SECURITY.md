@@ -91,9 +91,11 @@ The sections below detail the controls at each layer of that lifecycle.
   hashes. Wildcard version requirements are prohibited.
 - **Dependency cooldowns**: Python dependency resolution excludes packages published within the
   last 7 days through `exclude-newer` in `python/pyproject.toml`. Rust crate updates remain subject
-  to a 3-day cooldown and cargo-vet review. Resolved crates.io publication dates are committed in
-  `.supply-chain/crate-dates.json` so the check can run without registry access. A security fix or
-  critical bug fix may bypass either cooldown after explicit review. These windows give the
+  to a 3-day cooldown and cargo-vet review, and every Make target that compiles Rust checks the
+  resolved lockfiles first. Resolved crates.io publication dates are committed in
+  `.supply-chain/crate-dates.json` so the check can run without registry access; dates a branch adds
+  beyond `origin/develop` are re-verified against crates.io, locally and in the CI pre-commit job.
+  A security fix or critical bug fix may bypass either cooldown after explicit review. These windows give the
   community time to detect and quarantine compromised releases. Development tools are pinned to
   explicit versions across `.nautilus-engineering/tools.toml`, `tools.toml`, `Cargo.toml`, and
   related manifests, and version bumps are reviewed during security audits.
