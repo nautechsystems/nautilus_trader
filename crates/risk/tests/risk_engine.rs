@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
 #![expect(
     clippy::too_many_arguments,
     reason = "rstest fixtures define broad test setup signatures"
