@@ -1880,15 +1880,11 @@ pub fn parse_order_status_report(
         (quantity, filled_qty)
     };
 
-    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
-    // to avoid precision mismatches from quote-to-base conversion
-    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
-        && msg.state == OKXOrderStatus::Filled
-        && filled_qty.is_positive()
-    {
-        (filled_qty, filled_qty)
+    // Normalize quote conversion and base shortfalls to the venue's terminal filled size
+    let quantity = if msg.state == OKXOrderStatus::Filled && filled_qty.is_positive() {
+        filled_qty
     } else {
-        (quantity, filled_qty)
+        quantity
     };
 
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
@@ -2538,7 +2534,7 @@ mod tests {
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::{AccountType, BookType, GreeksConvention},
         identifiers::{ClientOrderId, Symbol, VenueOrderId},
-        instruments::CryptoPerpetual,
+        instruments::{CryptoPerpetual, CurrencyPair},
         orderbook::OrderBook,
         types::Currency,
     };
@@ -3508,6 +3504,89 @@ mod tests {
         assert_eq!(order_status_report.order_status, OrderStatus::Filled);
         assert_eq!(order_status_report.quantity, Quantity::from("0.03000000"));
         assert_eq!(order_status_report.filled_qty, Quantity::from("0.03000000"));
+    }
+
+    #[rstest]
+    #[case::base_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    #[case::base_partial(
+        OKXOrderStatus::PartiallyFilled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_canceled(
+        OKXOrderStatus::Canceled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_zero_fill(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0",
+        "0.00296487"
+    )]
+    #[case::quote_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::QuoteCcy,
+        "296.487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    fn test_parse_order_status_report_terminal_quantity(
+        #[values("", "0")] price: &str,
+        #[case] state: OKXOrderStatus,
+        #[case] target: OKXTargetCurrency,
+        #[case] size: &str,
+        #[case] filled: &str,
+        #[case] expected_quantity: &str,
+    ) {
+        let payload: Value = serde_json::from_str(&load_test_json("ws_orders.json")).unwrap();
+        let mut order: OKXOrderMsg = serde_json::from_value(payload["data"][0].clone()).unwrap();
+        order.inst_type = OKXInstrumentType::Spot;
+        order.ord_type = OKXOrderType::Market;
+        order.side = OKXSide::Buy;
+        order.tgt_ccy = Some(target);
+        order.state = state;
+        order.sz = size.to_string();
+        order.acc_fill_sz = Some(filled.to_string());
+        order.px = price.to_string();
+        order.avg_px = "100000".to_string();
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTC-USDC.OKX"))
+            .raw_symbol(Symbol::from("BTC-USDC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+
+        let report = parse_order_status_report(
+            &order,
+            &InstrumentAny::CurrencyPair(instrument),
+            AccountId::from("OKX-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(report.order_status, OrderStatus::try_from(state).unwrap());
+        assert_eq!(report.quantity, Quantity::from(expected_quantity));
+        assert_eq!(report.filled_qty, Quantity::from(filled));
     }
 
     #[rstest]

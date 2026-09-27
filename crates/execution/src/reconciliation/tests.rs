@@ -36,7 +36,10 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{audusd_sim, binary_option, crypto_perpetual_ethusdt, futures_spread_es},
+        stubs::{
+            audusd_sim, binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            futures_spread_es,
+        },
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -5891,21 +5894,31 @@ fn test_is_within_single_unit_tolerance_float_bleed(
 }
 
 #[rstest]
-fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
-    // Venue has reduced the order quantity (partial cancel) so it reports
-    // Filled with qty=10 while the local cache holds PartiallyFilled with 10
-    // of 20 filled; reconciliation must emit OrderUpdated to shrink the local
-    // quantity to 10 and must not synthesize a duplicate fill since filled_qty
-    // already matches.
+#[case::limit(OrderType::Limit, "20", "10")]
+#[case::market_1(OrderType::Market, "0.00296487", "0.00296475")]
+#[case::market_2(OrderType::Market, "0.00312500", "0.00312458")]
+#[case::market_3(OrderType::Market, "0.00312353", "0.00312344")]
+#[case::market_4(OrderType::Market, "0.00312426", "0.00312422")]
+fn test_status_vs_qty_mismatch_emits_updated(
+    #[case] order_type: OrderType,
+    #[case] requested: &str,
+    #[case] filled: &str,
+) {
+    let mut pair = currency_pair_btcusdt();
+    pair.size_precision = 8;
+    pair.size_increment = Quantity::from("0.00000001");
+    let instrument = InstrumentAny::CurrencyPair(pair);
+
+    // Matching fills require only a quantity correction, never another fill
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
     let account_id = AccountId::from("SIM-001");
 
-    let mut order = OrderTestBuilder::new(OrderType::Limit)
+    let mut order = OrderTestBuilder::new(order_type)
         .instrument_id(instrument.id())
         .client_order_id(client_order_id)
         .side(OrderSide::Buy)
-        .quantity(Quantity::from(20))
+        .quantity(Quantity::from(requested))
         .price(Price::from("1.00000"))
         .build();
 
@@ -5914,7 +5927,7 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         &mut order,
         &instrument,
         TradeId::from("T-001"),
-        Quantity::from(10),
+        Quantity::from(filled),
         Price::from("1.00000"),
     );
     assert_eq!(order.status(), OrderStatus::PartiallyFilled);
@@ -5923,12 +5936,12 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         client_order_id,
         venue_order_id,
         instrument.id(),
-        OrderType::Limit,
+        order_type,
         OrderStatus::Filled,
-        Quantity::from(10),
-        Quantity::from(10),
+        Quantity::from(filled),
+        Quantity::from(filled),
     );
-    report.price = Some(Price::from("1.00000"));
+    report.price = order.price();
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
 
@@ -5937,14 +5950,25 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         OrderEventAny::Updated(u) => u,
         other => panic!("expected OrderUpdated, was {other:?}"),
     };
-    assert_eq!(updated.quantity, Quantity::from(10));
+
+    assert_eq!(updated.quantity, Quantity::from(filled));
     assert!(updated.reconciliation);
 
     order.apply(event).unwrap();
-    assert_eq!(order.quantity(), Quantity::from(10));
-    assert_eq!(order.filled_qty(), Quantity::from(10));
+    assert_eq!(order.quantity(), Quantity::from(filled));
+    assert_eq!(order.filled_qty(), Quantity::from(filled));
     assert_eq!(order.status(), OrderStatus::Filled);
-    assert!(order.ts_closed().is_some());
+    assert_eq!(order.leaves_qty(), Quantity::zero(8));
+    assert_eq!(order.ts_closed(), Some(report.ts_last));
+    assert_eq!(
+        reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default()),
+        None
+    );
+    let replayed = OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+    assert_eq!(replayed.status(), OrderStatus::Filled);
+    assert_eq!(replayed.quantity(), Quantity::from(filled));
+    assert_eq!(replayed.filled_qty(), Quantity::from(filled));
+    assert_eq!(replayed.leaves_qty(), Quantity::zero(8));
 }
 
 #[rstest]

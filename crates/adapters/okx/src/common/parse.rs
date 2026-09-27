@@ -820,15 +820,11 @@ pub fn parse_order_status_report(
         (quantity_dec, filled_qty_dec)
     };
 
-    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
-    // to avoid precision mismatches from quote-to-base conversion
-    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
-        && order.state == OKXOrderStatus::Filled
-        && filled_qty.is_positive()
-    {
-        (filled_qty, filled_qty)
+    // Normalize quote conversion and base shortfalls to the venue's terminal filled size
+    let quantity = if order.state == OKXOrderStatus::Filled && filled_qty.is_positive() {
+        filled_qty
     } else {
-        (quantity, filled_qty)
+        quantity
     };
 
     let order_side = OrderSide::from(order.side);
@@ -908,7 +904,7 @@ pub fn parse_order_status_report(
     );
 
     // Optional fields
-    if !order.px.is_empty()
+    if !is_market_price(&order.px)
         && let Ok(decimal) = Decimal::from_str(&order.px)
         && let Ok(price) = Price::from_decimal_dp(decimal, price_precision)
     {
@@ -4265,6 +4261,79 @@ mod tests {
         assert_eq!(order_report.order_side, OrderSide::Buy.into());
         assert_eq!(order_report.order_type, OrderType::Market);
         assert_eq!(order_report.order_status, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    #[case::base_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    #[case::base_partial(
+        OKXOrderStatus::PartiallyFilled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_canceled(
+        OKXOrderStatus::Canceled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_zero_fill(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0",
+        "0.00296487"
+    )]
+    #[case::quote_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::QuoteCcy,
+        "296.487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    fn test_parse_order_status_report_terminal_quantity(
+        #[values("", "0")] price: &str,
+        #[case] state: OKXOrderStatus,
+        #[case] target: OKXTargetCurrency,
+        #[case] size: &str,
+        #[case] filled: &str,
+        #[case] expected_quantity: &str,
+    ) {
+        let response: OKXResponse<OKXOrderHistory> =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        let mut order = response.data[0].clone();
+        order.inst_type = OKXInstrumentType::Spot;
+        order.ord_type = OKXOrderType::Market;
+        order.side = OKXSide::Buy;
+        order.tgt_ccy = Some(target);
+        order.state = state;
+        order.sz = size.to_string();
+        order.acc_fill_sz = filled.to_string();
+        order.px = price.to_string();
+        order.avg_px = "100000".to_string();
+
+        let report = parse_order_status_report(
+            &order,
+            AccountId::from("OKX-001"),
+            InstrumentId::from("BTC-USDC.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(report.order_status, OrderStatus::try_from(state).unwrap());
+        assert_eq!(report.quantity, Quantity::from(expected_quantity));
+        assert_eq!(report.filled_qty, Quantity::from(filled));
     }
 
     #[rstest]

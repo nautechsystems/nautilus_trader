@@ -72,8 +72,8 @@ use crate::{
         parse::{
             FeeCache, FilledQtyCache, OrderStateSnapshot, ParsedOrderEvent,
             is_terminal_order_state, parse_algo_order_msg, parse_algo_order_status_report,
-            parse_order_event, parse_order_msg, parse_spread_order_event, parse_spread_order_msg,
-            update_fee_fill_caches,
+            parse_order_event, parse_order_msg, parse_order_status_report,
+            parse_spread_order_event, parse_spread_order_msg, update_fee_fill_caches,
         },
     },
 };
@@ -1581,6 +1581,8 @@ fn dispatch_order_messages(
                 ts_init,
             ) {
                 Ok(event) => {
+                    let needs_status =
+                        matches!(event, ParsedOrderEvent::Fill(_) | ParsedOrderEvent::Skipped);
                     update_order_state_cache(msg, instrument, client_order_id, order_state_cache);
                     dispatch_parsed_order_event(
                         event,
@@ -1594,6 +1596,16 @@ fn dispatch_order_messages(
                         state,
                         order_state_cache,
                         ts_init,
+                    );
+
+                    dispatch_filled_order_status(
+                        msg,
+                        Some(client_order_id),
+                        instrument,
+                        emitter,
+                        state,
+                        ts_init,
+                        needs_status,
                     );
 
                     if state.contains_terminal(&client_order_id)
@@ -1943,7 +1955,9 @@ fn dispatch_parsed_order_event(
             );
             emitter.send_order_status_report(*report);
         }
-        ParsedOrderEvent::Skipped => return,
+        ParsedOrderEvent::Skipped => {
+            is_terminal = venue_status == OKXOrderStatus::Filled;
+        }
     }
 
     if is_terminal {
@@ -2095,13 +2109,58 @@ fn dispatch_order_msg_as_report(
         ts_init,
     ) {
         Ok(report) => {
+            let needs_status = matches!(report, ExecutionReport::Fill(_));
             dispatch_execution_reports(vec![report], emitter, state);
 
             if let Some(instrument) = instruments.get(&msg.inst_id) {
+                dispatch_filled_order_status(
+                    msg,
+                    None,
+                    instrument,
+                    emitter,
+                    state,
+                    ts_init,
+                    needs_status,
+                );
                 update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
             }
         }
         Err(e) => log::error!("Failed to parse order message as report: {e}"),
+    }
+}
+
+fn dispatch_filled_order_status(
+    msg: &OKXOrderMsg,
+    client_order_id: Option<ClientOrderId>,
+    instrument: &InstrumentAny,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+    needs_status: bool,
+) {
+    if !needs_status || msg.state != OKXOrderStatus::Filled {
+        return;
+    }
+
+    let report = parse_order_status_report(msg, instrument, emitter.account_id(), ts_init)
+        .and_then(|report| {
+            let requested = parse_quantity(&msg.sz, instrument.size_precision())?;
+            Ok((report, requested))
+        });
+
+    match report {
+        Ok((mut report, requested)) => {
+            if report.filled_qty.is_positive() && report.quantity != requested {
+                report.client_order_id = client_order_id.or(report.client_order_id);
+
+                // The caller dispatches any real fill first; reconcile base shortfalls and quote sizing
+                dispatch_execution_reports(vec![ExecutionReport::Order(report)], emitter, state);
+            }
+        }
+        Err(e) => log::error!(
+            "Failed to parse filled order status for {}: {e}",
+            msg.ord_id
+        ),
     }
 }
 
@@ -2453,13 +2512,16 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType, TimeInForce, TriggerType},
         identifiers::Symbol,
-        instruments::CryptoPerpetual,
+        instruments::{CryptoPerpetual, CurrencyPair},
         types::{Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::{error::OKXWsError, messages::OKXWsFrame};
+    use crate::{
+        common::enums::{OKXInstrumentType, OKXSide, OKXTargetCurrency},
+        websocket::{error::OKXWsError, messages::OKXWsFrame},
+    };
 
     fn load_algo_order_messages(fixture: &str) -> Vec<OKXAlgoOrderMsg> {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2574,6 +2636,172 @@ mod tests {
             events.push(event);
         }
         events
+    }
+
+    #[rstest]
+    #[case::single_fill(false, false)]
+    #[case::partial_fill(true, false)]
+    #[case::status_only(true, true)]
+    fn short_final_fill_dispatches_terminal_status(
+        #[values(false, true)] tracked: bool,
+        #[values(OKXTargetCurrency::BaseCcy, OKXTargetCurrency::QuoteCcy)]
+        target: OKXTargetCurrency,
+        #[case] partial_first: bool,
+        #[case] status_only: bool,
+    ) {
+        let mut msg = load_regular_order_messages("ws_orders.json").remove(0);
+        msg.inst_id = Ustr::from("BTC-USDC");
+        msg.inst_type = OKXInstrumentType::Spot;
+        msg.ord_type = OKXOrderType::Market;
+        msg.side = OKXSide::Buy;
+        msg.tgt_ccy = Some(target);
+        msg.sz = match target {
+            OKXTargetCurrency::BaseCcy => "0.00296487",
+            OKXTargetCurrency::QuoteCcy => "296.487",
+        }
+        .to_string();
+
+        msg.acc_fill_sz = Some("0.00296475".to_string());
+
+        let last_qty = if partial_first {
+            "0.00196475"
+        } else {
+            "0.00296475"
+        };
+
+        msg.fill_sz = last_qty.to_string();
+        msg.fill_px = "100000".to_string();
+        msg.avg_px = "100000".to_string();
+        msg.px.clear();
+        msg.state = OKXOrderStatus::Filled;
+        let client_order_id = ClientOrderId::new(msg.cl_ord_id.as_str());
+        let instrument_id = InstrumentId::from("BTC-USDC.OKX");
+        let instrument = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+        let instruments = AtomicMap::new();
+        instruments.insert(msg.inst_id, InstrumentAny::CurrencyPair(instrument));
+        let state = WsDispatchState::default();
+
+        if tracked {
+            state.order_identities.insert(
+                client_order_id,
+                OrderIdentity {
+                    client_order_id,
+                    strategy_id: StrategyId::from("STRATEGY-001"),
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Market,
+                },
+            );
+        }
+
+        let (emitter, mut receiver) = test_execution_emitter();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+        let mut order_state_cache = AHashMap::new();
+        let clock = get_atomic_clock_realtime();
+
+        if partial_first {
+            let mut partial = msg.clone();
+            partial.state = OKXOrderStatus::PartiallyFilled;
+
+            if status_only {
+                partial.fill_sz = "0.00296475".to_string();
+                msg.fill_sz = "0".to_string();
+            } else {
+                partial.acc_fill_sz = Some("0.001".to_string());
+                partial.fill_sz = "0.001".to_string();
+                partial.trade_id = "prior-trade".to_string();
+            }
+
+            dispatch_ws_message(
+                OKXWsMessage::Orders(vec![partial]),
+                &emitter,
+                &state,
+                emitter.account_id(),
+                AccountType::Cash,
+                &instruments,
+                &mut fee_cache,
+                &mut filled_qty_cache,
+                &mut order_state_cache,
+                clock,
+            );
+            let events = drain_execution_events(&mut receiver);
+            assert_eq!(events.len(), if tracked { 2 } else { 1 });
+            assert!(!state.contains_terminal(&client_order_id));
+        }
+
+        dispatch_ws_message(
+            OKXWsMessage::Orders(vec![msg.clone()]),
+            &emitter,
+            &state,
+            emitter.account_id(),
+            AccountType::Cash,
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            clock,
+        );
+
+        let events = drain_execution_events(&mut receiver);
+        let fill_index = usize::from(tracked && !partial_first);
+        assert_eq!(events.len(), if status_only { 1 } else { fill_index + 2 });
+
+        if !status_only {
+            match &events[fill_index] {
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+                    assert!(tracked);
+                    assert_eq!(fill.last_qty, Quantity::from(last_qty));
+                }
+                ExecutionEvent::Report(CommonExecutionReport::Fill(fill)) => {
+                    assert!(!tracked);
+                    assert_eq!(fill.last_qty, Quantity::from(last_qty));
+                }
+                other => panic!("Expected fill before terminal status, was {other:?}"),
+            }
+        }
+
+        let report_index = if status_only { 0 } else { fill_index + 1 };
+
+        let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = &events[report_index]
+        else {
+            panic!("Expected terminal order status report");
+        };
+
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from("0.00296475"));
+        assert_eq!(report.filled_qty, Quantity::from("0.00296475"));
+        assert!(state.contains_terminal(&client_order_id));
+        assert!(!state.order_identities.contains_key(&client_order_id));
+        assert!(!state.contains_accepted(&client_order_id));
+        assert!(!order_state_cache.contains_key(&client_order_id));
+
+        dispatch_ws_message(
+            OKXWsMessage::Orders(vec![msg]),
+            &emitter,
+            &state,
+            emitter.account_id(),
+            AccountType::Cash,
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            clock,
+        );
+        assert!(drain_execution_events(&mut receiver).is_empty());
     }
 
     #[rstest]
