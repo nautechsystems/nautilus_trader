@@ -950,9 +950,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let start = lookback_start.map(Timestamp::from);
         let account_id = self.core.account_id;
 
+        // Read the order-event history as well as open orders, matching the shared default. An
+        // order that reached a terminal state while the node was down is only visible there.
         let (mut order_reports, orders_complete) = self
             .http
-            .request_order_status_reports_checked(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)

@@ -155,6 +155,14 @@ struct TestServerState {
     closed_orders_repeat: Arc<AtomicBool>,
     /// Counts `/0/private/ClosedOrders` requests, so a test can assert the exact page count.
     closed_orders_request_count: Arc<AtomicUsize>,
+    /// Pages served in order by `/api/history/v2/orders`; an empty queue serves no events.
+    order_events_pages: Arc<tokio::sync::Mutex<std::collections::VecDeque<String>>>,
+    /// When true, the front page is served on every request instead of being consumed.
+    order_events_repeat: Arc<AtomicBool>,
+    /// Counts `/api/history/v2/orders` requests, so a test can assert the exact page count.
+    order_events_request_count: Arc<AtomicUsize>,
+    /// When set, `/derivatives/api/v3/openorders` returns this JSON.
+    futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -169,6 +177,12 @@ impl Default for TestServerState {
             closed_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             closed_orders_repeat: Arc::new(AtomicBool::new(false)),
             closed_orders_request_count: Arc::new(AtomicUsize::new(0)),
+            order_events_pages: Arc::new(
+                tokio::sync::Mutex::new(std::collections::VecDeque::new()),
+            ),
+            order_events_repeat: Arc::new(AtomicBool::new(false)),
+            order_events_request_count: Arc::new(AtomicUsize::new(0)),
+            futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
@@ -316,7 +330,21 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     .unwrap_or_else(|| r#"{"result":"success","fills":[]}"#.to_string()),
             )
         }
-        "/api/history/v2/orders" => json_response(r#"{"orderEvents":[]}"#.to_string()),
+        "/api/history/v2/orders" => {
+            state
+                .order_events_request_count
+                .fetch_add(1, Ordering::Relaxed);
+            let mut pages = state.order_events_pages.lock().await;
+            if state.order_events_repeat.load(Ordering::Relaxed) {
+                if let Some(body) = pages.front() {
+                    return json_response(body.clone());
+                }
+            } else if let Some(body) = pages.pop_front() {
+                return json_response(body);
+            }
+
+            json_response(r#"{"orderEvents":[]}"#.to_string())
+        }
         "/derivatives/api/v3/sendorder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
             match state.command_responses.lock().await.submit {
@@ -699,6 +727,42 @@ fn create_test_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
         timeout_secs: 2,
         ..Default::default()
     }
+}
+
+/// Builds a futures client whose request rate is not throttled.
+///
+/// The order-event cap test issues one request per page, which the default rate limit would make
+/// far too slow to run in CI.
+fn create_unthrottled_futures_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        max_requests_per_second: Some(100_000),
+        ..create_test_exec_config(addr)
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenFuturesExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
 }
 
 fn create_test_spot_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
@@ -1149,6 +1213,37 @@ async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
     assert_eq!(fills, 0);
 }
 
+/// Mirrors `MAX_ORDER_EVENT_PAGES` in the futures HTTP client, which is private to that crate.
+const FUTURES_ORDER_EVENT_PAGE_CAP: usize = 500;
+
+fn futures_order_event(
+    order_id: &str,
+    event_type: &str,
+    filled: &str,
+    last_update: &str,
+) -> String {
+    format!(
+        r#"{{"order":{{"orderId":"{order_id}","cliOrdId":null,"type":"lmt","symbol":"PI_XBTUSD","side":"buy","quantity":1000.0,"filled":{filled},"limitPrice":27500.5,"timestamp":"2023-04-07T14:15:30.250Z","lastUpdateTimestamp":"{last_update}","reduceOnly":false}},"type":"{event_type}","reducedQuantity":null}}"#
+    )
+}
+
+fn futures_order_events_page(events: &[String], continuation: Option<&str>) -> String {
+    let token = match continuation {
+        Some(token) => format!(r#","continuationToken":"{token}""#),
+        None => String::new(),
+    };
+    format!(
+        r#"{{"serverTime":"2023-04-07T16:30:45.678Z","orderEvents":[{}]{token}}}"#,
+        events.join(",")
+    )
+}
+
+fn futures_open_orders_json(order_id: &str) -> String {
+    format!(
+        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
+    )
+}
+
 /// Mirrors `MAX_REPORT_PAGES` in the spot HTTP client, which is private to that crate.
 const SPOT_REPORT_PAGE_CAP: usize = 500;
 
@@ -1213,8 +1308,8 @@ async fn test_spot_fill_pagination_stops_at_the_cap_and_reports_incomplete() {
 
 /// The closed-order read is capped on the same terms as the fill read.
 ///
-/// Startup mass status asks for open orders only, so this loop is reached when a caller requests
-/// non-open orders. It pages the same way and needs the same bound.
+/// This drives the loop directly through a non-open report request. Startup mass status reaches it
+/// as well, so the bound matters on both paths.
 #[rstest]
 #[tokio::test]
 async fn test_spot_closed_order_pagination_stops_at_the_cap() {
@@ -1264,6 +1359,197 @@ async fn test_spot_closed_order_pagination_stops_at_the_cap() {
     );
 }
 
+fn futures_history_cmd() -> GenerateOrderStatusReports {
+    GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false, // open_only=false, so the order-event history is read
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
+/// The order-event read must follow the venue's continuation token.
+///
+/// A single page silently drops the rest of the history, and the read still reports itself
+/// complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_events_follow_the_continuation_token() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_futures_execution_client(addr);
+    add_test_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-PAGE1",
+                "PLACE",
+                "0.0",
+                "2023-04-07T14:20:45.500Z",
+            )],
+            Some("tok1"),
+        ));
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-PAGE2",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+
+    let reports = client
+        .generate_order_status_reports(&futures_history_cmd())
+        .await
+        .unwrap();
+
+    // Two requests means the token was followed; without it the read stops after the first page.
+    assert_eq!(state.order_events_request_count.load(Ordering::Relaxed), 2);
+
+    let ids: Vec<String> = reports
+        .iter()
+        .map(|report| report.venue_order_id.to_string())
+        .collect();
+    assert!(ids.contains(&"F-PAGE1".to_string()));
+    assert!(
+        ids.contains(&"F-PAGE2".to_string()),
+        "the second page must be read: {ids:?}"
+    );
+}
+
+/// An order-event read cut short by the page cap must not report itself complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_events_stop_at_the_cap() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_futures_execution_client(addr);
+    add_test_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Every page carries a token, so the read can only return by way of the cap.
+    state.order_events_repeat.store(true, Ordering::Relaxed);
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-LOOP",
+                "PLACE",
+                "0.0",
+                "2023-04-07T14:20:45.500Z",
+            )],
+            Some("tok"),
+        ));
+    }
+
+    let mass_status = tokio::time::timeout(
+        Duration::from_secs(120),
+        client.generate_mass_status(Some(60)),
+    )
+    .await
+    .expect("a paginated read must terminate when the venue always returns a token")
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(
+        state.order_events_request_count.load(Ordering::Relaxed),
+        FUTURES_ORDER_EVENT_PAGE_CAP,
+    );
+    assert!(
+        !mass_status.reports_complete(),
+        "a read cut short by the page cap must not report as complete"
+    );
+}
+
+/// Where several events describe one order, the latest state must win.
+///
+/// Mass status keys reports by venue order ID, so emitting every event lets arrival order decide
+/// which state survives.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_events_keep_the_latest_state_per_order() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_futures_execution_client(addr);
+    add_test_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // The newer event is listed first, so taking the last one seen would pick the stale state.
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[
+                futures_order_event("F-SAME", "FILL", "1000.0", "2023-04-07T15:00:00.000Z"),
+                futures_order_event("F-SAME", "PLACE", "0.0", "2023-04-07T14:00:00.000Z"),
+            ],
+            None,
+        ));
+    }
+
+    let reports = client
+        .generate_order_status_reports(&futures_history_cmd())
+        .await
+        .unwrap();
+
+    let matching: Vec<_> = reports
+        .iter()
+        .filter(|report| report.venue_order_id == VenueOrderId::from("F-SAME"))
+        .collect();
+    assert_eq!(matching.len(), 1, "one report per order, not one per event");
+    assert_eq!(
+        matching[0].filled_qty,
+        Quantity::from("1000"),
+        "the later event must win, not the last one parsed"
+    );
+}
+
+/// A historical event must not displace the venue's current view of an open order.
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_survives_a_historical_event() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_futures_execution_client(addr);
+    add_test_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    *state.futures_open_orders_json.lock().await = Some(futures_open_orders_json("F-OPEN"));
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-OPEN",
+                "CANCEL",
+                "0.0",
+                "2023-04-07T23:59:59.000Z",
+            )],
+            None,
+        ));
+    }
+
+    let reports = client
+        .generate_order_status_reports(&futures_history_cmd())
+        .await
+        .unwrap();
+
+    let matching: Vec<_> = reports
+        .iter()
+        .filter(|report| report.venue_order_id == VenueOrderId::from("F-OPEN"))
+        .collect();
+    assert_eq!(matching.len(), 1);
+    assert_ne!(
+        matching[0].order_status,
+        OrderStatus::Canceled,
+        "the open-order read is authoritative for an order the venue still reports as open"
+    );
+}
+
+/// A bounded mass status must declare the cutoff it applied.
 /// Startup mass status must read closed orders, not open orders alone.
 ///
 /// An order that reached a terminal state while the node was down is only visible through

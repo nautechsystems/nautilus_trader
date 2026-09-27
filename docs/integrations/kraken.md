@@ -602,7 +602,13 @@ flag.
 - Open orders: Fetches all currently active futures orders.
 - Historical orders: Fetches closed and filled orders when `open_only=False`.
 - Order events: Full order lifecycle history via `/api/history/v2/orders`
-  endpoint.
+  endpoint. The read follows the venue's continuation token and stops after 500 pages, leaving the
+  set incomplete when it does.
+- One report per order: several events can describe the same order, so the adapter keeps the latest
+  by update time rather than the last one received. An order the venue still reports as open keeps
+  the state from the open-order read, which a replayed event cannot displace.
+- Startup mass status reads the event history alongside open orders, so an order that reached a
+  terminal state while the node was down is reconciled.
 
 **Fill reports:**
 
