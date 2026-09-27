@@ -14388,11 +14388,6 @@ fn test_submit_sell_binary_option_no_position_not_denied_for_collateral(
     let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
     let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
-    for m in &process_messages {
-        println!("process event: {:?} {:?}", m.event_type(), m.message());
-    }
-    println!("execute commands: {}", execute_messages.len());
-
     assert!(
         process_messages.is_empty(),
         "SELL denied: {:?}",
@@ -14400,4 +14395,164 @@ fn test_submit_sell_binary_option_no_position_not_denied_for_collateral(
     );
     assert_eq!(execute_messages.len(), 1);
     assert_eq!(execute_messages[0].instrument_id(), instrument.id());
+}
+
+#[rstest]
+#[case::equity_single_currency(false, true)]
+#[case::equity_multi_currency(false, false)]
+#[case::binary_option_multi_currency(true, false)]
+fn test_submit_sell_no_instrument_base_currency_reaches_execution(
+    #[case] use_binary_option: bool,
+    #[case] account_has_base_currency: bool,
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let instrument = if use_binary_option {
+        InstrumentAny::BinaryOption(binary_option())
+    } else {
+        InstrumentAny::Equity(equity_aapl())
+    };
+    assert!(
+        instrument.base_currency().is_none(),
+        "fixture must model no base currency"
+    );
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    // Free collateral deliberately below the sale proceeds: 5 @ 0.50 credits 2.50.
+    let quote = instrument.quote_currency();
+    let free = Money::from_decimal(dec!(2), quote).unwrap();
+    let account_state = AccountState::new(
+        AccountId::new(format!("{}-001", instrument.id().venue)),
+        AccountType::Cash,
+        vec![AccountBalance::new(free, Money::zero(quote), free)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        account_has_base_currency.then_some(quote),
+    );
+    simple_cache
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            false,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let client_id = ClientId::new(format!("{}", instrument.id().venue));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5"))
+        .price(Price::from("0.50"))
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::from(0),
+        None,
+    );
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert!(
+        process_messages.is_empty(),
+        "SELL denied: {:?}",
+        process_messages.first().map(OrderEventAny::message)
+    );
+    assert_eq!(execute_messages.len(), 1);
+}
+
+#[rstest]
+fn test_submit_buy_no_instrument_base_currency_still_denied_for_collateral(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    let quote = instrument.quote_currency();
+    let free = Money::from_decimal(dec!(2), quote).unwrap();
+    let account_state = AccountState::new(
+        AccountId::from("POLYMARKET-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(free, Money::zero(quote), free)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(quote),
+    );
+    simple_cache
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            false,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let client_id = ClientId::from("POLYMARKET");
+    // 100 @ 0.50 = 50.00 notional against 2.00 free.
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("0.500"))
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::from(0),
+        None,
+    );
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    let reason = process_messages[0].message().unwrap();
+    assert!(
+        reason.contains("EXCEEDS_FREE_BALANCE"),
+        "BUY must still be denied for collateral, found: {reason}"
+    );
+    assert_eq!(execute_messages.len(), 0);
 }

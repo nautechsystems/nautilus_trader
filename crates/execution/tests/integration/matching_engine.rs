@@ -18841,9 +18841,6 @@ fn test_process_order_shorting_binary_option_on_cash_account_fills(
     engine.process_order(&mut market_order_sell, account_id);
 
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
-    for m in &saved_messages {
-        println!("event: {:?} {:?}", m.event_type(), m.message());
-    }
     assert!(
         saved_messages
             .iter()

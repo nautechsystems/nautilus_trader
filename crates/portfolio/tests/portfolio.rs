@@ -49,8 +49,8 @@ use nautilus_model::{
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
-            audusd_sim, betting, btcusd_bybit, currency_pair_btcusdt, default_fx_ccy, ethusd_bybit,
-            futures_spread_es,
+            audusd_sim, betting, binary_option, btcusd_bybit, currency_pair_btcusdt,
+            default_fx_ccy, ethusd_bybit, futures_spread_es,
         },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
@@ -10437,4 +10437,143 @@ fn test_deregister_statistics_clears_defaults(simple_cache: Cache, clock: Virtua
 
     assert!(portfolio.registered_statistics().is_empty());
     assert!(portfolio.statistics().general.is_empty());
+}
+
+#[rstest]
+fn test_update_orders_open_cash_account_sell_no_base_currency_locks_nothing(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    let venue = instrument.id().venue;
+    let quote = instrument.quote_currency();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    let account = AccountId::new(format!("{venue}-001"));
+    // The portfolio skips balance recalculation unless the account calculates its own state.
+    let mut account_any = AccountAny::from(cash_account_for(venue, quote));
+    account_any.set_calculate_account_state(true);
+    simple_cache.add_account(account_any).unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5"))
+        .price(Price::from("0.500"))
+        .build();
+    open_order(&mut portfolio, &mut order, account);
+
+    let locked = portfolio.balances_locked(&venue, None);
+    assert!(
+        locked
+            .get(&quote)
+            .is_none_or(|money| money.as_decimal().is_zero()),
+        "SELL must lock nothing, found: {locked:?}"
+    );
+}
+
+/// Pairs with the SELL case: without a lock that does fire, a zero SELL lock would be
+/// indistinguishable from a harness that never locks.
+#[rstest]
+fn test_update_orders_open_cash_account_buy_no_base_currency_locks_notional(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    let venue = instrument.id().venue;
+    let quote = instrument.quote_currency();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    let account = AccountId::new(format!("{venue}-001"));
+    let mut account_any = AccountAny::from(cash_account_for(venue, quote));
+    account_any.set_calculate_account_state(true);
+    simple_cache.add_account(account_any).unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("5"))
+        .price(Price::from("0.500"))
+        .build();
+    open_order(&mut portfolio, &mut order, account);
+
+    assert_eq!(
+        portfolio
+            .balances_locked(&venue, None)
+            .get(&quote)
+            .expect("BUY must lock the notional")
+            .as_decimal(),
+        dec!(2.50),
+    );
+}
+
+/// Multi-currency on purpose: a single-currency account routes the lock through an FX
+/// conversion that aborts without market data, hiding a real lock behind a skipped update.
+fn cash_account_for(venue: Venue, currency: Currency) -> AccountState {
+    AccountState::new(
+        AccountId::new(format!("{venue}-001")),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::new(1000.0, currency),
+            Money::zero(currency),
+            Money::new(1000.0, currency),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    )
+}
+
+/// Drives an order to `Accepted`. The shared `submit_order`/`accept_order` helpers stamp the
+/// default stub account, which the portfolio would not resolve for this venue.
+fn open_order(portfolio: &mut Portfolio, order: &mut OrderAny, account: AccountId) {
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account,
+        uuid4(),
+    );
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .expect("cache should accept the submitted order");
+    portfolio.update_order(&OrderEventAny::Submitted(submitted));
+
+    let accepted = order_accepted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account,
+        order.venue_order_id().unwrap_or(VenueOrderId::new("1")),
+        uuid4(),
+    );
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .expect("cache should accept the accepted order");
+    portfolio.update_order(&OrderEventAny::Accepted(accepted));
 }
