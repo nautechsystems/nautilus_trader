@@ -378,7 +378,11 @@ struct ManagerLogCapture {
 
 impl Log for ManagerLogCapture {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() <= Level::Warn && metadata.target() == "nautilus_live::execution::manager"
+        metadata.level() <= Level::Warn
+            && matches!(
+                metadata.target(),
+                "nautilus_live::execution::manager" | "nautilus_live::execution::reconciliation"
+            )
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -7598,6 +7602,98 @@ async fn test_mass_status_netting_rejects_aggregate_mismatch() {
     assert_eq!(
         ctx.cache.borrow().position_owned(&position.id),
         Some(position)
+    );
+}
+
+#[rstest]
+#[case::duplicates(0, 2, 0)]
+#[case::distinct_snapshots(1, 0, 3)]
+#[tokio::test]
+async fn test_mass_status_netting_ignores_duplicate_position_reports(
+    #[case] ts_last_step: u64,
+    #[case] duplicate_count: usize,
+    #[case] unresolved_count: usize,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx = TestContext::new();
+
+    // Unique ID keeps other tests' duplicate warnings out of the exact count
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.id = InstrumentId::from("ETHUSDT-DUPLICATE.BINANCE");
+    let instrument_id = instrument.id;
+    ctx.add_instrument(InstrumentAny::CryptoPerpetual(instrument));
+
+    let mut client = MockExecutionClient::new(Vec::new());
+    client.oms_type = OmsType::Netting;
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+        engine.register_oms_type(StrategyId::external(), OmsType::Unspecified);
+    }
+
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(
+        (0..3)
+            .map(|i| {
+                PositionStatusReport::new(
+                    test_account_id(),
+                    instrument_id,
+                    PositionSide::Long,
+                    Quantity::from("5.0"),
+                    UnixNanos::from(1_000_000 + i * ts_last_step),
+                    UnixNanos::from(2_000_000 + i),
+                    None,
+                    None,
+                    Some(dec!(3000.50)),
+                )
+            })
+            .collect(),
+    );
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    let duplicate_message = format!("Duplicate position report for {instrument_id} in mass status");
+    let unresolved_message = format!(
+        "account={}, instrument={instrument_id}, venue_position_id=None, venue_quantity=5.0: position recovery did not restore the reported quantity",
+        test_account_id(),
+    );
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert_eq!(result.events.len(), 2);
+    assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
+
+    let OrderEventAny::Filled(fill) = &result.events[1] else {
+        panic!("Expected Filled event, was {:?}", result.events[1]);
+    };
+
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.last_qty, Quantity::from("5.0"));
+    assert_eq!(fill.last_px, Price::from("3000.50"));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(5));
+    assert_eq!(cache.oms_type(&positions[0].id), Some(OmsType::Netting));
+    assert_eq!(
+        result.unresolved_positions,
+        vec![unresolved_message; unresolved_count]
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| **message == duplicate_message)
+            .count(),
+        duplicate_count
     );
 }
 

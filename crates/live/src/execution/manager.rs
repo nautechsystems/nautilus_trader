@@ -106,8 +106,8 @@ use super::{
     reconciliation::{
         FillKey, InflightCheck, PositionQuantityComparison, PositionReconciliationState,
         PositionReportShape, ReconciliationFillQueue, RetainedFillState,
-        create_cross_zero_leg_report, create_orphan_fill_order_report, has_active_inferred_fill,
-        is_exact_order_match, position_avg_px, position_qty_aggregates,
+        create_cross_zero_leg_report, create_orphan_fill_order_report, distinct_position_reports,
+        has_active_inferred_fill, is_exact_order_match, position_avg_px, position_qty_aggregates,
         resolve_inferred_fill_commission, should_project_fill, sort_reconciliation_events,
         terminal_report_has_missing_fills,
     },
@@ -1122,6 +1122,8 @@ impl ExecutionManager {
             if !self.should_reconcile_instrument(&instrument_id) {
                 continue;
             }
+
+            let reports = distinct_position_reports(reports);
 
             if self
                 .netting_position_reports_match((instrument_id, mass_status.account_id), &reports)

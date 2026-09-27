@@ -801,6 +801,37 @@ pub(super) fn position_qty_aggregates(
     )
 }
 
+/// Returns the reports without duplicates, logging a warning for each one removed.
+///
+/// Reports are duplicates when they match apart from the locally assigned report ID and
+/// initialization timestamp. Keeps the first occurrence of each report in input order.
+pub(super) fn distinct_position_reports(
+    reports: Vec<PositionStatusReport>,
+) -> Vec<PositionStatusReport> {
+    let mut distinct_reports: Vec<PositionStatusReport> = Vec::with_capacity(reports.len());
+
+    for report in reports {
+        let is_duplicate = distinct_reports.iter().any(|distinct| {
+            let mut normalized = distinct.clone();
+            normalized.report_id = report.report_id;
+            normalized.ts_init = report.ts_init;
+            normalized == report
+        });
+
+        if is_duplicate {
+            log::warn!(
+                "Duplicate position report for {} in mass status",
+                report.instrument_id
+            );
+            continue;
+        }
+
+        distinct_reports.push(report);
+    }
+
+    distinct_reports
+}
+
 /// Builds a filled market-order report for one leg of a position reversal.
 ///
 /// Returns `None` if the quantity cannot be represented at instrument precision.
@@ -864,7 +895,7 @@ pub(super) mod tests {
     use nautilus_execution::reconciliation::inferred_fill_price_and_liquidity;
     use nautilus_model::{
         accounts::AccountAny,
-        enums::OmsType,
+        enums::{OmsType, PositionSide},
         identifiers::Venue,
         instruments::stubs::crypto_perpetual_ethusdt,
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1598,6 +1629,37 @@ pub(super) mod tests {
             prop_assert!(short >= Decimal::ZERO);
             prop_assert_eq!(reversed, (-net, short, long));
         }
+    }
+
+    #[rstest]
+    fn test_distinct_position_reports_removes_non_adjacent_duplicates() {
+        let report = |side: PositionSide, quantity: &str, venue_position_id: &str, ts_init: u64| {
+            PositionStatusReport::new(
+                AccountId::from("BINANCE-001"),
+                InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+                side,
+                Quantity::from(quantity),
+                UnixNanos::from(1_000),
+                UnixNanos::from(ts_init),
+                None,
+                Some(PositionId::from(venue_position_id)),
+                Some(dec!(3000)),
+            )
+        };
+
+        let long = report(PositionSide::Long, "2.0", "P-LONG", 2_000);
+        let short = report(PositionSide::Short, "3.0", "P-SHORT", 2_001);
+        let long_duplicate = report(PositionSide::Long, "2.0", "P-LONG", 2_002);
+        let short_duplicate = report(PositionSide::Short, "3.0", "P-SHORT", 2_003);
+
+        let result = distinct_position_reports(vec![
+            long.clone(),
+            short.clone(),
+            long_duplicate,
+            short_duplicate,
+        ]);
+
+        assert_eq!(result, vec![long, short]);
     }
 
     #[rstest]

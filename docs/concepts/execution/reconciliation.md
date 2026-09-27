@@ -527,6 +527,10 @@ equal net quantities alone are insufficient. A residual difference outside the a
 remains unresolved even if it rounds to zero at the instrument size precision. Differences within
 the tolerance remain acceptable, including tiny residuals around zero.
 
+A report repeated with the same fields apart from `report_id` and `ts_init` counts once, and the
+engine logs a warning for each duplicate. Reports that differ in any other field, including
+`ts_last`, count separately.
+
 For an open position with a reported `avg_px_open`, startup also checks the entry average using
 the fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument
 price ticks; the comparison does not round them to instrument price precision. NETTING reports
