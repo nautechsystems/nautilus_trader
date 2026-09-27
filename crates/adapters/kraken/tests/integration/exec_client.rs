@@ -1086,6 +1086,84 @@ async fn test_spot_closed_order_pagination_stops_at_the_cap() {
     );
 }
 
+/// Startup mass status must read closed orders, not open orders alone.
+///
+/// An order that reached a terminal state while the node was down is only visible through
+/// `ClosedOrders`, so an open-only mass status cannot reconcile it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_includes_orders_only_in_closed_orders() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(mass_status.reports_complete());
+
+    let reports = mass_status.order_reports();
+
+    // `OCLOSED-0` exists only in the ClosedOrders payload; the OpenOrders fixture uses entirely
+    // different ids, so finding it proves the closed-order read ran rather than the open one.
+    let closed = reports
+        .get(&VenueOrderId::from("OCLOSED-0"))
+        .expect("a closed order must reach mass status");
+    assert_eq!(closed.order_status, OrderStatus::Filled);
+
+    // Open orders must still be there: reading closed orders is an addition, not a swap.
+    assert!(
+        reports.contains_key(&VenueOrderId::from("O26VBY-ISGAE-JP5TLU")),
+        "open orders must survive the closed-order read"
+    );
+}
+
+/// A closed-order read cut short by the page cap must leave the mass status incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_incomplete_when_closed_orders_hit_the_cap() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_unthrottled_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    // Control: one page then an empty one, so the read terminates normally and declares complete.
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+    let control = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        control.reports_complete(),
+        "the control must be complete, or the capped run proves nothing"
+    );
+
+    // The same page on every request: the read can only return by way of the cap.
+    state.closed_orders_repeat.store(true, Ordering::Relaxed);
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+
+    let capped = tokio::time::timeout(
+        Duration::from_secs(120),
+        client.generate_mass_status(Some(60)),
+    )
+    .await
+    .expect("a paginated read must terminate when the venue never returns an empty page")
+    .unwrap()
+    .unwrap();
+
+    assert!(
+        !capped.reports_complete(),
+        "a mass status whose closed-order read hit the cap must not report as complete"
+    );
+}
+
 /// A bounded mass status must declare the cutoff it applied.
 #[rstest]
 #[tokio::test]

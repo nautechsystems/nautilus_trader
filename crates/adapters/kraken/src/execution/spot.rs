@@ -1357,9 +1357,12 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let start = lookback_start.map(Timestamp::from);
 
         let account_id = self.core.account_id;
+        // Read closed orders as well as open ones, matching the shared default. An order that
+        // reached a terminal state while the node was down is only visible through ClosedOrders.
+        // The lookback cutoff and the closed-order page cap bound the read.
         let (order_reports, orders_complete) = self
             .http
-            .request_order_status_reports_checked(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
         let (fill_reports, fills_complete) = self
             .http
