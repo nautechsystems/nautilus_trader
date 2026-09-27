@@ -387,6 +387,35 @@ subscribe starts afresh. Other markets continue independently.
 See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
 for the shared recovery machinery and adapter responsibilities.
 
+### Live recovery validation
+
+The `lighter-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It uses Lighter mainnet public market data, submits no orders, and checks six perpetual
+books against the book stream contract, including rising nonces within each snapshot episode, and
+against an independent reconstruction of the venue feed's best 20 levels.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-lighter --features examples --test lighter-book-stress -- --timeout 10 --rounds 12
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): checks recovery without reconnects, then rotates nonce gaps, dropped and
+  delayed snapshots, rejected replacements, reconnects, and a restart during recovery.
+- `initial`: drops each book's first snapshot, in a fresh session per round.
+- `boundaries`: rejects every attempt in the retry budget, then checks the retry ceiling, a
+  reconnect that ends the ceiling wait, unsubscribe during recovery, and shutdown during a reconnect.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (12 by default).
+
+The harness requires the mainnet WebSocket stream and the public `orderBooks` and `orderBookDetails`
+APIs. See [Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared
+flags and output format.
+
 ## Orders capability
 
 ### Order identification

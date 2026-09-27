@@ -33,7 +33,7 @@
 mod stress;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     net::SocketAddr,
     str::FromStr,
     sync::Arc,
@@ -53,12 +53,11 @@ use nautilus_okx::{
     config::OKXDataClientConfig,
     data::OKXDataClient,
 };
-use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use stress::{
     BookProgress, Coverage, FrameKind, Route, Session, StressArgs, StressVenue, Upstream, WireBook,
-    WireCodec, WireConnection,
+    WireCodec, WireConnection, WireView, WireViews,
 };
 use tokio_tungstenite::tungstenite::Message;
 
@@ -79,7 +78,6 @@ const PUBLIC_ENDPOINT: &str = "okx-public-data-streams";
 const BUSINESS_ENDPOINT: &str = "okx-business-data-streams";
 const BOOK_CHANNELS: [&str; 3] = ["books", "books-rpi", "sprd-books5"];
 const DEPTH: usize = 20;
-const VIEWS_MAX: usize = 2048;
 
 type OkxSession = Session<Okx>;
 
@@ -746,15 +744,14 @@ impl StressVenue for Okx {
 
     fn verify(&mut self, checker: &mut BookStreamChecker, deltas: &OrderBookDeltas) {
         let id = deltas.instrument_id;
-        let views = self.wire.views.lock();
-
-        let view = views
-            .get(id.symbol.as_str())
-            .and_then(|views| {
-                views.iter().rev().find(|v| {
-                    v.sequence == deltas.sequence && v.timestamp == deltas.ts_event.as_u64()
-                })
-            })
+        let view = self
+            .wire
+            .views
+            .find(
+                id.symbol.as_str(),
+                deltas.sequence,
+                deltas.ts_event.as_u64(),
+            )
             .expect("wire oracle at emitted sequence and timestamp");
 
         if let Err(violation) = checker.verify(id, DEPTH, &view.book.bids, &view.book.asks) {
@@ -778,13 +775,13 @@ impl StressVenue for Okx {
 
 #[derive(Clone, Default)]
 struct OkxWire {
-    views: Arc<Mutex<HashMap<String, VecDeque<View>>>>,
+    views: WireViews,
 }
 
 impl WireCodec for OkxWire {
     fn open(&self, route: &Route, number: usize) -> Box<dyn WireConnection> {
         Box::new(OkxConnection {
-            views: Arc::clone(&self.views),
+            views: self.views.clone(),
             route: route.name,
             epoch: number,
             books: HashMap::new(),
@@ -792,16 +789,8 @@ impl WireCodec for OkxWire {
     }
 }
 
-// The top of the reference book after one raw frame
-struct View {
-    epoch: usize,
-    sequence: u64,
-    timestamp: u64,
-    book: WireBook,
-}
-
 struct OkxConnection {
-    views: Arc<Mutex<HashMap<String, VecDeque<View>>>>,
+    views: WireViews,
     route: &'static str,
     epoch: usize,
     books: HashMap<String, WireBook>,
@@ -836,21 +825,18 @@ impl WireConnection for OkxConnection {
         let snapshot = frame["action"] == "snapshot" || channel == "sprd-books5";
         let key = symbol(&frame["arg"]).unwrap().to_string();
         let book = self.books.entry(key.clone()).or_default();
-        let mut views = self.views.lock();
-        let views = views.entry(key.clone()).or_default();
 
         for data in frame["data"].as_array().unwrap() {
             apply(book, data, snapshot);
-            views.push_back(View {
-                epoch: self.epoch,
-                sequence: data["seqId"].as_u64().unwrap_or(0),
-                timestamp: data["ts"].as_str().unwrap().parse::<u64>().unwrap() * 1_000_000,
-                book: book.top(DEPTH),
-            });
-
-            if views.len() > VIEWS_MAX {
-                views.pop_front();
-            }
+            self.views.record(
+                &key,
+                WireView {
+                    epoch: self.epoch,
+                    sequence: data["seqId"].as_u64().unwrap_or(0),
+                    timestamp: data["ts"].as_str().unwrap().parse::<u64>().unwrap() * 1_000_000,
+                    book: book.top(DEPTH),
+                },
+            );
         }
 
         let kind = if snapshot {
@@ -1029,35 +1015,32 @@ fn check_wire_oracle() {
         );
         assert!(connection.client(&snapshot).is_empty());
 
-        let views = wire.views.lock();
-        let recorded = views["BTC-USDT"]
-            .iter()
-            .map(|view| (view.epoch, view.sequence, view.timestamp, view.book.clone()))
-            .collect::<Vec<_>>();
         assert_eq!(
-            recorded,
             [
-                (
-                    3,
-                    7,
-                    5_000_000,
-                    WireBook {
+                wire.views.find("BTC-USDT", 7, 5_000_000),
+                wire.views.find("BTC-USDT", 8, 6_000_000),
+            ],
+            [
+                Some(WireView {
+                    epoch: 3,
+                    sequence: 7,
+                    timestamp: 5_000_000,
+                    book: WireBook {
                         bids: [(Decimal::from(10), Decimal::from(2))].into(),
                         asks: [(Decimal::from(11), Decimal::from(4))].into(),
-                    }
-                ),
-                (
-                    3,
-                    8,
-                    6_000_000,
-                    WireBook {
+                    },
+                }),
+                Some(WireView {
+                    epoch: 3,
+                    sequence: 8,
+                    timestamp: 6_000_000,
+                    book: WireBook {
                         bids: [].into(),
                         asks: [(Decimal::from(11), Decimal::from(4))].into(),
-                    }
-                ),
+                    },
+                }),
             ]
         );
-        drop(views);
 
         let mut unchanged = snapshot.clone();
         assert!(!connection.corrupt(&mut unchanged, "BTC-USDT", FrameKind::Snapshot));

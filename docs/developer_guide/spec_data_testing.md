@@ -112,8 +112,8 @@ never receives data.
   is an empty snapshot.
 - An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
 - Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic
-  within a snapshot episode. OKX `seqId` can reset, so its checker skips this rule and relies on
-  the oracle.
+  within a snapshot episode. OKX `seqId` can reset and Polymarket books carry no sequence, so their
+  checkers skip this rule and rely on the oracle.
 - A book emits nothing after its unsubscribe settles.
 
 ### Validation levels
@@ -217,7 +217,8 @@ The shared module runs the harness, and the venue supplies only its own pieces b
 
 - A `WireCodec` that classifies each venue frame as a book snapshot, a book update, or an
   unsubscribe acknowledgement, recording it in the oracle before any fault applies. It can also
-  rewrite a frame to plant a sequence gap or an in-band mismatch.
+  rewrite a frame to plant a sequence gap or an in-band mismatch, and answer an adapter subscribe
+  with a venue rejection.
 - The proxy routes, the data client configuration, and any extra proxy routes, such as a REST
   snapshot proxy.
 - The oracle comparison for each emitted batch, the condition for a healthy book, and a startup
@@ -225,17 +226,17 @@ The shared module runs the harness, and the venue supplies only its own pieces b
 - The scenarios, written against `Session`.
 
 `FaultProxy` relays the adapter's WebSocket traffic to the venue. It applies per-book `Fault` rules
-(drop snapshots or updates, corrupt, hold, silence, cut on unsubscribe) and connection-wide cuts and
-freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
+(drop snapshots or updates, corrupt, hold, silence, cut on unsubscribe, reject subscribes) and
+connection-wide cuts and freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
 books to heal, and checks at shutdown that every socket and reconnect handle is released.
 
 Every harness accepts the same flags, and venues add their own; `--help` lists them:
 
-| Flag              | Meaning                                                        | Default                     |
-| ----------------- | -------------------------------------------------------------- | --------------------------- |
-| `--scenario NAME` | Scenario to run.                                               | `churn` for OKX and Binance |
-| `--timeout SECS`  | `book_snapshot_timeout_secs`; `0` disables snapshot deadlines. | `10`                        |
-| `--rounds N`      | Stress rounds.                                                 | Venue default               |
+| Flag              | Meaning                                                        | Default       |
+| ----------------- | -------------------------------------------------------------- | ------------- |
+| `--scenario NAME` | Scenario to run.                                               | `churn`       |
+| `--timeout SECS`  | `book_snapshot_timeout_secs`; `0` disables snapshot deadlines. | `10`          |
+| `--rounds N`      | Stress rounds.                                                 | Venue default |
 
 Run the harness explicitly, with adapter environment variables stripped:
 
@@ -262,7 +263,7 @@ traffic. The shared proxy, argument parsing, and wire book carry unit tests in t
 `book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
 Document the harness in the adapter's integration guide under a `Live recovery validation` heading
 that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
-endpoints it requires. OKX and Binance provide harnesses.
+endpoints it requires. OKX, Binance, Lighter, and Polymarket provide harnesses.
 
 ### In-band verification
 

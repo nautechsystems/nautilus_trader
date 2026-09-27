@@ -6350,6 +6350,7 @@ dependencies = [
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "serde_repr",

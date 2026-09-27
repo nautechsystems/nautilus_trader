@@ -901,7 +901,7 @@ mod tests {
             format!(
                 "deadline exceeded: idle wait, books={{}}, expected={{}}, \
                  faults={{\"A\": {fault:?}}}, upstream_frames=[(\"silent\", 0)], batches=0 \
-                 snapshots=0 connections_silent=0 cuts=0 dropped=1 held=0 corrupted=0 \
+                 snapshots=0 connections_silent=0 cuts=0 dropped=1 held=0 corrupted=0 rejected=0 \
                  upstream_failures=0 heal_ms_max=0"
             )
         );

@@ -208,3 +208,12 @@ doc = false
 name = "polymarket-session-keys"
 path = "examples/session_keys.rs"
 doc = false
+
+# Public market-data validation; explicitly connects to Polymarket mainnet from a served region.
+# Run with `cargo test --package nautilus-polymarket --features examples --test polymarket-book-stress -- --timeout 10 --rounds 12`
+[[test]]
+name = "polymarket-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

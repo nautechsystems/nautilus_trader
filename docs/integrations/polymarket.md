@@ -1668,6 +1668,48 @@ such as `tick_size` and `last_trade_price`. The adapter accepts these updates wi
 verification because their exact hash preimage is unavailable. Snapshots without a hash remain
 compatible.
 
+#### Live recovery validation
+
+The `polymarket-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It uses Polymarket public market data, submits no orders, and subscribes one outcome token
+from each of the six open, order-accepting markets with the highest 24-hour volume. Each book has
+its own connection (`ws_max_subscriptions` is 1).
+
+The harness checks every emitted book against the book stream contract and an independent
+reconstruction of the venue feed's best 20 levels. Polymarket books carry no sequence, so the
+reconstruction aligns snapshots with `book` events and updates with `price_change` events by
+timestamp, and skips batches it cannot align. A session also fails if a book emits no incremental
+updates after the venue sent it at least 10 `price_change` events.
+
+Run it from a network location Polymarket serves. From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-polymarket --features examples --test polymarket-book-stress -- --timeout 10 --rounds 12
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): one phase per round: a broken snapshot hash, a dropped initial snapshot, a
+  reconnect while a recovering book is held, dropped snapshots after a reconnect, and a restart
+  during recovery.
+- `boundaries`: holds a recovering book through the retry budget, then checks the retry ceiling, a
+  reconnect at the ceiling, unsubscribe during recovery, and shutdown during a reconnect.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (12 by default).
+
+Two venue behaviors limit what the harness can force:
+
+- Polymarket never rejects a subscription, and an unverifiable `book` event can complete recovery
+  before a corrupted replacement arrives, so the harness withholds replacement snapshots instead.
+- Reconnect replay also resubscribes a recovering book, so the ceiling reconnect check shows prompt
+  recovery without isolating the ceiling wake.
+
+The harness requires the market WebSocket channel, the Gamma markets API, and the CLOB API. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
+
 #### Effective deltas
 
 `compute_effective_deltas` defaults to `false`. Enable it to trade extra processing for smaller

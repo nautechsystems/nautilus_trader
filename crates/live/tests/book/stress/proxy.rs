@@ -18,7 +18,9 @@
 //! Each proxied socket opens its own venue connection and its own [`WireConnection`]. The relay
 //! passes every venue message to [`WireConnection::upstream`] first, so the harness oracle sees
 //! the venue feed before any fault, then applies a pending cut, corruption, drops, silence, and
-//! holds in that order. Messages the relay does not rewrite are forwarded byte for byte.
+//! holds in that order. An adapter subscribe that a reject rule matches never reaches the venue;
+//! the relay answers it with a venue rejection instead. Messages the relay does not rewrite are
+//! forwarded byte for byte.
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -229,11 +231,12 @@ impl FaultProxy {
 
         let _ = write!(
             stats,
-            "cuts={} dropped={} held={} corrupted={} upstream_failures={}",
+            "cuts={} dropped={} held={} corrupted={} rejected={} upstream_failures={}",
             self.cuts(),
             total(|fault| fault.dropped),
             total(|fault| fault.held),
             total(|fault| fault.corrupted),
+            total(|fault| fault.rejected),
             self.upstream_failures(),
         );
         stats
@@ -305,6 +308,13 @@ pub(crate) trait WireConnection: Send {
     fn corrupt(&mut self, _message: &mut Message, _key: &str, _kind: FrameKind) -> bool {
         false
     }
+
+    /// Returns the fault key an adapter book subscribe targets and a venue reply rejecting it.
+    ///
+    /// Returns `None` when `message` is not a book subscribe.
+    fn reject(&mut self, _message: &Message) -> Option<(String, Message)> {
+        None
+    }
 }
 
 /// Opens venue wire handling for each proxied socket.
@@ -335,12 +345,16 @@ pub(crate) struct Fault {
     pub(crate) silence: bool,
     /// Cuts the connection when the adapter unsubscribes the book.
     pub(crate) cut_unsubscribe: bool,
+    /// Adapter subscribes left to answer with [`WireConnection::reject`] instead of the venue.
+    pub(crate) reject: usize,
     /// Frames rewritten.
     pub(crate) corrupted: usize,
     /// Frames dropped by `drop_snapshots` or `drop_updates`.
     pub(crate) dropped: usize,
     /// Frames held.
     pub(crate) held: usize,
+    /// Adapter subscribes rejected.
+    pub(crate) rejected: usize,
     /// Frames forwarded as they arrived.
     pub(crate) forwarded: usize,
     /// When the first frame was forwarded.
@@ -401,6 +415,14 @@ async fn relay(mut socket: WebSocket, state: Arc<ProxyState>, index: usize, head
                     Some(Ok(ClientMessage::Ping(_) | ClientMessage::Pong(_))) => continue,
                     Some(Ok(ClientMessage::Close(_)) | Err(_)) | None => break,
                 };
+
+                if let Some(reply) = state.reject(wire.as_mut(), &message) {
+                    if socket.send(to_client(reply)).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+
                 let keys = wire.client(&message);
 
                 if upstream.send(message).await.is_err() || state.unsubscribe(&keys) {
@@ -558,6 +580,16 @@ impl ProxyState {
         true
     }
 
+    // Returns the venue rejection for an adapter subscribe that a reject rule answers
+    fn reject(&self, wire: &mut dyn WireConnection, message: &Message) -> Option<Message> {
+        let (key, reply) = wire.reject(message)?;
+        let mut faults = self.faults.lock();
+        let fault = faults.get_mut(&key).filter(|fault| fault.reject > 0)?;
+        fault.reject -= 1;
+        fault.rejected += 1;
+        Some(reply)
+    }
+
     // Returns whether an unsubscribed book asked for the connection to be cut
     fn unsubscribe(&self, keys: &[String]) -> bool {
         let mut faults = self.faults.lock();
@@ -632,8 +664,8 @@ mod tests {
 
     type Client = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
-    // Frames are JSON objects: `{"key": "A", "kind": "snapshot"}`, `{"unsubscribed": "A"}`, and
-    // adapter commands `{"unsubscribe": "A"}`
+    // Frames are JSON objects: `{"key": "A", "kind": "snapshot"}`, `{"unsubscribed": "A"}`,
+    // `{"rejected": "A"}`, and adapter commands `{"subscribe": "A"}` and `{"unsubscribe": "A"}`
     struct TestCodec;
 
     impl WireCodec for TestCodec {
@@ -681,6 +713,12 @@ mod tests {
             frame["corrupt"] = json!(true);
             *message = Message::Text(frame.to_string().into());
             true
+        }
+
+        fn reject(&mut self, message: &Message) -> Option<(String, Message)> {
+            let key = parse(message)["subscribe"].as_str()?.to_string();
+            let reply = json!({"rejected": key}).to_string();
+            Some((key, Message::Text(reply.into())))
         }
     }
 
@@ -1022,6 +1060,34 @@ mod tests {
         assert!(receive(&mut client).await.is_none());
     }
 
+    #[tokio::test]
+    async fn reject_answers_subscribes_instead_of_the_venue() {
+        let mut venue = start_venue().await;
+        let proxy = start_proxy(&venue.url).await;
+        let mut client = connect(&proxy).await;
+        proxy.fault("A").reject = 1;
+        let command = |key: &str| json!({"subscribe": key}).to_string();
+
+        for key in ["A", "B", "A"] {
+            client
+                .send(Message::Text(command(key).into()))
+                .await
+                .unwrap();
+        }
+
+        let replies = receive_all(&mut client).await;
+        let (first, _) = venue.commands.recv().await.unwrap();
+        let (second, _) = venue.commands.recv().await.unwrap();
+
+        assert_eq!(replies, [json!({"rejected": "A"}).to_string()]);
+        assert_eq!([first, second], [command("B"), command("A")]);
+        assert!(venue.commands.try_recv().is_err());
+        let fault = proxy.fault("A").clone();
+        assert_eq!(fault.reject, 0);
+        assert_eq!(fault.rejected, 1);
+        assert_eq!(proxy.fault("B").rejected, 0);
+    }
+
     #[rstest]
     #[case::matching_route(Some("test"), FrameKind::Snapshot, 1)]
     #[case::any_route(None, FrameKind::Snapshot, 1)]
@@ -1172,14 +1238,19 @@ mod tests {
             let mut fault = proxy.fault("A");
             fault.drop_updates = 1;
             fault.corrupt = 1;
+            fault.reject = 1;
         }
 
         send(&venue, &[frame("A", "update", 1), frame("A", "update", 2)]);
+        client
+            .send(Message::Text(json!({"subscribe": "A"}).to_string().into()))
+            .await
+            .unwrap();
         let _ = receive_all(&mut client).await;
 
         assert_eq!(
             proxy.stats(),
-            "connections_test=1 cuts=0 dropped=1 held=0 corrupted=1 upstream_failures=0"
+            "connections_test=1 cuts=0 dropped=1 held=0 corrupted=1 rejected=1 upstream_failures=0"
         );
     }
 }

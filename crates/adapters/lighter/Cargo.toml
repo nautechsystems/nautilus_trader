@@ -55,8 +55,9 @@ cargo-fuzz = true
 
 [package.metadata.cargo-machete]
 ignored = [
-  "nautilus-system",
-] # Optional dep activated only via the python feature
+  "nautilus-system", # Optional dep activated only via the python feature
+  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
+]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -103,6 +104,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 serde_urlencoded = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -114,6 +116,7 @@ dotenvy = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 toml = { workspace = true }
 
 [[bench]]
@@ -247,3 +250,12 @@ name = "lighter-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
+
+# Public market-data validation; explicitly connects to Lighter mainnet.
+# Run with `cargo test --package nautilus-lighter --features examples --test lighter-book-stress -- --timeout 10 --rounds 12`
+[[test]]
+name = "lighter-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

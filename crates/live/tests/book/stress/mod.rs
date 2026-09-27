@@ -69,7 +69,7 @@ use nautilus_model::identifiers::TraderId;
 
 pub(crate) use self::{
     args::{Flag, StressArgs},
-    oracle::WireBook,
+    oracle::{WireBook, WireView, WireViews},
     proxy::{Fault, FaultProxy, FrameKind, Route, Upstream, WireCodec, WireConnection},
     session::{BookProgress, Coverage, Session, StressVenue},
 };
