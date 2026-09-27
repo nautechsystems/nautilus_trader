@@ -60,15 +60,18 @@ use nautilus_model::{
         stubs::{quote_audusd, quote_ethusdt_binance},
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, BarAggregation, CurrencyType, LiquiditySide,
-        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
-        TradingState, TrailingOffsetType, TriggerType,
+        AccountType, AggregationSource, AggressorSide, BarAggregation, ContingencyType,
+        CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
         OrderPendingUpdate, OrderPriceField, OrderSubmitted, PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
-        order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
+        order::spec::{
+            OrderAcceptedSpec, OrderEmulatedSpec, OrderFilledSpec, OrderRejectedSpec,
+            OrderReleasedSpec, OrderSubmittedSpec,
+        },
     },
     fees::MakerTakerFeeRates,
     identifiers::{
@@ -7476,6 +7479,393 @@ fn test_modify_order_checks_cash_increase(
     assert_eq!(cached.filled_qty(), order.filled_qty());
     assert_eq!(cached.price(), order.price());
     assert_eq!(cached.status(), order.status());
+}
+
+// A 1000 USD cash account on AUD/USD.SIM
+fn usd_cash_account_cache(instrument: &InstrumentAny) -> Cache {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("1000 USD", "0 USD", "1000 USD"),
+        )))
+        .unwrap();
+    cache
+}
+
+fn limit_buy(instrument: &InstrumentAny, client_order_id: &str, quantity: &str) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .price(Price::from("1.00000"))
+        .build()
+}
+
+fn submit_order_command(order: &OrderAny) -> TradingCommand {
+    TradingCommand::SubmitOrder(SubmitOrder::from_order(
+        order,
+        order.trader_id(),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ))
+}
+
+fn notional_exceeds_free_balance(free_balance: &str, notional: &str) -> Ustr {
+    Ustr::from(
+        &OrderDeniedReason::NotionalExceedsFreeBalance {
+            free_balance: Money::from(free_balance),
+            notional: Money::from(notional),
+        }
+        .to_string(),
+    )
+}
+
+// Both commands are checked before the venue acknowledges the first order, as when a strategy
+// submits them from one callback
+#[rstest]
+fn test_submit_order_counts_approved_orders_not_yet_reflected_in_free_balance(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = usd_cash_account_cache(&instrument_audusd);
+    let first = limit_buy(&instrument_audusd, "O-001", "600");
+    let second = limit_buy(&instrument_audusd, "O-002", "600");
+    cache.add_order(first.clone(), None, None, false).unwrap();
+    cache.add_order(second.clone(), None, None, false).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let first_command = submit_order_command(&first);
+
+    risk_engine.execute(first_command.clone());
+    risk_engine.execute(submit_order_command(&second));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Denied);
+    assert_eq!(events[0].client_order_id(), second.client_order_id());
+    assert_eq!(
+        events[0].message(),
+        Some(notional_exceeds_free_balance("400 USD", "600 USD"))
+    );
+    assert_eq!(commands, vec![first_command]);
+}
+
+#[rstest]
+#[case::accepted(true, "400")]
+#[case::rejected(false, "1000")]
+fn test_submit_order_releases_reservation_once_account_reflects_order(
+    #[case] accepted: bool,
+    #[case] second_quantity: &str,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = usd_cash_account_cache(&instrument_audusd);
+    let first = limit_buy(&instrument_audusd, "O-001", "600");
+    let second = limit_buy(&instrument_audusd, "O-002", second_quantity);
+    cache.add_order(first.clone(), None, None, false).unwrap();
+    cache.add_order(second.clone(), None, None, false).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk_engine.execute(submit_order_command(&first));
+
+    {
+        let mut cache = risk_engine.cache().borrow_mut();
+        cache
+            .update_order(&OrderEventAny::Submitted(order_submitted(&first)))
+            .unwrap();
+
+        if accepted {
+            // The account now locks the accepted order's notional itself
+            cache
+                .update_order(&OrderEventAny::Accepted(order_accepted(
+                    &first,
+                    Some(VenueOrderId::from("V-001")),
+                    Some(account_id()),
+                )))
+                .unwrap();
+            cache
+                .update_account_state(&cash_account_state_million_usd(
+                    "1000 USD", "600 USD", "400 USD",
+                ))
+                .unwrap();
+        } else {
+            let rejected = OrderRejectedSpec::builder()
+                .trader_id(first.trader_id())
+                .strategy_id(first.strategy_id())
+                .instrument_id(first.instrument_id())
+                .client_order_id(first.client_order_id())
+                .build();
+            cache
+                .update_order(&OrderEventAny::Rejected(rejected))
+                .unwrap();
+        }
+    }
+
+    risk_engine.execute(submit_order_command(&second));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert!(events.is_empty());
+    assert_eq!(commands.len(), 2);
+}
+
+// The submit throttler denies an order over its rate after the checks approved it, so that order
+// holds no balance, while the order it passed is still counted
+#[rstest]
+fn test_submit_order_releases_reservation_of_order_denied_by_submit_throttler(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = usd_cash_account_cache(&instrument_audusd);
+    let first = limit_buy(&instrument_audusd, "O-001", "600");
+    let throttled = limit_buy(&instrument_audusd, "O-002", "300");
+    let third = limit_buy(&instrument_audusd, "O-003", "500");
+    for order in [&first, &throttled, &third] {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+    let config = RiskEngineConfig {
+        max_order_submit: RateLimit::new(1, DurationNanos::new(1000)),
+        ..RiskEngineConfig::default()
+    };
+    let mut risk_engine = get_risk_engine(
+        Some(Rc::new(RefCell::new(cache))),
+        Some(config),
+        None,
+        false,
+    );
+    let first_command = submit_order_command(&first);
+
+    risk_engine.execute(first_command.clone());
+    risk_engine.execute(submit_order_command(&throttled));
+
+    // The execution engine applies the throttler's denial
+    let throttler_denial = get_process_order_event_handler_messages(&process_order_event_handler)
+        .pop()
+        .unwrap();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .update_order(&throttler_denial)
+        .unwrap();
+
+    risk_engine.execute(submit_order_command(&third));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].client_order_id(), throttled.client_order_id());
+    assert_eq!(events[0].message(), Some(Ustr::from("RATE_LIMIT_EXCEEDED")));
+    assert_eq!(events[1].client_order_id(), third.client_order_id());
+    assert_eq!(
+        events[1].message(),
+        Some(notional_exceeds_free_balance("400 USD", "500 USD"))
+    );
+    assert_eq!(commands, vec![first_command]);
+}
+
+// Strategies send an order with an emulation trigger to the emulator, so it reserves nothing while
+// emulated. Once released without its trigger, an order submitted again, as an execution algorithm
+// does, is checked and charged like a new one.
+#[rstest]
+fn test_submit_order_charges_emulated_order_only_once_released(
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = usd_cash_account_cache(&instrument_audusd);
+    let emulated = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("600"))
+        .price(Price::from("1.00000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let while_emulated = limit_buy(&instrument_audusd, "O-002", "1200");
+    let after_release = limit_buy(&instrument_audusd, "O-003", "500");
+    for order in [&emulated, &while_emulated, &after_release] {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+    cache
+        .update_order(&OrderEventAny::Emulated(
+            OrderEmulatedSpec::builder()
+                .client_order_id(emulated.client_order_id())
+                .build(),
+        ))
+        .unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk_engine.execute(submit_order_command(&while_emulated));
+
+    // The emulator replaces the order with one without a trigger, then releases it
+    let released = limit_buy(&instrument_audusd, "O-001", "600");
+    {
+        let mut cache = risk_engine.cache().borrow_mut();
+        cache.add_order(released.clone(), None, None, true).unwrap();
+        cache
+            .update_order(&OrderEventAny::Released(
+                OrderReleasedSpec::builder()
+                    .client_order_id(released.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+    }
+    let released_command = submit_order_command(&released);
+    risk_engine.execute(released_command.clone());
+    risk_engine.execute(submit_order_command(&after_release));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        events[0].client_order_id(),
+        while_emulated.client_order_id()
+    );
+    assert_eq!(
+        events[0].message(),
+        Some(notional_exceeds_free_balance("1000 USD", "1200 USD"))
+    );
+    assert_eq!(events[1].client_order_id(), after_release.client_order_id());
+    assert_eq!(
+        events[1].message(),
+        Some(notional_exceeds_free_balance("400 USD", "500 USD"))
+    );
+    assert_eq!(commands, vec![released_command]);
+}
+
+// A reduce-only bracket leg reserves nothing, while a child the venue holds until its parent fills
+// keeps its charge until it is accepted
+#[rstest]
+#[case::reduce_only_take_profit(OrderSide::Sell, "600", "1.10000", true, "600 USD", "400 USD")]
+#[case::buy_child(OrderSide::Buy, "300", "1.00000", false, "900 USD", "100 USD")]
+fn test_submit_order_list_charges_held_child_until_accepted(
+    #[case] child_side: OrderSide,
+    #[case] child_quantity: &str,
+    #[case] child_price: &str,
+    #[case] child_reduce_only: bool,
+    #[case] locked_once_accepted: &str,
+    #[case] free: &str,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = usd_cash_account_cache(&instrument_audusd);
+    let order_list_id = OrderListId::from("OL-001");
+    let entry = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("600"))
+        .price(Price::from("1.00000"))
+        .contingency_type(ContingencyType::Oto)
+        .order_list_id(order_list_id)
+        .linked_order_ids(vec![ClientOrderId::from("O-002")])
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-002"))
+        .side(child_side)
+        .quantity(Quantity::from(child_quantity))
+        .price(Price::from(child_price))
+        .reduce_only(child_reduce_only)
+        .order_list_id(order_list_id)
+        .parent_order_id(entry.client_order_id())
+        .build();
+    let before_accepted = limit_buy(&instrument_audusd, "O-003", "500");
+    let after_accepted = limit_buy(&instrument_audusd, "O-004", "500");
+    for order in [&entry, &child, &before_accepted, &after_accepted] {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let order_list = OrderList::new(
+        order_list_id,
+        instrument_audusd.id(),
+        entry.strategy_id(),
+        vec![entry.client_order_id(), child.client_order_id()],
+        UnixNanos::default(),
+    );
+    risk_engine.execute(TradingCommand::SubmitOrderList(SubmitOrderList::new(
+        entry.trader_id(),
+        None,
+        entry.strategy_id(),
+        order_list,
+        vec![entry.init_event().clone(), child.init_event().clone()],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )));
+
+    // The venue accepts the entry and holds the child until the entry fills
+    {
+        let mut cache = risk_engine.cache().borrow_mut();
+        for order in [&entry, &child] {
+            cache
+                .update_order(&OrderEventAny::Submitted(order_submitted(order)))
+                .unwrap();
+        }
+        cache
+            .update_order(&OrderEventAny::Accepted(order_accepted(
+                &entry,
+                Some(VenueOrderId::from("V-001")),
+                Some(account_id()),
+            )))
+            .unwrap();
+        cache
+            .update_account_state(&cash_account_state_million_usd(
+                "1000 USD", "600 USD", "400 USD",
+            ))
+            .unwrap();
+    }
+    risk_engine.execute(submit_order_command(&before_accepted));
+
+    // Once accepted, the child is reflected by the account's own lock
+    {
+        let mut cache = risk_engine.cache().borrow_mut();
+        cache
+            .update_order(&OrderEventAny::Accepted(order_accepted(
+                &child,
+                Some(VenueOrderId::from("V-002")),
+                Some(account_id()),
+            )))
+            .unwrap();
+        cache
+            .update_account_state(&cash_account_state_million_usd(
+                "1000 USD",
+                locked_once_accepted,
+                free,
+            ))
+            .unwrap();
+    }
+    risk_engine.execute(submit_order_command(&after_accepted));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        events[0].client_order_id(),
+        before_accepted.client_order_id()
+    );
+    assert_eq!(
+        events[1].client_order_id(),
+        after_accepted.client_order_id()
+    );
+
+    for event in &events {
+        assert_eq!(
+            event.message(),
+            Some(notional_exceeds_free_balance(free, "500 USD"))
+        );
+    }
+    assert_eq!(commands.len(), 1);
 }
 
 #[rstest]
