@@ -144,7 +144,6 @@ jobs:
           rm -rf ~/.cargo/registry ~/.cargo/git || true
 
   codspeed-benchmarks:
-    if: github.ref != 'refs/heads/nightly'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
