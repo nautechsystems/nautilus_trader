@@ -106,8 +106,10 @@ impl RiskEngine {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> Self {
-        let throttler_submit = Self::create_submit_throttler(&config, clock.clone(), cache.clone());
-        let throttler_modify = Self::create_modify_throttler(&config, clock.clone(), cache.clone());
+        let throttler_submit =
+            Self::create_submit_throttler(&config, Rc::clone(&clock), Rc::clone(&cache));
+        let throttler_modify =
+            Self::create_modify_throttler(&config, Rc::clone(&clock), Rc::clone(&cache));
         let max_notional_per_order = config.max_notional_per_order.clone();
 
         Self {
@@ -213,7 +215,7 @@ impl RiskEngine {
 
         let failure_handler = {
             let cache = cache;
-            let clock = clock.clone();
+            let clock = Rc::clone(&clock);
             Box::new(move |command: TradingCommand| {
                 let reason = OrderDeniedReason::RateLimitExceeded.to_string();
 
@@ -292,7 +294,7 @@ impl RiskEngine {
 
         let failure_handler = {
             let cache = cache;
-            let clock = clock.clone();
+            let clock = Rc::clone(&clock);
             Box::new(move |order: ModifyOrder| {
                 let reason = "Exceeded MAX_ORDER_MODIFY_RATE";
                 log::warn!(
