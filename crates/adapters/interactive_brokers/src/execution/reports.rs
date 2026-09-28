@@ -530,7 +530,11 @@ impl IbReportClient {
                         avg_px_open,
                     );
 
-                    reports.push(report);
+                    if Self::upsert_position_report(&mut reports, report) {
+                        tracing::debug!(
+                            "Superseded duplicate IB position report for {instrument_id}"
+                        );
+                    }
                 }
                 Ok(PositionUpdate::PositionEnd) => {
                     // End of position list
@@ -562,6 +566,29 @@ impl IbReportClient {
         }
 
         Ok(reports)
+    }
+
+    /// Inserts `report`, replacing an earlier report for the same account, instrument, and
+    /// venue position, and returns whether a report was replaced.
+    ///
+    /// IB holds one position per account and contract but resends the whole set while the
+    /// positions subscription is open (for example after a [2100] account-data notice), so a
+    /// later report supersedes the earlier one instead of counting the quantity twice.
+    pub(super) fn upsert_position_report(
+        reports: &mut Vec<PositionStatusReport>,
+        report: PositionStatusReport,
+    ) -> bool {
+        if let Some(existing) = reports.iter_mut().find(|existing| {
+            existing.account_id == report.account_id
+                && existing.instrument_id == report.instrument_id
+                && existing.venue_position_id == report.venue_position_id
+        }) {
+            *existing = report;
+            return true;
+        }
+
+        reports.push(report);
+        false
     }
 
     // A combo-level execution carries a generic BAG contract without its legs, so its spread
