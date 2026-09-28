@@ -14213,7 +14213,7 @@ fn risk_engine_with_clients(
         ..Default::default()
     };
 
-    let mut exec_engine = get_exec_engine(Some(cache.clone()), None, Some(config));
+    let mut exec_engine = get_exec_engine(Some(Rc::clone(&cache)), None, Some(config));
 
     for (client_id, account_id, venue) in clients {
         let client = StubExecutionClient::new(
