@@ -306,9 +306,6 @@ impl BaseAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        let base_currency = instrument
-            .base_currency()
-            .unwrap_or(instrument.quote_currency());
         let (amount, currency) = match side {
             // A buy at a negative price settles as a credit rather than a debit, so it
             // reserves nothing. Clamping per order rather than after aggregation keeps a
@@ -321,7 +318,11 @@ impl BaseAccount {
                 )?;
                 (notional.as_decimal().max(Decimal::ZERO), notional.currency)
             }
-            OrderSide::Sell => (quantity.as_decimal(), base_currency),
+            // No modeled base asset means nothing to reserve; inventory is venue-enforced.
+            OrderSide::Sell => match instrument.base_currency() {
+                Some(base_currency) => (quantity.as_decimal(), base_currency),
+                None => (Decimal::ZERO, instrument.quote_currency()),
+            },
         };
 
         Ok(Money::from_decimal(amount, currency)?)

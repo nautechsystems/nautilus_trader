@@ -19,7 +19,7 @@ market swaps but is not production-ready.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; quantity for pending sell orders.        |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; base-asset quantity for pending sells.   |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
 | Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders; no leverage or borrowing.    |
@@ -30,6 +30,22 @@ Cash accounts **settle trades in full**; there is no leverage and therefore no
 concept of margin. Locked balances reflect the value reserved for pending
 orders: the notional value of each pending buy and the quantity each pending
 sell would deliver.
+
+A sell delivers the instrument's base asset, so the reservation belongs in that
+asset. Instruments whose `base_currency()` is `None`, such as binary options and
+equities, model no such asset. A pending sell on those instruments locks nothing
+and its proceeds are not compared against the free quote balance. Reserving the
+order quantity in the quote currency instead would label a share or contract
+count as money and lock collateral the sale never consumes; comparing sale
+proceeds against free collateral would deny a sale for lack of the very balance
+it credits.
+
+Inventory availability for those instruments is therefore not tracked or checked
+locally, including across concurrent sells. The venue enforces it, and any
+rejection arrives through the normal order lifecycle. This boundary is
+deliberate: reproducing the venue's inventory check locally would require
+per-asset balances the adapter does not receive. Buy reservations and sell
+checks for instruments that do model a base asset are unchanged.
 
 ### Margin accounts
 

@@ -22,6 +22,12 @@
 //! - BUY orders lock quote currency (cost of purchase).
 //! - SELL orders lock base currency (assets being sold).
 //!
+//! Instruments that model no base currency (binary options, equities, and the other types whose
+//! `base_currency()` is `None`) have no asset to reserve, so a SELL locks nothing rather than
+//! labeling the quantity as quote money. Inventory availability for those instruments is not
+//! tracked or checked locally, including across concurrent SELLs, and is left to the venue,
+//! whose rejections arrive through the normal order lifecycle.
+//!
 //! Callers must clear all existing locks via [`CashAccount::clear_balance_locked`]
 //! before applying new locks. This prevents stale currency entries when order
 //! compositions change.
@@ -278,8 +284,8 @@ mod tests {
         fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
-            Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
-            InstrumentAny, stubs::*,
+            BinaryOption, Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+            Instrument, InstrumentAny, stubs::*,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -631,7 +637,43 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("100 USD"));
+        assert_eq!(balance_locked, Money::zero(Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_sell_binary_option_reserves_nothing(
+        cash_account_million_usd: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        // BinaryOption::base_currency() is None: there is no modeled asset to reserve, so a
+        // SELL must not reserve quote collateral.
+        let balance_locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &InstrumentAny::BinaryOption(binary_option),
+                OrderSide::Sell,
+                Quantity::from("5.00"),
+                Price::from("0.500"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(balance_locked, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_no_base_currency_still_reserves_notional(
+        cash_account_million_usd: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        let balance_locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &binary_option.into_any(),
+                OrderSide::Buy,
+                Quantity::from("5"),
+                Price::from("0.500"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(balance_locked, Money::new(2.5, Currency::USDC()));
     }
 
     #[rstest]

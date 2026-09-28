@@ -2622,7 +2622,9 @@ impl AccountRisk<'_> {
             return self.check_cumulative_balance(order, -impact);
         }
 
-        if self.account.base_currency().is_some() {
+        // Without an instrument base currency there is no asset to check, so fall through to
+        // `check_asset_balance` rather than comparing sale proceeds against free collateral.
+        if self.instrument.base_currency().is_some() && self.account.base_currency().is_some() {
             return self.check_cumulative_balance(order, impact);
         }
 
