@@ -2692,23 +2692,19 @@ impl LiveNode {
                 }
             }
             TradingCommand::ModifyOrder(modify) => {
-                self.exec_manager
-                    .register_command_inflight(modify.client_order_id);
+                self.exec_manager.register_inflight(modify.client_order_id);
             }
             TradingCommand::ModifyOrders(modify) => {
                 for child in &modify.modifies {
-                    self.exec_manager
-                        .register_command_inflight(child.client_order_id);
+                    self.exec_manager.register_inflight(child.client_order_id);
                 }
             }
             TradingCommand::CancelOrder(cancel) => {
-                self.exec_manager
-                    .register_command_inflight(cancel.client_order_id);
+                self.exec_manager.register_inflight(cancel.client_order_id);
             }
             TradingCommand::CancelOrders(cancel) => {
                 for child in &cancel.cancels {
-                    self.exec_manager
-                        .register_command_inflight(child.client_order_id);
+                    self.exec_manager.register_inflight(child.client_order_id);
                 }
             }
             _ => {}
@@ -10137,7 +10133,6 @@ mod tests {
         for _ in 0..3 {
             node.exec_manager
                 .register_submission(order.init_event(), Some(ClientId::from("OTHER")));
-            node.exec_manager.register_inflight(client_order_id);
             advance_clock(Duration::from_millis(101)).await;
             let result = node.exec_manager.check_inflight_orders();
             assert!(result.queries.is_empty());
@@ -10934,7 +10929,6 @@ mod tests {
                 1
             );
         }
-        node.exec_manager.register_inflight(client_order_id);
         node.exec_manager
             .register_submission(order.init_event(), Some(client_id));
         advance_clock(Duration::from_millis(101)).await;

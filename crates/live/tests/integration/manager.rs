@@ -5352,6 +5352,7 @@ async fn test_reconcile_mass_status_sorts_events_chronologically() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_inflight_order_generates_rejection_after_max_retries(
     #[case] policy: SubmissionRecoveryPolicy,
+    #[values(false, true)] submission: bool,
 ) {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
@@ -5368,9 +5369,14 @@ async fn test_inflight_order_generates_rejection_after_max_retries(
 
     // Order must be submitted (have account_id) to generate rejection
     let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
-    ctx.add_order(order);
+    ctx.add_order(order.clone());
 
-    ctx.manager.register_inflight(client_order_id);
+    if submission {
+        ctx.manager
+            .register_submission(order.init_event(), Some(test_client_id()));
+    } else {
+        ctx.manager.register_inflight(client_order_id);
+    }
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await; // 200ms, past threshold
 
@@ -5386,7 +5392,7 @@ async fn test_inflight_order_generates_rejection_after_max_retries(
 
     let diagnostics = ctx.manager.take_submission_recovery_exhaustions();
     let order = ctx.get_order(&client_order_id).unwrap();
-    let expected = if policy == SubmissionRecoveryPolicy::RetainUnresolved {
+    let expected = if submission && policy == SubmissionRecoveryPolicy::RetainUnresolved {
         vec![SubmissionRecoveryExhausted {
             trader_id: order.trader_id(),
             client_id: Some(test_client_id()),

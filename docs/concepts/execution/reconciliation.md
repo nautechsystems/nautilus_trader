@@ -391,6 +391,10 @@ for recovery, so duplicate submission registration cannot restart the timeout. A
 identity do not. Missing-order bookkeeping does not register an acknowledged submission again.
 Later commands do not produce submission-exhaustion diagnostics.
 
+`LiveNode` registers submission identity before dispatch. Direct `ExecutionManager` callers use
+`register_submission` for submissions; `register_inflight` only starts command recovery and does not
+infer submission identity from the cache.
+
 The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
 of `N` permits `N - 1` intermediate order queries before local resolution. Missing-order checks use
 `open_check_missing_retries` and require completed, matching client coverage plus a successful

@@ -248,56 +248,57 @@ impl ExecutionManager {
         self.cache.borrow()
     }
 
-    /// Registers an order as inflight for tracking.
+    /// Registers an inflight command at dispatch, starting its recovery budget.
     ///
-    /// Skips filtered orders. With `RetainUnresolved`, duplicate registration preserves the
-    /// active recovery budget and cannot restart an acknowledged submission's timeout.
+    /// Skips filtered orders and preserves an active submission's remaining budget.
+    /// Submission identity and duplicate suppression require [`Self::register_submission`].
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
-        self.register_inflight_check(client_order_id, false);
-    }
+        self.confirm_submission_outcome(&client_order_id);
 
-    /// Registers a cancel or modify at dispatch, even if its pending event has not arrived.
-    pub(crate) fn register_command_inflight(&mut self, client_order_id: ClientOrderId) {
-        self.register_inflight_check(client_order_id, true);
-    }
-
-    fn register_inflight_check(&mut self, client_order_id: ClientOrderId, is_command: bool) {
-        if self
-            .config
-            .filtered_client_order_ids
-            .contains(&client_order_id)
+        if self.order_inflight_checks.contains_key(&client_order_id)
+            && self.submission_recovery_pending(client_order_id)
         {
             return;
         }
 
-        self.confirm_submission_outcome(&client_order_id);
+        self.start_inflight_check(client_order_id);
+    }
 
-        let retain_submission =
-            self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved;
+    /// Registers a submission's identity before execution dispatch or cache insertion.
+    ///
+    /// With submission tracking enabled, duplicate registration preserves the current
+    /// recovery budget. Both policies still use the existing local resolution behavior.
+    pub fn register_submission(
+        &mut self,
+        initialized: &OrderInitialized,
+        client_id: Option<ClientId>,
+    ) {
+        let client_order_id = initialized.client_order_id;
 
-        if retain_submission
-            && let Some(order) = self.get_order(client_order_id)
-            && order.status() == OrderStatus::Submitted
-        {
-            let confirmed = !Self::submission_is_unacknowledged(&order)
+        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved {
+            self.confirm_submission_outcome(&client_order_id);
+
+            if self.submissions.contains_key(&client_order_id)
                 || self
-                    .submissions
-                    .get(&client_order_id)
-                    .is_some_and(|submission| submission.venue_confirmed);
-
-            if !is_command && confirmed {
+                    .cache
+                    .borrow()
+                    .order_ref(&client_order_id)
+                    .is_some_and(|order| !Self::submission_is_unacknowledged(&order))
+            {
                 return;
             }
 
-            if !confirmed {
-                let client_id = self.cache.borrow().client_id(&client_order_id).copied();
-                self.track_submission(order.init_event(), client_id);
-            }
+            self.track_submission(initialized, client_id);
         }
 
-        if retain_submission
-            && self.order_inflight_checks.contains_key(&client_order_id)
-            && (!is_command || self.submission_recovery_pending(client_order_id))
+        self.start_inflight_check(client_order_id);
+    }
+
+    fn start_inflight_check(&mut self, client_order_id: ClientOrderId) {
+        if self
+            .config
+            .filtered_client_order_ids
+            .contains(&client_order_id)
         {
             return;
         }
@@ -314,33 +315,6 @@ impl ExecutionManager {
         self.order_recon_retries.insert(client_order_id, 0);
         self.order_query_recency.remove(&client_order_id);
         self.order_activity.remove(&client_order_id);
-    }
-
-    /// Registers a submission's identity before execution dispatch or cache insertion.
-    ///
-    /// With submission tracking enabled, duplicate registration preserves the current
-    /// recovery budget. Both policies still use the existing local resolution behavior.
-    pub fn register_submission(
-        &mut self,
-        initialized: &OrderInitialized,
-        client_id: Option<ClientId>,
-    ) {
-        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::ResolveLocally {
-            self.register_inflight(initialized.client_order_id);
-            return;
-        }
-
-        self.confirm_submission_outcome(&initialized.client_order_id);
-        if self.submissions.contains_key(&initialized.client_order_id)
-            || self
-                .get_order(initialized.client_order_id)
-                .is_some_and(|order| !Self::submission_is_unacknowledged(&order))
-        {
-            return;
-        }
-
-        self.track_submission(initialized, client_id);
-        self.register_inflight(initialized.client_order_id);
     }
 
     fn track_submission(&mut self, initialized: &OrderInitialized, client_id: Option<ClientId>) {
@@ -386,7 +360,9 @@ impl ExecutionManager {
             .get(&client_order_id)
             .is_some_and(|submission| !submission.exhausted && !submission.venue_confirmed)
             && self
-                .get_order(client_order_id)
+                .cache
+                .borrow()
+                .order_ref(&client_order_id)
                 .is_none_or(|order| Self::submission_is_unacknowledged(&order))
     }
 
