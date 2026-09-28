@@ -5350,6 +5350,99 @@ mod tests {
     }
 
     #[rstest]
+    #[case::not_applied_exactly("100.0", "O-POSITION-FILLS")]
+    #[case::preparation_error("1.0", "O-POSITION-CONFLICT")]
+    fn test_position_fill_report_result_falls_back_after_unapplied_fill_expires(
+        #[case] authoritative_qty: &str,
+        #[case] client_order_id: &str,
+    ) {
+        let (mut node, venue_report, mut fill_report) = position_fill_test_fixture(
+            "UnappliedPositionFillNode",
+            Quantity::from(authoritative_qty),
+        );
+        fill_report.client_order_id = Some(ClientOrderId::from(client_order_id));
+        let reports = [fill_report.clone()];
+
+        let quantities = (0..2)
+            .map(|_| position_quantity_after_check(&mut node, &venue_report, &reports))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            quantities,
+            vec![Quantity::from("1.0"), Quantity::from("2.0")]
+        );
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_expires_one_unapplied_fill_per_check() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("UnappliedPositionFillsNode", Quantity::from("100.0"));
+        let mut later_fill_report = fill_report.clone();
+        later_fill_report.trade_id = TradeId::from("T-POSITION-AUTHORITATIVE-LATER");
+        later_fill_report.ts_event = UnixNanos::from(1_001);
+        let reports = [fill_report.clone(), later_fill_report.clone()];
+
+        let quantities = (0..3)
+            .map(|_| position_quantity_after_check(&mut node, &venue_report, &reports))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            quantities,
+            vec![
+                Quantity::from("1.0"),
+                Quantity::from("1.0"),
+                Quantity::from("2.0"),
+            ]
+        );
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&later_fill_report)
+        );
+    }
+
+    #[rstest]
+    #[case::within_grace(60_000, true)]
+    #[case::after_grace(0, false)]
+    fn test_position_fill_report_result_retries_refused_fill_only_within_grace(
+        #[case] position_check_threshold_ms: u32,
+        #[case] expected_applied: bool,
+    ) {
+        let (mut node, venue_report, fill_report) = position_fill_test_fixture_with_threshold(
+            "TransientPositionFillNode",
+            Quantity::from("1.0"),
+            position_check_threshold_ms,
+        );
+        let mut conflicting_report = fill_report.clone();
+        conflicting_report.client_order_id = Some(ClientOrderId::from("O-POSITION-CONFLICT"));
+
+        let quantities = [conflicting_report, fill_report.clone()]
+            .into_iter()
+            .map(|report| position_quantity_after_check(&mut node, &venue_report, &[report]))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            quantities,
+            vec![Quantity::from("1.0"), Quantity::from("2.0")]
+        );
+        assert_eq!(
+            node.exec_manager
+                .position_contains_fill_report(&fill_report),
+            expected_applied
+        );
+    }
+
+    #[rstest]
     fn test_position_fill_report_result_synthesizes_only_residual_after_fresh_report() {
         let (mut node, venue_report, fill_report) =
             position_fill_test_fixture("ResidualPositionFillNode", Quantity::from("0.5"));
@@ -6949,10 +7042,18 @@ mod tests {
         name: &str,
         authoritative_qty: Quantity,
     ) -> (LiveNode, PositionStatusReport, FillReport) {
+        position_fill_test_fixture_with_threshold(name, authoritative_qty, 0)
+    }
+
+    fn position_fill_test_fixture_with_threshold(
+        name: &str,
+        authoritative_qty: Quantity,
+        position_check_threshold_ms: u32,
+    ) -> (LiveNode, PositionStatusReport, FillReport) {
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
-                position_check_threshold_ms: 0,
+                position_check_threshold_ms,
                 ..Default::default()
             },
             ..Default::default()
@@ -7076,6 +7177,28 @@ mod tests {
             queried_clients: IndexSet::from([client_id]),
             failed_clients: IndexSet::new(),
         }
+    }
+
+    fn position_quantity_after_check(
+        node: &mut LiveNode,
+        venue_report: &PositionStatusReport,
+        reports: &[FillReport],
+    ) -> Quantity {
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(node, venue_report.clone());
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, reports.to_vec())]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        node.kernel
+            .cache
+            .borrow()
+            .positions_open(None, Some(&key.0), None, Some(&key.1), None)
+            .iter()
+            .map(|position| position.quantity)
+            .sum()
     }
 
     fn fill_report_event(fill: &OrderFilled) -> ExecutionEvent {

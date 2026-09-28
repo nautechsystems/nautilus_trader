@@ -4836,6 +4836,68 @@ pub(crate) mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_position_fill_report_filtered_external_fill_falls_back_after_grace() {
+        let state = BlockingReportClientState::default();
+        let client_order_id = ClientOrderId::from("O-EXTERNAL-FILL");
+        let fill = reconciliation_fill_report(
+            client_order_id,
+            VenueOrderId::from("V-EXTERNAL-FILL"),
+            TradeId::from("T-EXTERNAL-FILL"),
+            Price::from("100.0"),
+            Money::from("0.25 USDT"),
+            UnixNanos::from(1_000_000),
+        );
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))])
+        .with_fill_report_responses([vec![fill.clone()]], None)
+        .with_fill_reports_at_window_end();
+        let mut config = shutdown_report_test_config(None, Some(0.1));
+        config.exec_engine.filter_unclaimed_external_orders = true;
+        let mut node = reconciliation_node("FilteredExternalFillNode", config, factory);
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let cache = node.kernel().cache();
+        let driver_cache = cache.clone();
+        let driver_handle = node.handle();
+        let fill_count = state.fill_report_count.clone();
+        let converged_fill_count = Arc::new(AtomicUsize::new(0));
+        let driver_converged_fill_count = converged_fill_count.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async {
+                    driver_cache
+                        .borrow()
+                        .positions_open(None, Some(&instrument_id), None, Some(&account_id), None)
+                        .iter()
+                        .map(|position| position.quantity)
+                        .sum::<Quantity>()
+                        == Quantity::from("1.0")
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+
+            driver_converged_fill_count
+                .store(fill_count.load(Ordering::Relaxed), Ordering::Relaxed);
+            driver_handle.stop();
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert_eq!(converged_fill_count.load(Ordering::Relaxed), 2);
+        assert!(cache.borrow().order(&client_order_id).is_none());
+        assert!(!node.exec_manager().position_contains_fill_report(&fill));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_open_report_completed_before_shutdown_is_reconciled() {
         let state = BlockingReportClientState::default();
         let release = Arc::new(tokio::sync::Notify::new());

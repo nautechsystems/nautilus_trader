@@ -149,6 +149,7 @@ pub struct ExecutionManager {
 
     fills_processed: RecencyMap<FillKey>,
     fills_recent: RecencyMap<FillKey>,
+    fills_unapplied: RecencyMap<FillKey>,
 
     position_activity: RecencyMap<InstrumentAccountKey>,
     position_activity_revisions: IndexMap<InstrumentAccountKey, u64>,
@@ -173,6 +174,7 @@ impl Debug for ExecutionManager {
             .field("order_lookback_warnings", &self.order_lookback_warnings)
             .field("fills_processed", &self.fills_processed)
             .field("fills_recent", &self.fills_recent)
+            .field("fills_unapplied", &self.fills_unapplied)
             .field("position_activity", &self.position_activity)
             .field("position_activity_revisions", &self.position_activity_revisions)
             .field("position_recon", &self.position_recon)
@@ -208,6 +210,7 @@ impl ExecutionManager {
             order_lookback_warnings: IndexSet::new(),
             fills_processed: RecencyMap::default(),
             fills_recent: RecencyMap::default(),
+            fills_unapplied: RecencyMap::default(),
             position_activity: RecencyMap::default(),
             position_activity_revisions: IndexMap::new(),
             position_recon: IndexMap::new(),
@@ -2574,6 +2577,31 @@ impl ExecutionManager {
 
         report.venue_position_id = Some(position_id);
         Ok(PositionFillReportPreparation::Ready)
+    }
+
+    /// Records a position-check fill that failed to apply, keeping its first failure time.
+    pub fn record_unapplied_fill_report(&mut self, report: &FillReport) {
+        let fill_key = (report.account_id, report.instrument_id, report.trade_id);
+        if !self.fills_unapplied.contains_key(&fill_key) {
+            self.fills_unapplied.mark(fill_key);
+        }
+
+        let ttl = Duration::from_mins(self.config.position_check_lookback_mins)
+            .max(Duration::from_mins(1));
+        self.fills_unapplied.prune_older_than(ttl);
+    }
+
+    /// Checks whether a fill has stayed unapplied past the position check threshold.
+    ///
+    /// Such a fill no longer holds back synthetic position reconciliation.
+    #[must_use]
+    pub fn is_unapplied_fill_report_expired(&self, report: &FillReport) -> bool {
+        let fill_key = (report.account_id, report.instrument_id, report.trade_id);
+        self.fills_unapplied.contains_key(&fill_key)
+            && !self.fills_unapplied.within(
+                &fill_key,
+                Duration::from(self.config.position_check_threshold_ns),
+            )
     }
 
     /// Checks whether cached position fills match the report, including quantity and commission.
@@ -6384,6 +6412,106 @@ mod tests {
 
         assert!(!manager.order_activity.contains_key(&old_id));
         assert!(manager.order_activity.contains_key(&fresh_id));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_unapplied_fill_report_expires_after_position_check_threshold() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache,
+            ExecutionManagerConfig {
+                position_check_threshold_ns: DurationNanos::from_millis(100),
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+
+        let report = unapplied_fill_report("T-UNAPPLIED");
+        let mut expired = vec![manager.is_unapplied_fill_report_expired(&report)];
+
+        manager.record_unapplied_fill_report(&report);
+        dst::time::sleep(Duration::from_millis(60)).await;
+        manager.record_unapplied_fill_report(&report);
+        expired.push(manager.is_unapplied_fill_report_expired(&report));
+        dst::time::sleep(Duration::from_millis(40)).await;
+        expired.push(manager.is_unapplied_fill_report_expired(&report));
+
+        assert_eq!(expired, vec![false, false, true]);
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_record_unapplied_fill_report_prunes_outside_position_check_lookback() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache,
+            ExecutionManagerConfig {
+                position_check_lookback_mins: 1,
+                position_check_threshold_ns: DurationNanos::from_secs(5),
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+
+        let old_report = unapplied_fill_report("T-UNAPPLIED-OLD");
+        let recent_report = unapplied_fill_report("T-UNAPPLIED-RECENT");
+        let fresh_report = unapplied_fill_report("T-UNAPPLIED-FRESH");
+
+        manager.record_unapplied_fill_report(&old_report);
+        dst::time::sleep(Duration::from_secs(30)).await;
+        manager.record_unapplied_fill_report(&recent_report);
+        dst::time::sleep(Duration::from_secs(31)).await;
+        manager.record_unapplied_fill_report(&fresh_report);
+
+        assert!(!manager.fills_unapplied.contains_key(&(
+            old_report.account_id,
+            old_report.instrument_id,
+            old_report.trade_id,
+        )));
+        assert!(manager.fills_unapplied.contains_key(&(
+            recent_report.account_id,
+            recent_report.instrument_id,
+            recent_report.trade_id,
+        )));
+        assert!(manager.fills_unapplied.contains_key(&(
+            fresh_report.account_id,
+            fresh_report.instrument_id,
+            fresh_report.trade_id,
+        )));
+    }
+
+    fn unapplied_fill_report(trade_id: &str) -> FillReport {
+        FillReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            VenueOrderId::from("V-UNAPPLIED"),
+            TradeId::from(trade_id),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        )
     }
 
     #[rstest]

@@ -115,6 +115,13 @@ position checks, the node coordinates authoritative fill queries and dispatch be
 manager to generate synthetic events. Activity revisions detect local changes during requests or
 callbacks; applying authoritative fills defers synthetic reconciliation until a fresh position report.
 
+A fill that fails preparation or that the engine does not apply also defers synthetic
+reconciliation, but only until `position_check_threshold_ms` has passed since its first failure.
+Later checks skip that fill and reconcile the position synthetically. Each check stops at the first
+such fill for an instrument and account, so each refused fill delays the fallback by at least one
+check. If a skipped fill later applies through another path, such as the execution stream, it can
+add to the synthetic correction until the next position check reconciles the difference.
+
 The manager remains available without the `node` feature. Standalone callers can use its individual
 polling methods and apply the returned events themselves. Standalone position polling directly
 returns synthetic discrepancy events; the node adds the authoritative-fill recovery sequence.
@@ -511,7 +518,8 @@ A fill kept off the position stays on its order only, as in
 - **Locked balance**: an open order that the fill closes keeps its locked balance until the next
   order event for that instrument and account.
 - **Position checks**: if the reconciled position closes before a continuous position check aligns
-  it, later checks stop at the fill until it falls outside `position_check_lookback_mins`.
+  it, later checks stop at the fill until `position_check_threshold_ms` has passed since it first
+  failed to apply, then align the position synthetically.
 
 #### Startup position validation
 

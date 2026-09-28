@@ -377,7 +377,7 @@ and caveats, see [Runtime checks](../concepts/execution/reconciliation.md#runtim
 | `own_books_audit_interval_secs`      | None           | Interval (seconds) between audits that remove own-book orders the cache no longer holds as active. None disables.                                                                              |
 | `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s.                                                         |
 | `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                                                                                                                   |
-| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                                                                                                                |
+| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies, and how long a fill that fails to apply defers synthetic reconciliation.                                       |
 | `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument/account before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
 
 :::warning

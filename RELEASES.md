@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed live node startup succeeding with unrecovered venue positions
 - Fixed replayed fills doubling positions reconciled from venue position reports (#5041), thanks @faysou
 - Fixed startup reconciliation dropping fills that precede order acceptance (#5041), thanks @faysou
+- Fixed refused fills stalling position reconciliation (#5041, #5060), thanks for reporting @chaneyka1; thanks @faysou
 - Fixed duplicate `LiveNode` builds replacing thread-local messaging (#5049), thanks for reporting @logeid
 - Fixed unqueryable Python custom-data writes (#4984), thanks for reporting @shanezilla
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
