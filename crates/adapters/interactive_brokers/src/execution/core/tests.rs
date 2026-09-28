@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType},
+    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide},
     events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -37,6 +37,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, OptionSpread, stubs::equity_aapl},
     orders::{OrderList, builder::OrderTestBuilder},
+    reports::PositionStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -4654,4 +4655,90 @@ fn held_fills_start_one_resolution_per_order() {
     assert_eq!(starts, [true, false, false, true]);
     assert_eq!(held, vec![TradeId::from("T-1"), TradeId::from("T-2")]);
     assert!(state.fills_held[&IbOrderSelector::PermId(303)].is_empty());
+}
+
+// -------------------------------------------------------------------------------------------------
+// Position reports
+// -------------------------------------------------------------------------------------------------
+
+fn create_test_position_report(
+    instrument_id: InstrumentId,
+    side: PositionSide,
+    quantity: &str,
+    avg_px_open: Decimal,
+    ts: u64,
+) -> PositionStatusReport {
+    PositionStatusReport::new(
+        AccountId::from("IB-DUR151935"),
+        instrument_id,
+        side,
+        Quantity::from(quantity),
+        UnixNanos::new(ts),
+        UnixNanos::new(ts),
+        None,
+        None,
+        Some(avg_px_open),
+    )
+}
+
+#[rstest]
+fn test_upsert_position_report_replaces_duplicate_for_same_instrument() {
+    // IB resends the position set after a [2100] account-data notice while the positions
+    // subscription is still open; the later report supersedes, it must not double the quantity
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let btc = InstrumentId::new(Symbol::from("BTC/USD"), Venue::from("PAXOS"));
+    let mut reports = Vec::new();
+
+    let first =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let btc_report =
+        create_test_position_report(btc, PositionSide::Long, "0.01", Decimal::new(8750000, 2), 2);
+    let resent =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 3);
+
+    assert!(!InteractiveBrokersExecutionClient::upsert_position_report(
+        &mut reports,
+        first
+    ));
+    assert!(!InteractiveBrokersExecutionClient::upsert_position_report(
+        &mut reports,
+        btc_report
+    ));
+    assert!(InteractiveBrokersExecutionClient::upsert_position_report(
+        &mut reports,
+        resent.clone()
+    ));
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].instrument_id, mnq);
+    assert_eq!(reports[0].ts_last, UnixNanos::new(3));
+    assert_eq!(reports[0].signed_decimal_qty, resent.signed_decimal_qty);
+    assert_eq!(reports[1].instrument_id, btc);
+
+    let venue_total: Decimal = reports
+        .iter()
+        .filter(|report| report.instrument_id == mnq)
+        .map(|report| report.signed_decimal_qty)
+        .sum();
+    assert_eq!(venue_total, Decimal::NEGATIVE_ONE);
+}
+
+#[rstest]
+fn test_upsert_position_report_keeps_latest_quantity_for_changed_position() {
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let mut reports = Vec::new();
+
+    let stale =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let flat = create_test_position_report(mnq, PositionSide::Flat, "0", Decimal::ZERO, 2);
+
+    InteractiveBrokersExecutionClient::upsert_position_report(&mut reports, stale);
+    assert!(InteractiveBrokersExecutionClient::upsert_position_report(
+        &mut reports,
+        flat
+    ));
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].position_side, PositionSide::Flat);
+    assert_eq!(reports[0].signed_decimal_qty, Decimal::ZERO);
 }

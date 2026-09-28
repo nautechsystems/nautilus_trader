@@ -1484,7 +1484,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         avg_px_open,
                     );
 
-                    reports.push(report);
+                    if Self::upsert_position_report(&mut reports, report) {
+                        tracing::debug!(
+                            "Superseded duplicate IB position report for {instrument_id}"
+                        );
+                    }
                 }
                 Ok(PositionUpdate::PositionEnd) => {
                     // End of position list

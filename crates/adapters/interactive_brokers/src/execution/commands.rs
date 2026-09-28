@@ -728,6 +728,29 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
+    /// Inserts `report`, replacing an earlier report for the same account, instrument, and
+    /// venue position, and returns whether a report was replaced.
+    ///
+    /// IB holds one position per account and contract but resends the whole set while the
+    /// positions subscription is open (for example after a [2100] account-data notice), so a
+    /// later report supersedes the earlier one instead of counting the quantity twice.
+    pub(super) fn upsert_position_report(
+        reports: &mut Vec<PositionStatusReport>,
+        report: PositionStatusReport,
+    ) -> bool {
+        if let Some(existing) = reports.iter_mut().find(|existing| {
+            existing.account_id == report.account_id
+                && existing.instrument_id == report.instrument_id
+                && existing.venue_position_id == report.venue_position_id
+        }) {
+            *existing = report;
+            return true;
+        }
+
+        reports.push(report);
+        false
+    }
+
     /// Returns whether IB accepts a quote quantity (`cashQty`) for the instrument.
     ///
     /// IB supports a cash quantity on inverse instruments and on `CRYPTO` contracts, where a
