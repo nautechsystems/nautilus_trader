@@ -104,10 +104,10 @@ pub use super::{
 use super::{
     recency::RecencyMap,
     reconciliation::{
-        FillKey, InflightCheck, PendingCommand, PositionQuantityComparison,
-        PositionReconciliationState, PositionReportShape, ReconciliationFillQueue,
-        RetainedFillState, create_cross_zero_leg_report, create_orphan_fill_order_report,
-        has_active_inferred_fill, is_exact_order_match, position_avg_px, position_qty_aggregates,
+        FillKey, InflightCheck, PositionQuantityComparison, PositionReconciliationState,
+        PositionReportShape, ReconciliationFillQueue, RetainedFillState,
+        create_cross_zero_leg_report, create_orphan_fill_order_report, has_active_inferred_fill,
+        is_exact_order_match, position_avg_px, position_qty_aggregates,
         resolve_inferred_fill_commission, should_project_fill, sort_reconciliation_events,
         terminal_report_has_missing_fills,
     },
@@ -129,8 +129,6 @@ struct SubmissionRecoveryState {
     exhausted: bool,
     // A Submitted report can confirm venue identity without producing a native event
     venue_confirmed: bool,
-    // Native event boundary and command budget, captured at dispatch
-    pending_command: Option<InflightCheck>,
 }
 
 /// Manager for execution state.
@@ -252,27 +250,18 @@ impl ExecutionManager {
 
     /// Registers an order as inflight for tracking.
     ///
-    /// Skips filtered orders. With `RetainUnresolved`, duplicate tracking preserves an active
-    /// recovery budget and skips `Submitted` orders already confirmed by native state or
-    /// a matching venue report. Pending cancel or update commands use their own recovery budget.
+    /// Skips filtered orders. With `RetainUnresolved`, duplicate registration preserves the
+    /// active recovery budget and cannot restart an acknowledged submission's timeout.
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
-        self.register_inflight_check(client_order_id, None);
+        self.register_inflight_check(client_order_id, false);
     }
 
-    /// Registers an actual cancel or modify dispatch, even if its pending event is queued.
-    pub(crate) fn register_command_inflight(
-        &mut self,
-        client_order_id: ClientOrderId,
-        pending_status: OrderStatus,
-    ) {
-        self.register_inflight_check(client_order_id, Some(pending_status));
+    /// Registers a cancel or modify at dispatch, even if its pending event has not arrived.
+    pub(crate) fn register_command_inflight(&mut self, client_order_id: ClientOrderId) {
+        self.register_inflight_check(client_order_id, true);
     }
 
-    fn register_inflight_check(
-        &mut self,
-        client_order_id: ClientOrderId,
-        command_pending_status: Option<OrderStatus>,
-    ) {
+    fn register_inflight_check(&mut self, client_order_id: ClientOrderId, is_command: bool) {
         if self
             .config
             .filtered_client_order_ids
@@ -283,75 +272,44 @@ impl ExecutionManager {
 
         self.confirm_submission_outcome(&client_order_id);
 
-        // Duplicate submission tracking must not restart a confirmed submission, but a new
-        // command can dispatch while native status is still Submitted, before its pending event.
-        if command_pending_status.is_none()
-            && self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
+        let retain_submission =
+            self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved;
+
+        if retain_submission
             && let Some(order) = self.get_order(client_order_id)
             && order.status() == OrderStatus::Submitted
-            && (!Self::submission_is_unacknowledged(&order)
+        {
+            let confirmed = !Self::submission_is_unacknowledged(&order)
                 || self
                     .submissions
                     .get(&client_order_id)
-                    .is_some_and(|submission| submission.venue_confirmed))
-        {
-            return;
-        }
+                    .is_some_and(|submission| submission.venue_confirmed);
 
-        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
-            && let Some(order) = self.get_order(client_order_id)
-            && order.status() == OrderStatus::Submitted
-            && Self::submission_is_unacknowledged(&order)
-        {
-            let client_id = self.cache.borrow().client_id(&client_order_id).copied();
-            self.track_submission(order.init_event(), client_id);
-        }
-
-        let pending_command = if self.config.submission_recovery_policy
-            == SubmissionRecoveryPolicy::RetainUnresolved
-        {
-            self.get_order(client_order_id).and_then(|order| {
-                let pending_event_id = Self::pending_command_event_id(&order);
-                let pending_status =
-                    command_pending_status.or_else(|| pending_event_id.map(|_| order.status()))?;
-                Some(PendingCommand {
-                    pending_status,
-                    pending_event_id: pending_event_id.filter(|_| pending_status == order.status()),
-                    next_event_index: order.event_count(),
-                })
-            })
-        } else {
-            None
-        };
-        let check = InflightCheck {
-            is_command: command_pending_status.is_some(),
-            pending_command,
-            submitted_at: dst::time::Instant::now(),
-            retry_count: 0,
-            last_query_at: None,
-        };
-
-        if self.submission_recovery_pending(client_order_id) {
-            if check.pending_command.is_some()
-                && let Some(submission) = self.submissions.get_mut(&client_order_id)
-                && (command_pending_status.is_some() || submission.pending_command.is_none())
-            {
-                submission.pending_command = Some(check.clone());
-            }
-
-            if self.order_inflight_checks.contains_key(&client_order_id) {
+            if !is_command && confirmed {
                 return;
             }
+
+            if !confirmed {
+                let client_id = self.cache.borrow().client_id(&client_order_id).copied();
+                self.track_submission(order.init_event(), client_id);
+            }
         }
 
-        if command_pending_status.is_none()
-            && self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
+        if retain_submission
             && self.order_inflight_checks.contains_key(&client_order_id)
+            && (!is_command || self.submission_recovery_pending(client_order_id))
         {
             return;
         }
 
-        self.order_inflight_checks.insert(client_order_id, check);
+        self.order_inflight_checks.insert(
+            client_order_id,
+            InflightCheck {
+                submitted_at: dst::time::Instant::now(),
+                retry_count: 0,
+                last_query_at: None,
+            },
+        );
 
         self.order_recon_retries.insert(client_order_id, 0);
         self.order_query_recency.remove(&client_order_id);
@@ -404,7 +362,6 @@ impl ExecutionManager {
                 instrument_id: initialized.instrument_id,
                 exhausted: false,
                 venue_confirmed: false,
-                pending_command: None,
             });
     }
 
@@ -433,176 +390,34 @@ impl ExecutionManager {
                 .is_none_or(|order| Self::submission_is_unacknowledged(&order))
     }
 
-    fn pending_command_event_id(order: &OrderAny) -> Option<UUID4> {
-        if !matches!(
-            order.status(),
-            OrderStatus::PendingCancel | OrderStatus::PendingUpdate
-        ) {
-            return None;
-        }
-
-        order.events().iter().rev().find_map(|event| match event {
-            OrderEventAny::PendingCancel(event) => Some(event.event_id),
-            OrderEventAny::PendingUpdate(event) => Some(event.event_id),
-            _ => None,
-        })
-    }
-
-    fn has_command_recovery(&self, client_order_id: ClientOrderId) -> bool {
-        self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
-            && self
-                .order_inflight_checks
-                .get(&client_order_id)
-                .is_some_and(|check| check.is_command && check.pending_command.is_some())
-    }
-
-    fn command_completed(check: &mut InflightCheck, order: &OrderAny) -> bool {
-        let Some(pending) = check.pending_command.as_mut() else {
-            return false;
-        };
-
-        let mut completed = order.is_closed();
-
-        for event in order.events().into_iter().skip(pending.next_event_index) {
-            match event {
-                OrderEventAny::PendingCancel(event)
-                    if pending.pending_status == OrderStatus::PendingCancel =>
-                {
-                    pending.pending_event_id = Some(event.event_id);
-                }
-                OrderEventAny::PendingUpdate(event)
-                    if pending.pending_status == OrderStatus::PendingUpdate =>
-                {
-                    pending.pending_event_id = Some(event.event_id);
-                }
-                OrderEventAny::Accepted(_) | OrderEventAny::Triggered(_)
-                    if pending.pending_event_id.is_some() =>
-                {
-                    completed = true;
-                    break;
-                }
-                OrderEventAny::Updated(_)
-                    if pending.pending_status == OrderStatus::PendingUpdate
-                        || pending.pending_event_id.is_some() =>
-                {
-                    completed = true;
-                    break;
-                }
-                OrderEventAny::Rejected(_)
-                | OrderEventAny::Denied(_)
-                | OrderEventAny::Canceled(_)
-                | OrderEventAny::Expired(_) => {
-                    completed = true;
-                    break;
-                }
-                OrderEventAny::CancelRejected(_)
-                    if pending.pending_status == OrderStatus::PendingCancel
-                        || pending.pending_event_id.is_some() =>
-                {
-                    completed = true;
-                    break;
-                }
-                OrderEventAny::ModifyRejected(_)
-                    if pending.pending_status == OrderStatus::PendingUpdate =>
-                {
-                    completed = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        pending.next_event_index = order.event_count();
-
-        completed
-    }
-
-    /// Retires submission tracking only after a native outcome has been applied.
+    /// Retires submission recovery after a native outcome has been applied.
     ///
-    /// An already-dispatched cancel or update keeps its own recovery budget and event boundary
-    /// until native evidence completes it, including after submission tracking has retired.
+    /// An acknowledgement ends the submission budget, including recovery for commands
+    /// dispatched before acknowledgement. A later command starts its own inflight check.
     pub fn confirm_submission_outcome(&mut self, client_order_id: &ClientOrderId) {
-        if self.config.submission_recovery_policy != SubmissionRecoveryPolicy::RetainUnresolved
-            || (!self.submissions.contains_key(client_order_id)
-                && !self.order_inflight_checks.contains_key(client_order_id))
-        {
-            return;
-        }
-
-        let Some(order) = self.get_order(*client_order_id) else {
+        let Some(submission) = self.submissions.get(client_order_id) else {
             return;
         };
 
-        if self
-            .submissions
-            .get(client_order_id)
-            .is_none_or(|submission| submission.venue_confirmed)
-        {
-            if self
-                .order_inflight_checks
-                .get_mut(client_order_id)
-                .is_some_and(|check| Self::command_completed(check, &order))
-            {
-                self.clear_recon_tracking(client_order_id, true);
-                self.record_local_activity(*client_order_id);
-            }
+        let venue_confirmed = submission.venue_confirmed;
+        let acknowledged = self
+            .cache
+            .borrow()
+            .order_ref(client_order_id)
+            .is_some_and(|order| !Self::submission_is_unacknowledged(&order));
 
-            if !Self::submission_is_unacknowledged(&order) {
-                self.submissions.shift_remove(client_order_id);
-            }
+        if !acknowledged {
             return;
         }
 
-        if let Some(submission) = self.submissions.get_mut(client_order_id)
-            && let Some(pending) = submission.pending_command.as_mut()
-            && Self::command_completed(pending, &order)
-        {
-            submission.pending_command = None;
-        }
-
-        if Self::submission_is_unacknowledged(&order) {
+        if venue_confirmed {
+            // Native history replaces the report-only marker without clearing a later command
+            self.submissions.shift_remove(client_order_id);
             return;
         }
 
-        self.retire_submission_recovery(*client_order_id, &order, true);
-
-        // Post-dispatch retirement must preserve the acknowledgement's settling window
+        self.clear_recon_tracking(client_order_id, true);
         self.record_local_activity(*client_order_id);
-    }
-
-    fn retire_submission_recovery(
-        &mut self,
-        client_order_id: ClientOrderId,
-        order: &OrderAny,
-        drop_last_query: bool,
-    ) {
-        let pending_id = Self::pending_command_event_id(order);
-        let pending_command = self
-            .submissions
-            .get(&client_order_id)
-            .and_then(|submission| {
-                submission.pending_command.as_ref().filter(|pending| {
-                    // Report-only acknowledgement preserves actual command dispatches;
-                    // generic registration keeps its existing report cleanup behavior.
-                    !submission.venue_confirmed || pending.is_command
-                })
-            })
-            .cloned()
-            .filter(|check| {
-                check.pending_command.as_ref().is_some_and(|pending| {
-                    match pending.pending_event_id {
-                        Some(event_id) => Some(event_id) == pending_id,
-                        None => !order.is_closed(),
-                    }
-                })
-            });
-        self.clear_recon_tracking(&client_order_id, drop_last_query);
-
-        if let Some(pending) = pending_command {
-            // The pending command's budget begins at its actual dispatch
-            self.order_recon_retries
-                .insert(client_order_id, pending.retry_count);
-            self.order_inflight_checks.insert(client_order_id, pending);
-        }
     }
 
     fn exhaust_submission(
@@ -699,18 +514,17 @@ impl ExecutionManager {
 
         self.order_inflight_checks.shift_remove(client_order_id);
 
-        if self
+        let keep_confirmation = self
             .submissions
             .get(client_order_id)
             .is_some_and(|submission| submission.venue_confirmed)
             && self
-                .get_order(*client_order_id)
-                .is_some_and(|order| Self::submission_is_unacknowledged(&order))
-            && let Some(submission) = self.submissions.get_mut(client_order_id)
-        {
-            // Remember report-only confirmation until native history can prevent re-registration
-            submission.pending_command = None;
-        } else {
+                .cache
+                .borrow()
+                .order_ref(client_order_id)
+                .is_some_and(|order| Self::submission_is_unacknowledged(&order));
+
+        if !keep_confirmation {
             self.submissions.shift_remove(client_order_id);
         }
         self.order_recon_retries.shift_remove(client_order_id);
@@ -1938,14 +1752,6 @@ impl ExecutionManager {
             }
 
             if let Some(check) = self.order_inflight_checks.get_mut(&client_order_id) {
-                // Confirmation may transfer recovery to a later dispatched command
-                if now
-                    .checked_duration_since(check.submitted_at)
-                    .is_none_or(|elapsed| elapsed <= threshold)
-                {
-                    continue;
-                }
-
                 if let Some(last_query_at) = check.last_query_at
                     && now
                         .checked_duration_since(last_query_at)
@@ -3269,8 +3075,7 @@ impl ExecutionManager {
     ///
     /// This is the `LiveNode` dispatch path for order events: acknowledgement
     /// events clear reconciliation tracking, fills record position
-    /// activity, and every event stamps local activity. Opt-in command recovery waits
-    /// for applied native completion before retiring its budget. The stamp must come
+    /// activity, and every event stamps local activity. The stamp must come
     /// AFTER any [`Self::clear_recon_tracking`] call - that call drops the
     /// local-activity mark, which is the sole grace gate protecting a
     /// just-acknowledged order from missing-order reconciliation while the
@@ -3287,9 +3092,7 @@ impl ExecutionManager {
             | OrderEventAny::Denied(_)
             | OrderEventAny::Updated(_)
             | OrderEventAny::ModifyRejected(_)
-            | OrderEventAny::CancelRejected(_)
-                if !self.has_command_recovery(event.client_order_id()) =>
-            {
+            | OrderEventAny::CancelRejected(_) => {
                 self.clear_recon_tracking(&event.client_order_id(), true);
             }
             _ => {}
@@ -3375,11 +3178,6 @@ impl ExecutionManager {
                 .client_order_id(&report.venue_order_id)
                 .is_none_or(|id| *id == client_order_id)
         {
-            let retire_submission = self
-                .submissions
-                .get(&client_order_id)
-                .is_some_and(|submission| !submission.venue_confirmed);
-
             if Self::submission_is_unacknowledged(&order) {
                 let client_id = self.cache.borrow().client_id(&client_order_id).copied();
                 self.track_submission(order.init_event(), client_id);
@@ -3389,18 +3187,7 @@ impl ExecutionManager {
                 submission.venue_confirmed = true;
             }
 
-            if retire_submission {
-                self.retire_submission_recovery(client_order_id, &order, false);
-            } else if order.is_closed()
-                || !self
-                    .order_inflight_checks
-                    .get(&client_order_id)
-                    .is_some_and(|check| check.is_command)
-            {
-                self.clear_recon_tracking(&client_order_id, false);
-            }
-
-            // Command ownership survives retirement of the submission confirmation marker
+            self.clear_recon_tracking(&client_order_id, false);
             self.record_local_activity(client_order_id);
             return true;
         }
@@ -3429,7 +3216,6 @@ impl ExecutionManager {
             report.order_status,
             OrderStatus::PendingUpdate | OrderStatus::PendingCancel
         ) && !accepted_during_pending_command
-            && !self.has_command_recovery(client_order_id)
         {
             self.clear_recon_tracking(&client_order_id, report.order_status.is_closed());
         }
