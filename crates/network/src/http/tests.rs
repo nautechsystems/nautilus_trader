@@ -786,6 +786,80 @@ fn http2_initial_window_follows_environment() {
         });
 }
 
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
+fn platform_roots_load_once_per_process() {
+    let Some(config) = tls_server_config() else {
+        // Cargo exports the system `SSL_CERT_DIR`, which would still supply roots without the file
+        run_tls_child(
+            "http::tests::platform_roots_load_once_per_process",
+            &[("SSL_CERT_DIR", None)],
+        );
+        return;
+    };
+
+    let roots = std::path::PathBuf::from(std::env::var_os("SSL_CERT_FILE").unwrap());
+    let parked = roots.with_extension("parked");
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            std::fs::rename(&roots, &parked).unwrap();
+            let error = HttpClient::builder()
+                .use_system_proxy(false)
+                .build()
+                .unwrap_err();
+
+            std::fs::rename(&parked, &roots).unwrap();
+            HttpClient::builder()
+                .use_system_proxy(false)
+                .build()
+                .unwrap();
+
+            std::fs::remove_file(&roots).unwrap();
+            let client = HttpClient::builder()
+                .use_system_proxy(false)
+                .timeout_secs(3)
+                .build()
+                .unwrap();
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let acceptor = tokio_rustls::TlsAcceptor::from(config);
+
+            let peer = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let stream = acceptor.accept(stream).await.unwrap();
+                let mut connection = h2::server::handshake(stream).await.unwrap();
+                while let Some(request) = connection.accept().await {
+                    let (_, mut respond) = request.unwrap();
+                    respond
+                        .send_response(http::Response::new(()), true)
+                        .unwrap();
+                }
+            });
+
+            let response = send(
+                &client,
+                Method::GET,
+                format!("https://localhost:{port}/"),
+                None,
+            )
+            .await
+            .unwrap();
+            peer.abort();
+
+            assert_eq!(
+                error.to_string(),
+                "Failed to build HTTP client: unexpected error: No CA certificates were loaded from the system"
+            );
+            assert_eq!(response.status.as_u16(), 200);
+            assert_eq!(response.body, Bytes::new());
+        });
+}
+
 // SSL_CERT_FILE supplies isolated trust on the Unix verifier, not native Apple/Windows stores
 #[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
 const TLS_CHILD: &str = "NAUTILUS_HTTP_TLS_PARITY_CHILD";

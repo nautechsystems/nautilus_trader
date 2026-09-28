@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use nautilus_network::http::InnerHttpClient;
+use nautilus_network::http::HttpClient;
 
 fn bench_send_request_roundtrip(c: &mut Criterion) {
     let mut group = c.benchmark_group("http/send_request_roundtrip");
@@ -39,7 +39,7 @@ fn bench_send_request_roundtrip(c: &mut Criterion) {
     });
 
     let url = format!("http://{addr}/");
-    let client = InnerHttpClient::default();
+    let client = HttpClient::builder().build().unwrap();
 
     for label in ["GET_no_params", "GET_no_headers"] {
         group.bench_function(BenchmarkId::new("method", label), |b| {
@@ -47,9 +47,10 @@ fn bench_send_request_roundtrip(c: &mut Criterion) {
                 rt.block_on(async {
                     black_box(
                         client
-                            .send_request(
+                            .request(
                                 http::Method::GET,
                                 black_box(url.clone()),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -87,7 +88,7 @@ fn bench_send_request_with_headers(c: &mut Criterion) {
     });
 
     let url = format!("http://{addr}/");
-    let client = InnerHttpClient::default();
+    let client = HttpClient::builder().build().unwrap();
 
     for num_headers in [0, 2, 5, 10] {
         let headers: std::collections::HashMap<String, String> = (0..num_headers)
@@ -108,11 +109,12 @@ fn bench_send_request_with_headers(c: &mut Criterion) {
                     rt.block_on(async {
                         black_box(
                             client
-                                .send_request(
+                                .request(
                                     http::Method::GET,
                                     black_box(url.clone()),
                                     None,
                                     headers.clone(),
+                                    None,
                                     None,
                                     None,
                                 )

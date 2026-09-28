@@ -36,6 +36,7 @@ use hyper_util::{
     client::{legacy::Client as HyperClient, proxy::matcher::Matcher},
     rt::{TokioExecutor, TokioTimer},
 };
+use parking_lot::Mutex;
 use tower_http::follow_redirect::{
     FollowRedirect,
     policy::{Action, Attempt, Policy},
@@ -63,13 +64,13 @@ impl Client {
             .ok_or_else(|| {
                 HttpClientError::ClientBuildError("TLS provider is unavailable".into())
             })?;
-        let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
-            .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
+
+        let verifier = platform_verifier(&provider)?;
         let mut tls = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
         let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
         let proxies = connector.proxies.clone();
@@ -153,19 +154,6 @@ pub(super) struct Settings {
     pub(super) adaptive_window: bool,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            pool_max_idle_per_host: usize::MAX,
-            pool_idle_timeout: Duration::from_secs(90),
-            keep_alive_interval: None,
-            stream_window: None,
-            connection_window: None,
-            adaptive_window: false,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct Redirects {
     policy: HttpRedirectPolicy,
@@ -223,6 +211,24 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
     fn clone_body(&self, body: &Full<Bytes>) -> Option<Full<Bytes>> {
         Some(body.clone())
     }
+}
+
+// Each `Verifier::new` reloads the platform roots, which on Linux reads the CA bundle from disk,
+// so concurrent first builds share one load under the lock, and a failed load is not cached.
+fn platform_verifier(
+    provider: &Arc<rustls::crypto::CryptoProvider>,
+) -> Result<Arc<rustls_platform_verifier::Verifier>, HttpClientError> {
+    static VERIFIER: Mutex<Option<Arc<rustls_platform_verifier::Verifier>>> = Mutex::new(None);
+
+    let mut cached = VERIFIER.lock();
+
+    if let Some(verifier) = &*cached {
+        return Ok(verifier.clone());
+    }
+
+    let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
+        .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
+    Ok(cached.insert(Arc::new(verifier)).clone())
 }
 
 fn retryable(e: &(dyn Error + 'static)) -> bool {

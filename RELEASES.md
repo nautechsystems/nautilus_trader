@@ -51,6 +51,7 @@ Released on TBD (UTC).
 - Removed `maker_fee` and `taker_fee` from Arrow instrument schemas and the SQL `instrument` table
 - Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
 - Removed `serialize_decimal` and `serialize_optional_decimal` - use `decimal::serialize` and `serialize_optional`
+- Removed Rust `InnerHttpClient` `Default` impl, which panicked on transport errors; use `HttpClient::builder()`
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
@@ -278,6 +279,7 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
+- Optimized HTTP client construction by reusing loaded platform TLS roots across clients
 - Optimized Deribit WebSocket and HTTP decimal decoding
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
 - Optimized Tardis Machine decimal decoding

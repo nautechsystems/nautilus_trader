@@ -897,36 +897,6 @@ impl AsRef<[u8]> for SecretBody {
     }
 }
 
-impl Default for InnerHttpClient {
-    /// Creates a new default [`InnerHttpClient`] instance.
-    ///
-    /// The default client has an empty list of response header keys. Production clients reuse a
-    /// connection pool; simulated clients open a connection per request.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the production HTTP transport cannot be initialized.
-    fn default() -> Self {
-        install_cryptographic_provider();
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        let client =
-            super::transport::Client::new(None, true, None, super::transport::Settings::default())
-                .expect("failed to build default HTTP client");
-        Self {
-            #[cfg(not(all(feature = "simulation", madsim)))]
-            client,
-            headers: HeaderMap::new(),
-            timeout: None,
-            #[cfg(not(all(feature = "simulation", madsim)))]
-            redirect_policy: HttpRedirectPolicy::default(),
-            #[cfg(all(feature = "simulation", madsim))]
-            simulation: super::simulation::Client::default(),
-            response_headers: Arc::default(),
-            max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
-        }
-    }
-}
-
 #[cfg(not(all(feature = "simulation", madsim)))]
 fn http2_adaptive_window() -> Result<bool, HttpClientError> {
     let Some(value) = std::env::var_os(NAUTILUS_HTTP2_ADAPTIVE_WINDOW) else {
@@ -1303,9 +1273,17 @@ mod tests {
         (addr, request_rx)
     }
 
+    fn inner_client() -> InnerHttpClient {
+        HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap()
+            .client
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_body_ready_at_deadline_is_rejected() {
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = http::Response::new(Full::new(Bytes::from_static(b"ready")));
         let result = client
             .consume_response(response, Some(crate::dst::time::Instant::now()))
@@ -1320,7 +1298,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(Method::GET, format!("{url}/get"), None, None, None, None)
             .await
@@ -1506,7 +1484,7 @@ mod tests {
     ) {
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
         let response = http::Response::new(Full::new(Bytes::from_static(bytes)));
 
@@ -1525,7 +1503,7 @@ mod tests {
         // Cap above the 1 MiB payload: body should be returned intact.
         let client = InnerHttpClient {
             max_response_bytes: 4 * 1024 * 1024,
-            ..Default::default()
+            ..inner_client()
         };
 
         let response = client
@@ -1546,7 +1524,7 @@ mod tests {
         // Cap below the 1 MiB payload: the request must fail rather than buffer it.
         let client = InnerHttpClient {
             max_response_bytes: 16 * 1024,
-            ..Default::default()
+            ..inner_client()
         };
 
         let result = client
@@ -1573,7 +1551,7 @@ mod tests {
         let (addr, server_task) = spawn_chunked_response_server().await;
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
 
         let response = client
@@ -1600,7 +1578,7 @@ mod tests {
         let max_response_bytes = 8;
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
 
         let error = client
@@ -1630,7 +1608,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(Method::POST, format!("{url}/post"), None, None, None, None)
             .await
@@ -1646,7 +1624,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         let mut body = HashMap::new();
         body.insert(
@@ -1683,7 +1661,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(
                 Method::PATCH,
@@ -1706,7 +1684,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(
                 Method::DELETE,
@@ -1728,7 +1706,7 @@ mod tests {
     async fn test_not_found() {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/notfound");
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         let response = client
             .send_request(Method::GET, url, None, None, None, None)
@@ -1745,7 +1723,7 @@ mod tests {
     async fn test_timeout() {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/slow");
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         // We'll set a 1-second timeout for a route that sleeps 2 seconds
         let result = client
