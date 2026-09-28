@@ -609,6 +609,13 @@ flag.
   the state from the open-order read, which a replayed event cannot displace.
 - Startup mass status reads the event history alongside open orders, so an order that reached a
   terminal state while the node was down is reconciled.
+- Pricing safeguard: the fills endpoint returns a single page with no cursor, so an execution older
+  than that page is absent. A terminal report from the history that executed without a covering
+  fill is withheld from the mass status, because reconciliation would otherwise infer the fill at
+  the order's limit price. Withholding one marks the set incomplete, and a later cycle reports the
+  order once a fill can price it.
+- Targeted queries: a single-order query reads one page of history rather than following the
+  continuation token, so it stays within the reconciliation timeout and the shared request budget.
 
 **Fill reports:**
 

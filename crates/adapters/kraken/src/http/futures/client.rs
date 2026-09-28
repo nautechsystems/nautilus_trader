@@ -1725,6 +1725,21 @@ impl KrakenFuturesHttpClient {
             .map(|(reports, _)| reports)
     }
 
+    /// Requests order status reports for a single-order query, reading one page of history.
+    ///
+    /// A targeted query runs while the caller waits, so it must not walk the whole history the way
+    /// a mass status can. One page is what this path read before it began following the
+    /// continuation token, and it still covers the recent events a query is asking about.
+    pub(crate) async fn request_order_status_reports_targeted(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_bounded(account_id, instrument_id, None, None, false, 1)
+            .await
+            .map(|(reports, _)| reports)
+    }
+
     /// Requests order status reports, also reporting whether the set is complete.
     ///
     /// The flag is `false` when a record was skipped because its instrument could not be resolved,
@@ -1736,6 +1751,27 @@ impl KrakenFuturesHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            start,
+            end,
+            open_only,
+            MAX_ORDER_EVENT_PAGES,
+        )
+        .await
+    }
+
+    /// Requests order status reports, reading at most `max_event_pages` of order-event history.
+    async fn request_order_status_reports_bounded(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        open_only: bool,
+        max_event_pages: usize,
     ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         let mut complete = true;
 
@@ -1861,11 +1897,15 @@ impl KrakenFuturesHttpClient {
             let mut pages = 0;
 
             loop {
-                if pages >= MAX_ORDER_EVENT_PAGES {
-                    log::warn!(
-                        "Order events pagination hit the cap of {MAX_ORDER_EVENT_PAGES} pages; returning a truncated set and marking it incomplete"
-                    );
-                    complete = false;
+                if pages >= max_event_pages {
+                    // A caller asking for fewer pages accepts the shorter read, so only the safety
+                    // cap reports the set as incomplete.
+                    if max_event_pages >= MAX_ORDER_EVENT_PAGES {
+                        log::warn!(
+                            "Order events pagination hit the cap of {MAX_ORDER_EVENT_PAGES} pages; returning a truncated set and marking it incomplete"
+                        );
+                        complete = false;
+                    }
                     break;
                 }
 

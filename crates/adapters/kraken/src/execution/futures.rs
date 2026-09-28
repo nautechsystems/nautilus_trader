@@ -765,7 +765,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let account_id = self.core.account_id;
         let reports = self
             .http
-            .request_order_status_reports(account_id, None, None, None, false)
+            .request_order_status_reports_targeted(account_id, None)
             .await?;
 
         // Match by venue_order_id or client_order_id (comparing truncated form
@@ -956,6 +956,13 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
+        // Captured before the orders-status extension is merged in, so the safeguard below applies
+        // to the venue read alone and leaves the extension to its own rule.
+        let from_venue_read: HashSet<VenueOrderId> = order_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
+
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
             .await?;
@@ -978,6 +985,44 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
+
+        // Same safeguard as above, for the order-event history. The fills endpoint returns one
+        // page with no cursor, so an execution older than that page is simply absent. A terminal
+        // report that executed without a covering fill carries no `avg_px`, and reconciliation
+        // would infer the fill at the order's limit price. Defer those until a later cycle can
+        // price them. The predicate is the filled quantity rather than `Filled`, because a
+        // partially filled order that was then cancelled or expired is priced the same way.
+        let priced: HashSet<VenueOrderId> = fill_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
+        let mut deferred = 0usize;
+        order_reports.retain(|report| {
+            let terminal = matches!(
+                report.order_status,
+                OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Expired
+                    | OrderStatus::Voided
+            );
+            // Only terminal reports are deferred, so an open order is never withheld: the venue
+            // still reports it, and dropping it would let reconciliation resolve it as missing.
+            let keep = !from_venue_read.contains(&report.venue_order_id)
+                || !terminal
+                || report.filled_qty.is_zero()
+                || priced.contains(&report.venue_order_id);
+            if !keep {
+                deferred += 1;
+                log::debug!(
+                    "Deferring executed order {} from mass status: no fill covers it",
+                    report.venue_order_id,
+                );
+            }
+            keep
+        });
+
+        let orders_complete = orders_complete && deferred == 0;
+
         let position_reports = self
             .http
             .request_position_status_reports(account_id, None)

@@ -161,8 +161,9 @@ struct TestServerState {
     order_events_repeat: Arc<AtomicBool>,
     /// Counts `/api/history/v2/orders` requests, so a test can assert the exact page count.
     order_events_request_count: Arc<AtomicUsize>,
-    /// When set, `/derivatives/api/v3/openorders` returns this JSON.
-    futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Query string of each `/api/history/v2/orders` request, so a test can assert the
+    /// continuation token was sent rather than inferring it from the request count.
+    order_events_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -182,7 +183,7 @@ impl Default for TestServerState {
             ),
             order_events_repeat: Arc::new(AtomicBool::new(false)),
             order_events_request_count: Arc::new(AtomicUsize::new(0)),
-            futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            order_events_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
@@ -334,6 +335,11 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             state
                 .order_events_request_count
                 .fetch_add(1, Ordering::Relaxed);
+            state
+                .order_events_queries
+                .lock()
+                .await
+                .push(req.uri().query().unwrap_or_default().to_string());
             let mut pages = state.order_events_pages.lock().await;
             if state.order_events_repeat.load(Ordering::Relaxed) {
                 if let Some(body) = pages.front() {
@@ -1158,6 +1164,143 @@ async fn test_futures_scoped_fill_reports_match_the_resolved_instrument() {
     );
 }
 
+fn futures_fill_for_order(order_id: &str, price: &str) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-{order_id}","symbol":"PI_XBTUSD","side":"buy","order_id":"{order_id}","fillTime":"{fill_time}","size":1000,"price":{price},"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+/// Paired control for the test below: a history execution the fill set covers must be kept.
+///
+/// The fill prices it at 49000 while the history event carries a 27500.5 limit, so this also shows
+/// the two prices differ.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_executed_history_order_with_a_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-EXEC",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    *state.fills_response.lock().await = Some(futures_fill_for_order("F-EXEC", "49000.0"));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-EXEC")),
+        "a priced execution must be kept"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A history order that executed without a covering fill must not reach mass status.
+///
+/// The futures fills endpoint returns one page with no cursor, so an execution older than that
+/// page is simply absent. Such a report carries no `avg_px`, and reconciliation would infer the
+/// fill at the order's limit price rather than the price it actually executed at. Pairs with the
+/// control above, which is identical but for the fill being present.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_defers_executed_history_order_without_a_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-EXEC",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    *state.fills_response.lock().await = Some(r#"{"result":"success","fills":[]}"#.to_string());
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-EXEC")),
+        "an execution with no covering fill must be deferred, not priced at the limit"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "deferring a report leaves the set incomplete"
+    );
+}
+
+/// A single-order query must not walk the order-event history.
+///
+/// It runs while the caller waits and shares the request budget, so it reads one page.
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_query_does_not_paginate_history() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-targeted-001"));
+
+    // Every page carries a token, so an unbounded read would page to the cap.
+    state.order_events_repeat.store(true, Ordering::Relaxed);
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-OTHER",
+                "PLACE",
+                "0.0",
+                "2023-04-07T14:20:45.500Z",
+            )],
+            Some("tok"),
+        ));
+    }
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-targeted-001")),
+        None,
+        None,
+        None,
+    );
+
+    let _ = tokio::time::timeout(
+        Duration::from_secs(120),
+        client.generate_order_status_report(&cmd),
+    )
+    .await
+    .expect("a targeted query must not page to the cap");
+
+    assert_eq!(
+        state.order_events_request_count.load(Ordering::Relaxed),
+        1,
+        "a targeted query reads one page of history"
+    );
+}
+
 /// A bounded futures mass status must declare the cutoff it applied.
 #[rstest]
 #[tokio::test]
@@ -1235,12 +1378,6 @@ fn futures_order_events_page(events: &[String], continuation: Option<&str>) -> S
     format!(
         r#"{{"serverTime":"2023-04-07T16:30:45.678Z","orderEvents":[{}]{token}}}"#,
         events.join(",")
-    )
-}
-
-fn futures_open_orders_json(order_id: &str) -> String {
-    format!(
-        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
     )
 }
 
@@ -1411,8 +1548,20 @@ async fn test_futures_order_events_follow_the_continuation_token() {
         .await
         .unwrap();
 
-    // Two requests means the token was followed; without it the read stops after the first page.
-    assert_eq!(state.order_events_request_count.load(Ordering::Relaxed), 2);
+    // The mock advances pages regardless of the query, so the request count alone would not show
+    // the token was sent. Assert the query strings instead.
+    let queries = state.order_events_queries.lock().await.clone();
+    assert_eq!(queries.len(), 2, "two pages must be requested: {queries:?}");
+    assert!(
+        !queries[0].contains("continuation_token"),
+        "the first request must not carry a token: {:?}",
+        queries[0]
+    );
+    assert!(
+        queries[1].contains("continuation_token=tok1"),
+        "the second request must carry the token page one returned: {:?}",
+        queries[1]
+    );
 
     let ids: Vec<String> = reports
         .iter()
@@ -1518,7 +1667,8 @@ async fn test_futures_open_order_survives_a_historical_event() {
     add_test_account_to_cache(&cache);
     client.connect().await.unwrap();
 
-    *state.futures_open_orders_json.lock().await = Some(futures_open_orders_json("F-OPEN"));
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("F-OPEN", "PI_XBTUSD"));
     {
         let mut pages = state.order_events_pages.lock().await;
         pages.push_back(futures_order_events_page(
