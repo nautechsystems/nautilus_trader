@@ -34,7 +34,7 @@ use rust_decimal::Decimal;
 
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
+    KEY_PRICE_PRECISION, extract_column, extract_column_by_name,
     extract_optional_string_column_by_name, json_string_field, metadata_with_type_name,
     optional_ustr_value, record_batch_with_timestamps, record_batch_with_u64_timestamps,
     timestamp_data_type,
@@ -276,20 +276,11 @@ pub fn decode_commodity_batch(
     let margin_maint_values =
         extract_column::<StringArray>(cols, "margin_maint", 16, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
-    let info_values =
-        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 17, DataType::Utf8)?;
-    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
-        record_batch,
-        "ts_event",
-        18,
-        DataType::UInt64,
-    )?;
-    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
-        record_batch,
-        "ts_init",
-        19,
-        DataType::UInt64,
-    )?;
+    let info_values = extract_column_by_name::<StringArray>(record_batch, "info", DataType::Utf8)?;
+    let ts_event_values =
+        extract_column_by_name::<UInt64Array>(record_batch, "ts_event", DataType::UInt64)?;
+    let ts_init_values =
+        extract_column_by_name::<UInt64Array>(record_batch, "ts_init", DataType::UInt64)?;
 
     let mut result = Vec::with_capacity(num_rows);
 

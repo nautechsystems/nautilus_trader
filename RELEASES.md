@@ -16,7 +16,6 @@ Released on TBD (UTC).
 - Added custom data support to `StreamingFeatherWriter` (#4759), thanks for reporting @mystic-io
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
-- Added legacy `custom_<snake_case>` layout discovery to custom data queries
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
@@ -52,6 +51,7 @@ Released on TBD (UTC).
 - Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
 - Removed `serialize_decimal` and `serialize_optional_decimal` - use `decimal::serialize` and `serialize_optional`
 - Removed Rust `InnerHttpClient` `Default` impl, which panicked on transport errors; use `HttpClient::builder()`
+- Removed Rust fixed-width Arrow decoders `decode_price`, `decode_quantity`, and `validate_precision_bytes`
 - Removed the `instrument_id` column from funding rate, instrument status, and option Greeks Arrow files
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
@@ -102,6 +102,7 @@ Released on TBD (UTC).
 - Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
 - Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
 - Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
+- Renamed Rust `extract_column_by_name_or_index` to `extract_column_by_name`, dropping the positional fallback
 - Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
 - Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
 - Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
@@ -329,7 +330,7 @@ Released on TBD (UTC).
 - Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
-- Documented legacy custom data layout discovery and migration
+- Documented legacy custom data layout migration
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
 - Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes

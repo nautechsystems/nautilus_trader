@@ -32,10 +32,7 @@ use super::{
     urisafe_instrument_id,
 };
 use crate::{
-    catalog::types::{
-        CatalogDataType, custom_data_read_prefixes, custom_type_name,
-        parquet_catalog_data_type_path_prefixes,
-    },
+    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
     common::paths::normalize_path_separators,
 };
 
@@ -300,14 +297,9 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if directory listing fails.
     pub fn list_instruments(&self, data_type: &CatalogDataType) -> anyhow::Result<Vec<String>> {
-        let prefixes = match custom_type_name(data_type) {
-            Some(type_name) => Vec::from(custom_data_read_prefixes(type_name)),
-            None => parquet_catalog_data_type_path_prefixes(data_type),
-        };
-
         let mut instruments = Vec::new();
 
-        for prefix in prefixes {
+        for prefix in parquet_catalog_data_type_path_prefixes(data_type) {
             instruments.extend(self.list_prefix_instruments(prefix.as_ref())?);
         }
 
@@ -371,23 +363,8 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
-        if let Some(type_name) = custom_type_name(data_type) {
-            let mut all_files = Vec::new();
-            for prefix in custom_data_read_prefixes(type_name) {
-                all_files.extend(self.list_prefix_files_with_criteria(
-                    prefix.as_ref(),
-                    identifiers,
-                    start,
-                    end,
-                )?);
-            }
-
-            all_files.sort();
-            all_files.dedup();
-            return Ok(all_files);
-        }
-
         let mut all_files = Vec::new();
+
         for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
             all_files.extend(self.list_prefix_files_with_criteria(
                 data_cls.as_ref(),

@@ -120,11 +120,10 @@ Custom data uses `data/custom/<type_name>/` with optional identifier path segmen
 Instruments use one directory per concrete instrument class, such as `data/currency_pair/` or
 `data/equity/`, rather than a shared `instruments` directory.
 
-Catalog queries, and therefore backtests, discover built-in data only in these canonical
-directories. Custom-data reads are the exception: they also discover the legacy Python-written
-`data/custom_<snake_case>` layout. Other legacy layouts such as `data/trade_tick/` and
-`data/quote_tick/` are not read at query time. To upgrade a catalog that still uses a legacy
-layout, convert it with
+Catalog queries, and therefore backtests, read only these canonical directories. Legacy layouts
+such as `data/trade_tick/`, `data/quote_tick/`, and the Python-written
+`data/custom_<snake_case>/` are not read at query time. To upgrade a catalog that still uses a
+legacy layout, convert it with
 [nautilus catalog migrate-parquet](../../how_to/migrate_parquet_catalog.md).
 
 :::warning[Overlapping writes]

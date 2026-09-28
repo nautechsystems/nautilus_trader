@@ -58,9 +58,9 @@ use std::{
 use arrow::{
     array::{
         Array, ArrayRef, BinaryArray, BinaryViewArray, Decimal128Array, DictionaryArray,
-        FixedSizeBinaryArray, Int32Array, Int64Array, StringArray, StringBuilder,
-        StringDictionaryBuilder, StringViewArray, StructArray, TimestampNanosecondArray,
-        UInt8Array, UInt32Array, UInt64Array,
+        Int32Array, Int64Array, StringArray, StringBuilder, StringDictionaryBuilder,
+        StringViewArray, StructArray, TimestampNanosecondArray, UInt8Array, UInt32Array,
+        UInt64Array,
     },
     buffer::NullBuffer,
     datatypes::{DataType, Field, Int8Type, Int32Type, Schema, TimeUnit},
@@ -79,10 +79,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{
         Currency, Money, PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
-        fixed::{
-            FIXED_PRECISION, FIXED_PRECISION_STANDARD, PRECISION_BYTES, correct_price_raw,
-            correct_quantity_raw,
-        },
+        fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD},
         money::MoneyRaw,
         price::PriceRaw,
         quantity::{QUANTITY_RAW_MAX, QuantityRaw},
@@ -93,11 +90,9 @@ use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use self::legacy::legacy_enum_dictionary_column;
 pub use self::legacy::{
-    is_legacy_enum_field, is_nautilus_legacy_schema, is_nautilus_timestamp_schema,
-    is_timestamp_field, normalize_legacy_fixed_columns, normalized_legacy_data_type,
-    normalized_timestamp_type,
+    is_nautilus_legacy_schema, is_nautilus_timestamp_schema, is_timestamp_field,
+    normalize_legacy_fixed_columns, normalized_legacy_data_type, normalized_timestamp_type,
 };
 
 // Define metadata key constants constants
@@ -226,13 +221,6 @@ pub fn record_batch_with_timestamps(
         .iter()
         .zip(columns)
         .map(|(field, column)| {
-            if field.data_type() == &enum_dictionary_data_type()
-                && column.data_type() == &DataType::UInt8
-                && is_legacy_enum_field(field.name())
-            {
-                return legacy_enum_dictionary_column(field, column.as_ref());
-            }
-
             if field.data_type() != &timestamp_data_type()
                 || column.data_type() != &DataType::UInt64
             {
@@ -563,17 +551,6 @@ pub enum EncodingError {
     ParseError(&'static str, String),
     #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
     InvalidColumnType(&'static str, usize, DataType, DataType),
-    #[error(
-        "Precision mode mismatch for `{field}`: catalog data has {actual_bytes} byte values, \
-         but this build expects {expected_bytes} bytes. The catalog was created with a different \
-         precision mode (standard=8 bytes, high=16 bytes). Rebuild the catalog or change your \
-         build's precision mode. See: https://nautilustrader.io/docs/latest/getting_started/installation#precision-mode"
-    )]
-    PrecisionMismatch {
-        field: &'static str,
-        expected_bytes: i32,
-        actual_bytes: i32,
-    },
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
 }
@@ -923,202 +900,13 @@ pub(crate) fn decode_required_u8(
 }
 
 #[cfg(test)]
-trait PriceRawSource {
-    fn raw_price(self) -> PriceRaw;
+fn get_raw_price(value: i128) -> PriceRaw {
+    decimal_to_price_raw(value, "test", 0).expect("Decimal price must fit the current build")
 }
 
 #[cfg(test)]
-impl PriceRawSource for &[u8] {
-    fn raw_price(self) -> PriceRaw {
-        PriceRaw::from_le_bytes(
-            self.try_into()
-                .expect("Price raw bytes must be exactly the size of PriceRaw"),
-        )
-    }
-}
-
-#[cfg(test)]
-impl PriceRawSource for i128 {
-    fn raw_price(self) -> PriceRaw {
-        decimal_to_price_raw(self, "test", 0).expect("Decimal price must fit the current build")
-    }
-}
-
-#[inline]
-#[cfg(test)]
-fn get_raw_price(value: impl PriceRawSource) -> PriceRaw {
-    value.raw_price()
-}
-
-#[inline]
-#[cfg(not(test))]
-fn get_raw_price(value: &[u8]) -> PriceRaw {
-    PriceRaw::from_le_bytes(
-        value
-            .try_into()
-            .expect("Price raw bytes must be exactly the size of PriceRaw"),
-    )
-}
-
-#[cfg(test)]
-trait QuantityRawSource {
-    fn raw_quantity(self) -> QuantityRaw;
-}
-
-#[cfg(test)]
-impl QuantityRawSource for &[u8] {
-    fn raw_quantity(self) -> QuantityRaw {
-        QuantityRaw::from_le_bytes(
-            self.try_into()
-                .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
-        )
-    }
-}
-
-#[cfg(test)]
-impl QuantityRawSource for i128 {
-    fn raw_quantity(self) -> QuantityRaw {
-        decimal_to_quantity_raw(self, "test", 0)
-            .expect("Decimal quantity must fit the current build")
-    }
-}
-
-#[inline]
-#[cfg(test)]
-fn get_raw_quantity(value: impl QuantityRawSource) -> QuantityRaw {
-    value.raw_quantity()
-}
-
-#[inline]
-#[cfg(not(test))]
-fn get_raw_quantity(value: &[u8]) -> QuantityRaw {
-    QuantityRaw::from_le_bytes(
-        value
-            .try_into()
-            .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
-    )
-}
-
-/// Gets raw price bytes and corrects for floating-point precision errors in stored data.
-///
-/// Data from catalogs may have been created with `int(value * FIXED_SCALAR)` which
-/// introduces floating-point errors. This corrects the raw value to the nearest valid
-/// multiple of the scale factor for the given precision.
-///
-/// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
-#[inline]
-fn get_corrected_raw_price(bytes: &[u8], precision: u8) -> PriceRaw {
-    let raw = get_raw_price(bytes);
-
-    // Preserve sentinel values unchanged
-    if raw == PRICE_UNDEF || raw == PRICE_ERROR {
-        return raw;
-    }
-
-    correct_price_raw(raw, precision)
-}
-
-/// Gets raw quantity bytes and corrects for floating-point precision errors in stored data.
-///
-/// Data from catalogs may have been created with `int(value * FIXED_SCALAR)` which
-/// introduces floating-point errors. This corrects the raw value to the nearest valid
-/// multiple of the scale factor for the given precision.
-///
-/// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
-#[inline]
-fn get_corrected_raw_quantity(bytes: &[u8], precision: u8) -> QuantityRaw {
-    let raw = get_raw_quantity(bytes);
-
-    // Preserve sentinel values unchanged
-    if raw == QUANTITY_UNDEF {
-        return raw;
-    }
-
-    correct_quantity_raw(raw, precision)
-}
-
-/// Decodes a [`Price`] from raw bytes with bounds validation.
-///
-/// Uses corrected raw values to handle floating-point precision errors in stored data.
-/// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
-///
-/// # Errors
-///
-/// Returns an [`EncodingError::ParseError`] if the price value is out of bounds.
-pub fn decode_price(
-    bytes: &[u8],
-    precision: u8,
-    field: &'static str,
-    row: usize,
-) -> Result<Price, EncodingError> {
-    let raw = get_corrected_raw_price(bytes, precision);
-    Price::from_raw_checked(raw, precision)
-        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
-}
-
-/// Decodes a [`Quantity`] from raw bytes with bounds validation.
-///
-/// Uses corrected raw values to handle floating-point precision errors in stored data.
-/// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
-///
-/// # Errors
-///
-/// Returns an [`EncodingError::ParseError`] if the quantity value is out of bounds.
-pub fn decode_quantity(
-    bytes: &[u8],
-    precision: u8,
-    field: &'static str,
-    row: usize,
-) -> Result<Quantity, EncodingError> {
-    let raw = get_corrected_raw_quantity(bytes, precision);
-    Quantity::from_raw_checked(raw, precision)
-        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
-}
-
-/// Decodes a [`Price`] from raw bytes, using precision 0 for sentinel values.
-///
-/// For order book data where sentinel values indicate empty levels.
-///
-/// # Errors
-///
-/// Returns an [`EncodingError::ParseError`] if the price value is out of bounds.
-pub fn decode_price_with_sentinel(
-    bytes: &[u8],
-    precision: u8,
-    field: &'static str,
-    row: usize,
-) -> Result<Price, EncodingError> {
-    let raw = get_raw_price(bytes);
-    let (final_raw, final_precision) = if raw == PRICE_UNDEF {
-        (raw, 0)
-    } else {
-        (get_corrected_raw_price(bytes, precision), precision)
-    };
-    Price::from_raw_checked(final_raw, final_precision)
-        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
-}
-
-/// Decodes a [`Quantity`] from raw bytes, using precision 0 for sentinel values.
-///
-/// For order book data where sentinel values indicate empty levels.
-///
-/// # Errors
-///
-/// Returns an [`EncodingError::ParseError`] if the quantity value is out of bounds.
-pub fn decode_quantity_with_sentinel(
-    bytes: &[u8],
-    precision: u8,
-    field: &'static str,
-    row: usize,
-) -> Result<Quantity, EncodingError> {
-    let raw = get_raw_quantity(bytes);
-    let (final_raw, final_precision) = if raw == QUANTITY_UNDEF {
-        (raw, 0)
-    } else {
-        (get_corrected_raw_quantity(bytes, precision), precision)
-    };
-    Quantity::from_raw_checked(final_raw, final_precision)
-        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+fn get_raw_quantity(value: i128) -> QuantityRaw {
+    decimal_to_quantity_raw(value, "test", 0).expect("Decimal quantity must fit the current build")
 }
 
 /// Provides Apache Arrow schema definitions for data types.
@@ -1685,21 +1473,17 @@ pub fn extract_column<'a, T: Array + 'static>(
     Ok(downcasted_values)
 }
 
-/// Extracts a column by name when present, falling back to an index for older schemas.
+/// Extracts a column by name.
 ///
 /// # Errors
 ///
-/// Returns an error if the resolved column is missing or has the wrong type.
-pub fn extract_column_by_name_or_index<'a, T: Array + 'static>(
+/// Returns an error if the column is missing or has the wrong type.
+pub fn extract_column_by_name<'a, T: Array + 'static>(
     record_batch: &'a RecordBatch,
     column_key: &'static str,
-    fallback_index: usize,
     expected_type: DataType,
 ) -> Result<&'a T, EncodingError> {
-    let column_index = record_batch
-        .schema()
-        .index_of(column_key)
-        .unwrap_or(fallback_index);
+    let column_index = record_batch.schema().index_of(column_key)?;
     extract_column::<T>(
         record_batch.columns(),
         column_key,
@@ -1757,30 +1541,6 @@ pub fn extract_optional_string_column_by_name<'a>(
 #[must_use]
 pub fn optional_ustr_value(values: Option<&StringArray>, row: usize) -> Option<Ustr> {
     values.and_then(|column| (!column.is_null(row)).then(|| Ustr::from(column.value(row))))
-}
-
-/// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.
-///
-/// This detects precision mode mismatches that occur when catalog data was encoded
-/// with a different precision mode (64-bit standard vs 128-bit high-precision).
-///
-/// # Errors
-///
-/// Returns [`EncodingError::PrecisionMismatch`] if the actual byte width doesn't
-/// match [`PRECISION_BYTES`].
-pub fn validate_precision_bytes(
-    array: &FixedSizeBinaryArray,
-    field: &'static str,
-) -> Result<(), EncodingError> {
-    let actual = array.value_length();
-    if actual != PRECISION_BYTES {
-        return Err(EncodingError::PrecisionMismatch {
-            field,
-            expected_bytes: PRECISION_BYTES,
-            actual_bytes: actual,
-        });
-    }
-    Ok(())
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.

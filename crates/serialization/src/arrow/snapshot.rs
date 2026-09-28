@@ -46,8 +46,8 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::timestamp("expire_time", true),
     JsonFieldSpec::utf8("filled_qty", false),
     JsonFieldSpec::utf8("liquidity_side", true),
-    JsonFieldSpec::decimal_str("avg_px", true),
-    JsonFieldSpec::decimal_str("slippage", true),
+    JsonFieldSpec::utf8("avg_px", true),
+    JsonFieldSpec::utf8("slippage", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::utf8("status", false),
     JsonFieldSpec::boolean("is_post_only", false),
@@ -208,7 +208,7 @@ mod tests {
     }
 
     // The catalog spec before `avg_px` and `slippage` became exact
-    fn legacy_float64_fields() -> Vec<JsonFieldSpec> {
+    fn float64_fields() -> Vec<JsonFieldSpec> {
         ORDER_SNAPSHOT_FIELDS
             .iter()
             .map(|spec| match spec.name {
@@ -251,51 +251,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_columns() {
-        // A catalog file written while the fields were `f64`: the columns are `Float64`, not
-        // `Utf8`, and must still decode to the same economic state without a version marker.
+    fn test_order_snapshot_rejects_float64_avg_px_column() {
+        // Converting a float into an exact price would lose precision silently
         let snapshot = make_order_snapshot(Some(dec!(1.07)), Some(dec!(0.07)));
         let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
+        let batch = encode_batch(
             "OrderSnapshot",
             &metadata,
             std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
+            &float64_fields(),
         )
         .unwrap();
 
-        assert_eq!(
-            legacy_batch
-                .schema()
-                .field_with_name("avg_px")
-                .unwrap()
-                .data_type(),
-            &DataType::Float64
-        );
+        let error =
+            OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap_err();
 
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
-    }
-
-    #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_null_columns() {
-        let snapshot = make_order_snapshot(None, None);
-        let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
-            "OrderSnapshot",
-            &metadata,
-            std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
-        )
-        .unwrap();
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
+        assert!(matches!(
+            error,
+            EncodingError::InvalidColumnType("avg_px", _, DataType::Utf8, DataType::Float64)
+        ));
     }
 
     fn make_position_snapshot() -> PositionSnapshot {

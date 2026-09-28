@@ -42,8 +42,8 @@ use super::{
 };
 use crate::{
     catalog::types::{
-        CatalogDataType, custom_data_read_prefixes, custom_type_name,
-        parquet_catalog_data_type_path_prefixes, parquet_catalog_data_type_table_stem,
+        CatalogDataType, parquet_catalog_data_type_path_prefixes,
+        parquet_catalog_data_type_table_stem,
     },
     common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
 };
@@ -851,16 +851,11 @@ impl ParquetDataCatalog {
             decode_metadata.extend(lookup_metadata.clone());
             let identifier = extract_identifier_from_path(&file)
                 .ok_or_else(|| anyhow::anyhow!("Cannot extract identifier from path '{file}'"))?;
-            // Distinguish canonical and legacy files sharing an identifier and
-            // filename, since DataFusion skips re-registering a table name.
-            let (data_cls, _) = self.extract_data_cls_and_identifier_from_path(&file)?;
-            let layout_tag = make_sql_safe_identifier(data_cls.as_deref().unwrap_or("custom"));
             let safe_type_name = make_sql_safe_identifier(type_name);
             let safe_sql_identifier = make_sql_safe_identifier(identifier);
             let safe_filename = extract_sql_safe_filename(&file);
-            let table_name = format!(
-                "custom_{safe_type_name}_{layout_tag}_{safe_sql_identifier}_{safe_filename}"
-            );
+            let table_name =
+                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}");
             let resolved_path = self.resolve_path_for_datafusion(&file);
             let sql_query = build_query(&table_name, start, end, where_clause);
 
@@ -949,14 +944,9 @@ impl ParquetDataCatalog {
         // Take the identifiers once so every prefix shares them without cloning per directory.
         let identifiers = identifiers.map(Vec::into_boxed_slice);
 
-        let prefixes = match custom_type_name(data_type) {
-            Some(type_name) => Vec::from(custom_data_read_prefixes(type_name)),
-            None => parquet_catalog_data_type_path_prefixes(data_type),
-        };
-
         let mut files = Vec::new();
 
-        for prefix in prefixes {
+        for prefix in parquet_catalog_data_type_path_prefixes(data_type) {
             files.extend(self.query_prefix_files(
                 prefix.as_ref(),
                 identifiers.as_deref(),
@@ -1148,19 +1138,6 @@ impl ParquetDataCatalog {
         &self,
         data_type: &CatalogDataType,
     ) -> anyhow::Result<Vec<String>> {
-        if let Some(type_name) = custom_type_name(data_type) {
-            let mut file_paths = Vec::new();
-
-            for prefix in custom_data_read_prefixes(type_name) {
-                let directory = self.make_path(prefix.as_ref(), None)?;
-                file_paths.extend(self.list_parquet_files(&directory)?);
-            }
-
-            file_paths.sort();
-            file_paths.dedup();
-            return Ok(file_paths);
-        }
-
         let mut file_paths = Vec::new();
 
         for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {

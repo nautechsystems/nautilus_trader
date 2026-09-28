@@ -42,12 +42,6 @@ pub enum JsonFieldEncoding {
     Utf8,
     Utf8Json,
     EnumDictionary,
-    /// Exact decimal written as `Utf8`, read back from `Utf8`, `Utf8View`, or `Float64`.
-    ///
-    /// The `Float64` case is what lets catalog files written before a field moved from `f64` to
-    /// `Decimal` keep decoding: `Decimal`'s `Deserialize` accepts both a JSON string and a JSON
-    /// number, so no version discriminator is needed.
-    DecimalStr,
     UInt64,
     Timestamp,
     Float64,
@@ -90,15 +84,6 @@ impl JsonFieldSpec {
     }
 
     #[must_use]
-    pub const fn decimal_str(name: &'static str, nullable: bool) -> Self {
-        Self {
-            name,
-            encoding: JsonFieldEncoding::DecimalStr,
-            nullable,
-        }
-    }
-
-    #[must_use]
     pub const fn u64(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -136,9 +121,7 @@ impl JsonFieldSpec {
 
     fn field(self) -> Field {
         let data_type = match self.encoding {
-            JsonFieldEncoding::Utf8
-            | JsonFieldEncoding::Utf8Json
-            | JsonFieldEncoding::DecimalStr => DataType::Utf8,
+            JsonFieldEncoding::Utf8 | JsonFieldEncoding::Utf8Json => DataType::Utf8,
             JsonFieldEncoding::EnumDictionary => enum_dictionary_data_type(),
             JsonFieldEncoding::UInt64 => DataType::UInt64,
             JsonFieldEncoding::Timestamp => super::timestamp_data_type(),
@@ -408,7 +391,7 @@ fn encode_column(
     rows: &[Map<String, Value>],
 ) -> Result<ArrayRef, ArrowError> {
     match field.encoding {
-        JsonFieldEncoding::Utf8 | JsonFieldEncoding::DecimalStr => encode_utf8_column(field, rows),
+        JsonFieldEncoding::Utf8 => encode_utf8_column(field, rows),
         JsonFieldEncoding::Utf8Json => encode_utf8_json_column(field, rows),
         JsonFieldEncoding::EnumDictionary => encode_enum_dictionary_column(field, rows),
         JsonFieldEncoding::UInt64 => encode_u64_column(field, rows),
@@ -607,10 +590,6 @@ enum ColumnRef<'a> {
         name: &'static str,
         values: StringColumnRef<'a>,
     },
-    DecimalStr {
-        name: &'static str,
-        values: DecimalColumnRef<'a>,
-    },
     UInt64 {
         name: &'static str,
         values: &'a UInt64Array,
@@ -634,7 +613,6 @@ impl ColumnRef<'_> {
         match self {
             Self::Utf8 { name, .. }
             | Self::Utf8Json { name, .. }
-            | Self::DecimalStr { name, .. }
             | Self::UInt64 { name, .. }
             | Self::Timestamp { name, .. }
             | Self::Float64 { name, .. }
@@ -654,10 +632,6 @@ impl ColumnRef<'_> {
                     })
                 }
             }
-            Self::DecimalStr { values, .. } => match values {
-                DecimalColumnRef::Str(values) => Ok(string_to_json(values, row)),
-                DecimalColumnRef::Float64(values) => f64_to_json(self.name(), values, row),
-            },
             Self::UInt64 { values, .. } => {
                 if values.is_null(row) {
                     Ok(Value::Null)
@@ -702,10 +676,6 @@ fn decode_column_ref(
             name: field.name,
             values: extract_column_string(columns, field.name, index)?,
         }),
-        JsonFieldEncoding::DecimalStr => Ok(ColumnRef::DecimalStr {
-            name: field.name,
-            values: extract_column_decimal(columns, field.name, index)?,
-        }),
         JsonFieldEncoding::UInt64 => Ok(ColumnRef::UInt64 {
             name: field.name,
             values: extract_column::<UInt64Array>(columns, field.name, index, DataType::UInt64)?,
@@ -728,27 +698,6 @@ fn decode_column_ref(
             values: extract_column::<BooleanArray>(columns, field.name, index, DataType::Boolean)?,
         }),
     }
-}
-
-// Reference to a decimal column, either the current `Utf8`/`Utf8View` form or the `Float64`
-// form written before the field became exact.
-enum DecimalColumnRef<'a> {
-    Str(StringColumnRef<'a>),
-    Float64(&'a Float64Array),
-}
-
-fn extract_column_decimal<'a>(
-    columns: &'a [ArrayRef],
-    column_key: &'static str,
-    column_index: usize,
-) -> Result<DecimalColumnRef<'a>, EncodingError> {
-    extract_column_string(columns, column_key, column_index)
-        .map(DecimalColumnRef::Str)
-        .or_else(|e| {
-            extract_column::<Float64Array>(columns, column_key, column_index, DataType::Float64)
-                .map(DecimalColumnRef::Float64)
-                .map_err(|_| e)
-        })
 }
 
 fn string_to_json(values: &StringColumnRef<'_>, row: usize) -> Value {

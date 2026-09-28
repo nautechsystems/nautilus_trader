@@ -212,10 +212,6 @@ fn staged_arrow_metadata(
     metadata_json: &str,
 ) -> anyhow::Result<(HashMap<String, String>, StagedFieldMetadata)> {
     let value = serde_json::from_str::<serde_json::Value>(metadata_json)?;
-    if value.get("format_version").is_none() {
-        return Ok((serde_json::from_value(value)?, HashMap::new()));
-    }
-
     anyhow::ensure!(
         value
             .get("format_version")
@@ -540,24 +536,26 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn staged_arrow_metadata_reads_current_and_legacy_formats() {
+    fn staged_arrow_metadata_reads_versioned_format_and_rejects_unversioned() {
         let current = r#"{
             "format_version": 1,
             "schema_metadata": {"type_name": "Example"},
             "field_metadata": {"payload": {"ARROW:extension:name": "arrow.json"}}
         }"#;
-        let legacy = r#"{"type_name":"Example"}"#;
+        let unversioned = r#"{"type_name":"Example"}"#;
 
         let (current_schema, current_fields) = staged_arrow_metadata(current).unwrap();
-        let (legacy_schema, legacy_fields) = staged_arrow_metadata(legacy).unwrap();
+        let error = staged_arrow_metadata(unversioned).unwrap_err();
 
         assert_eq!(current_schema["type_name"], "Example");
         assert_eq!(
             current_fields["payload"]["ARROW:extension:name"],
             "arrow.json"
         );
-        assert_eq!(legacy_schema["type_name"], "Example");
-        assert!(legacy_fields.is_empty());
+        assert_eq!(
+            error.to_string(),
+            "Unsupported staged Arrow metadata format version"
+        );
     }
 
     #[rstest]

@@ -476,7 +476,6 @@ impl ParquetDataCatalog {
         })
     }
 
-    // Canonical layout only. Legacy read prefixes such as `custom_<type>` stay in place.
     fn files_for_delete(
         &self,
         data_type: &NautilusDataType,
