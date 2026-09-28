@@ -996,7 +996,9 @@ impl OrderBook {
         analysis::get_worst_px_for_quantity(qty, levels)
     }
 
-    /// Calculates average price and quantity for target exposure. Returns (price, quantity, `executed_exposure`).
+    /// Calculates average price and quantity for target exposure.
+    ///
+    /// Returns (average price, quantity, last-touched price).
     #[must_use]
     pub fn get_avg_px_qty_for_exposure(
         &self,

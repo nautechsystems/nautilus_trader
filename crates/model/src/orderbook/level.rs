@@ -370,6 +370,7 @@ mod tests {
         let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), side));
 
         assert_eq!(level0, same);
+        assert_ne!(level0, level1);
         assert_eq!(level0 > level1, first_is_greater);
         assert_eq!(level0 < level1, !first_is_greater);
     }

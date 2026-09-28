@@ -725,8 +725,21 @@ impl OwnBookLadder {
     }
 
     /// Adds an order to the ladder at its price level.
+    ///
+    /// Re-adding a client order ID at a different price moves the order to the new level's
+    /// FIFO tail, so each ID lives at exactly one level.
     pub(crate) fn add(&mut self, order: OwnBookOrder) {
         let book_price = order.to_book_price();
+
+        if self
+            .cache
+            .get(&order.client_order_id)
+            .is_some_and(|price| *price != book_price)
+            && let Err(e) = self.remove(&order.client_order_id)
+        {
+            log::error!("{e}");
+        }
+
         self.cache.insert(order.client_order_id, book_price);
 
         if let Some(level) = self.levels.get_mut(&book_price) {
@@ -775,7 +788,10 @@ impl OwnBookLadder {
             self.levels.remove(&price);
         }
 
-        self.add(order);
+        if !order.size.is_zero() {
+            self.add(order);
+        }
+
         Ok(())
     }
 

@@ -184,6 +184,8 @@ Released on TBD (UTC).
 - Fixed failed log file rotations retrying with a disk sync on every line
 - Fixed file logs lagging until the write buffer filled; lines now flush within about 100 ms
 - Fixed `nautilus` CLI dropping buffered log lines at exit
+- Fixed `OwnOrderBook` ghost orders after re-adding at a new price or a zero-size price update
+- Fixed `OrderBook.get_avg_px_qty_for_exposure` quantities 100x too large for 18-decimal DeFi sizes
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Architect AX market data subscriptions not resuming after an explicit reconnect
@@ -264,6 +266,7 @@ Released on TBD (UTC).
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
 - Improved testkit data downloads with atomic checksum manifest writes and stale partial cleanup
+- Improved order book and own order book regression coverage from mutation testing
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
@@ -321,6 +324,7 @@ Released on TBD (UTC).
 - Documented shared book snapshot defaults and live validation levels
 - Documented legacy custom data layout discovery and migration
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
+- Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only

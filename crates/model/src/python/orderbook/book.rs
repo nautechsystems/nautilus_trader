@@ -515,7 +515,9 @@ impl OrderBook {
         self.get_worst_px_for_quantity(qty, order_side)
     }
 
-    /// Calculates average price and quantity for target exposure. Returns (price, quantity, `executed_exposure`).
+    /// Calculates average price and quantity for target exposure.
+    ///
+    /// Returns (average price, quantity, last-touched price).
     #[pyo3(name = "get_avg_px_qty_for_exposure")]
     fn py_get_avg_px_qty_for_exposure(
         &self,
