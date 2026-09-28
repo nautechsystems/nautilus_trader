@@ -8402,6 +8402,116 @@ fn test_update_order_keeps_immediate_order_out_of_existing_own_book(
 }
 
 #[rstest]
+fn test_update_order_adds_emulated_order_to_existing_own_book_on_release(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let emulated = build_order_emulated(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
+    let emulated_ids = cache
+        .own_order_book(&audusd_sim.id())
+        .unwrap()
+        .bid_client_order_ids();
+
+    let released = build_order_released(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Price::from("1.00000"),
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    let own_order = own_book.bids().next().unwrap().orders[&client_order_id];
+    assert!(emulated_ids.is_empty());
+    assert_eq!(order.status(), OrderStatus::Released);
+    assert_eq!(own_book.bid_client_order_ids(), vec![client_order_id]);
+    assert_eq!(own_order.status, OrderStatus::Released);
+    assert_eq!(own_order.price, Price::from("1.00000"));
+    assert_eq!(own_order.size, Quantity::from(100_000));
+}
+
+#[rstest]
+fn test_update_order_adds_quote_quantity_order_to_existing_own_book_after_conversion(
+    mut cache: Cache,
+) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("0.80000"))
+        .quote_quantity(true)
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-QUOTE"),
+    );
+    update_order_with_event(&mut cache, &mut order, accepted);
+    let accepted_ids = cache
+        .own_order_book(&audusd_sim.id())
+        .unwrap()
+        .bid_client_order_ids();
+
+    let converted = build_order_updated(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Quantity::from(125_000),
+        order.venue_order_id(),
+        order.account_id(),
+        order.price(),
+        None,
+        None,
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Updated(converted));
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    let own_order = own_book.bids().next().unwrap().orders[&client_order_id];
+    assert!(accepted_ids.is_empty());
+    assert!(!order.is_quote_quantity());
+    assert_eq!(own_book.bid_client_order_ids(), vec![client_order_id]);
+    assert_eq!(own_order.status, OrderStatus::Accepted);
+    assert_eq!(own_order.price, Price::from("0.80000"));
+    assert_eq!(own_order.size, Quantity::from(125_000));
+}
+
+#[rstest]
 fn test_update_order_applies_fill_with_stale_unowned_venue_id(mut cache: Cache) {
     let audusd_sim = audusd_sim();
     cache

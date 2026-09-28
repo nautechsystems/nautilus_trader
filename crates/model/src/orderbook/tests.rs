@@ -36,7 +36,7 @@ use crate::{
     },
     enums::{
         AggressorSide, BookAction, BookType, OrderSide, OrderStatus, OrderType, RecordFlag,
-        TimeInForce,
+        TimeInForce, TriggerType,
     },
     identifiers::{ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     orderbook::{
@@ -2031,7 +2031,7 @@ fn test_apply_delta_incremental_preserves_metadata_high_water(
 }
 
 struct BookWarnCapture {
-    messages: Mutex<Vec<String>>,
+    records: Mutex<Vec<(Level, String)>>,
 }
 
 impl BookWarnCapture {
@@ -2043,9 +2043,18 @@ impl BookWarnCapture {
     }
 
     fn take_matching(&self, predicate: impl Fn(&str) -> bool) -> Vec<String> {
-        let mut messages = self.messages.lock();
-        let (mine, rest) = messages.drain(..).partition(|message| predicate(message));
-        *messages = rest;
+        self.take_records_matching(predicate)
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    }
+
+    fn take_records_matching(&self, predicate: impl Fn(&str) -> bool) -> Vec<(Level, String)> {
+        let mut records = self.records.lock();
+        let (mine, rest) = records
+            .drain(..)
+            .partition(|(_, message)| predicate(message));
+        *records = rest;
         mine
     }
 }
@@ -2061,7 +2070,9 @@ impl Log for BookWarnCapture {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages.lock().push(record.args().to_string());
+            self.records
+                .lock()
+                .push((record.level(), record.args().to_string()));
         }
     }
 
@@ -2069,7 +2080,7 @@ impl Log for BookWarnCapture {
 }
 
 static BOOK_WARN_CAPTURE: BookWarnCapture = BookWarnCapture {
-    messages: Mutex::new(Vec::new()),
+    records: Mutex::new(Vec::new()),
 };
 static BOOK_WARN_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -5053,25 +5064,42 @@ fn test_book_clear_stale_levels_l1_mbp() {
 }
 
 #[rstest]
-#[case::priced_gtc_limit(OrderType::Limit, TimeInForce::Gtc, Some("100.00"), true)]
-#[case::market_without_price(OrderType::Market, TimeInForce::Gtc, None, false)]
-#[case::priced_ioc_limit(OrderType::Limit, TimeInForce::Ioc, Some("100.00"), false)]
-#[case::priced_fok_limit(OrderType::Limit, TimeInForce::Fok, Some("100.00"), false)]
+#[case::priced_gtc_limit(OrderType::Limit, TimeInForce::Gtc, Some("100.00"), None, false, true)]
+#[case::market_without_price(OrderType::Market, TimeInForce::Gtc, None, None, false, false)]
+#[case::priced_ioc_limit(OrderType::Limit, TimeInForce::Ioc, Some("100.00"), None, false, false)]
+#[case::priced_fok_limit(OrderType::Limit, TimeInForce::Fok, Some("100.00"), None, false, false)]
+#[case::emulated_limit(
+    OrderType::Limit,
+    TimeInForce::Gtc,
+    Some("100.00"),
+    Some(TriggerType::BidAsk),
+    false,
+    false
+)]
+#[case::quote_quantity_limit(OrderType::Limit, TimeInForce::Gtc, Some("100.00"), None, true, false)]
 fn test_should_handle_own_book_order(
     #[case] order_type: OrderType,
     #[case] time_in_force: TimeInForce,
     #[case] price: Option<&str>,
+    #[case] emulation_trigger: Option<TriggerType>,
+    #[case] quote_quantity: bool,
     #[case] expected: bool,
 ) {
     let mut builder = OrderTestBuilder::new(order_type);
     builder
         .instrument_id(InstrumentId::from("AAPL.XNAS"))
         .quantity(Quantity::from(10))
-        .time_in_force(time_in_force);
+        .time_in_force(time_in_force)
+        .quote_quantity(quote_quantity);
 
     if let Some(price) = price {
         builder.price(Price::from(price));
     }
+
+    if let Some(trigger) = emulation_trigger {
+        builder.emulation_trigger(trigger);
+    }
+
     let order = builder.build();
 
     assert_eq!(should_handle_own_book_order(&order), expected);
@@ -5770,8 +5798,11 @@ fn test_own_book_audit_open_orders_logs_removed_order(own_order: OwnBookOrder) {
     book.audit_open_orders(&AHashSet::from([own_order.client_order_id]));
 
     assert_eq!(
-        BOOK_WARN_CAPTURE.take_matching(|message| message.contains("O-AUDIT-STALE")),
-        vec!["Audit error - O-AUDIT-STALE absent from valid order IDs, deleting from own book"]
+        BOOK_WARN_CAPTURE.take_records_matching(|message| message.contains("O-AUDIT-STALE")),
+        vec![(
+            Level::Warn,
+            "Audit removing O-AUDIT-STALE from own book, absent from valid order IDs".to_string()
+        )]
     );
     assert_eq!(book.bid_client_order_ids(), vec![own_order.client_order_id]);
 }
@@ -7903,15 +7934,17 @@ fn own_order_side_strategy() -> impl Strategy<Value = OrderSide> {
     prop::sample::select(vec![OrderSide::Buy, OrderSide::Sell])
 }
 
+const OWN_ORDER_STATUSES: [OrderStatus; 6] = [
+    OrderStatus::Submitted,
+    OrderStatus::Accepted,
+    OrderStatus::Triggered,
+    OrderStatus::PendingUpdate,
+    OrderStatus::PendingCancel,
+    OrderStatus::PartiallyFilled,
+];
+
 fn own_order_status_strategy() -> impl Strategy<Value = OrderStatus> {
-    prop::sample::select(vec![
-        OrderStatus::Submitted,
-        OrderStatus::Accepted,
-        OrderStatus::Triggered,
-        OrderStatus::PendingUpdate,
-        OrderStatus::PendingCancel,
-        OrderStatus::PartiallyFilled,
-    ])
+    prop::sample::select(OWN_ORDER_STATUSES.to_vec())
 }
 
 fn own_book_order_spec_strategy(
@@ -8253,16 +8286,7 @@ fn reference_quantity(
             continue;
         }
 
-        let price = if let Some(group_size) = group_size {
-            if is_bid {
-                (order.price.as_decimal() / group_size).floor() * group_size
-            } else {
-                (order.price.as_decimal() / group_size).ceil() * group_size
-            }
-        } else {
-            order.price.as_decimal()
-        };
-
+        let price = reference_group_price(order.price.as_decimal(), group_size, is_bid);
         *quantities.entry(price).or_insert(Decimal::ZERO) += order.size.as_decimal();
     }
 
@@ -8270,6 +8294,54 @@ fn reference_quantity(
         .into_iter()
         .filter(|(_, quantity)| *quantity > Decimal::ZERO)
         .collect()
+}
+
+// Truncates public buckets to depth before subtracting own size, so views never refill depth
+fn reference_filtered_levels(
+    public_levels: &BTreeMap<u16, u16>,
+    own_quantities: &BTreeMap<Decimal, Decimal>,
+    group_size: Option<Decimal>,
+    depth: Option<usize>,
+    is_bid: bool,
+) -> Vec<(Decimal, Decimal)> {
+    let mut levels = public_levels
+        .iter()
+        .map(|(&price_cents, &size_cents)| {
+            (
+                price_from_cents(price_cents).as_decimal(),
+                quantity_from_cents(size_cents).as_decimal(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if is_bid {
+        levels.reverse();
+    }
+
+    let mut buckets = IndexMap::<Decimal, Decimal>::new();
+
+    for (price, size) in levels {
+        *buckets
+            .entry(reference_group_price(price, group_size, is_bid))
+            .or_insert(Decimal::ZERO) += size;
+    }
+
+    buckets
+        .into_iter()
+        .take(depth.unwrap_or(usize::MAX))
+        .filter_map(|(price, size)| {
+            let net = size - own_quantities.get(&price).copied().unwrap_or(Decimal::ZERO);
+            (net > Decimal::ZERO).then_some((price, net))
+        })
+        .collect()
+}
+
+fn reference_group_price(price: Decimal, group_size: Option<Decimal>, is_bid: bool) -> Decimal {
+    match group_size {
+        Some(group_size) if is_bid => (price / group_size).floor() * group_size,
+        Some(group_size) => (price / group_size).ceil() * group_size,
+        None => price,
+    }
 }
 
 fn reference_price_order_ids(
@@ -8366,6 +8438,93 @@ fn prop_test_own_book_grouped_filtered_quantities_match_reference() {
         }
 
         assert_own_book_quantities_match_reference(&book, &reference);
+    });
+}
+
+#[rstest]
+fn prop_test_order_book_filtered_views_match_reference() {
+    proptest!(|(
+        public_bids in prop::collection::btree_map(1u16..=200, 1u16..=5_000, 0..=24),
+        public_asks in prop::collection::btree_map(1u16..=200, 1u16..=5_000, 0..=24),
+        specs in prop::collection::vec(own_book_order_spec_strategy(1, 200), 0..=48),
+        depth in prop::option::of(1usize..=12),
+        group_size in prop::sample::select(vec![
+            dec!(0.01),
+            dec!(0.05),
+            dec!(0.10),
+            dec!(0.25),
+            dec!(1.00),
+        ]),
+        status in prop::option::of(
+            prop::sample::subsequence(OWN_ORDER_STATUSES.to_vec(), 0..=OWN_ORDER_STATUSES.len())
+                .prop_map(|statuses| statuses.into_iter().collect::<AHashSet<_>>()),
+        ),
+        time_filter in prop_oneof![
+            Just((None, None)),
+            (prop::option::of(0u64..=1_000), 0u64..=3_000)
+                .prop_map(|(buffer_ns, now)| (buffer_ns, Some(now))),
+        ],
+    )| {
+        let instrument_id = InstrumentId::from("TEST.VENUE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        for (side, levels) in [(OrderSide::Buy, &public_bids), (OrderSide::Sell, &public_asks)] {
+            for (&price_cents, &size_cents) in levels {
+                let order = BookOrder::new(
+                    side,
+                    price_from_cents(price_cents),
+                    quantity_from_cents(size_cents),
+                    0,
+                );
+                book.add(order, 0, 0, UnixNanos::default());
+            }
+        }
+
+        let mut own_book = OwnOrderBook::new(instrument_id);
+        let mut reference = OwnBookReference::default();
+
+        for (sequence, spec) in specs.into_iter().enumerate() {
+            add_unique_own_order(&mut own_book, &mut reference, spec.to_order(sequence as u64 + 1));
+        }
+
+        let (buffer_ns, now) = time_filter;
+        let status = status.as_ref();
+        let expected = |public, orders, group_size, is_bid| {
+            let own = reference_quantity(orders, status, group_size, buffer_ns, now, is_bid);
+            reference_filtered_levels(public, &own, group_size, depth, is_bid)
+        };
+        let expected_bids = expected(&public_bids, &reference.bids, None, true);
+        let expected_asks = expected(&public_asks, &reference.asks, None, false);
+        let expected_grouped_bids = expected(&public_bids, &reference.bids, Some(group_size), true);
+        let expected_grouped_asks =
+            expected(&public_asks, &reference.asks, Some(group_size), false);
+
+        let bids = book
+            .bids_filtered_as_map(depth, Some(&own_book), status, buffer_ns, now)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let asks = book
+            .asks_filtered_as_map(depth, Some(&own_book), status, buffer_ns, now)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let grouped_bids = book
+            .group_bids_filtered(group_size, depth, Some(&own_book), status, buffer_ns, now)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let grouped_asks = book
+            .group_asks_filtered(group_size, depth, Some(&own_book), status, buffer_ns, now)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let view = book.filtered_view(Some(&own_book), depth, status, buffer_ns, now);
+        let view_bids = view.bids_as_map(None).into_iter().collect::<Vec<_>>();
+        let view_asks = view.asks_as_map(None).into_iter().collect::<Vec<_>>();
+
+        prop_assert_eq!(&bids, &expected_bids);
+        prop_assert_eq!(&asks, &expected_asks);
+        prop_assert_eq!(&grouped_bids, &expected_grouped_bids);
+        prop_assert_eq!(&grouped_asks, &expected_grouped_asks);
+        prop_assert_eq!(&view_bids, &expected_bids);
+        prop_assert_eq!(&view_asks, &expected_asks);
     });
 }
 

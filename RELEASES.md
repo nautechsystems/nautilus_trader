@@ -191,6 +191,9 @@ Released on TBD (UTC).
 - Fixed `OwnOrderBook` ghost orders after re-adding at a new price or a zero-size price update
 - Fixed `OrderBook` grouped filtered views overstating liquidity when own orders are better priced
 - Fixed own order books appearing with `manage_own_order_books` disabled after a failed order event
+- Fixed `OrderBook` filtered views subtracting emulated orders, which never rest in the public book
+- Fixed own order books holding quote-quantity orders in quote units before conversion to base units
+- Fixed own order book audit removals logging as errors, halting `shutdown_on_error` nodes
 - Fixed `OrderBook.get_avg_px_qty_for_exposure` quantities 100x too large for 18-decimal DeFi sizes
 - Fixed recoverable adapter conditions logging as errors, halting `shutdown_on_error` nodes
 - Fixed adapters logging routine events as warnings and duplicate failures twice
@@ -263,6 +266,7 @@ Released on TBD (UTC).
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
 - Added Binance live book stress harness with fault injection and independent book oracles
+- Added `OrderBook` filtered view property tests against a reference model
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
@@ -275,6 +279,7 @@ Released on TBD (UTC).
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
 - Improved testkit data downloads with atomic checksum manifest writes and stale partial cleanup
 - Improved order book and own order book regression coverage from mutation testing
+- Improved the live test harness own book invariant to detect missing orders and stale entry fields
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
@@ -325,6 +330,7 @@ Released on TBD (UTC).
 
 - Documented the adapter config field layout convention in the developer guide
 - Documented declined fill notification in the execution concepts guide
+- Documented own order book membership for emulated, quote-quantity, and external client orders
 - Documented trader-scoped Postgres cache and the `assign-account` migration (#5070), thanks @utx0
 - Documented shared order book recovery ownership and Lighter recovery limits
 - Documented Lighter active and pending order limits by account tier

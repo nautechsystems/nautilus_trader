@@ -531,14 +531,14 @@ impl OwnOrderBook {
             .collect();
 
         for client_order_id in bids_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.bids.remove(&client_order_id) {
                 log::error!("{e}");
             }
         }
 
         for client_order_id in asks_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.asks.remove(&client_order_id) {
                 log::error!("{e}");
             }
@@ -546,10 +546,8 @@ impl OwnOrderBook {
     }
 }
 
-fn log_audit_error(client_order_id: &ClientOrderId) {
-    log::error!(
-        "Audit error - {client_order_id} absent from valid order IDs, deleting from own book"
-    );
+fn log_audit_removal(client_order_id: &ClientOrderId) {
+    log::warn!("Audit removing {client_order_id} from own book, absent from valid order IDs");
 }
 
 fn transform_opposite_order(order: OwnBookOrder, side: OrderSide) -> OwnBookOrder {
@@ -1019,7 +1017,15 @@ impl Ord for OwnBookLevel {
     }
 }
 
+/// Returns whether an order belongs in an own order book.
+///
+/// An eligible order has a price, does not use `IOC` or `FOK` time in force, is not held by the
+/// order emulator, and has a base-denominated quantity. Emulated orders never rest in the public
+/// book, and a quote-quantity order becomes eligible once an update converts it to base units.
 #[must_use]
 pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
-    order.has_price() && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+    order.has_price()
+        && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+        && order.emulation_trigger().is_none()
+        && !order.is_quote_quantity()
 }

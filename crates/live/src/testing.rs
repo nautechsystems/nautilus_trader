@@ -507,10 +507,12 @@ impl RoutedKind {
 
 /// Cross-layer invariants for live execution tests.
 pub mod invariants {
+    use ahash::AHashSet;
     use nautilus_common::cache::Cache;
     use nautilus_model::{
         enums::OrderStatus,
         identifiers::{ClientOrderId, InstrumentId},
+        orderbook::own::should_handle_own_book_order,
         orders::Order,
     };
     use rust_decimal::Decimal;
@@ -543,18 +545,46 @@ pub mod invariants {
         );
     }
 
-    /// Asserts that every order retained in an own order book remains open in the cache.
+    /// Asserts that an instrument's own order book contains its eligible nonterminal cached orders.
+    ///
+    /// Every own-book entry must match its nonterminal cached order's projection field by field,
+    /// and every nonterminal cached order that `should_handle_own_book_order` accepts must be
+    /// present. Requires own-book management and a settled state: call it once queued commands
+    /// and events are processed, and not while an order awaits submission, such as a contingent
+    /// order held for its parent or an external-client order before its first event.
     pub fn assert_own_book_consistent(cache: &Cache, instrument_id: &InstrumentId) {
-        let Some(book) = cache.own_order_book(instrument_id) else {
-            return;
-        };
+        let mut tracked_ids = AHashSet::new();
 
-        let mut order_ids = book.bid_client_order_ids();
-        order_ids.extend(book.ask_client_order_ids());
+        if let Some(book) = cache.own_order_book(instrument_id) {
+            let entries = book
+                .bids()
+                .chain(book.asks())
+                .flat_map(|level| level.orders.values());
 
-        for id in order_ids {
-            let open = cache.order(&id).is_some_and(|order| !order.is_closed());
-            assert!(open, "own order book retains closed or missing order {id}");
+            for entry in entries {
+                let id = entry.client_order_id;
+
+                let Some(order) = cache.order(&id).filter(|order| !order.is_closed()) else {
+                    panic!("own order book retains closed or missing order {id}");
+                };
+
+                // `OwnBookOrder` equality compares only the client order ID
+                assert_eq!(
+                    format!("{entry:?}"),
+                    format!("{:?}", order.to_own_book_order()),
+                    "own order book entry for {id} diverges from the cached order",
+                );
+                tracked_ids.insert(id);
+            }
+        }
+
+        for order in cache.orders(None, Some(instrument_id), None, None, None) {
+            let id = order.client_order_id();
+            let eligible = !order.is_closed() && should_handle_own_book_order(&order);
+            assert!(
+                !eligible || tracked_ids.contains(&id),
+                "own order book is missing open order {id}",
+            );
         }
     }
 
@@ -587,17 +617,29 @@ pub mod invariants {
 
 #[cfg(test)]
 mod tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use nautilus_common::cache::Cache;
     use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
-        enums::{OmsType, OrderType},
-        identifiers::{AccountId, ClientId, TraderId},
+        enums::{OmsType, OrderSide, OrderStatus, OrderType},
+        identifiers::{AccountId, ClientId, ClientOrderId, TraderId, VenueOrderId},
         instruments::{Instrument, stubs::audusd_sim},
-        orders::OrderTestBuilder,
-        types::Quantity,
+        orderbook::own::OwnOrderBook,
+        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 
-    use super::ExecutionHarness;
+    use super::{ExecutionHarness, invariants};
+
+    #[derive(Clone, Copy, Debug)]
+    enum OwnBookFault {
+        Missing,
+        StaleSize,
+        Closed,
+        Unknown,
+    }
 
     #[rstest]
     #[case::occupied_route(false, "Venue SIM already routed to A, cannot re-route to B")]
@@ -654,5 +696,124 @@ mod tests {
         assert_eq!(routed[0].client_id(), client_id);
         assert_eq!(routed[0].account_id(), account_id);
         assert_eq!(routed[0].oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    #[case::consistent(None, None)]
+    #[case::missing(
+        Some(OwnBookFault::Missing),
+        Some("own order book is missing open order O-001")
+    )]
+    #[case::stale_size(
+        Some(OwnBookFault::StaleSize),
+        Some("own order book entry for O-001 diverges from the cached order")
+    )]
+    #[case::closed(
+        Some(OwnBookFault::Closed),
+        Some("own order book retains closed or missing order O-001")
+    )]
+    #[case::unknown(
+        Some(OwnBookFault::Unknown),
+        Some("own order book retains closed or missing order O-UNKNOWN")
+    )]
+    fn test_assert_own_book_consistent_detects_divergence(
+        #[case] fault: Option<OwnBookFault>,
+        #[case] expected: Option<&str>,
+    ) {
+        let (mut cache, order) = cache_with_accepted_order(false);
+        let instrument_id = order.instrument_id();
+        let entry = order.to_own_book_order();
+
+        match fault {
+            None => {}
+            Some(OwnBookFault::Missing) => {
+                let own_book = cache.own_order_book_mut(&instrument_id).unwrap();
+                own_book.delete(entry).unwrap();
+            }
+            Some(OwnBookFault::StaleSize) => {
+                let mut stale = entry;
+                stale.size = Quantity::from(50_000);
+                let own_book = cache.own_order_book_mut(&instrument_id).unwrap();
+                own_book.update(stale).unwrap();
+            }
+            Some(OwnBookFault::Closed) => {
+                let account_id = order.account_id().unwrap();
+                let canceled = TestOrderEventStubs::canceled(&order, account_id, None);
+                cache.update_order(&canceled).unwrap();
+                let own_book = cache.own_order_book_mut(&instrument_id).unwrap();
+                own_book.add(entry);
+            }
+            Some(OwnBookFault::Unknown) => {
+                let mut unknown = entry;
+                unknown.client_order_id = ClientOrderId::from("O-UNKNOWN");
+                let own_book = cache.own_order_book_mut(&instrument_id).unwrap();
+                own_book.add(unknown);
+            }
+        }
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            invariants::assert_own_book_consistent(&cache, &instrument_id);
+        }));
+
+        let message = result.err().map(|payload| {
+            payload
+                .downcast_ref::<String>()
+                .cloned()
+                .unwrap_or_default()
+        });
+
+        match expected {
+            None => assert!(message.is_none(), "unexpected panic: {message:?}"),
+            Some(expected) => assert!(
+                message.as_deref().is_some_and(|m| m.contains(expected)),
+                "panic message {message:?} lacks {expected:?}",
+            ),
+        }
+    }
+
+    #[rstest]
+    fn test_assert_own_book_consistent_ignores_ineligible_open_order() {
+        let (cache, order) = cache_with_accepted_order(true);
+        let instrument_id = order.instrument_id();
+        let own_book = cache.own_order_book(&instrument_id).unwrap();
+        let in_own_book = own_book.is_order_in_book(&order.client_order_id());
+
+        invariants::assert_own_book_consistent(&cache, &instrument_id);
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert!(!in_own_book);
+    }
+
+    fn cache_with_accepted_order(quote_quantity: bool) -> (Cache, OrderAny) {
+        let instrument = audusd_sim();
+        let instrument_id = instrument.id();
+        let account_id = AccountId::from("SIM-001");
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.into()).unwrap();
+        cache
+            .add_own_order_book(OwnOrderBook::new(instrument_id))
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-001"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .quote_quantity(quote_quantity)
+            .build();
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        let order = cache
+            .update_order(&TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        let order = cache
+            .update_order(&TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from("V-001"),
+            ))
+            .unwrap();
+
+        (cache, order)
     }
 }

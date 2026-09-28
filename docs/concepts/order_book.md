@@ -185,18 +185,20 @@ making and other quoting strategies use it to estimate available liquidity at ea
 level after subtracting their own orders.
 
 Execution engines maintain own books when `manage_own_order_books` is enabled. The cache
-updates an existing own book as order events change state. Eligible orders have a price and
-do not use `IOC` or `FOK` time in force. Terminal events may still clean up an existing own
-book entry, even when the order would not otherwise be eligible for tracking.
+updates an existing own book as order events change state. Eligible orders have a price, do not
+use `IOC` or `FOK` time in force, and are not held by the order emulator. Emulated orders never rest
+in the public book, so they join only when released. Quote-quantity orders join once an update
+converts their quantity to base units. Terminal events may still clean up an existing own book
+entry, even when the order would not otherwise be eligible for tracking.
 
 ### Order lifecycle
 
 The `OwnOrderBook` tracks orders through their lifecycle. Orders are added during submission or
-materialized from reconciliation. Nonterminal states such as `OrderStatus::Accepted`,
-`OrderStatus::PendingUpdate`, `OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled`
-update the entry. The closed states `OrderStatus::Denied`, `OrderStatus::Rejected`,
-`OrderStatus::Canceled`, `OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided`
-remove it.
+materialized from reconciliation. Orders sent to an external execution client join on their first
+order event. Nonterminal states such as `OrderStatus::Accepted`, `OrderStatus::PendingUpdate`,
+`OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled` update the entry. The closed
+states `OrderStatus::Denied`, `OrderStatus::Rejected`, `OrderStatus::Canceled`,
+`OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided` remove it.
 
 Each `OwnBookOrder` carries:
 
@@ -217,7 +219,7 @@ The `status` and `ts_accepted` fields drive the optional filters described in
 ### Auditing
 
 The `audit_open_orders` method reconciles an own book against a set of valid client order
-IDs. Any own-book order not in the provided set is removed and logged as an audit error.
+IDs. Any own-book order not in the provided set is removed with a warning.
 `Cache::audit_own_order_books` builds this set from open, in-flight, and active-local orders so
 non-terminal entries remain during normal event-processing and venue-latency windows. Live systems
 can run this audit periodically through the own-books audit interval.

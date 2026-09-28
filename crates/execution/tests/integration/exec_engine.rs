@@ -12333,9 +12333,13 @@ fn test_submit_market_should_not_add_to_own_book() {
 }
 
 #[rstest]
-#[case(TimeInForce::Fok)]
-#[case(TimeInForce::Ioc)]
-fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInForce) {
+#[case::fok(TimeInForce::Fok, false)]
+#[case::ioc(TimeInForce::Ioc, false)]
+#[case::quote_quantity(TimeInForce::Gtc, true)]
+fn test_submit_ineligible_order_should_not_add_to_own_book(
+    #[case] time_in_force: TimeInForce,
+    #[case] quote_quantity: bool,
+) {
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
@@ -12379,6 +12383,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         .quantity(Quantity::from(100_000))
         .price(Price::from_str("10.0").unwrap())
         .time_in_force(time_in_force)
+        .quote_quantity(quote_quantity)
         .build();
 
     execution_engine
@@ -12409,7 +12414,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
 
     assert!(
         own_order_book.is_none(),
-        "Orders with {time_in_force} time in force should not be added to own order book even when order book management is enabled"
+        "Order with {time_in_force} time in force and quote_quantity={quote_quantity} should not be added to own order book"
     );
 }
 
