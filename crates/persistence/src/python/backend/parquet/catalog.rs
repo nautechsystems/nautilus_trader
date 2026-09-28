@@ -1474,6 +1474,12 @@ impl PyParquetDataCatalog {
             NautilusDataType::Defi => {
                 return Err(to_pytype_err("Defi data is not supported by query"));
             }
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            _ => return Err(to_pytype_err("Defi data is not supported by query")),
         };
 
         let mut python_objects = Vec::new();

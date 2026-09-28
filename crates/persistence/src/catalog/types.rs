@@ -348,6 +348,9 @@ macro_rules! data_path_prefix_match {
             NautilusDataType::Custom { type_name } => Cow::Owned(format!("custom/{type_name}")),
             #[cfg(feature = "defi")]
             NautilusDataType::Defi => Cow::Borrowed("defi"),
+            #[cfg(not(feature = "defi"))]
+            #[allow(unreachable_patterns, reason = "DeFi variants can exist without this crate's defi feature")]
+            _ => Cow::Borrowed("defi"),
         }
     };
 }
@@ -490,6 +493,12 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
         NautilusRecordType::ExecutionMassStatus => Cow::Borrowed("execution_mass_status"),
         #[cfg(feature = "defi")]
         NautilusRecordType::Defi => Cow::Borrowed("defi"),
+        #[cfg(not(feature = "defi"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "DeFi variants can exist without this crate's defi feature"
+        )]
+        _ => Cow::Borrowed("defi"),
     }
 }
 

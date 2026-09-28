@@ -101,6 +101,9 @@ pub(crate) fn data_to_arrow_batches(
                 NautilusDataType::Defi => {
                     anyhow::bail!("Catalog Arrow queries do not support DeFi data")
                 }
+                #[cfg(not(feature = "defi"))]
+                #[allow(unreachable_patterns, reason = "DeFi variants can exist without this crate's defi feature")]
+                _ => anyhow::bail!("Catalog Arrow queries do not support DeFi data"),
             }
         };
     }
@@ -306,6 +309,12 @@ pub(crate) fn catalog_record_schema(record_type: NautilusRecordType) -> anyhow::
         NautilusRecordType::Defi => {
             anyhow::bail!("Catalog Arrow queries do not support DeFi records")
         }
+        #[cfg(not(feature = "defi"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "DeFi variants can exist without this crate's defi feature"
+        )]
+        _ => anyhow::bail!("Catalog Arrow queries do not support DeFi records"),
     })
 }
 

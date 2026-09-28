@@ -56,6 +56,13 @@ impl From<&Data> for DataKind {
             Data::Custom(_) => Self::Custom,
             #[cfg(feature = "defi")]
             Data::Defi(_) => Self::Defi,
+            // Compatibility storage keeps the original `Data` values
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            _ => Self::Custom,
         }
     }
 }
@@ -142,24 +149,7 @@ impl ReplayBatch {
     }
 
     pub(super) fn get_owned(&self, index: usize) -> Option<Data> {
-        match self.get(index)? {
-            DataRef::Instrument(data) => Some(Data::Instrument(Box::new(data.clone()))),
-            DataRef::BookDelta(data) => Some(Data::BookDelta(*data)),
-            DataRef::BookDeltas(data) => Some(Data::BookDeltas(Box::new(data.clone()))),
-            DataRef::BookDepth(data) => Some(Data::BookDepth(Box::new(data.clone()))),
-            DataRef::Quote(data) => Some(Data::Quote(*data)),
-            DataRef::Trade(data) => Some(Data::Trade(*data)),
-            DataRef::Bar(data) => Some(Data::Bar(*data)),
-            DataRef::MarkPrice(data) => Some(Data::MarkPrice(*data)),
-            DataRef::IndexPrice(data) => Some(Data::IndexPrice(*data)),
-            DataRef::FundingRate(data) => Some(Data::FundingRate(*data)),
-            DataRef::OptionGreeks(data) => Some(Data::OptionGreeks(*data)),
-            DataRef::InstrumentStatus(data) => Some(Data::InstrumentStatus(*data)),
-            DataRef::InstrumentClose(data) => Some(Data::InstrumentClose(*data)),
-            DataRef::Custom(data) => Some(Data::Custom(data.clone())),
-            #[cfg(feature = "defi")]
-            DataRef::Defi(data) => Some(Data::Defi(Box::new(data.clone()))),
-        }
+        self.get(index).map(|data| data.to_owned_data())
     }
 }
 

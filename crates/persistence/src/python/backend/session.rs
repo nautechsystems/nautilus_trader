@@ -213,6 +213,14 @@ impl DataBackendSession {
             NautilusDataType::Defi => Err(to_pyvalue_err(format!(
                 "DataBackendSession does not support data type {data_type}"
             ))),
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            _ => Err(to_pyvalue_err(format!(
+                "DataBackendSession does not support data type {data_type}"
+            ))),
         }
     }
 }

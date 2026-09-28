@@ -225,7 +225,8 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel p
 	check-code-sim check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	clippy-strict-audit \
-	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
+	docs docs-rust docsrs-check cargo-build cargo-check check-features check-features-defi \
+	hawk cargo-test \
 	cargo-test-extras cargo-test-postgres-ci cargo-test-doc cargo-test-core-local cargo-test-core-selected \
 	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
 	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
@@ -792,8 +793,15 @@ check-hawk-installed:  #-- Verify the pinned cargo-hawk version is installed
 	fi
 
 .PHONY: check-features
-check-features: check-cargo-cooldown check-hack-installed  #-- Verify crate feature combinations compile correctly
+check-features: check-cargo-cooldown check-hack-installed check-features-defi  #-- Verify crate feature combinations compile correctly
 	cargo hack --workspace check --locked --each-feature --all-targets
+
+# Dependents such as nautilus-blockchain enable DeFi in model and common without enabling the
+# defi feature of the crates that match on their DeFi variants.
+.PHONY: check-features-defi
+check-features-defi: check-cargo-cooldown  #-- Verify DeFi match arms compile when only model and common enable defi
+	cargo check --locked -p nautilus-backtest -p nautilus-live --all-targets \
+		--features python,streaming,nautilus-model/defi,nautilus-common/defi
 
 .PHONY: check-cbindgen-abi
 check-cbindgen-abi:  #-- Verify generated C headers preserve the public ABI names

@@ -1898,6 +1898,12 @@ impl DataEngine {
             DataRef::Custom(custom) => self.handle_custom_data(custom),
             #[cfg(feature = "defi")]
             DataRef::Defi(_) => unreachable!("handled before market data dispatch"),
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            other => log_defi_data_dropped(other),
         }
     }
 
@@ -1962,6 +1968,12 @@ impl DataEngine {
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            other => log_defi_data_dropped(DataRef::from(&other)),
         }
     }
 
@@ -5722,6 +5734,11 @@ fn parse_spread_leg_parts(
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
+}
+
+#[cfg(not(feature = "defi"))]
+fn log_defi_data_dropped(data: DataRef<'_>) {
+    log::error!("Cannot process data {data:?}, nautilus-data built without its `defi` feature");
 }
 
 #[derive(Debug)]

@@ -285,6 +285,9 @@ pub fn decode_batch_to_data(
                 NautilusDataType::Defi => {
                     anyhow::bail!("DeFi batches require DeFi-specific decoding")
                 }
+                #[cfg(not(feature = "defi"))]
+                #[allow(unreachable_patterns, reason = "DeFi variants can exist without this crate's defi feature")]
+                _ => anyhow::bail!("DeFi batches require DeFi-specific decoding"),
             }
         };
     }

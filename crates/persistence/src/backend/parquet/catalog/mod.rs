@@ -559,7 +559,13 @@ impl CatalogReader for ParquetDataCatalog {
                 where_clause,
                 optimize_file_loading,
             )
-            .expect("built-in data type dispatch is exhaustive"),
+            .unwrap_or_else(|| {
+                Err(anyhow::Error::from(
+                    crate::errors::PersistenceError::unsupported(format!(
+                        "Parquet catalog {data_type} data"
+                    )),
+                ))
+            }),
         }
     }
 

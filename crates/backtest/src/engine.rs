@@ -410,6 +410,7 @@ impl BacktestEngine {
     ///
     /// Returns an error if:
     /// - `data` is empty.
+    /// - `data` contains DeFi data and this crate is built without its `defi` feature.
     /// - `validate` is `true`, the first element is built-in market data (excluding
     ///   custom and DeFi data), and its instrument has not been added to the cache via
     ///   [`add_instrument`](Self::add_instrument).
@@ -474,15 +475,16 @@ impl BacktestEngine {
             anyhow::bail!("data was empty");
         };
 
+        #[cfg(not(feature = "defi"))]
+        anyhow::ensure!(
+            !items.clone().any(is_defi),
+            "DeFi data requires the nautilus-backtest `defi` feature"
+        );
+
         if validate {
             // Validate against the first element only and assume the batch is
             // homogeneous (documented contract on add_data).
-            #[cfg(feature = "defi")]
-            let first_is_defi = matches!(first, DataRef::Defi(_));
-            #[cfg(not(feature = "defi"))]
-            let first_is_defi = false;
-
-            if !first_is_defi && !matches!(first, DataRef::Custom(_)) {
+            if !is_defi(first) && !matches!(first, DataRef::Custom(_)) {
                 let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
                     self.kernel
@@ -514,7 +516,7 @@ impl BacktestEngine {
         let mut batch_max_ts: Option<UnixNanos> = None;
 
         #[cfg(feature = "defi")]
-        if items.clone().any(|item| matches!(item, DataRef::Defi(_))) {
+        if items.clone().any(is_defi) {
             self.add_defi_data_client_if_not_exists(client_id);
         }
 
@@ -524,8 +526,7 @@ impl BacktestEngine {
             batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
             batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
 
-            #[cfg(feature = "defi")]
-            if matches!(item, DataRef::Defi(_)) {
+            if is_defi(item) {
                 continue;
             }
 
@@ -987,6 +988,12 @@ impl BacktestEngine {
             DataRef::Instrument(_) | DataRef::Custom(_) => SettlementScope::Data(None),
             #[cfg(feature = "defi")]
             DataRef::Defi(_) => SettlementScope::Data(None),
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            _ => SettlementScope::Data(None),
         }
     }
 
@@ -1576,8 +1583,8 @@ impl BacktestEngine {
         ) {
             return Ok(());
         }
-        #[cfg(feature = "defi")]
-        if matches!(data, DataRef::Defi(_)) {
+
+        if is_defi(data) {
             return Ok(());
         }
 
@@ -1622,6 +1629,12 @@ impl BacktestEngine {
                 }
                 #[cfg(feature = "defi")]
                 DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
+                #[cfg(not(feature = "defi"))]
+                #[allow(
+                    unreachable_patterns,
+                    reason = "DeFi variants can exist without this crate's defi feature"
+                )]
+                _ => unreachable!("filtered before exchange routing"),
             }
 
             drop(exchange_ref);
@@ -2408,6 +2421,33 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
         log::info!("{line}");
     }
     log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+}
+
+fn is_defi(data: DataRef<'_>) -> bool {
+    match data {
+        DataRef::Instrument(_)
+        | DataRef::BookDelta(_)
+        | DataRef::BookDeltas(_)
+        | DataRef::BookDepth(_)
+        | DataRef::Quote(_)
+        | DataRef::Trade(_)
+        | DataRef::Bar(_)
+        | DataRef::MarkPrice(_)
+        | DataRef::IndexPrice(_)
+        | DataRef::FundingRate(_)
+        | DataRef::OptionGreeks(_)
+        | DataRef::InstrumentStatus(_)
+        | DataRef::InstrumentClose(_)
+        | DataRef::Custom(_) => false,
+        #[cfg(feature = "defi")]
+        DataRef::Defi(_) => true,
+        #[cfg(not(feature = "defi"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "DeFi variants can exist without this crate's defi feature"
+        )]
+        _ => true,
+    }
 }
 
 #[cfg(test)]

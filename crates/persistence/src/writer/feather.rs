@@ -1308,6 +1308,12 @@ impl FeatherWriter {
             }
             #[cfg(feature = "defi")]
             Data::Defi(_) => Err("Unsupported DeFi data variant for feather writes".into()),
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            _ => Err("Unsupported DeFi data variant for feather writes".into()),
         }
     }
 

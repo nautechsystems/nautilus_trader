@@ -539,6 +539,14 @@ impl AsyncRunner {
             DataEvent::DeFi(data) => {
                 msgbus::send_defi_data(MessagingSwitchboard::data_engine_process_defi_data(), data);
             }
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            other => log::error!(
+                "Cannot handle {other} data event, nautilus-live built without its `defi` feature"
+            ),
         }
     }
 

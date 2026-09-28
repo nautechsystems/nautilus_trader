@@ -264,6 +264,12 @@ impl ParquetDataCatalog {
             other @ NautilusDataType::Defi => {
                 anyhow::bail!("Unsupported data type: {other}")
             }
+            #[cfg(not(feature = "defi"))]
+            #[allow(
+                unreachable_patterns,
+                reason = "DeFi variants can exist without this crate's defi feature"
+            )]
+            other => anyhow::bail!("Unsupported data type: {other}"),
         }
     }
 
