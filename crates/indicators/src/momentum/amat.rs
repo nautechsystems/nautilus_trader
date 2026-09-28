@@ -308,7 +308,7 @@ mod tests {
         let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
 
         for value in 0..60 {
-            ind.update_raw(value as f64);
+            ind.update_raw(f64::from(value));
         }
 
         assert!(ind.initialized());
@@ -316,7 +316,7 @@ mod tests {
         assert!(!ind.short_run);
 
         for value in (20..60).rev() {
-            ind.update_raw(value as f64);
+            ind.update_raw(f64::from(value));
         }
 
         assert!(!ind.long_run);
@@ -328,7 +328,7 @@ mod tests {
         let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
 
         for value in (0..60).rev() {
-            ind.update_raw(value as f64);
+            ind.update_raw(f64::from(value));
         }
 
         assert!(ind.initialized());
@@ -336,7 +336,7 @@ mod tests {
         assert!(!ind.long_run);
 
         for value in 20..60 {
-            ind.update_raw(value as f64);
+            ind.update_raw(f64::from(value));
         }
 
         assert!(ind.long_run);
