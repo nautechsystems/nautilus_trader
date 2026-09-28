@@ -180,10 +180,16 @@ impl ArcherMovingAveragesTrends {
                 .fast_ma_price
                 .front()
                 .expect("buffer has at least one element");
+            let slow_back = self.slow_ma.value();
+            let slow_front = *self
+                .slow_ma_price
+                .front()
+                .expect("buffer has at least one element");
 
             let fast_diff = fast_back - fast_front;
-            self.long_run = fast_diff > 0.0 || self.long_run;
-            self.short_run = fast_diff < 0.0 || self.short_run;
+            let slow_diff = slow_back - slow_front;
+            self.long_run = (fast_diff > 0.0 && slow_diff > 0.0) || self.long_run;
+            self.short_run = (fast_diff < 0.0 && slow_diff < 0.0) || self.short_run;
         }
 
         if !self.initialized {
