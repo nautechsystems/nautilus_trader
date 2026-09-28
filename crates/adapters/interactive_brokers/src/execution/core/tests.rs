@@ -2394,6 +2394,42 @@ fn submit_order_denies_when_client_not_ready() {
 }
 
 #[rstest]
+fn deny_unpreparable_order_emits_order_invalid_denial() {
+    let order = create_test_limit_order(ClientOrderId::from("O-IB-UNPREPARABLE"));
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TRADER-001"),
+        Some(*IB_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let error = anyhow::anyhow!("No contract found for AAPL.SMART");
+
+    let result = InteractiveBrokersExecutionClient::deny_unpreparable_order(
+        &cmd,
+        &error,
+        &exec_sender.into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    let expected = "ORDER_INVALID: No contract found for AAPL.SMART";
+    assert_eq!(result.unwrap_err().to_string(), expected);
+
+    match next_order_event(&mut exec_receiver) {
+        OrderEventAny::Denied(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.instrument_id, order.instrument_id());
+            assert_eq!(event.reason, expected);
+        }
+        event => panic!("Expected OrderDenied, was {event:?}"),
+    }
+
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[rstest]
 fn submit_order_list_denies_all_orders_when_reduce_only_is_present() {
     let (client, mut rx, cache) = create_test_execution_client();
     let reduce_only = OrderTestBuilder::new(OrderType::Limit)
