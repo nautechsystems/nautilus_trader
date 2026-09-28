@@ -43,13 +43,11 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!(reason);
         }
 
-        let is_inverse = instrument_provider
-            .find(&cmd.instrument_id)
-            .is_some_and(|instrument| instrument.is_inverse());
-
-        if cmd.order_init.quote_quantity && !is_inverse {
+        if cmd.order_init.quote_quantity
+            && !Self::accepts_quote_quantity(instrument_provider, &cmd.instrument_id)
+        {
             let ts_event = clock.get_time_ns();
-            let detail = "Quote quantity requires an inverse instrument";
+            let detail = "Quote quantity requires an inverse instrument or an IB crypto contract";
             let reason = coded_denial_reason(DENIAL_QUOTE_QUANTITY_UNSUPPORTED, detail);
             Self::send_order_denied_to(
                 cmd.order_init.trader_id,
@@ -728,6 +726,20 @@ impl InteractiveBrokersExecutionClient {
         }
 
         Ok(())
+    }
+
+    /// Returns whether IB accepts a quote quantity (`cashQty`) for the instrument.
+    ///
+    /// IB supports a cash quantity on inverse instruments and on `CRYPTO` contracts, where a
+    /// MARKET BUY must be sized in quote currency.
+    pub(super) fn accepts_quote_quantity(
+        instrument_provider: &InteractiveBrokersInstrumentProvider,
+        instrument_id: &InstrumentId,
+    ) -> bool {
+        instrument_provider
+            .find(instrument_id)
+            .is_some_and(|instrument| instrument.is_inverse())
+            || instrument_provider.is_crypto_instrument(instrument_id)
     }
 
     /// Denies a single order the client cannot resolve or transform for IB.

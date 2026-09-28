@@ -388,9 +388,12 @@ The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in fo
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
 
-The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-trailing orders support price offsets and basis-point offsets, which IB receives as a trailing
-percent. These checks emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments and IB
+crypto contracts (PAXOS, ZEROHASH), and only on BUY `MARKET` orders, which IB sizes by `cashQty`
+(IB rejects a cash quantity on any other order type with error 10244). Trailing orders support
+price offsets and basis-point offsets, which IB receives as a trailing percent. These checks, and
+any order the adapter cannot resolve or transform for IB, emit coded `OrderDenied` reasons before
+the adapter sends an order to IB.
 
 ### Commands and order attributes
 
