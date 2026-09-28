@@ -875,9 +875,10 @@ impl OrderBook {
         let mut public_map = group_levels(self.bids(None), group_size, depth, true);
 
         if let Some(own_book) = own_book {
+            // Leave own buckets untruncated so better-priced ones cannot evict those within depth
             filter_quantities(
                 &mut public_map,
-                own_book.bid_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
+                own_book.bid_quantity(status, None, Some(group_size), accepted_buffer_ns, now),
             );
         }
 
@@ -907,9 +908,10 @@ impl OrderBook {
         let mut public_map = group_levels(self.asks(None), group_size, depth, false);
 
         if let Some(own_book) = own_book {
+            // Leave own buckets untruncated so better-priced ones cannot evict those within depth
             filter_quantities(
                 &mut public_map,
-                own_book.ask_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
+                own_book.ask_quantity(status, None, Some(group_size), accepted_buffer_ns, now),
             );
         }
 

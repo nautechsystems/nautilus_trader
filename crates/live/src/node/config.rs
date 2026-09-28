@@ -507,7 +507,8 @@ pub struct LiveExecutionEngineConfig {
     /// If purge operations should also delete from the backing database.
     #[builder(default)]
     pub purge_from_database: bool,
-    /// The interval (seconds) between auditing own books against public order books.
+    /// The interval (seconds) between audits that remove own-book orders the cache no longer
+    /// holds as active.
     pub own_books_audit_interval_secs: Option<f64>,
     /// The queue size for the engine's internal queue buffers.
     #[builder(default = 100_000)]

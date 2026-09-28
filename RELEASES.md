@@ -185,6 +185,8 @@ Released on TBD (UTC).
 - Fixed file logs lagging until the write buffer filled; lines now flush within about 100 ms
 - Fixed `nautilus` CLI dropping buffered log lines at exit
 - Fixed `OwnOrderBook` ghost orders after re-adding at a new price or a zero-size price update
+- Fixed `OrderBook` grouped filtered views overstating liquidity when own orders are better priced
+- Fixed own order books appearing with `manage_own_order_books` disabled after a failed order event
 - Fixed `OrderBook.get_avg_px_qty_for_exposure` quantities 100x too large for 18-decimal DeFi sizes
 - Fixed recoverable adapter conditions logging as errors, halting `shutdown_on_error` nodes
 - Fixed adapters logging routine events as warnings and duplicate failures twice
@@ -327,6 +329,7 @@ Released on TBD (UTC).
 - Documented legacy custom data layout discovery and migration
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
+- Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only

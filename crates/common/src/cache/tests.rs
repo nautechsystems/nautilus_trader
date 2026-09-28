@@ -8341,7 +8341,14 @@ fn test_update_order_removes_closed_ioc_from_existing_own_book(mut cache: Cache)
     update_order_with_event(&mut cache, &mut live_order, accepted);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
-    assert!(own_book.bids().count() > 0);
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![live_order.client_order_id()]
+    );
+    assert_eq!(
+        own_book.bid_quantity(None, None, None, None, None),
+        IndexMap::from([(dec!(1.00000), dec!(100_000))])
+    );
 
     let canceled = TestOrderEventStubs::canceled(
         &live_order,
@@ -8351,7 +8358,47 @@ fn test_update_order_removes_closed_ioc_from_existing_own_book(mut cache: Cache)
     update_order_with_event(&mut cache, &mut live_order, canceled);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bid_client_order_ids().is_empty());
     assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+#[case::ioc(TimeInForce::Ioc)]
+#[case::fok(TimeInForce::Fok)]
+fn test_update_order_keeps_immediate_order_out_of_existing_own_book(
+    mut cache: Cache,
+    #[case] time_in_force: TimeInForce,
+) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .time_in_force(time_in_force)
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-IMMEDIATE"),
+    );
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert!(own_book.bid_client_order_ids().is_empty());
+    assert_eq!(own_book.update_count, 0);
 }
 
 #[rstest]
@@ -8757,7 +8804,22 @@ fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
     cache.update_own_order_book(&live_order);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
-    assert!(own_book.bids().count() > 0);
+    let bids = own_book.bids_as_map(None, None, None);
+    let reinserted = &bids[&dec!(1.00000)];
+    assert_eq!(bids.len(), 1);
+    assert_eq!(reinserted.len(), 1);
+    assert_eq!(reinserted[0].client_order_id, live_order.client_order_id());
+    assert_eq!(
+        reinserted[0].venue_order_id,
+        Some(VenueOrderId::new("V-REINSERT"))
+    );
+    assert_eq!(reinserted[0].price, Price::from("1.00000"));
+    assert_eq!(reinserted[0].size, Quantity::from(100_000));
+    assert_eq!(reinserted[0].status, OrderStatus::Accepted);
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![live_order.client_order_id()]
+    );
 }
 
 #[rstest]

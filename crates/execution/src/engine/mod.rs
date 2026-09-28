@@ -3880,6 +3880,7 @@ impl ExecutionEngine {
 
                 log::error!("Error applying event: {e}, did not apply {event}");
 
+                // Failed updates leave the order unchanged, so only terminal events need cleanup
                 if matches!(
                     event,
                     OrderEventAny::Denied(_)
@@ -3893,26 +3894,8 @@ impl ExecutionEngine {
                     self.cache
                         .borrow_mut()
                         .force_remove_from_own_order_book(&client_order_id);
-                } else {
-                    let order = self
-                        .cache
-                        .borrow()
-                        .order(&client_order_id)
-                        .map(|o| o.clone());
-
-                    if let Some(order) = order {
-                        let should_update_own_book = {
-                            let cache = self.cache.borrow();
-                            let own_book = cache.own_order_book(&order.instrument_id());
-                            (own_book.is_some() && order.is_closed())
-                                || should_handle_own_book_order(&order)
-                        };
-
-                        if should_update_own_book {
-                            self.cache.borrow_mut().update_own_order_book(&order);
-                        }
-                    }
                 }
+
                 return None;
             }
         };
@@ -4954,10 +4937,15 @@ impl ExecutionEngine {
         let mut cache = self.cache.borrow_mut();
         if cache.own_order_book_mut(instrument_id).is_none() {
             let own_book = OwnOrderBook::new(*instrument_id);
-            cache.add_own_order_book(own_book).unwrap();
+            cache
+                .add_own_order_book(own_book)
+                .expect("adding an own order book cannot fail");
         }
 
-        RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
+        RefMut::map(cache, |c| {
+            c.own_order_book_mut(instrument_id)
+                .expect("own order book was ensured above")
+        })
     }
 }
 

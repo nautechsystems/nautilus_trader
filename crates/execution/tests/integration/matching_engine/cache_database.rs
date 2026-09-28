@@ -35,7 +35,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Currency, Money},
 };
@@ -47,9 +47,10 @@ struct FailNthAddOrderState {
     fail_add_order_on: Option<usize>,
     fail_index_order_position: bool,
     add_order_calls: usize,
+    accounts: AHashMap<AccountId, AccountAny>,
+    orders: AHashMap<ClientOrderId, OrderAny>,
     order_snapshots: Vec<OrderSnapshot>,
     position_snapshots: Vec<PositionSnapshot>,
-    accounts: AHashMap<AccountId, AccountAny>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -72,6 +73,13 @@ impl FailNthAddOrderDatabaseControl {
         self.state.lock().accounts = accounts
             .into_iter()
             .map(|account| (account.id(), account))
+            .collect();
+    }
+
+    pub(super) fn set_orders(&self, orders: impl IntoIterator<Item = OrderAny>) {
+        self.state.lock().orders = orders
+            .into_iter()
+            .map(|order| (order.client_order_id(), order))
             .collect();
     }
 
@@ -114,8 +122,10 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        let state = self.control.state.lock();
         Ok(CacheMap {
-            accounts: self.control.state.lock().accounts.clone(),
+            accounts: state.accounts.clone(),
+            orders: state.orders.clone(),
             ..Default::default()
         })
     }

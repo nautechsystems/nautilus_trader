@@ -206,13 +206,14 @@ impl OwnOrderBook {
         self.reset();
     }
 
-    /// Adds an own order to the book.
+    /// Adds an own order to its side of the book, replacing any order there with the same client
+    /// order ID.
     #[pyo3(name = "add")]
     fn py_add(&mut self, order: OwnBookOrder) {
         self.add(order);
     }
 
-    /// Updates an existing own order in the book.
+    /// Updates an existing own order in the book, removing it if the size becomes zero.
     ///
     /// # Errors
     ///

@@ -4200,6 +4200,55 @@ fn test_book_group_asks_filtered_with_own_book() {
 }
 
 #[rstest]
+fn test_book_group_filtered_with_depth_subtracts_own_orders_within_depth() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    for (order_id, side, price) in [
+        (1, OrderSide::Buy, "100.00"),
+        (2, OrderSide::Buy, "99.00"),
+        (3, OrderSide::Sell, "103.00"),
+        (4, OrderSide::Sell, "104.00"),
+    ] {
+        let order = BookOrder::new(side, Price::from(price), Quantity::from(10), order_id);
+        book.add(order, 0, order_id, order_id.into());
+    }
+
+    // Better-priced own orders not yet in the public book sit beside resting ones
+    for (client_order_id, side, price, size) in [
+        ("BID-NEW", OrderSide::Buy, "101.00", 1),
+        ("BID-REST", OrderSide::Buy, "100.00", 5),
+        ("ASK-NEW", OrderSide::Sell, "102.00", 1),
+        ("ASK-REST", OrderSide::Sell, "103.00", 4),
+    ] {
+        own_book.add(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from(client_order_id),
+            None,
+            side,
+            Price::from(price),
+            Quantity::from(size),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    let grouped_bids =
+        book.group_bids_filtered(dec!(1.0), Some(1), Some(&own_book), None, None, None);
+    let grouped_asks =
+        book.group_asks_filtered(dec!(1.0), Some(1), Some(&own_book), None, None, None);
+
+    assert_eq!(grouped_bids, IndexMap::from([(dec!(100), dec!(5))]));
+    assert_eq!(grouped_asks, IndexMap::from([(dec!(103), dec!(6))]));
+}
+
+#[rstest]
 fn test_book_group_with_status_filter() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);

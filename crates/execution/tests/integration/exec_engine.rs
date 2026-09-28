@@ -12414,6 +12414,139 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
 }
 
 #[rstest]
+#[case::applied(VenueOrderId::from("V-001"), OrderStatus::Accepted)]
+#[case::failed_ownership_check(VenueOrderId::from("V-OWNED"), OrderStatus::Submitted)]
+fn test_order_events_do_not_create_own_book_when_management_disabled(
+    #[case] venue_order_id: VenueOrderId,
+    #[case] expected_status: OrderStatus,
+) {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let config = ExecutionEngineConfig {
+        manage_own_order_books: false,
+        ..Default::default()
+    };
+
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+    let account_id = AccountId::test_default();
+    let instrument = audusd_sim();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_venue_order_id(
+            &ClientOrderId::from("O-OWNER"),
+            &VenueOrderId::from("V-OWNED"),
+            false,
+        )
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+    let submitted_order = cached_order_or(&execution_engine, &order);
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &submitted_order,
+        account_id,
+        venue_order_id,
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.order(&order.client_order_id()).unwrap().status(),
+        expected_status
+    );
+    assert!(cache.own_order_book(&instrument.id).is_none());
+}
+
+#[rstest]
+fn test_failed_terminal_event_removes_order_from_own_book() {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let config = ExecutionEngineConfig {
+        manage_own_order_books: true,
+        ..Default::default()
+    };
+
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+    let account_id = AccountId::test_default();
+    let instrument = audusd_sim();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    let client_order_id = order.client_order_id();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+    let submitted_order = cached_order_or(&execution_engine, &order);
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &submitted_order,
+        account_id,
+        VenueOrderId::from("V-001"),
+    ));
+    assert!(
+        execution_engine
+            .cache()
+            .borrow()
+            .own_order_book(&instrument.id)
+            .is_some_and(|own_book| own_book.is_order_in_book(&client_order_id))
+    );
+
+    // A mismatched strategy ID makes the cancel fail to apply
+    let canceled = OrderEventAny::Canceled(build_order_canceled(
+        order.trader_id(),
+        StrategyId::from("S-OTHER"),
+        instrument.id,
+        client_order_id,
+        Some(VenueOrderId::from("V-001")),
+        Some(account_id),
+    ));
+    execution_engine.process(&canceled);
+
+    let cache = execution_engine.cache().borrow();
+    let own_book = cache.own_order_book(&instrument.id).unwrap();
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert!(cache.is_order_closed(&client_order_id));
+    assert!(!cache.is_order_open(&client_order_id));
+    assert!(own_book.bid_client_order_ids().is_empty());
+    assert!(own_book.bids_as_map(None, None, None).is_empty());
+}
+
+#[rstest]
 fn test_submit_order_adds_to_own_book_bid() {
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -21613,9 +21746,8 @@ fn poll_to_completion<F: Future>(fut: F) -> F::Output {
 //
 // The second nested-borrow path (iterating `cache.orders(...)` while invoking
 // `get_or_init_own_order_book`) is not exercised here: with `database: None`,
-// `cache_all` clears `self.orders`, so the loop sees an empty cache. Locking
-// down that path would need a stub `CacheDatabaseAdapter` that returns the
-// staged order from `load_all`; deferred while `load_cache` has no callers.
+// `cache_all` clears `self.orders`, so the loop sees an empty cache.
+// `test_load_cache_rebuilds_own_books_from_persisted_orders` covers that path.
 #[rstest]
 #[case::own_books_enabled(true)]
 #[case::own_books_disabled(false)]
@@ -21658,6 +21790,104 @@ fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
     let cache = engine.cache().borrow();
     assert!(cache.orders(None, None, None, None, None).is_empty());
     assert!(cache.own_order_book(&instrument.id).is_none());
+}
+
+#[rstest]
+fn test_load_cache_rebuilds_own_books_from_persisted_orders() {
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let account_id = AccountId::test_default();
+
+    let accept = |mut order: OrderAny, venue_order_id: &str| {
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from(venue_order_id),
+            ))
+            .unwrap();
+        order
+    };
+
+    let mut open_limit = accept(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-OPEN"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build(),
+        "V-OPEN",
+    );
+    let partial_fill = OrderFilledTestBuilder::new(&open_limit, &instrument_any)
+        .last_qty(Quantity::from(40_000))
+        .build();
+    open_limit.apply(partial_fill).unwrap();
+
+    let mut closed_limit = accept(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-CLOSED"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00010"))
+            .quantity(Quantity::from(100_000))
+            .build(),
+        "V-CLOSED",
+    );
+    let full_fill = OrderFilledTestBuilder::new(&closed_limit, &instrument_any).build();
+    closed_limit.apply(full_fill).unwrap();
+
+    let ioc_limit = accept(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-IOC"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00020"))
+            .quantity(Quantity::from(100_000))
+            .time_in_force(TimeInForce::Ioc)
+            .build(),
+        "V-IOC",
+    );
+    let market = accept(
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-MARKET"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .build(),
+        "V-MARKET",
+    );
+
+    let (database, control) = FailNthAddOrderDatabase::create();
+    control.set_orders([open_limit, closed_limit, ioc_limit, market]);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+
+    let config = ExecutionEngineConfig {
+        manage_own_order_books: true,
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    poll_to_completion(engine.load_cache()).unwrap();
+
+    let cache = engine.cache().borrow();
+    let own_book = cache
+        .own_order_book(&instrument.id)
+        .expect("own book should be rebuilt from the open limit order");
+    let bids = own_book.bids_as_map(None, None, None);
+    let rebuilt = &bids[&dec!(1.00000)];
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![ClientOrderId::from("O-OPEN")]
+    );
+    assert!(own_book.ask_client_order_ids().is_empty());
+    assert_eq!(bids.len(), 1);
+    assert_eq!(rebuilt.len(), 1);
+    assert_eq!(rebuilt[0].price, Price::from("1.00000"));
+    assert_eq!(rebuilt[0].size, Quantity::from(60_000));
+    assert_eq!(rebuilt[0].status, OrderStatus::PartiallyFilled);
 }
 
 #[rstest]

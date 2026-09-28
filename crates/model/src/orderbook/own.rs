@@ -69,7 +69,7 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// The current order status (`SUBMITTED/ACCEPTED/PENDING_CANCEL/PENDING_UPDATE/PARTIALLY_FILLED`).
+    /// The current order status.
     pub status: OrderStatus,
     /// UNIX timestamp (nanoseconds) when the last order event occurred for this order.
     pub ts_last: UnixNanos,
@@ -273,7 +273,8 @@ impl OwnOrderBook {
         self.update_count = 0;
     }
 
-    /// Adds an own order to the book.
+    /// Adds an own order to its side of the book, replacing any order there with the same client
+    /// order ID.
     pub fn add(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
@@ -282,7 +283,7 @@ impl OwnOrderBook {
         }
     }
 
-    /// Updates an existing own order in the book.
+    /// Updates an existing own order in the book, removing it if the size becomes zero.
     ///
     /// # Errors
     ///
@@ -751,6 +752,7 @@ impl OwnBookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
+    /// Removes the order if the size becomes zero.
     ///
     /// # Errors
     ///
