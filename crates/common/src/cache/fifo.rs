@@ -255,6 +255,11 @@ where
         self.index.get_mut(key)
     }
 
+    /// Returns an iterator over the key-value pairs in arbitrary order.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.index.iter()
+    }
+
     /// Inserts a key-value pair into the cache.
     ///
     /// If the key already exists, the value is updated (no eviction occurs).
@@ -289,6 +294,15 @@ where
     pub fn clear(&mut self) {
         self.order.clear();
         self.index.clear();
+    }
+
+    /// Removes all entries from the cache and returns them oldest first.
+    pub fn drain(&mut self) -> Vec<(K, V)> {
+        self.order
+            .drain(..)
+            .rev()
+            .filter_map(|key| self.index.remove_entry(&key))
+            .collect()
     }
 }
 
@@ -616,6 +630,44 @@ mod tests {
         }
 
         assert_eq!(cache.get(&1), Some(&"one_modified".to_string()));
+    }
+
+    #[rstest]
+    fn test_map_iter() {
+        let mut cache: FifoCacheMap<u32, &str, 4> = FifoCacheMap::new();
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+
+        let mut entries: Vec<_> = cache.iter().map(|(k, v)| (*k, *v)).collect();
+        entries.sort_unstable();
+
+        assert_eq!(entries, vec![(1, "one"), (2, "two"), (3, "three")]);
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[rstest]
+    fn test_map_drain_returns_oldest_first() {
+        let mut cache: FifoCacheMap<u32, &str, 3> = FifoCacheMap::new();
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+        cache.insert(4, "four"); // Evicts 1
+        cache.insert(3, "THREE"); // Updates in place without reordering
+
+        let drained = cache.drain();
+
+        assert_eq!(drained, vec![(2, "two"), (3, "THREE"), (4, "four")]);
+        assert!(cache.is_empty());
+
+        // A stale eviction order would evict the reinserted key before capacity
+        cache.insert(4, "four");
+        cache.insert(5, "five");
+        cache.insert(6, "six");
+        let mut entries: Vec<_> = cache.iter().map(|(k, v)| (*k, *v)).collect();
+        entries.sort_unstable();
+
+        assert_eq!(entries, vec![(4, "four"), (5, "five"), (6, "six")]);
     }
 
     #[rstest]
