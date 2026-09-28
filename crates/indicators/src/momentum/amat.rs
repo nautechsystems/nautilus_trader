@@ -182,8 +182,8 @@ impl ArcherMovingAveragesTrends {
                 .expect("buffer has at least one element");
 
             let fast_diff = fast_back - fast_front;
-            self.long_run = fast_diff > 0.0 || self.long_run;
-            self.short_run = fast_diff < 0.0 || self.short_run;
+            self.long_run = fast_diff > 0.0;
+            self.short_run = fast_diff < 0.0;
         }
 
         if !self.initialized {
