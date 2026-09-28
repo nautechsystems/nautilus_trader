@@ -24,6 +24,7 @@ LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 NIGHTLY_TOOLCHAIN := $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
 DOCSRS_TOOLCHAIN := $(shell bash scripts/tool-version.sh nightly)
+SOCKET_CLI_VERSION := $(shell bash scripts/tool-version.sh socket-cli)
 UV_VERSION := $(shell bash scripts/uv-version.sh)
 UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
@@ -568,6 +569,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 .PHONY: update
 update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
 	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
+	$Q $(MAKE) --no-print-directory socket-scan
 
 .PHONY: update-uv
 update-uv:  #-- Install or upgrade uv to the version pinned in the shared tool catalog
@@ -611,6 +613,18 @@ cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources
 .PHONY: cargo-vet
 cargo-vet: check-vet-installed  #-- Run cargo-vet supply chain audit
 	cargo vet
+
+.PHONY: socket-scan
+socket-scan:  #-- Scan dependency manifests with Socket and report alerts without failing
+	$(info $(M) Running Socket scan...)
+	@if ! command -v socket >/dev/null 2>&1; then \
+		printf "$(YELLOW)Skipping Socket scan: socket CLI is not installed$(RESET)\n"; \
+		printf "Install with: $(CYAN)npm install -g @socketsecurity/cli@%s$(RESET), then run $(CYAN)socket login$(RESET)\n" \
+			"$(SOCKET_CLI_VERSION)"; \
+	elif ! socket scan create . --repo=nautilus_trader --branch=local --exclude-paths=target \
+		--no-interactive --report --markdown; then \
+		printf "$(YELLOW)Socket scan found error-level alerts or could not run; see the output above$(RESET)\n"; \
+	fi
 
 #== Documentation
 
