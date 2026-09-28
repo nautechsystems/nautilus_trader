@@ -119,6 +119,7 @@ pub(super) use crate::{
 pub(super) const MODIFY_TRAILING_OFFSET_PARAM: &str = "trailing_offset";
 
 pub(super) const DENIAL_CLIENT_NOT_READY: &str = "IB_CLIENT_NOT_READY";
+pub(super) const DENIAL_ORDER_INVALID: &str = "ORDER_INVALID";
 pub(super) const DENIAL_ORDER_LIST_INVALID: &str = "ORDER_LIST_INVALID";
 pub(super) const DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED: &str = "ORDER_LIST_SIBLING_SUBMIT_FAILED";
 pub(super) const DENIAL_POST_ONLY_UNSUPPORTED: &str = "UNSUPPORTED_POST_ONLY";
