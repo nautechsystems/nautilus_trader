@@ -585,7 +585,7 @@ impl DeribitRawHttpClient {
         if let Err(ref e) = result
             && e.is_retryable()
         {
-            log::error!("Request exhausted retries: method={method}, error={e}");
+            log::warn!("Request exhausted retries: method={method}, error={e}");
         }
 
         result

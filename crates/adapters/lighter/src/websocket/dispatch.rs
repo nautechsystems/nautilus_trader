@@ -401,7 +401,8 @@ impl RetiredOrderCache {
                 if remove_index {
                     inner.by_index.remove(&old_index);
                 }
-                log::warn!(
+
+                log::debug!(
                     "Evicting retired Lighter order identity at replay-cache capacity: cloid={old_cloid}, client_order_index={old_index}",
                 );
             }
@@ -499,7 +500,7 @@ impl TradeDedupCache {
         {
             if inner.entries.get(&old_trade_id).map(|(_, seq)| *seq) == Some(old_seq) {
                 inner.entries.remove(&old_trade_id);
-                log::warn!(
+                log::debug!(
                     "Evicting Lighter trade id at replay-cache capacity: trade_id={old_trade_id}",
                 );
             }

@@ -249,10 +249,7 @@ impl OKXWsFeedHandler {
                 log::trace!("Sent pong response to OKX text ping");
                 Ok(())
             }
-            Err(e) => {
-                log::warn!("Failed to send pong: error={e}");
-                Err(anyhow::anyhow!("Failed to send pong: {e}"))
-            }
+            Err(e) => Err(anyhow::anyhow!("Failed to send pong: {e}")),
         }
     }
 
@@ -358,7 +355,7 @@ impl OKXWsFeedHandler {
                                 payload,
                                 rate_limit_keys.as_deref(),
                             ).await {
-                                log::error!("Failed to send message: error={e}");
+                                log::debug!("Failed to send message: error={e}");
 
                                 if let Some(request_id) = request_id {
                                     self.pending_messages.push_back(OKXWsMessage::SendFailed {
@@ -401,7 +398,6 @@ impl OKXWsFeedHandler {
                                 return Some(OKXWsMessage::Authenticated);
                             }
 
-                            log::error!("WebSocket authentication failed: error={msg}");
                             self.auth_tracker.fail(msg.clone());
 
                             let error = OKXWebSocketError {

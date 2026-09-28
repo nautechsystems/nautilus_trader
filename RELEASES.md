@@ -186,6 +186,8 @@ Released on TBD (UTC).
 - Fixed `nautilus` CLI dropping buffered log lines at exit
 - Fixed `OwnOrderBook` ghost orders after re-adding at a new price or a zero-size price update
 - Fixed `OrderBook.get_avg_px_qty_for_exposure` quantities 100x too large for 18-decimal DeFi sizes
+- Fixed recoverable adapter conditions logging as errors, halting `shutdown_on_error` nodes
+- Fixed adapters logging routine events as warnings and duplicate failures twice
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
 - Fixed Architect AX market data subscriptions not resuming after an explicit reconnect

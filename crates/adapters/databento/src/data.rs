@@ -371,9 +371,8 @@ impl DatabentoDataClient {
         }
 
         let feed_future = async move {
-            if let Err(e) = feed_handler.run().await {
-                log::error!("Feed handler error: {e}");
-            }
+            // run() logs its terminal error and forwards it as `DatabentoMessage::Error`
+            let _ = feed_handler.run().await;
             feed_channels.lock().remove(&feed_dataset);
         };
 
@@ -698,7 +697,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -710,7 +709,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -722,7 +721,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -737,7 +736,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );

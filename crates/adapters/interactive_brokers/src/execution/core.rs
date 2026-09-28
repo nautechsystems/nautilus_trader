@@ -1432,11 +1432,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 match tokio::time::timeout(timeout_dur, client_clone.all_open_orders()).await {
                     Ok(Ok(s)) => s,
                     Ok(Err(e)) => {
-                        tracing::error!("query_order: failed to request open orders: {e}");
+                        tracing::warn!("query_order: failed to request open orders: {e}");
                         return;
                     }
                     Err(_) => {
-                        tracing::error!("query_order: timeout requesting open orders");
+                        tracing::warn!("query_order: timeout requesting open orders");
                         return;
                     }
                 };
@@ -2173,7 +2173,7 @@ impl InteractiveBrokersExecutionClient {
         )?;
 
         if let Err(e) = client.cancel_order(ib_order_id, "").await {
-            tracing::error!(
+            tracing::warn!(
                 "Cancel outcome is unknown after attempting to send order {} to IB: {e}",
                 cmd.client_order_id
             );
@@ -2350,7 +2350,7 @@ impl InteractiveBrokersExecutionClient {
                 venue_order_id.unwrap_or_else(|| VenueOrderId::from(ib_order_id.to_string()));
 
             if let Err(e) = client.cancel_order(ib_order_id, "").await {
-                tracing::error!(
+                tracing::warn!(
                     "Failed to cancel order {} (IB order ID: {}): {e}",
                     client_order_id,
                     ib_order_id

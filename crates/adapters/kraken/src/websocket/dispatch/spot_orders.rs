@@ -418,7 +418,7 @@ impl OrderRequestState {
             .ok()
             .and_then(|guard| guard.clone())
         else {
-            log::error!(
+            log::warn!(
                 "Submit timeout: no auth token for compensating cancel cl_ord_ids={cl_ord_ids:?}; \
                  relying on reconciliation to recover any orphan order",
             );
@@ -446,7 +446,7 @@ impl OrderRequestState {
         };
 
         let Some(cmd_tx) = self.cmd_tx() else {
-            log::error!(
+            log::warn!(
                 "Submit timeout: compensating cancel sender unavailable cl_ord_ids={cl_ord_ids:?}; \
                  relying on reconciliation to recover any orphan order",
             );
@@ -454,7 +454,7 @@ impl OrderRequestState {
         };
 
         if let Err(e) = cmd_tx.send(SpotHandlerCommand::SendOrderRequest { req_id, payload }) {
-            log::error!(
+            log::warn!(
                 "Submit timeout: compensating cancel channel closed: {e}; \
                  relying on reconciliation to recover any orphan order",
             );
@@ -610,7 +610,7 @@ impl OrderRequestState {
             return;
         };
         let Some(identity) = self.dispatch_state.lookup_identity(&client_order_id) else {
-            log::warn!(
+            log::debug!(
                 "Kraken WS amend_order rejection for untracked order client_order_id={client_order_id}",
             );
             return;
@@ -649,7 +649,7 @@ impl OrderRequestState {
             return;
         };
         let Some(identity) = self.dispatch_state.lookup_identity(&client_order_id) else {
-            log::warn!(
+            log::debug!(
                 "Kraken WS cancel_order rejection for untracked order client_order_id={client_order_id}",
             );
             return;

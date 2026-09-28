@@ -1834,7 +1834,7 @@ impl ExecutionClient for OKXExecutionClient {
                     {
                         Ok(spread_reports) => reports.extend(spread_reports),
                         Err(e) => {
-                            log::error!("OKX query_order failed to fetch spread order: {e}");
+                            log::warn!("OKX query_order failed to fetch spread order: {e}");
                         }
                     }
                 }
@@ -1863,7 +1863,7 @@ impl ExecutionClient for OKXExecutionClient {
                             query_algo |= route == QueryOrderRoute::RegularThenAlgo;
                         }
                         Err(e) => {
-                            log::error!("OKX query_order failed to fetch regular order: {e}");
+                            log::warn!("OKX query_order failed to fetch regular order: {e}");
                         }
                     }
                 }
@@ -1937,7 +1937,7 @@ impl ExecutionClient for OKXExecutionClient {
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            log::error!(
+                            log::warn!(
                                 "OKX query_order failed to fetch regular child order: {e}"
                             );
                         }

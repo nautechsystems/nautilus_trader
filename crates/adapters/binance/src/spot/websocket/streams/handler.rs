@@ -311,10 +311,6 @@ fn classify_unsolicited_json(text: &str) -> Vec<BinanceSpotWsMessage> {
     if value.get("e").and_then(|v| v.as_str()) == Some("serverShutdown")
         && let Ok(msg) = serde_json::from_value::<BinanceSpotServerShutdownMsg>(value.clone())
     {
-        log::warn!(
-            "Binance server shutdown notice received (event_time={}); disconnect expected ~10 minutes from event",
-            msg.event_time,
-        );
         return vec![BinanceSpotWsMessage::ServerShutdown(msg)];
     }
 

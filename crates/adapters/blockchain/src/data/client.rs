@@ -119,10 +119,7 @@ impl BlockchainDataClient {
     fn spawn_process_task(
         &mut self,
     ) -> anyhow::Result<tokio::sync::oneshot::Receiver<anyhow::Result<()>>> {
-        let command_rx = if let Some(r) = self.command_rx.take() {
-            r
-        } else {
-            log::error!("Command receiver already taken, not spawning handler");
+        let Some(command_rx) = self.command_rx.take() else {
             anyhow::bail!("Command receiver already taken");
         };
 
@@ -146,13 +143,6 @@ impl BlockchainDataClient {
             log::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
-                // TODO: connect() could return more granular error types to distinguish
-                // cancellation from actual failures without string matching
-                if e.to_string().contains("cancelled") || e.to_string().contains("Sync cancelled") {
-                    log::warn!("Blockchain core client connection interrupted: {e}");
-                } else {
-                    log::error!("Failed to connect blockchain core client: {e}");
-                }
                 let _ = startup_tx.send(Err(e));
                 return;
             }

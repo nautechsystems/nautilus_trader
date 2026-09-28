@@ -1222,7 +1222,7 @@ impl DeribitWsFeedHandler {
                                     }
                                 }
                             } else if let Some(error) = &response.error {
-                                log::error!(
+                                log::warn!(
                                     "Cancel rejected: code={}, message={}, client_order_id={}",
                                     error.code,
                                     error.message,
@@ -1517,7 +1517,7 @@ impl DeribitWsFeedHandler {
                                     }
                                 }
                             } else if let Some(error) = &response.error {
-                                log::error!(
+                                log::warn!(
                                     "Order modify rejected: code={}, message={}, client_order_id={}",
                                     error.code,
                                     error.message,
@@ -1720,7 +1720,7 @@ impl DeribitWsFeedHandler {
                                                 self.book_sequence.get(&book_msg.instrument_name)
                                             && prev_id != last_id
                                         {
-                                            log::error!(
+                                            log::warn!(
                                                 "Book sequence gap for {}: expected prev_change_id={}, was {} \
                                                 - dropping delta, forcing resync",
                                                 book_msg.instrument_name,

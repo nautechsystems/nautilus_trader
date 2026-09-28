@@ -5822,7 +5822,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log::warn!(
+        log::debug!(
             "Order queries are not supported on the blockchain execution client; cannot query {}",
             cmd.client_order_id
         );
@@ -6267,7 +6267,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         // Venue mass status is unsupported; durable intent reconciliation at connect
         // covers restart recovery, and Ok(None) keeps LiveNode startup safe
-        log::warn!(
+        log::info!(
             "Mass status is not supported on the blockchain execution client; skipping venue reconciliation"
         );
         Ok(None)

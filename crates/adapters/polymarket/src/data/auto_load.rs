@@ -370,7 +370,7 @@ impl PolymarketDataClient {
                                     );
                                 }
                                 Err(e) => {
-                                    log::error!(
+                                    log::warn!(
                                         "Auto-load closed-market probe failed for {} condition_id(s): {e:?}",
                                         probe_condition_ids.len(),
                                     );
@@ -379,7 +379,7 @@ impl PolymarketDataClient {
                             }
                         }
                         Err(e) => {
-                            log::error!(
+                            log::warn!(
                                 "Auto-load batch failed for chunk of {} condition_id(s): {e:?}",
                                 chunk.len(),
                             );

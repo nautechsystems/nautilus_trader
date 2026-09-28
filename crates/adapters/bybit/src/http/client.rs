@@ -1494,7 +1494,7 @@ impl BybitRawHttpClient {
         if let Err(ref e) = result
             && let Ok(params_json) = serde_json::to_string(&params)
         {
-            log::error!("Repay request failed with params {params_json}: {e}");
+            log::debug!("Repay request failed with params {params_json}: {e}");
         }
 
         result
@@ -1546,7 +1546,7 @@ impl BybitRawHttpClient {
         if let Err(ref e) = result
             && let Ok(params_json) = serde_json::to_string(&params)
         {
-            log::error!("Repay request failed with params {params_json}: {e}");
+            log::debug!("Repay request failed with params {params_json}: {e}");
         }
 
         result
@@ -3214,11 +3214,6 @@ impl BybitHttpClient {
         let instrument = self
             .instrument_from_cache(&instrument_id.symbol)
             .map_err(|e| {
-                log::error!(
-                    "Instrument cache miss for symbol '{}': {}",
-                    instrument_id.symbol.as_str(),
-                    e
-                );
                 anyhow::anyhow!(
                     "Failed to query order {}: {}",
                     client_order_id
@@ -3234,7 +3229,7 @@ impl BybitHttpClient {
 
         let report =
             parse_order_status_report(order, &instrument, account_id, ts_init).map_err(|e| {
-                log::error!(
+                log::debug!(
                     "Failed to parse order status report for {}: {}",
                     order.order_link_id.as_str(),
                     e

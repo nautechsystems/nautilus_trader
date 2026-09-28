@@ -238,7 +238,8 @@ impl InteractiveBrokersExecutionClient {
                 if Self::is_definitive_order_submit_error(&e) {
                     return Err(e).context("IB rejected the modified order before sending it");
                 }
-                tracing::error!(
+
+                tracing::warn!(
                     "Modify outcome is unknown after attempting to send order {} to IB: {e}",
                     cmd.client_order_id
                 );
@@ -371,7 +372,8 @@ impl InteractiveBrokersExecutionClient {
                             return Err(e)
                                 .context("IB rejected the modified open order before sending it");
                         }
-                        tracing::error!(
+
+                        tracing::warn!(
                             "Modify outcome is unknown after attempting to send open order {} to IB: {e}",
                             cmd.client_order_id
                         );

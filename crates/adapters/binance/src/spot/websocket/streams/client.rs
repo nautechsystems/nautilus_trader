@@ -636,10 +636,7 @@ impl BinanceSpotWebSocketClient {
             .maybe_state_sink(socket_control.as_ref().map(SocketControl::sink))
             .connect()
             .await
-            .map_err(|e| {
-                log::error!("WebSocket connection failed: {e}");
-                BinanceWsError::NetworkError(e.to_string())
-            })?;
+            .map_err(|e| BinanceWsError::NetworkError(e.to_string()))?;
 
         let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();

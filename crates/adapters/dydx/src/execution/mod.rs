@@ -876,7 +876,7 @@ impl DydxExecutionClient {
             if let Err(e) = fut.await {
                 if is_definitive_broadcast_rejection(&e) {
                     let error_msg = format!("{label} failed: {e:?}");
-                    log::error!("{error_msg}");
+                    log::warn!("{error_msg}");
 
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
@@ -1100,7 +1100,8 @@ async fn broadcast_partitioned_cancels(
                     }
                     Err(e) => {
                         let msg = format!("Short-term batch cancel failed: {e:?}");
-                        log::error!("{msg}");
+                        log::warn!("{msg}");
+
                         // A CheckTx rejection refuses the whole transaction
                         // atomically: a venue result for every cancel in it.
                         if e.is_definitive_broadcast_rejection() {
@@ -1150,7 +1151,7 @@ async fn broadcast_partitioned_cancels(
                     }
                     Err(e) => {
                         let msg = format!("Long-term batch cancel failed: {e:?}");
-                        log::error!("{msg}");
+                        log::warn!("{msg}");
 
                         if e.is_definitive_broadcast_rejection() {
                             emit_partitioned_cancel_rejections(
@@ -1297,7 +1298,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         if order.is_quote_quantity() {
             let reason = "Quote quantity orders are not supported by dYdX";
-            log::error!("{reason}");
+            log::warn!("{reason}");
             self.emitter.emit_order_denied(&order, reason);
             return Ok(());
         }
@@ -1314,7 +1315,7 @@ impl ExecutionClient for DydxExecutionClient {
         };
 
         if let Some(reason) = unsupported_tif_reason {
-            log::error!("{reason}");
+            log::warn!("{reason}");
             self.emitter.emit_order_denied(&order, reason);
             return Ok(());
         }
@@ -1328,13 +1329,13 @@ impl ExecutionClient for DydxExecutionClient {
             | OrderType::LimitIfTouched => {}
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit => {
                 let reason = "Trailing stop orders not supported by dYdX v4 protocol";
-                log::error!("{reason}");
+                log::warn!("{reason}");
                 self.emitter.emit_order_denied(&order, reason);
                 return Ok(());
             }
             order_type => {
                 let reason = format!("Order type {order_type:?} not supported by dYdX");
-                log::error!("{reason}");
+                log::warn!("{reason}");
                 self.emitter.emit_order_denied(&order, &reason);
                 return Ok(());
             }
@@ -1630,7 +1631,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         for order in &orders {
             if order.order_type() != OrderType::Limit {
-                log::warn!(
+                log::debug!(
                     "Order {} has type {:?}, falling back to individual submission",
                     order.client_order_id(),
                     order.order_type()
@@ -1790,7 +1791,7 @@ impl ExecutionClient for DydxExecutionClient {
                         {
                             if e.is_definitive_broadcast_rejection() {
                                 let error_msg = format!("Order submission failed: {e:?}");
-                                log::error!("{error_msg}");
+                                log::warn!("{error_msg}");
                                 let ts_event = clock.get_time_ns();
                                 emitter.emit_order_rejected_event(
                                     strategy_id,
@@ -1849,7 +1850,7 @@ impl ExecutionClient for DydxExecutionClient {
                         // A CheckTx rejection refuses the whole transaction
                         // atomically: a venue result for every order in it.
                         let error_msg = format!("Batch order submission failed: {e:?}");
-                        log::error!("{error_msg}");
+                        log::warn!("{error_msg}");
                         let ts_event = clock.get_time_ns();
 
                         for (client_order_id, instrument_id, strategy_id) in order_info {
@@ -1879,7 +1880,7 @@ impl ExecutionClient for DydxExecutionClient {
     /// Strategies should handle `OrderModifyRejected` by canceling and resubmitting.
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let reason = "dYdX does not support order modification. Use cancel and resubmit instead.";
-        log::error!("{reason}");
+        log::warn!("{reason}");
 
         self.send_modify_rejected(
             cmd.strategy_id,
@@ -1962,7 +1963,7 @@ impl ExecutionClient for DydxExecutionClient {
         // Stored flags remain authoritative after the order expires
         let order_flags = self.get_order_context(client_id_u32).map_or_else(
             || {
-                log::warn!(
+                log::debug!(
                     "Order context not found for {client_order_id}, deriving flags from order"
                 );
                 types::OrderLifetime::from_time_in_force(
@@ -2014,7 +2015,7 @@ impl ExecutionClient for DydxExecutionClient {
                     log::debug!("Successfully cancelled order: {client_order_id}");
                 }
                 Err(e) if e.is_definitive_broadcast_rejection() => {
-                    log::error!("Failed to cancel order {client_order_id}: {e:?}");
+                    log::warn!("Failed to cancel order {client_order_id}: {e:?}");
 
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(

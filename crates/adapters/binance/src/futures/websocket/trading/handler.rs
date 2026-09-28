@@ -130,7 +130,7 @@ impl BinanceFuturesWsTradingHandler {
                         }
                         BinanceFuturesWsTradingCommand::PlaceOrder { id, params } => {
                             if let Err(e) = self.handle_place_order(id.clone(), params).await {
-                                log::error!("Failed to handle place order command: {e}");
+                                log::debug!("Failed to handle place order command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -140,7 +140,7 @@ impl BinanceFuturesWsTradingHandler {
                         }
                         BinanceFuturesWsTradingCommand::CancelOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_order(id.clone(), params).await {
-                                log::error!("Failed to handle cancel order command: {e}");
+                                log::debug!("Failed to handle cancel order command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -150,7 +150,7 @@ impl BinanceFuturesWsTradingHandler {
                         }
                         BinanceFuturesWsTradingCommand::ModifyOrder { id, params } => {
                             if let Err(e) = self.handle_modify_order(id.clone(), params).await {
-                                log::error!("Failed to handle modify order command: {e}");
+                                log::debug!("Failed to handle modify order command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
                                     request_id: id,

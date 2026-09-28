@@ -534,7 +534,7 @@ fn handle_ws_message(
             };
             let topic_key = msg.topic.as_str();
             let Some(bar_type) = bar_types_cache.load().get(topic_key).copied() else {
-                log::warn!("No bar type cached for kline topic: {topic_key}");
+                log::debug!("No bar type cached for kline topic: {topic_key}");
                 return;
             };
 

@@ -1207,7 +1207,7 @@ impl LighterExecutionClient {
                                             );
                                         }
                                         Err(e) => {
-                                            log::error!(
+                                            log::warn!(
                                                 "Failed to refresh Lighter nonce after reconnect: {e}",
                                             );
                                             nonce_refresh_retry
@@ -1322,7 +1322,7 @@ impl LighterExecutionClient {
                                             );
                                         }
                                         Err(e) => {
-                                            log::error!(
+                                            log::warn!(
                                                 "Failed to refresh Lighter nonce after \
                                                  invalid-nonce rejection: {e}",
                                             );
@@ -2036,7 +2036,7 @@ impl LighterExecutionClient {
                          retaining pending state for venue reconciliation; diagnostic={e:?}",
                     );
                 } else {
-                    log::error!("{reason} for {client_order_id}; diagnostic={e:?}");
+                    log::warn!("{reason} for {client_order_id}; diagnostic={e:?}");
                     dispatch.remove_pending_sendtx_by_nonce(connection_epoch, nonce);
                     dispatch.clear_pending_order_action_if(
                         &client_order_id,
@@ -2440,7 +2440,7 @@ impl NonceRefreshRetry {
                         return;
                     }
                     Err(e) => {
-                        log::error!(
+                        log::warn!(
                             "Failed to retry Lighter nonce refresh for connection epoch \
                              {connection_epoch}: {e}",
                         );
@@ -3015,7 +3015,7 @@ impl FanoutDispatchContext {
                      retaining pending state for venue reconciliation; diagnostic={e:?}",
                 );
             } else {
-                log::error!("{reason} for {client_order_id}; diagnostic={e:?}");
+                log::warn!("{reason} for {client_order_id}; diagnostic={e:?}");
                 self.dispatch
                     .remove_pending_sendtx_by_nonce(connection_epoch, nonce);
                 rollback_tx_dispatch_create(
@@ -3224,7 +3224,7 @@ impl FanoutDispatchContext {
             return;
         }
 
-        log::error!(
+        log::warn!(
             "{reason} for {}; diagnostic={error:?}",
             prepared.client_order_id
         );
@@ -4592,7 +4592,8 @@ impl ExecutionClient for LighterExecutionClient {
                      orders cannot be placed",
                 ));
             }
-            log::error!("Lighter integrator approval failed; continuing startup: {e:?}");
+
+            log::warn!("Lighter integrator approval failed; continuing startup: {e:?}");
         }
 
         self.nonce_ready_connection_epoch

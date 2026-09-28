@@ -500,7 +500,7 @@ impl FeedHandler {
                 match self.send_once(payload, connection_epoch).await {
                     Ok(()) => Ok(()),
                     Err(e) => {
-                        log::error!("Error dispatching Lighter sendTx (tx_type={tx_type}): {e}");
+                        log::debug!("Error dispatching Lighter sendTx (tx_type={tx_type}): {e}");
                         Err(e)
                     }
                 }
@@ -1224,16 +1224,13 @@ impl FeedHandler {
                             }),
                         )
                     }
-                    Some(_) => {
-                        log::error!("Lighter sendTx rejected: {value}");
-                        (
-                            true,
-                            Some(send_tx_rejected_from_value(
-                                value,
-                                SendTxRejectionSource::Ack,
-                            )),
-                        )
-                    }
+                    Some(_) => (
+                        true,
+                        Some(send_tx_rejected_from_value(
+                            value,
+                            SendTxRejectionSource::Ack,
+                        )),
+                    ),
                     None => {
                         log::warn!(
                             "Ignoring malformed Lighter sendTx response without numeric code: {value}",

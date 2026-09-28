@@ -202,15 +202,8 @@ impl DatabentoLiveClient {
                 feed_handler.run(),
             );
 
-            if let Err(e) = proc_handle {
-                log::error!("Message processor error: {e}");
-                return Err(e);
-            }
-
-            if let Err(e) = feed_handle {
-                log::error!("Feed handler error: {e}");
-                return Err(to_pyruntime_err(e));
-            }
+            proc_handle?;
+            feed_handle.map_err(to_pyruntime_err)?;
 
             log::debug!("Live client completed");
             Ok(())

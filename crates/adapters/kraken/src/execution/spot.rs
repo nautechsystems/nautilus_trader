@@ -1583,7 +1583,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 .all(|w| w[0].instrument_id() == w[1].instrument_id());
 
             if any_quote_qty {
-                log::warn!(
+                log::debug!(
                     "Kraken WS batch_add does not support quote-quantity orders, falling back to REST for order_list_id={}",
                     cmd.order_list.id,
                 );
@@ -1593,7 +1593,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                     Err(e) => log::warn!("Kraken WS batch_add fallback to REST: {e}"),
                 }
             } else {
-                log::warn!(
+                log::debug!(
                     "Kraken WS batch_add requires single shared symbol, falling back to REST for order_list_id={}",
                     cmd.order_list.id,
                 );

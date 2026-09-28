@@ -144,7 +144,7 @@ impl BinanceSpotWsTradingHandler {
                         }
                         BinanceSpotWsTradingCommand::PlaceOrder { id, params } => {
                             if let Err(e) = self.handle_place_order(id.clone(), params).await {
-                                log::error!("Failed to handle place order command: {e}");
+                                log::debug!("Failed to handle place order command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceSpotWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -154,7 +154,7 @@ impl BinanceSpotWsTradingHandler {
                         }
                         BinanceSpotWsTradingCommand::CancelOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_order(id.clone(), params).await {
-                                log::error!("Failed to handle cancel order command: {e}");
+                                log::debug!("Failed to handle cancel order command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceSpotWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -164,7 +164,7 @@ impl BinanceSpotWsTradingHandler {
                         }
                         BinanceSpotWsTradingCommand::CancelReplaceOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_replace_order(id.clone(), params).await {
-                                log::error!("Failed to handle cancel replace command: {e}");
+                                log::debug!("Failed to handle cancel replace command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceSpotWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -174,7 +174,7 @@ impl BinanceSpotWsTradingHandler {
                         }
                         BinanceSpotWsTradingCommand::CancelAllOrders { id, symbol } => {
                             if let Err(e) = self.handle_cancel_all_orders(id.clone(), symbol).await {
-                                log::error!("Failed to handle cancel all command: {e}");
+                                log::debug!("Failed to handle cancel all command: {e}");
                                 self.pending_requests.remove(&id);
                                 self.emit(BinanceSpotWsTradingMessage::RequestFailed {
                                     request_id: id,
@@ -655,9 +655,6 @@ impl BinanceSpotWsTradingHandler {
                 }
                 610 => {
                     let event_time = parse_server_shutdown_event_time_ms(data);
-                    log::warn!(
-                        "Binance server shutdown notice (SBE, event_time={event_time}); disconnect expected within ~10 minutes",
-                    );
                     return Ok(BinanceSpotWsTradingMessage::ServerShutdown { event_time });
                 }
                 _ => {} // Fall through to WebSocketResponse parsing
@@ -929,9 +926,6 @@ pub(crate) fn classify_user_data_event(
         }
         BinanceSpotUserDataEventType::ServerShutdown => {
             let event_time = event.get("E").and_then(|v| v.as_i64()).unwrap_or_default();
-            log::warn!(
-                "Binance server shutdown notice (event_time={event_time}); disconnect expected within ~10 minutes",
-            );
             Some(BinanceSpotWsTradingMessage::ServerShutdown { event_time })
         }
         BinanceSpotUserDataEventType::ListenKeyExpired

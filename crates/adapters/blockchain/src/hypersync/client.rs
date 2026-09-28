@@ -549,7 +549,7 @@ impl HyperSyncClient {
             let mut rx = match client.stream(query, StreamConfig::default()).await {
                 Ok(rx) => rx,
                 Err(e) => {
-                    log::error!("Failed to create DEX event stream for {dex}: {e}");
+                    log::warn!("Failed to create DEX event stream for {dex}: {e}");
 
                     if !Self::sleep_or_cancel(
                         Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
@@ -582,7 +582,7 @@ impl HyperSyncClient {
                                 if received_response {
                                     log::debug!("DEX event stream drained for {dex}: {e}");
                                 } else {
-                                    log::error!("Failed to receive DEX event stream response for {dex}: {e}");
+                                    log::warn!("Failed to receive DEX event stream response for {dex}: {e}");
                                 }
                                 break;
                             }
@@ -620,7 +620,7 @@ impl HyperSyncClient {
             match client.get_height().await {
                 Ok(height) if height >= from_block => return,
                 Ok(_) => {}
-                Err(e) => log::error!("Failed to get HyperSync height for DEX event stream: {e}"),
+                Err(e) => log::warn!("Failed to get HyperSync height for DEX event stream: {e}"),
             }
 
             if !Self::sleep_or_cancel(

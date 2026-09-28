@@ -1061,13 +1061,7 @@ impl DataClient for AxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
         let params = request.params;
         let clock = self.clock;
-        let width = match map_bar_spec_to_candle_width(&bar_type.spec()) {
-            Ok(w) => w,
-            Err(e) => {
-                log::error!("Failed to map bar type {bar_type}: {e}");
-                return Err(e);
-            }
-        };
+        let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
 
         let cancel = self.cancellation_token.clone();
 
@@ -1409,10 +1403,7 @@ fn handle_md_message(
         AxMdMessage::Heartbeat(_) => {
             log::trace!("Received heartbeat");
         }
-        AxMdMessage::SubscriptionResponse(_) => {}
-        AxMdMessage::Error(error) => {
-            log::warn!("WebSocket error: {}", error.message);
-        }
+        AxMdMessage::SubscriptionResponse(_) | AxMdMessage::Error(_) => {}
     }
 }
 

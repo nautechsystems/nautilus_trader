@@ -622,7 +622,7 @@ impl BetfairHttpClient {
         if let Err(ref e) = result
             && should_retry(e)
         {
-            log::error!("Request exhausted retries: method={method}, error={e}");
+            log::warn!("Request exhausted retries: method={method}, error={e}");
         }
 
         result

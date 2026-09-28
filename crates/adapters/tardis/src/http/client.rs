@@ -208,7 +208,7 @@ impl TardisHttpClient {
         match serde_json::from_str(&body) {
             Ok(parsed) => Ok(parsed),
             Err(e) => {
-                log::error!("Failed to parse response: {e}");
+                log::debug!("Failed to parse response: {e}");
                 log::debug!("Response body was: {body}");
                 Err(Error::ResponseParse(e.to_string()))
             }

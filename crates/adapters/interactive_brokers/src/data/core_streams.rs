@@ -1084,7 +1084,7 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
                             break;
                         }
                         Some(Err(e)) => {
-                            tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
+                            tracing::debug!("Subscription error for {}: {:?}", instrument_id, e);
                             anyhow::bail!("Subscription error: {e:?}");
                         }
                         None => break,
@@ -1303,7 +1303,6 @@ async fn process_trade_stream(
                         return Ok(StreamAction::Resubscribe);
                     }
                     Some(Err(e)) => {
-                        tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
                         anyhow::bail!("Subscription error: {e:?}");
                     }
                     None => return Ok(StreamAction::Stop),
@@ -1403,7 +1402,6 @@ async fn process_realtime_bar_stream(
                         return Ok(StreamAction::Resubscribe);
                     }
                     Some(Err(e)) => {
-                        tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
                         anyhow::bail!("Subscription error: {e:?}");
                     }
                     None => return Ok(StreamAction::Stop),
@@ -1679,10 +1677,7 @@ where
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
-        Err(e) => {
-            tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
-            anyhow::bail!("Subscription error: {e:?}");
-        }
+        Err(e) => anyhow::bail!("Subscription error: {e:?}"),
     }
 }
 
@@ -1750,14 +1745,7 @@ where
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
-        Err(e) => {
-            tracing::error!(
-                "Option greeks subscription error for {}: {:?}",
-                instrument_id,
-                e
-            );
-            anyhow::bail!("Subscription error: {e:?}");
-        }
+        Err(e) => anyhow::bail!("Subscription error: {e:?}"),
     }
 }
 
@@ -1821,14 +1809,7 @@ where
         }
         Ok(SubscriptionItem::Notice(_)) => Ok(StreamAction::Continue),
         Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
-        Err(e) => {
-            tracing::error!(
-                "Index price subscription stream error for {}: {:?}",
-                instrument_id,
-                e
-            );
-            anyhow::bail!("Subscription error: {e:?}");
-        }
+        Err(e) => anyhow::bail!("Subscription error: {e:?}"),
     }
 }
 

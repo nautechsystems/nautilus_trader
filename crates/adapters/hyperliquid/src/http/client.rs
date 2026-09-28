@@ -646,7 +646,7 @@ impl HyperliquidRawHttpClient {
             {
                 let delay =
                     backoff_full_jitter(attempt, RATE_LIMIT_BACKOFF_BASE, RATE_LIMIT_BACKOFF_CAP);
-                log::warn!(
+                log::debug!(
                     "Transient error; retrying: endpoint={request:?}, attempt={attempt}, status={:?}, wait_ms={:?}",
                     response.status.as_u16(),
                     delay.as_millis()

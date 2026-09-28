@@ -257,7 +257,7 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             database.toggle_perf_sync_settings(enable).await
         } else {
-            log::warn!("Database not initialized, skipping performance settings toggle");
+            log::debug!("Database not initialized, skipping performance settings toggle");
             Ok(())
         }
     }

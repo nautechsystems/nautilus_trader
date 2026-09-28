@@ -449,10 +449,7 @@ impl BinanceFuturesExecutionClient {
     async fn refresh_account_state(&self) -> anyhow::Result<AccountState> {
         let account_info = match self.http_client.query_account().await {
             Ok(info) => info,
-            Err(e) => {
-                log::error!("Binance Futures account state request failed: {e}");
-                anyhow::bail!("Binance Futures account state request failed: {e}");
-            }
+            Err(e) => anyhow::bail!("Binance Futures account state request failed: {e}"),
         };
 
         Ok(self.create_account_state(&account_info))
@@ -664,7 +661,7 @@ impl BinanceFuturesExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    log::error!("WS submit request failed for {client_order_id}: {e}");
+                    log::warn!("WS submit request failed for {client_order_id}: {e}");
                     anyhow::bail!("WS submit order failed: {e}");
                 }
                 Ok(())
@@ -887,7 +884,7 @@ impl BinanceFuturesExecutionClient {
 
                 if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
-                    log::error!("WS cancel request failed for {client_order_id}: {e}");
+                    log::warn!("WS cancel request failed for {client_order_id}: {e}");
                     anyhow::bail!("WS cancel order failed: {e}");
                 }
                 Ok(())
@@ -2106,7 +2103,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     })?;
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Failed to connect WS trading API: {e}. \
                          Order operations will use HTTP fallback"
                     );
@@ -3618,7 +3615,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
                 if let Err(e) = result {
                     dispatch_state.pending_requests.remove(&request_id);
-                    log::error!(
+                    log::warn!(
                         "WS modify request failed for {}: {e}",
                         command.client_order_id
                     );

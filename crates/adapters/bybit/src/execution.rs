@@ -823,7 +823,7 @@ impl ExecutionClient for BybitExecutionClient {
 
             // Demo environment does not support Trade WebSocket API
             if self.config.environment == BybitEnvironment::Demo {
-                log::warn!("Demo mode: Trade WebSocket not available, orders use HTTP REST API");
+                log::info!("Demo mode: Trade WebSocket not available, orders use HTTP REST API");
             } else {
                 self.ws_trade.connect().await?;
                 self.ws_trade.wait_until_active(10.0).await?;
@@ -940,7 +940,7 @@ impl ExecutionClient for BybitExecutionClient {
                     log::warn!("Order not found: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}");
                 }
                 Err(e) => {
-                    log::error!("Failed to query order: {e}");
+                    log::warn!("Failed to query order: {e}");
                 }
             }
             Ok(())
@@ -1226,7 +1226,7 @@ impl ExecutionClient for BybitExecutionClient {
             });
 
             if skip_spot {
-                log::warn!(
+                log::info!(
                     "SPOT mass-status position coverage is unavailable because wallet balances cannot be attributed to pairs"
                 );
             }

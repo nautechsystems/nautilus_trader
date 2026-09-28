@@ -1323,7 +1323,7 @@ impl ExecutionClient for DeriveExecutionClient {
                             && order.instrument_name == venue_symbol
                     }) else {
                         let reason = "trigger order not found for client_order_id";
-                        log::warn!("Cannot cancel trigger order {client_order_id}: {reason}");
+                        log::debug!("Cannot cancel trigger order {client_order_id}: {reason}");
                         emitter.emit_order_cancel_rejected_event(
                             strategy_id,
                             instrument_id,

@@ -92,7 +92,8 @@ fn create_csv_reader<P: AsRef<Path>>(
                             path_ref.display()
                         );
                     }
-                    log::warn!(
+
+                    log::debug!(
                         "Attempt {attempt}/{max_retries} failed to open file '{}': {e}. Retrying after {delay_ms}ms...",
                         path_ref.display()
                     );
@@ -135,7 +136,8 @@ fn create_csv_reader<P: AsRef<Path>>(
                         filepath_ref.display()
                     );
                 }
-                log::warn!(
+
+                log::debug!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{}': {e}. Retrying after {DELAY_MS}ms...",
                     filepath_ref.display()
                 );
@@ -161,7 +163,8 @@ fn create_csv_reader<P: AsRef<Path>>(
                         filepath_ref.display()
                     );
                 }
-                log::warn!(
+
+                log::debug!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{}': {e}. Retrying after {DELAY_MS}ms...",
                     filepath_ref.display()
                 );

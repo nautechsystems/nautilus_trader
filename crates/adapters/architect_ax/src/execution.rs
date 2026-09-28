@@ -714,7 +714,7 @@ impl ExecutionClient for AxExecutionClient {
                     cleanup_closed_order_status_report(&report, &caches);
                     emitter.send_order_status_report(report);
                 }
-                Err(e) => log::error!("AX query order failed: {e}"),
+                Err(e) => log::warn!("AX query order failed: {e}"),
             }
             Ok(())
         });
@@ -1339,7 +1339,7 @@ fn dispatch_ws_message(
             log::debug!("Open orders response: {} orders", resp.res.orders.len());
         }
         AxOrdersWsMessage::Error(err) => {
-            log::warn!("WebSocket error: {}", err.message);
+            log::debug!("WebSocket error: {}", err.message);
         }
         AxOrdersWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");
@@ -1539,7 +1539,7 @@ fn dispatch_order_event(
                 );
                 emitter.send_order_event(OrderEventAny::CancelRejected(event));
             } else {
-                log::warn!(
+                log::debug!(
                     "Could not find metadata for cancel rejected order {}",
                     msg.oid
                 );

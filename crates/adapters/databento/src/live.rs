@@ -960,7 +960,7 @@ impl DatabentoFeedHandler {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg) {
             Ok(()) => {}
-            Err(e) => log::error!("Error sending message: {e}"),
+            Err(e) => log::debug!("Error sending message: {e}"),
         }
     }
 

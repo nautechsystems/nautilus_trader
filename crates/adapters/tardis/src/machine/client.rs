@@ -193,7 +193,7 @@ where
                             yield Ok(data);
                         }
                     } else {
-                        log::error!("Missing instrument info for message: {msg:?}");
+                        log::debug!("Missing instrument info for message: {msg:?}");
                         yield Err(Error::ConnectionClosed {
                             reason: "Missing instrument definition info".to_string()
                         });
@@ -201,7 +201,6 @@ where
                     }
                 }
                 Err(e) => {
-                    log::warn!("Error in WebSocket stream: {e:?}");
                     yield Err(e);
                     break;
                 }

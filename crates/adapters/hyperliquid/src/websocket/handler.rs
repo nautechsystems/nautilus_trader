@@ -444,7 +444,7 @@ impl FeedHandler {
                                     };
 
                                     if let Err(e) = result {
-                                        log::error!("Error sending post request id={id}: {e}");
+                                        log::warn!("Error sending post request id={id}: {e}");
                                         self.post_router
                                             .cancel_registration(id, &cancellation_token)
                                             .await;

@@ -666,7 +666,7 @@ impl InteractiveBrokersInstrumentProvider {
         // Check if security type is filtered
         let sec_type_str = security_type_code(&contract.security_type);
         if self.is_filtered_sec_type(&sec_type_str) {
-            tracing::warn!(
+            tracing::debug!(
                 "Skipping filtered security type {} for contract",
                 sec_type_str
             );
@@ -1669,7 +1669,7 @@ impl InteractiveBrokersInstrumentProvider {
     ) -> anyhow::Result<Option<InstrumentId>> {
         let sec_type = security_type_code(&details.contract.security_type);
         if self.is_filtered_sec_type(&sec_type) {
-            tracing::warn!(
+            tracing::debug!(
                 "Skipping filtered security type {} for contract {:?}",
                 sec_type,
                 details.contract

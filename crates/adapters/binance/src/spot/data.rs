@@ -937,7 +937,6 @@ impl DataClient for BinanceSpotDataClient {
                 SpotWsClient::Sbe(ws_client) => {
                     log::info!("Connecting to Binance Spot SBE WebSocket...");
                     ws_client.connect().await.map_err(|e| {
-                        log::error!("Binance Spot SBE WebSocket connection failed: {e:?}");
                         anyhow::anyhow!("failed to connect Binance Spot SBE WebSocket: {e}")
                     })?;
                     log::info!("Binance Spot SBE WebSocket connected");
@@ -991,7 +990,6 @@ impl DataClient for BinanceSpotDataClient {
                 SpotWsClient::JsonPublic(ws_client) => {
                     log::info!("Connecting to Binance Spot public JSON WebSocket...");
                     ws_client.connect().await.map_err(|e| {
-                        log::error!("Binance Spot public JSON WebSocket connection failed: {e:?}");
                         anyhow::anyhow!("failed to connect Binance Spot public JSON WebSocket: {e}")
                     })?;
                     log::info!("Binance Spot public JSON WebSocket connected");

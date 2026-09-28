@@ -585,7 +585,7 @@ impl PolymarketDataClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to refresh Polymarket instruments: {e}");
+                        log::warn!("Failed to refresh Polymarket instruments: {e}");
                     }
                 }
             }

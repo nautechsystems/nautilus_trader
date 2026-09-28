@@ -1065,11 +1065,7 @@ impl OKXRawHttpClient {
                 let retry_after = retry_after(&resp.headers, now);
 
                 if resp.status.is_success() {
-                    let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
-                        .map_err(|e| {
-                            log::warn!("Failed to deserialize OKX response: {e}");
-                            e
-                        })?;
+                    let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)?;
 
                     if okx_response.code != OKX_SUCCESS_CODE
                         && !(accepts_partial_success
@@ -1092,7 +1088,7 @@ impl OKXRawHttpClient {
                     if status == StatusCode::NOT_FOUND {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
-                        log::warn!(
+                        log::debug!(
                             "HTTP error {} with body: {error_body}",
                             resp.status.as_str()
                         );
@@ -1165,21 +1161,12 @@ impl OKXRawHttpClient {
             }
         };
 
-        let result = self
-            .retry_manager
+        self.retry_manager
             .invocation(path, operation, should_retry, create_error)
             .retry_delay(&OKXHttpError::retry_after)
             .cancellation_token(&self.cancellation_token)
             .execute()
-            .await;
-
-        if let Err(ref e) = result
-            && e.is_retryable()
-        {
-            log::error!("Request exhausted retries: path={path}, error={e}");
-        }
-
-        result
+            .await
     }
 
     /// Sets the position mode for an account.
@@ -6034,7 +6021,7 @@ impl OKXHttpClient {
 
     /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// Items with non-zero `sCode` are logged at debug level but do not
     /// fail the entire batch.
     ///
     /// # Errors
@@ -6070,7 +6057,7 @@ impl OKXHttpClient {
                 && code != "0"
             {
                 let msg = item.s_msg.as_deref().unwrap_or("");
-                log::warn!(
+                log::debug!(
                     "Algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
                     item.algo_id
                 );
@@ -6083,7 +6070,7 @@ impl OKXHttpClient {
     /// Cancels advance algo orders (trailing stop, iceberg, TWAP) via HTTP.
     ///
     /// These order types cannot use the standard `cancel-algos` endpoint.
-    /// Items with non-zero `sCode` are logged as warnings.
+    /// Items with non-zero `sCode` are logged at debug level.
     ///
     /// # Errors
     ///
@@ -6118,7 +6105,7 @@ impl OKXHttpClient {
                 && code != "0"
             {
                 let msg = item.s_msg.as_deref().unwrap_or("");
-                log::warn!(
+                log::debug!(
                     "Advance algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
                     item.algo_id
                 );

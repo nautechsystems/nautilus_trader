@@ -1163,7 +1163,7 @@ impl BlockchainDataClientCore {
         swap.block_hash = Some(self.observed_block_hash(swap_event.block_number, "swap")?);
         // Keep the swap and leave price metadata empty rather than aborting the pool sync
         if let Err(e) = swap.calculate_trade_info(&pool.token0, &pool.token1, None) {
-            log::warn!(
+            log::debug!(
                 "Skipping trade info for swap at block {} on pool {}: {e}",
                 swap_event.block_number,
                 pool.instrument_id,

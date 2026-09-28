@@ -886,7 +886,7 @@ impl BinanceFuturesDataClient {
                         }
                     }
                 } else {
-                    log::warn!(
+                    log::debug!(
                         "Received Binance liquidation for uncached symbol {}",
                         liq_msg.order.symbol
                     );
@@ -1220,14 +1220,12 @@ impl DataClient for BinanceFuturesDataClient {
         let session_result = async {
             log::info!("Connecting to Binance Futures market WebSocket...");
             self.ws_client.connect().await.map_err(|e| {
-                log::error!("Binance Futures market WebSocket connection failed: {e:?}");
                 anyhow::anyhow!("failed to connect Binance Futures market WebSocket: {e}")
             })?;
             log::info!("Binance Futures market WebSocket connected");
 
             log::info!("Connecting to Binance Futures public WebSocket...");
             self.ws_public_client.connect().await.map_err(|e| {
-                log::error!("Binance Futures public WebSocket connection failed: {e:?}");
                 anyhow::anyhow!("failed to connect Binance Futures public WebSocket: {e}")
             })?;
             log::info!("Binance Futures public WebSocket connected");

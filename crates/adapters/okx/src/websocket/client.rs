@@ -3651,7 +3651,7 @@ async fn authenticate_session(
         Err(e) => {
             let auth_error = Error::Io(std::io::Error::other(e.to_string()));
             if !auth_attempt_superseded(&auth_error) {
-                log::error!("WebSocket authentication failed: error={e}");
+                log::warn!("WebSocket authentication failed: error={e}");
             }
 
             Err(auth_error)

@@ -817,14 +817,7 @@ pub fn dispatch_ws_message(
         | OKXWsMessage::Instruments(_) => {
             log::debug!("Ignoring data message on execution client");
         }
-        OKXWsMessage::Error(e) => {
-            log::warn!(
-                "Websocket error: code={} message={} conn_id={:?}",
-                e.code,
-                e.message,
-                e.conn_id
-            );
-        }
+        OKXWsMessage::Error(_) => {}
         OKXWsMessage::Reconnected => {
             log::info!("Websocket reconnected");
         }

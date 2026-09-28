@@ -118,10 +118,10 @@ pub(crate) async fn build_and_connect_user_stream(
     );
 
     log::debug!("Connecting to Binance Futures user data stream...");
-    ws_client.connect().await.map_err(|_| {
-        log::error!("Binance Futures private WebSocket connection failed");
-        anyhow::anyhow!("failed to connect Binance Futures private WebSocket")
-    })?;
+    ws_client
+        .connect()
+        .await
+        .map_err(|_| anyhow::anyhow!("failed to connect Binance Futures private WebSocket"))?;
     log::debug!("Connected to Binance Futures user data stream");
 
     Ok(ws_client)
@@ -167,7 +167,7 @@ pub(crate) async fn run_recovery_driver<F>(
 /// Runs recovery with exponential backoff. Retries indefinitely until success
 /// or cancellation, because the alternative (giving up) leaves the user data
 /// stream blind until the next keepalive tick up to 30 minutes later, which
-/// is worse than a persistent error log on a permanent failure.
+/// is worse than a persistent warning on a permanent failure.
 async fn recover_with_retry<F>(ctx: &RecoveryCtx, dispatch_fn: F, cancel: &CancellationToken)
 where
     F: Fn(BinanceFuturesWsStreamsMessage, &DispatchCtx, &tokio::sync::mpsc::UnboundedSender<()>)
@@ -185,7 +185,7 @@ where
         match recover_user_data_stream(ctx, dispatch_fn.clone()).await {
             Ok(()) => return,
             Err(e) => {
-                log::error!("Listen key recovery attempt {attempt} failed: {e:#}");
+                log::warn!("Listen key recovery attempt {attempt} failed: {e:#}");
                 tokio::select! {
                     () = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
                     () = cancel.cancelled() => return,
@@ -204,8 +204,6 @@ where
         + 'static,
 {
     let _guard = ctx.recovery_lock.lock().await;
-
-    log::warn!("Rotating Binance Futures listen key after expiry or keepalive failure");
 
     close_recovery_listen_key(ctx).await?;
 

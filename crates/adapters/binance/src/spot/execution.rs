@@ -674,7 +674,7 @@ impl BinanceSpotExecutionClient {
         reason: String,
     ) -> anyhow::Error {
         ws_trading.mark_user_data_inactive();
-        log::error!("{reason}; Binance Spot private user data is required for execution");
+        log::debug!("{reason}; Binance Spot private user data is required for execution");
 
         self.abort_session_tasks();
 
@@ -1289,7 +1289,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to request Binance Spot instruments: {e}");
+                    log::warn!("Failed to request Binance Spot instruments: {e}");
                 }
             }
         })?;
@@ -2585,7 +2585,7 @@ fn dispatch_ws_trading_message(
             dispatch_state
                 .cancel_replace_request_ids
                 .remove(&request_id);
-            log::error!(
+            log::warn!(
                 "WS trading request failed without structured venue response: request_id={request_id}, {msg}"
             );
         }
@@ -2656,7 +2656,7 @@ fn dispatch_ws_trading_message(
                 match http_client.request_account_state(account_id).await {
                     Ok(state) => emitter.send_account_state(state),
                     Err(e) => {
-                        log::error!("Failed to refresh account state after balance update: {e}");
+                        log::warn!("Failed to refresh account state after balance update: {e}");
                     }
                 }
             }) {
@@ -3167,7 +3167,7 @@ fn handle_spot_order_list_submit_error(
 ) -> anyhow::Result<()> {
     match classify_spot_http_failure(&error) {
         CommandFailure::Ambiguous(reason) => {
-            log::error!("Ambiguous order-list submit failure, awaiting reconciliation: {reason}");
+            log::warn!("Ambiguous order-list submit failure, awaiting reconciliation: {reason}");
         }
         CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
             // An order list is validated and placed atomically by the venue, so a
@@ -3377,9 +3377,7 @@ fn dispatch_execution_report(
     let symbol = report.symbol;
     let instrument_id = InstrumentId::new(symbol.into(), *BINANCE_VENUE);
     let Some(instrument) = http_client.get_instrument(&symbol) else {
-        log::error!(
-            "Cannot dispatch Spot execution report for uncached instrument {instrument_id}"
-        );
+        log::warn!("Cannot dispatch Spot execution report for uncached instrument {instrument_id}");
         return;
     };
     let (price_precision, size_precision) =

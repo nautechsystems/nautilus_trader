@@ -1443,7 +1443,7 @@ impl OKXHttpClient {
 
     /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// Items with non-zero `sCode` are logged at debug level but do not
     /// fail the entire batch.
     ///
     /// # Errors

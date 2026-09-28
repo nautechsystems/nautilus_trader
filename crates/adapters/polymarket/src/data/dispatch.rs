@@ -365,7 +365,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 };
 
                 if ts_event < book.ts_last {
-                    log::warn!(
+                    log::debug!(
                         "Ignoring stale book snapshot for {instrument_id}: ts_event={ts_event} < ts_last={}",
                         book.ts_last,
                     );

@@ -479,7 +479,7 @@ impl BinanceFuturesDataWsFeedHandler {
                 if let Ok(msg) =
                     serde_json::from_value::<BinanceFuturesListenKeyExpiredMsg>(json.clone())
                 {
-                    log::warn!("Listen key expired at {}", msg.event_time);
+                    log::debug!("Listen key expired at {}", msg.event_time);
                 }
                 Some(BinanceFuturesWsStreamsMessage::ListenKeyExpired)
             }

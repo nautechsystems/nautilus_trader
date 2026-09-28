@@ -576,7 +576,7 @@ impl KrakenFuturesRawHttpClient {
         })?;
 
         serde_json::from_str(&response_text).map_err(|e| {
-            log::error!("Failed to parse response from {endpoint}: {response_text}");
+            log::warn!("Failed to parse response from {endpoint}: {response_text}");
             KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
         })
     }

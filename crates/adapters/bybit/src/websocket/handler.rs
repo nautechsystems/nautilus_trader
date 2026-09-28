@@ -292,7 +292,7 @@ impl BybitWsFeedHandler {
                         return Some(order_not_sent_message(&command, &error));
                     }
                     Err(OrderSendFailure::Ambiguous(error)) => {
-                        log::error!("Ambiguous order send failure: req_id={req_id}, error={error}");
+                        log::warn!("Ambiguous order send failure: req_id={req_id}, error={error}");
                     }
                 }
                 continue;
@@ -345,7 +345,7 @@ impl BybitWsFeedHandler {
                                     return Some(order_not_sent_message(&command, &error));
                                 }
                                 Err(OrderSendFailure::Ambiguous(error)) => {
-                                    log::error!(
+                                    log::warn!(
                                         "Ambiguous order send failure: req_id={req_id}, error={error}"
                                     );
                                 }

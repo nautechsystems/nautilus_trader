@@ -454,7 +454,7 @@ impl KrakenSpotDataClient {
                         );
 
                         if let Some(request) = resync {
-                            log::warn!(
+                            log::info!(
                                 "Resyncing Kraken L3 book: symbol={}, depth={}, reason={}",
                                 request.symbol,
                                 request.depth,

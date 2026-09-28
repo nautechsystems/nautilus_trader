@@ -2730,7 +2730,8 @@ fn classify_post_failure(failure: PostRequestError) -> CommandFailure {
             (error, CommandFailure::venue_rejected(reason))
         }
     };
-    log::warn!("WebSocket command failed: {error}");
+
+    log::debug!("WebSocket command failed: {error}");
     outcome
 }
 
@@ -3138,7 +3139,7 @@ async fn post_order_batch(
                     .zip(inner_errors.iter())
                 {
                     if let Some(error_msg) = error {
-                        log::warn!(
+                        log::debug!(
                             "Order {} rejected by exchange: {error_msg}",
                             order.client_order_id(),
                         );
@@ -3149,7 +3150,10 @@ async fn post_order_batch(
                 && inner_errors.len() == 1
                 && let Some(error_msg) = inner_errors[0].as_ref()
             {
-                log::warn!("{label} rejected by deterministic whole-batch validation: {error_msg}",);
+                log::debug!(
+                    "{label} rejected by deterministic whole-batch validation: {error_msg}",
+                );
+
                 for (order, cloid_hex) in orders.iter().zip(cloid_hexes.iter()) {
                     rejection_route.emit_once(order, error_msg, ts, cloid_hex);
                 }
