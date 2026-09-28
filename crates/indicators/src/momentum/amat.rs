@@ -305,12 +305,7 @@ mod tests {
 
     #[rstest]
     fn long_run_clears_after_sustained_bearish_reversal() {
-        let mut ind = ArcherMovingAveragesTrends::new(
-            3,
-            4,
-            5,
-            Some(MovingAverageType::Simple),
-        );
+        let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
 
         for value in 0..60 {
             ind.update_raw(value as f64);
@@ -330,12 +325,7 @@ mod tests {
 
     #[rstest]
     fn short_run_clears_after_sustained_bullish_reversal() {
-        let mut ind = ArcherMovingAveragesTrends::new(
-            3,
-            4,
-            5,
-            Some(MovingAverageType::Simple),
-        );
+        let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
 
         for value in (0..60).rev() {
             ind.update_raw(value as f64);
