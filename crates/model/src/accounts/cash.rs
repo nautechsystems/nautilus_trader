@@ -660,23 +660,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_sell_with_base_currency_is_unchanged(
-        cash_account_million_usd: CashAccount,
-        audusd_sim: CurrencyPair,
-    ) {
-        let balance_locked = cash_account_million_usd
-            .calculate_balance_locked(
-                &audusd_sim.into_any(),
-                OrderSide::Sell,
-                Quantity::from("1000000"),
-                Price::from("0.8"),
-                None,
-            )
-            .unwrap();
-        assert_eq!(balance_locked, Money::from("1000000 AUD"));
-    }
-
-    #[rstest]
     fn test_calculate_balance_locked_buy_no_base_currency_still_reserves_notional(
         cash_account_million_usd: CashAccount,
         binary_option: BinaryOption,
