@@ -653,6 +653,16 @@ impl OcmState {
             .sum()
     }
 
+    pub(crate) fn replaced_voided_quantity(&self, client_order_id: &ClientOrderId) -> Decimal {
+        self.order_correlations
+            .get(client_order_id)
+            .into_iter()
+            .flat_map(|correlation| &correlation.venue_order_ids)
+            .filter(|bet_id| self.replaced_venue_order_ids.contains(*bet_id))
+            .map(|bet_id| self.fill_tracker.voided_quantity(bet_id))
+            .sum()
+    }
+
     pub(crate) fn confirm_pending_reduction(
         &mut self,
         client_order_id: &ClientOrderId,

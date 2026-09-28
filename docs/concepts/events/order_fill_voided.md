@@ -49,6 +49,9 @@ local fill.
   reconciliation ignores fill decreases in working reports without explicit void evidence,
   `VOIDED` does not reopen, and snapshot reconciliation derives corrections only from retained
   fills.
+- Report `OrderUpdated.quantity` gross (see [OrderUpdated](order_updated.md#contract)): inclusive
+  of filled and non-reopened voided quantity. Nautilus already excludes the non-reopened voided
+  quantity from leaves; an adapter that also nets it out of `quantity` subtracts it twice.
 
 ### Status behavior with a local fill
 
@@ -56,7 +59,10 @@ The corrected quantity does not become executable by default:
 
 - A filled order becomes terminal `VOIDED`, even when some effective filled quantity survives.
 - A partially filled order preserves the remainder that was already working. Its status derives
-  from the surviving effective fills and its leaves exclude the non-reopened void quantity.
+  from the surviving effective fills and its leaves exclude the non-reopened void quantity. This
+  exclusion is preserved across subsequent [`OrderUpdated`](order_updated.md) events: Nautilus
+  always derives leaves as `quantity - filled_qty - non_reopened_voided_qty`, so a later quantity
+  change does not put the voided portion back into leaves.
 - A canceled or expired order keeps its terminal status.
 - A correction with `is_reopened=true` also returns the corrected quantity to working leaves. The
   order derives `ACCEPTED` when no effective fill remains or `PARTIALLY_FILLED` when some quantity

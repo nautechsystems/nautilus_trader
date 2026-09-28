@@ -8,6 +8,19 @@ order emulator, or reconciliation.
 Typical transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handler:
 `on_order_updated`.
 
+## Contract
+
+`quantity` is the order's **gross** quantity: inclusive of filled quantity and any non-reopened
+voided quantity (see [OrderFillVoided](order_fill_voided.md)). Nautilus derives working leaves as
+
+```text
+leaves_qty = max(quantity - filled_qty - non_reopened_voided_qty, 0)
+```
+
+so a non-reopened void stays excluded from leaves across subsequent updates without adapters having
+to net it out of `quantity` themselves. An adapter that reports `quantity` net of a non-reopened
+void causes leaves to double-subtract that quantity.
+
 ## Fields
 
 Beyond the [common Python order event fields](index.md#common-python-order-event-fields),

@@ -68,7 +68,9 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
         OrderPendingUpdate, OrderPriceField, OrderSubmitted, PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
-        order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
+        order::spec::{
+            OrderAcceptedSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderSubmittedSpec,
+        },
     },
     fees::MakerTakerFeeRates,
     identifiers::{
@@ -7590,6 +7592,94 @@ fn test_modify_order_rechecks_max_notional(
     assert_eq!(cached.price(), order.price());
     assert_eq!(cached.trigger_price(), order.trigger_price());
     assert_eq!(cached.status(), OrderStatus::Accepted);
+}
+
+/// `check_modify_orders_risk` projects the new quantity onto a clone of the order via
+/// `OrderAny::update()` directly, bypassing `OrderAny::apply()`. `check_margin` only requires
+/// funds for the *increase* over the original order's margin (`margin_increase`), and the
+/// original's leaves is always computed correctly (never projected). Before the leaves-qty fix,
+/// the projection ignored a non-reopened voided quantity, so the projected leaves would be 0.700
+/// ETH (1.000 - 0.300 filled) instead of the correct 0.500 (1.000 - 0.300 filled - 0.200
+/// non-reopened voided): required increase 2 USDT (7 - 5) instead of the correct 0 (5 - 5, which
+/// short-circuits the balance check entirely for a Modify). A free balance of 1 USDT is enough for
+/// the correct zero increase but not the buggy 2 USDT one.
+#[rstest]
+fn test_modify_order_projection_excludes_non_reopened_voided_quantity(
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_eth_usdt.clone()).unwrap();
+    let account_id = AccountId::from("BINANCE-001");
+    let mut account = margin_account_with_usdt_balance("1 USDT", "0 USDT", "1 USDT");
+    account.set_default_leverage(dec!(10));
+    cache.add_account(AccountAny::Margin(account)).unwrap();
+
+    let mut order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("100.00"))
+            .build(),
+        account_id,
+    );
+
+    let fill = order_filled(
+        &order,
+        &instrument_eth_usdt,
+        None,
+        Some(account_id),
+        None,
+        Some(TradeId::from("T-RISK-VOID")),
+        Some(Quantity::from("0.500")),
+        None,
+        None,
+        None,
+        None,
+    );
+    order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+    order
+        .apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trader_id(fill.trader_id)
+                .strategy_id(fill.strategy_id)
+                .instrument_id(fill.instrument_id)
+                .client_order_id(fill.client_order_id)
+                .venue_order_id(fill.venue_order_id)
+                .account_id(fill.account_id)
+                .trade_id(fill.trade_id)
+                .voided_qty(Quantity::from("0.200"))
+                .order_side(fill.order_side)
+                .order_type(fill.order_type)
+                .last_px(fill.last_px)
+                .currency(fill.currency)
+                .liquidity_side(fill.liquidity_side)
+                .maybe_position_id(fill.position_id)
+                .is_reopened(false)
+                .build(),
+        ))
+        .unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from("0.300"));
+    assert_eq!(order.non_reopened_voided_qty(), Quantity::from("0.200"));
+    assert_eq!(order.leaves_qty(), Quantity::from("0.500"));
+
+    cache.add_order(order.clone(), None, None, true).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let modify = modify_command(&order, Some(Quantity::from("1.000")), None, None);
+    let command = TradingCommand::ModifyOrder(modify);
+    risk_engine.execute(command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    assert!(
+        events.is_empty(),
+        "expected the modify to pass risk with corrected leaves, found {events:?}"
+    );
+    assert_eq!(commands, vec![command]);
 }
 
 #[rstest]
