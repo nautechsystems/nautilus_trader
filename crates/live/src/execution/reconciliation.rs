@@ -819,10 +819,7 @@ pub(super) fn distinct_position_reports(
         });
 
         if is_duplicate {
-            log::warn!(
-                "Duplicate position report for {} in mass status",
-                report.instrument_id
-            );
+            log::warn!("Duplicate position report for {}", report.instrument_id);
             continue;
         }
 

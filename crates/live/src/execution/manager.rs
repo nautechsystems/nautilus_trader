@@ -2333,17 +2333,7 @@ impl ExecutionManager {
         failed_clients: &IndexSet<ClientId>,
         clients: &[&dyn ExecutionClient],
     ) -> PositionFillReportPlan {
-        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
-            IndexMap::new();
-
-        for report in reports {
-            if self.should_reconcile_instrument(&report.instrument_id) {
-                venue_positions
-                    .entry((report.instrument_id, report.account_id))
-                    .or_default()
-                    .push(report.clone());
-            }
-        }
+        let venue_positions = self.group_position_reports(reports.iter().cloned());
 
         let keys = check
             .client_coverage
@@ -2672,20 +2662,7 @@ impl ExecutionManager {
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
 
-        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
-            IndexMap::new();
-
-        for report in reports {
-            if !self.should_reconcile_instrument(&report.instrument_id) {
-                continue;
-            }
-
-            venue_positions
-                .entry((report.instrument_id, report.account_id))
-                .or_default()
-                .push(report);
-        }
-
+        let venue_positions = self.group_position_reports(reports);
         let mut events = Vec::new();
 
         for key in check.client_coverage.keys() {
@@ -2797,6 +2774,30 @@ impl ExecutionManager {
         }
 
         events
+    }
+
+    fn group_position_reports(
+        &self,
+        reports: impl IntoIterator<Item = PositionStatusReport>,
+    ) -> IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> {
+        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
+            IndexMap::new();
+
+        for report in reports {
+            if !self.should_reconcile_instrument(&report.instrument_id) {
+                continue;
+            }
+
+            venue_positions
+                .entry((report.instrument_id, report.account_id))
+                .or_default()
+                .push(report);
+        }
+
+        venue_positions
+            .into_iter()
+            .map(|(key, reports)| (key, distinct_position_reports(reports)))
+            .collect()
     }
 
     /// Returns any external order claim for the given instrument ID.

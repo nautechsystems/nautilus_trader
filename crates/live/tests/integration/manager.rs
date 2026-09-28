@@ -7657,7 +7657,7 @@ async fn test_mass_status_netting_ignores_duplicate_position_reports(
         .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
-    let duplicate_message = format!("Duplicate position report for {instrument_id} in mass status");
+    let duplicate_message = format!("Duplicate position report for {instrument_id}");
     let unresolved_message = format!(
         "account={}, instrument={instrument_id}, venue_position_id=None, venue_quantity=5.0: position recovery did not restore the reported quantity",
         test_account_id(),
@@ -16285,6 +16285,126 @@ async fn test_position_check_aggregates_hedge_positions_before_comparing_report(
             .position_recon_retry_count(&(instrument_id, test_account_id())),
         0
     );
+}
+
+#[rstest]
+#[case::duplicates(0, false)]
+#[case::distinct_snapshots(1, true)]
+#[tokio::test]
+async fn test_position_check_ignores_duplicate_position_reports(
+    #[case] ts_last_step: u64,
+    #[case] discrepant: bool,
+) {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let key = (instrument_id, test_account_id());
+
+    ctx.add_instrument(instrument.clone());
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-NET"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    ctx.add_position(&position);
+
+    let reports: Vec<PositionStatusReport> = (0..2)
+        .map(|i| {
+            PositionStatusReport::new(
+                test_account_id(),
+                instrument_id,
+                PositionSide::Long,
+                Quantity::from("5.0"),
+                UnixNanos::from(1_000_000 + i * ts_last_step),
+                UnixNanos::from(2_000_000 + i),
+                None,
+                None,
+                Some(dec!(3000.00)),
+            )
+        })
+        .collect();
+
+    let mock_client = MockPositionExecutionClient::new(vec![], reports.clone());
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+    let queried_clients = IndexSet::from([mock_client.client_id()]);
+    let mut check = ctx
+        .manager
+        .prepare_position_report_check(UUID4::new(), &clients);
+
+    let plan = ctx.manager.plan_position_fill_reports(
+        &mut check,
+        &reports,
+        &queried_clients,
+        &IndexSet::new(),
+        &clients,
+    );
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let discrepancy_keys = if discrepant {
+        IndexSet::from([key])
+    } else {
+        IndexSet::new()
+    };
+
+    assert_eq!(plan.discrepancy_keys, discrepancy_keys);
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager.position_recon_retry_count(&key),
+        u32::from(discrepant)
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_skips_reports_outside_reconciliation_instruments() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: DurationNanos::ZERO,
+        reconciliation_instrument_ids: IndexSet::from([test_instrument_id()]),
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let excluded_key = (test_instrument_id2(), test_account_id());
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        test_instrument_id2(),
+        PositionSide::Long,
+        Quantity::from("5"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(50000.0)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report.clone()]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+    let queried_clients = IndexSet::from([mock_client.client_id()]);
+    let mut check = ctx
+        .manager
+        .prepare_position_report_check(UUID4::new(), &clients);
+
+    let plan = ctx.manager.plan_position_fill_reports(
+        &mut check,
+        &[report],
+        &queried_clients,
+        &IndexSet::new(),
+        &clients,
+    );
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(plan.discrepancy_keys.is_empty());
+    assert!(plan.queries.is_empty());
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_recon_retry_count(&excluded_key), 0);
 }
 
 #[rstest]

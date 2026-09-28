@@ -428,6 +428,9 @@ does not prevent recovery from an explicit position report.
 
 - Deduplicates order reports within the batch and logs warnings.
 - Logs duplicate trade IDs as warnings for investigation.
+- Counts a position report once in startup validation and continuous position checks when it
+  matches an earlier report apart from `report_id` and `ts_init`, and logs a warning for each
+  duplicate. Reports that differ in any other field, including `ts_last`, count separately.
 
 ### Order reconciliation
 
@@ -526,10 +529,6 @@ When the venue reports both long and short positions, both side totals must also
 equal net quantities alone are insufficient. A residual difference outside the account tolerance
 remains unresolved even if it rounds to zero at the instrument size precision. Differences within
 the tolerance remain acceptable, including tiny residuals around zero.
-
-A report repeated with the same fields apart from `report_id` and `ts_init` counts once, and the
-engine logs a warning for each duplicate. Reports that differ in any other field, including
-`ts_last`, count separately.
 
 For an open position with a reported `avg_px_open`, startup also checks the entry average using
 the fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument
