@@ -18,7 +18,8 @@
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::Context;
-use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{Params, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
@@ -225,6 +226,7 @@ pub fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
+        .maybe_info(pair_altname_info(pair_name, definition.altname.as_str()))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -610,6 +612,26 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
         .checked_mul(NANOSECONDS_IN_MILLISECOND)
         .with_context(|| format!("{field} timestamp overflowed when converting to nanoseconds"))?;
     Ok(UnixNanos::from(nanos))
+}
+
+/// Carries Kraken's `altname` on the instrument when it differs from the `AssetPairs` key.
+///
+/// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
+/// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
+/// sees the `AssetPairs` response, so the alias has to travel with the instrument.
+fn pair_altname_info(pair_name: &str, altname: &str) -> Option<Params> {
+    use crate::common::consts::KRAKEN_ALTNAME_KEY;
+
+    if altname == pair_name {
+        return None;
+    }
+
+    let mut map = IndexMap::new();
+    map.insert(
+        KRAKEN_ALTNAME_KEY.to_string(),
+        serde_json::Value::String(altname.to_string()),
+    );
+    Some(Params::from_index_map(map))
 }
 
 /// Parses a Kraken spot order into a Nautilus OrderStatusReport.
