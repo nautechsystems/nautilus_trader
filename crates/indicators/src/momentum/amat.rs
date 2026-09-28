@@ -304,6 +304,56 @@ mod tests {
     }
 
     #[rstest]
+    fn long_run_clears_after_sustained_bearish_reversal() {
+        let mut ind = ArcherMovingAveragesTrends::new(
+            3,
+            4,
+            5,
+            Some(MovingAverageType::Simple),
+        );
+
+        for value in 0..60 {
+            ind.update_raw(value as f64);
+        }
+
+        assert!(ind.initialized());
+        assert!(ind.long_run);
+        assert!(!ind.short_run);
+
+        for value in (20..60).rev() {
+            ind.update_raw(value as f64);
+        }
+
+        assert!(!ind.long_run);
+        assert!(ind.short_run);
+    }
+
+    #[rstest]
+    fn short_run_clears_after_sustained_bullish_reversal() {
+        let mut ind = ArcherMovingAveragesTrends::new(
+            3,
+            4,
+            5,
+            Some(MovingAverageType::Simple),
+        );
+
+        for value in (0..60).rev() {
+            ind.update_raw(value as f64);
+        }
+
+        assert!(ind.initialized());
+        assert!(ind.short_run);
+        assert!(!ind.long_run);
+
+        for value in 20..60 {
+            ind.update_raw(value as f64);
+        }
+
+        assert!(ind.long_run);
+        assert!(!ind.short_run);
+    }
+
+    #[rstest]
     fn reset_clears_internal_state() {
         let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, None);
         feed_sequence(&mut ind, 0, 50, 1);
