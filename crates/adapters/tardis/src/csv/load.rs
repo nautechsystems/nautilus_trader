@@ -181,6 +181,7 @@ pub fn load_deltas<P: AsRef<Path>>(
     let mut current_size_precision = size_precision.unwrap_or(0);
     let mut last_ts_init: Option<UnixNanos> = None;
     let mut last_is_snapshot = false;
+    let mut seen_first_snapshot = false;
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
@@ -193,6 +194,24 @@ pub fn load_deltas<P: AsRef<Path>>(
         }
 
         let data: TardisBookUpdateRecord = record.deserialize(None)?;
+
+        // Tardis documents that a file may open with buffered updates received before the
+        // exchange sent the initial snapshot after a connection restart; these rows have no
+        // book state to apply against and should be skipped (see
+        // https://docs.tardis.dev/faq/order-books).
+        if !seen_first_snapshot {
+            if !data.is_snapshot {
+                log::warn!(
+                    "Skipping pre-snapshot buffered delta record for {}/{} at local_timestamp={} \
+                     (received before the first snapshot row)",
+                    data.exchange,
+                    data.symbol,
+                    data.local_timestamp,
+                );
+                continue;
+            }
+            seen_first_snapshot = true;
+        }
 
         update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
         update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
@@ -1314,14 +1333,76 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
+    fn test_load_deltas_skips_rows_before_first_snapshot() {
+        // Tardis documents that a file may open with buffered updates received before the
+        // exchange sent the initial snapshot after a connection restart (see
+        // https://docs.tardis.dev/faq/order-books). These two leading rows have
+        // `is_snapshot=false` and must be skipped, not applied to an empty book.
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
+binance-futures,BTCUSDT,3,3,true,bid,100.0,5.0
+binance-futures,BTCUSDT,3,3,true,ask,100.5,6.0
+binance-futures,BTCUSDT,4,4,false,bid,100.0,7.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_pre_snapshot_orphans.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(0), None, None).unwrap();
+
+        // The 2 pre-snapshot rows are skipped entirely: 1 CLEAR + 2 snapshot Adds + 1 Update.
+        assert_eq!(deltas.len(), 4);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[0].ts_event, UnixNanos::from(3_000));
+        assert_eq!(deltas[0].ts_init, UnixNanos::from(3_000));
+        assert_eq!(deltas[1].action, BookAction::Add);
+        assert_eq!(deltas[1].order.price, Price::from("100.0"));
+        assert_eq!(deltas[2].action, BookAction::Add);
+        assert_eq!(deltas[2].order.price, Price::from("100.5"));
+        assert_eq!(deltas[3].action, BookAction::Update);
+        assert_eq!(deltas[3].order.price, Price::from("100.0"));
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_returns_empty_when_no_snapshot_present() {
+        // A file with no `is_snapshot=true` row anywhere has no usable base state to apply
+        // deltas against, so every row is skipped and no deltas are produced.
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_no_snapshot.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(0), None, None).unwrap();
+
+        assert!(deltas.is_empty());
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
     fn test_load_deltas_groups_messages_by_local_timestamp() {
+        // Fixture opens with a snapshot row (own, earlier local_timestamp) so the two message
+        // groups that follow are not treated as pre-snapshot orphans; it contributes its own
+        // CLEAR + Add pair ahead of the two original message groups.
         let filepath = get_test_data_path("csv/deltas_message_boundaries.csv");
         let deltas = load_deltas(filepath, Some(1), Some(1), None, None).unwrap();
 
-        assert_eq!(deltas.len(), 4);
+        assert_eq!(deltas.len(), 6);
+        assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(
             deltas.iter().map(|delta| delta.flags).collect::<Vec<_>>(),
-            vec![0, RecordFlag::F_LAST as u8, 0, RecordFlag::F_LAST as u8]
+            vec![
+                RecordFlag::F_SNAPSHOT as u8, // OrderBookDelta::clear() always sets F_SNAPSHOT
+                RecordFlag::F_LAST as u8,
+                0,
+                RecordFlag::F_LAST as u8,
+                0,
+                RecordFlag::F_LAST as u8,
+            ]
         );
         assert_eq!(
             deltas
@@ -1329,6 +1410,8 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
                 .map(|delta| delta.ts_event)
                 .collect::<Vec<_>>(),
             vec![
+                UnixNanos::from(900_000),
+                UnixNanos::from(900_000),
                 UnixNanos::from(1_000_000),
                 UnixNanos::from(1_000_000),
                 UnixNanos::from(1_000_000),
@@ -1338,24 +1421,29 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(
             deltas.iter().map(|delta| delta.ts_init).collect::<Vec<_>>(),
             vec![
+                UnixNanos::from(1_900_000),
+                UnixNanos::from(1_900_000),
                 UnixNanos::from(2_000_000),
                 UnixNanos::from(2_000_000),
                 UnixNanos::from(2_010_000),
                 UnixNanos::from(2_010_000),
             ]
         );
-        assert_eq!(deltas[0].order.side, Some(OrderSide::Buy));
-        assert_eq!(deltas[0].order.price, Price::from("100.0"));
-        assert_eq!(deltas[0].order.size, Quantity::from("1.0"));
-        assert_eq!(deltas[1].order.side, Some(OrderSide::Sell));
-        assert_eq!(deltas[1].order.price, Price::from("101.0"));
-        assert_eq!(deltas[1].order.size, Quantity::from("2.0"));
+        assert_eq!(deltas[1].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[1].order.price, Price::from("98.0"));
+        assert_eq!(deltas[1].order.size, Quantity::from("9.0"));
         assert_eq!(deltas[2].order.side, Some(OrderSide::Buy));
-        assert_eq!(deltas[2].order.price, Price::from("99.0"));
-        assert_eq!(deltas[2].order.size, Quantity::from("3.0"));
+        assert_eq!(deltas[2].order.price, Price::from("100.0"));
+        assert_eq!(deltas[2].order.size, Quantity::from("1.0"));
         assert_eq!(deltas[3].order.side, Some(OrderSide::Sell));
-        assert_eq!(deltas[3].order.price, Price::from("102.0"));
-        assert_eq!(deltas[3].order.size, Quantity::from("4.0"));
+        assert_eq!(deltas[3].order.price, Price::from("101.0"));
+        assert_eq!(deltas[3].order.size, Quantity::from("2.0"));
+        assert_eq!(deltas[4].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[4].order.price, Price::from("99.0"));
+        assert_eq!(deltas[4].order.size, Quantity::from("3.0"));
+        assert_eq!(deltas[5].order.side, Some(OrderSide::Sell));
+        assert_eq!(deltas[5].order.price, Price::from("102.0"));
+        assert_eq!(deltas[5].order.size, Quantity::from("4.0"));
     }
 
     #[rstest]
