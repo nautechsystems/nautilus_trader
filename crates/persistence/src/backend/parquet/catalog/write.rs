@@ -416,7 +416,7 @@ impl ParquetDataCatalog {
 
             let directory = self.make_path(&instrument_prefix, Some(instrument_id.as_str()))?;
 
-            // ArrowWriter stores the full schema (including "class" metadata) in ARROW:schema.
+            // ArrowWriter stores the full schema (including `type_name` metadata) in ARROW:schema.
             // When reading, use the builder's schema for metadata (see query_instruments).
             let path = self.write_parquet_file_checked(
                 &directory,

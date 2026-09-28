@@ -104,7 +104,6 @@ impl FundingRateUpdate {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("instrument_id".to_string(), "Utf8".to_string());
         metadata.insert("rate".to_string(), "Utf8".to_string());
         metadata.insert("interval".to_string(), "UInt64".to_string());
         metadata.insert(

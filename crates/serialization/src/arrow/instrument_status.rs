@@ -22,14 +22,13 @@ use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeFromRecordBatch, EncodeToRecordBatch,
     EncodingError, KEY_INSTRUMENT_ID,
     json::{
-        JsonFieldSpec, decode_batch, encode_batch_with_identifier, metadata_for_type,
-        schema_for_type_with_identifier,
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
     },
 };
 
 const INSTRUMENT_STATUS_FIELDS: &[JsonFieldSpec] = &[
-    JsonFieldSpec::utf8("instrument_id", false),
-    JsonFieldSpec::utf8("action", false),
+    JsonFieldSpec::enum_dictionary("action", false),
     JsonFieldSpec::timestamp("ts_event", false),
     JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::utf8("reason", true),
@@ -79,10 +78,11 @@ impl DecodeFromRecordBatch for InstrumentStatus {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
+        decode_batch_with_metadata_fields(
             metadata,
             &record_batch,
             INSTRUMENT_STATUS_FIELDS,
+            &[KEY_INSTRUMENT_ID],
             Some("InstrumentStatus"),
         )
     }
@@ -137,8 +137,39 @@ mod tests {
 
         let original = vec![status1, status2];
         let record_batch = InstrumentStatus::encode_batch(&metadata, &original).unwrap();
+        let schema = record_batch.schema();
         let decoded: Vec<Data> =
-            InstrumentStatus::decode_data_batch(&metadata, record_batch).unwrap();
+            InstrumentStatus::decode_data_batch(schema.metadata(), record_batch).unwrap();
+
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .map(|field| field.name().as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "action",
+                "ts_event",
+                "ts_init",
+                "reason",
+                "trading_event",
+                "is_trading",
+                "is_quoting",
+                "is_short_sell_restricted",
+                "identifier",
+            ]
+        );
+        assert_eq!(
+            schema.field(0).data_type(),
+            &crate::arrow::enum_dictionary_data_type()
+        );
+        assert_eq!(
+            schema.metadata(),
+            &HashMap::from([
+                ("type_name".to_string(), "InstrumentStatus".to_string()),
+                (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            ])
+        );
 
         assert_eq!(decoded.len(), original.len());
         for (orig, dec) in original.iter().zip(decoded.iter()) {

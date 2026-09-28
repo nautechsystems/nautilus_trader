@@ -163,7 +163,6 @@ def test_funding_rate_update_get_fields() -> None:
     fields = FundingRateUpdate.get_fields()
 
     assert fields == {
-        "instrument_id": "Utf8",
         "rate": "Utf8",
         "interval": "UInt64",
         "next_funding_ns": 'Timestamp(Nanosecond, Some("UTC"))',

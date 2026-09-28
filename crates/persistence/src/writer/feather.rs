@@ -67,7 +67,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{
-    EncodeToRecordBatch, KEY_INSTRUMENT_ID, catalog_identifier_from_metadata,
+    EncodeToRecordBatch, KEY_INSTRUMENT_ID, KEY_TYPE_NAME, catalog_identifier_from_metadata,
     record_batch_with_identifier_column, schema_with_identifier_column,
 };
 use object_store::{ObjectStore, ObjectStoreExt, path::Path};
@@ -501,6 +501,8 @@ impl FeatherWriter {
             MarkPriceUpdate::path_prefix().to_string(),
             IndexPriceUpdate::path_prefix().to_string(),
             FundingRateUpdate::path_prefix().to_string(),
+            InstrumentStatus::path_prefix().to_string(),
+            InstrumentClose::path_prefix().to_string(),
         ])
     }
 
@@ -531,7 +533,7 @@ impl FeatherWriter {
         let identifier = catalog_identifier_from_metadata(&metadata);
 
         let instrument_type = if T::path_prefix() == InstrumentAny::path_prefix() {
-            metadata.get("class").map(String::as_str)
+            metadata.get(KEY_TYPE_NAME).map(String::as_str)
         } else {
             None
         };
@@ -604,7 +606,7 @@ impl FeatherWriter {
             let identifier = catalog_identifier_from_metadata(&metadata);
 
             let instrument_type = if type_str == InstrumentAny::path_prefix() {
-                metadata.get("class").map(String::as_str)
+                metadata.get(KEY_TYPE_NAME).map(String::as_str)
             } else {
                 None
             };
@@ -1851,6 +1853,8 @@ mod tests {
                 "mark_prices".to_string(),
                 "index_prices".to_string(),
                 "funding_rates".to_string(),
+                "instrument_status".to_string(),
+                "instrument_closes".to_string(),
             ]),
         );
     }
@@ -2149,7 +2153,9 @@ mod tests {
         let mut reader = StreamReader::try_new(Cursor::new(buffer.as_slice()), None).unwrap();
 
         let read_metadata = reader.schema().metadata().clone();
-        assert_eq!(read_metadata, metadata);
+        let mut expected_metadata = metadata.clone();
+        expected_metadata.insert("type_name".to_string(), "QuoteTick".to_string());
+        assert_eq!(read_metadata, expected_metadata);
 
         let read_batch = reader.next().unwrap().unwrap();
         assert_eq!(read_batch.column(0), batch.column(0));

@@ -18,59 +18,67 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nautilus_serialization::arrow::normalize_legacy_fixed_columns;
+use arrow::record_batch::RecordBatch;
+use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick};
+use nautilus_serialization::arrow::{
+    DecodeFromRecordBatch, EncodeToRecordBatch, normalize_legacy_fixed_columns,
+    record_batch_without_identifier_column,
+};
 use parquet::{
-    arrow::{ARROW_SCHEMA_META_KEY, ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
+    arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
     basic::{Compression, ZstdLevel},
     file::properties::WriterProperties,
 };
 
-const FILES: &[&str] = &[
-    "quotes.parquet",
-    "trades.parquet",
-    "bars.parquet",
-    "deltas.parquet",
-    "quotes-3-groups-filter-query.parquet",
+type RoundTrip = fn(RecordBatch) -> anyhow::Result<RecordBatch>;
+
+const FILES: &[(&str, RoundTrip)] = &[
+    ("quotes.parquet", round_trip::<QuoteTick>),
+    ("trades.parquet", round_trip::<TradeTick>),
+    ("bars.parquet", round_trip::<Bar>),
+    ("deltas.parquet", round_trip::<OrderBookDelta>),
+    (
+        "quotes-3-groups-filter-query.parquet",
+        round_trip::<QuoteTick>,
+    ),
 ];
+
+// Current-format fixtures without a legacy source, re-encoded in place
+const CURRENT_FILES: &[(&str, RoundTrip)] = &[("depths.parquet", round_trip::<OrderBookDepth>)];
 
 fn main() -> anyhow::Result<()> {
     let nautilus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/nautilus");
     let source_dir = nautilus.join("legacy/64-bit");
     let target_dir = nautilus.join("arrow");
 
-    for file_name in FILES {
+    for (file_name, round_trip) in FILES {
         let source = source_dir.join(file_name);
         let target = target_dir.join(file_name);
-        transcode_legacy_fixture(&source, &target)?;
+        transcode_legacy_fixture(&source, &target, *round_trip)?;
+        println!("Wrote {}", target.display());
+    }
+
+    for (file_name, round_trip) in CURRENT_FILES {
+        let target = target_dir.join(file_name);
+        round_trip_fixture(&target, *round_trip)?;
         println!("Wrote {}", target.display());
     }
 
     Ok(())
 }
 
-fn transcode_legacy_fixture(source: &Path, target: &Path) -> anyhow::Result<()> {
+fn transcode_legacy_fixture(
+    source: &Path,
+    target: &Path,
+    round_trip: RoundTrip,
+) -> anyhow::Result<()> {
     let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(source)?)?;
     let schema = builder.schema().clone();
     let row_groups = builder.metadata().num_row_groups();
     let preserve_row_groups =
         (0..row_groups).any(|index| builder.metadata().row_group(index).num_rows() != 1);
 
-    let metadata = builder
-        .metadata()
-        .file_metadata()
-        .key_value_metadata()
-        .map(|entries| {
-            entries
-                .iter()
-                .filter(|entry| entry.key != ARROW_SCHEMA_META_KEY)
-                .cloned()
-                .collect()
-        });
-
-    let properties = WriterProperties::builder()
-        .set_key_value_metadata(metadata)
-        .set_compression(Compression::ZSTD(ZstdLevel::default()))
-        .build();
+    let properties = writer_properties();
     let mut writer: Option<ArrowWriter<File>> = None;
 
     for row_group in 0..row_groups {
@@ -81,6 +89,7 @@ fn transcode_legacy_fixture(source: &Path, target: &Path) -> anyhow::Result<()> 
 
         for batch in reader {
             let batch = normalize_legacy_fixed_columns(&batch?.with_schema(schema.clone())?)?;
+            let batch = round_trip(batch)?;
 
             if let Some(writer) = writer.as_mut() {
                 writer.write(&batch)?;
@@ -109,4 +118,45 @@ fn transcode_legacy_fixture(source: &Path, target: &Path) -> anyhow::Result<()> 
         .ok_or_else(|| anyhow::anyhow!("legacy fixture {} produced no batches", source.display()))?
         .close()?;
     Ok(())
+}
+
+fn round_trip_fixture(path: &Path, round_trip: RoundTrip) -> anyhow::Result<()> {
+    let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(path)?)?;
+    let schema = builder.schema().clone();
+    let batches = builder
+        .build()?
+        .map(|batch| round_trip(batch?.with_schema(schema.clone())?))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let first = batches
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("fixture {} has no batches", path.display()))?;
+    let mut writer = ArrowWriter::try_new(
+        File::create(path)?,
+        first.schema(),
+        Some(writer_properties()),
+    )?;
+
+    for batch in &batches {
+        writer.write(batch)?;
+    }
+
+    writer.close()?;
+    Ok(())
+}
+
+fn writer_properties() -> WriterProperties {
+    WriterProperties::builder()
+        .set_compression(Compression::ZSTD(ZstdLevel::default()))
+        .build()
+}
+
+// Writes the schema and metadata that the current catalog writer produces for the same values
+fn round_trip<T>(batch: RecordBatch) -> anyhow::Result<RecordBatch>
+where
+    T: DecodeFromRecordBatch + EncodeToRecordBatch,
+{
+    let metadata = batch.schema().metadata().clone();
+    let values = T::decode_batch(&metadata, batch)?;
+    let batch = T::encode_batch(&T::chunk_metadata(&values), &values)?;
+    Ok(record_batch_without_identifier_column(batch)?)
 }

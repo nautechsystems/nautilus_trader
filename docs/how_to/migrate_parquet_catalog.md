@@ -45,18 +45,18 @@ cutting over.
 The current format uses standard Arrow types. Each representation below applies to the record families named
 beside it.
 
-| Value                   | Current Arrow representation                      | Record families                                                              |
-| ----------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Prices and sizes        | `Decimal128(38, 16)`                              | Quotes, trades, bars, deltas, depth levels, mark and index prices, closes    |
-| Decimal text            | UTF-8 strings                                     | Funding `rate`, instruments, order, position, snapshot, and report records   |
-| Floating-point measures | `Float64`                                         | Option Greeks, position `signed_qty` and average-price/return fields         |
-| Instant timestamps      | `Timestamp(Nanosecond, Some("UTC"))`              | Every `ts_event`/`ts_init` column and other instant fields                   |
-| Durations and counters  | Unsigned integers                                 | Position `duration`, funding `interval`, sequences, counts, order IDs, flags |
-| Market-data enums       | `Dictionary<Int8, Utf8>` enum names               | Trade aggressor side, delta action/side, close type                          |
-| Record enums and IDs    | UTF-8 strings                                     | Order, position, snapshot, and report enums, sides, statuses, and IDs        |
-| Structured payloads     | UTF-8 strings with `arrow.json`                   | Account balances/margins/`info`, order `info`/commissions/tags, reports      |
-| Custom `Money`          | Struct of decimal amount and currency dictionary  | Custom-data `Money` fields from the Arrow macro                              |
-| Depth sides             | Lists of price, size, count, and order ID structs | Order book depths                                                            |
+| Value                   | Current Arrow representation                      | Record families                                                                       |
+| ----------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Prices and sizes        | `Decimal128(38, 16)`                              | Quotes, trades, bars, deltas, depth levels, mark and index prices, closes             |
+| Decimal text            | UTF-8 strings                                     | Funding `rate`, instruments, order, position, snapshot, and report records            |
+| Floating-point measures | `Float64`                                         | Option Greeks, position `signed_qty` and average-price/return fields                  |
+| Instant timestamps      | `Timestamp(Nanosecond, Some("UTC"))`              | Every `ts_event`/`ts_init` column and other instant fields                            |
+| Durations and counters  | Unsigned integers                                 | Position `duration`, funding `interval`, sequences, counts, order IDs, flags          |
+| Market-data enums       | `Dictionary<Int8, Utf8>` enum names               | Trade aggressor side, delta action/side, close type, status action, Greeks convention |
+| Record enums and IDs    | UTF-8 strings                                     | Order, position, snapshot, and report enums, sides, statuses, and IDs                 |
+| Structured payloads     | UTF-8 strings with `arrow.json`                   | Account balances/margins/`info`, order `info`/commissions/tags, reports               |
+| Custom `Money`          | Struct of decimal amount and currency dictionary  | Custom-data `Money` fields from the Arrow macro                                       |
+| Depth sides             | Lists of price, size, count, and order ID structs | Order book depths                                                                     |
 
 Nanosecond values remain exact, including distinct timestamps within the same
 microsecond, and durations remain integer values.
@@ -77,15 +77,20 @@ catalog representation.
 
 ### Nulls and rejected values
 
-Undefined prices and quantities map to Arrow nulls in nullable families such as deltas, depths, closes, and mark and
-index prices. Quotes, trades, and bars reject undefined values when encoding and reject nulls when decoding, naming
-the field and row. Invalid values and values outside the representable range produce errors.
+Undefined prices and quantities map to Arrow nulls in nullable families such as deltas, closes, and mark and index
+prices. Quotes, trades, and bars declare their price and size columns non-nullable, reject undefined values when
+encoding, and reject nulls when decoding, naming the field and row. Depth level fields are non-nullable: encoding
+omits absent levels, and decoding rejects null levels and null values. Invalid values and values outside the
+representable range produce errors.
 
 ### Identity and file layout
 
-Identity lives in schema metadata (`instrument_id`, `bar_type`, `type`, `class`, `type_name`) and in directory names,
-and it travels with each file so a read restores it. The writer strips the in-memory nullable `identifier` column
-before persisting, so stored files carry no `identifier` column. Parquet files do not store a cluster key.
+Every file's schema metadata names its type under `type_name`, for example `QuoteTick`, `OrderFilled`,
+`CryptoPerpetual`, or a registered custom type, and carries its identity under `instrument_id` or `bar_type`.
+Directory names repeat that identity. Market-data files, including funding rates, instrument status, and option
+Greeks, keep the instrument ID only in metadata; record files also store it as a column. The writer strips the
+in-memory nullable `identifier` column before persisting, so stored files carry no `identifier` column. Parquet files
+do not store a cluster key.
 
 The catalog groups files by data type and identifier. Custom data uses `data/custom/<type>/<identifier>/`; instruments
 use a folder for each concrete instrument type. Older folder names are recognized when reading the migration source,
@@ -97,12 +102,16 @@ including `quote_tick`, `order_book_depth10`, per-class instrument directories, 
 | ---------------------------------------------- | ---------------------------------------------------------------------- |
 | Fixed-width market data, 8- or 16-byte fields  | Normalize to decimals, UTC timestamps, enum dictionaries, plain UTF-8  |
 | Flat 10-level and fixed-list depths            | Rebuild as variable-depth lists; null levels dropped; missing IDs zero |
-| Records with `type` metadata                   | Align to the registered record schema, including `info`                |
-| Instruments with `class` metadata              | Decode and re-encode into the per-class string schema                  |
+| Records with legacy `type` metadata            | Align to the registered record schema, including `info`                |
+| Instruments with legacy `class` metadata       | Decode and re-encode into the per-class string schema                  |
 | Known legacy status, funding, and close shapes | Convert through the three registered transcoders                       |
 | Final-format custom data with `type_name`      | Pass through; rename `custom_<type>` to `custom/<type>`                |
 | Legacy custom data without `type_name`         | Infer the type from the `custom_<type>` directory and rename           |
 | Empty coverage files                           | Copy as empty files under the renamed layout                           |
+
+The migration then decodes every built-in destination batch and encodes it again with the current encoder, so
+migrated files carry the same schema and metadata as files that later writes produce, and the two consolidate. Rows
+that the current decoders reject fail the migration.
 
 Custom-data `ts_event` and `ts_init` columns stored as `uint64` nanoseconds convert to
 `timestamp("ns", tz="UTC")`. Other supported custom-data columns pass through unchanged.
@@ -124,9 +133,9 @@ destination format preserves order IDs for subsequent writes.
 - **Unmigrated paths.** `portfolio_snapshot` directories, non-Parquet leaves, and unrecognized catalog directories
   are reported as unmigrated and never converted.
 - **Preflight failures.** Schema conflicts, missing `type_name` metadata outside legacy `custom_<type>`
-  directories, missing `class` metadata, fixed-binary custom columns, custom timestamps that are neither `uint64`
-  nor nanosecond Arrow timestamps, and unknown fingerprints fail preflight with every problem listed, before any
-  destination write.
+  directories, instruments without `class` or `type_name` metadata, fixed-binary custom columns, custom timestamps
+  that are neither `uint64` nor nanosecond Arrow timestamps, and unknown fingerprints fail preflight with every
+  problem listed, before any destination write.
 
 ### Sources to validate before cutover
 

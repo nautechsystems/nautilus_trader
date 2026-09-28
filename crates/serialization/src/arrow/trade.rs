@@ -29,8 +29,8 @@ use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_IDENTIFIER, decode_required_decimal_price,
     decode_required_decimal_quantity, decode_required_timestamp, enum_dictionary_array,
     enum_dictionary_data_type, extract_column, extract_column_string, fixed_decimal_data_type,
-    identifier_array_from_display, parse_metadata, required_price_decimal_array,
-    required_quantity_decimal_array,
+    identifier_array_from_display, metadata_with_type_name, parse_metadata,
+    required_price_decimal_array, required_quantity_decimal_array,
 };
 #[cfg(test)]
 use super::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
@@ -39,8 +39,8 @@ use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRec
 impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("price", fixed_decimal_data_type(), true),
-            Field::new("size", fixed_decimal_data_type(), true),
+            Field::new("price", fixed_decimal_data_type(), false),
+            Field::new("size", fixed_decimal_data_type(), false),
             Field::new("aggressor_side", enum_dictionary_data_type(), false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
@@ -48,10 +48,7 @@ impl ArrowSchemaProvider for TradeTick {
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
-        match metadata {
-            Some(metadata) => Schema::new_with_metadata(fields, metadata),
-            None => Schema::new(fields),
-        }
+        Schema::new_with_metadata(fields, metadata_with_type_name("TradeTick", metadata))
     }
 }
 
@@ -221,7 +218,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{get_raw_price, get_raw_quantity};
+    use crate::arrow::{KEY_TYPE_NAME, get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -231,10 +228,10 @@ mod tests {
 
         let mut expected_fields = Vec::with_capacity(7);
 
-        expected_fields.push(Field::new("price", fixed_decimal_data_type(), true));
+        expected_fields.push(Field::new("price", fixed_decimal_data_type(), false));
 
         expected_fields.extend(vec![
-            Field::new("size", fixed_decimal_data_type(), true),
+            Field::new("size", fixed_decimal_data_type(), false),
             Field::new("aggressor_side", enum_dictionary_data_type(), false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
@@ -242,7 +239,9 @@ mod tests {
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ]);
 
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
+        let mut expected_metadata = metadata;
+        expected_metadata.insert(KEY_TYPE_NAME.to_string(), "TradeTick".to_string());
+        let expected_schema = Schema::new_with_metadata(expected_fields, expected_metadata);
         assert_eq!(schema, expected_schema);
     }
 

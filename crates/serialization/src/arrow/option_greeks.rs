@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Array, Float64Array, Float64Builder, StringBuilder, UInt64Array},
+    array::{Array, Float64Array, Float64Builder, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -29,8 +29,9 @@ use nautilus_model::{
 
 use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeFromRecordBatch, EncodeToRecordBatch,
-    EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, decode_required_timestamp, extract_column,
-    extract_column_string, identifier_array_from_display,
+    EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, decode_required_timestamp,
+    enum_dictionary_array, enum_dictionary_data_type, extract_column, extract_column_string,
+    identifier_array_from_display, json::metadata_for_type, metadata_with_type_name,
 };
 
 const TYPE_NAME: &str = "OptionGreeks";
@@ -38,7 +39,7 @@ const TYPE_NAME: &str = "OptionGreeks";
 impl ArrowSchemaProvider for OptionGreeks {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("instrument_id", DataType::Utf8, false),
+            Field::new("convention", enum_dictionary_data_type(), false),
             Field::new("delta", DataType::Float64, false),
             Field::new("gamma", DataType::Float64, false),
             Field::new("vega", DataType::Float64, false),
@@ -51,13 +52,10 @@ impl ArrowSchemaProvider for OptionGreeks {
             Field::new("open_interest", DataType::Float64, true),
             Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
             Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
-            Field::new("convention", DataType::Utf8, false),
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
-        let mut metadata = metadata.unwrap_or_default();
-        metadata.insert("type".to_string(), TYPE_NAME.to_string());
-        Schema::new_with_metadata(fields, metadata)
+        Schema::new_with_metadata(fields, metadata_with_type_name(TYPE_NAME, metadata))
     }
 }
 
@@ -84,7 +82,6 @@ impl EncodeToRecordBatch for OptionGreeks {
     where
         T: std::borrow::Borrow<Self>,
     {
-        let mut instrument_id_builder = StringBuilder::new();
         let mut delta_builder = Float64Builder::new();
         let mut gamma_builder = Float64Builder::new();
         let mut vega_builder = Float64Builder::new();
@@ -97,10 +94,8 @@ impl EncodeToRecordBatch for OptionGreeks {
         let mut open_interest_builder = Float64Builder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
-        let mut convention_builder = StringBuilder::new();
 
         for greeks in data.iter().map(std::borrow::Borrow::borrow) {
-            instrument_id_builder.append_value(greeks.instrument_id.to_string());
             delta_builder.append_value(greeks.delta);
             gamma_builder.append_value(greeks.gamma);
             vega_builder.append_value(greeks.vega);
@@ -113,13 +108,18 @@ impl EncodeToRecordBatch for OptionGreeks {
             append_optional_f64(&mut open_interest_builder, greeks.open_interest);
             ts_event_builder.append_value(greeks.ts_event.as_u64());
             ts_init_builder.append_value(greeks.ts_init.as_u64());
-            convention_builder.append_value(greeks.convention);
         }
+
+        let conventions = enum_dictionary_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|greeks| greeks.convention),
+        )?;
 
         crate::arrow::record_batch_with_timestamps(
             Arc::new(Self::get_schema(Some(metadata.clone()))),
             vec![
-                Arc::new(instrument_id_builder.finish()),
+                Arc::new(conventions),
                 Arc::new(delta_builder.finish()),
                 Arc::new(gamma_builder.finish()),
                 Arc::new(vega_builder.finish()),
@@ -132,7 +132,6 @@ impl EncodeToRecordBatch for OptionGreeks {
                 Arc::new(open_interest_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
-                Arc::new(convention_builder.finish()),
                 Arc::new(identifier_array_from_display(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
@@ -143,26 +142,30 @@ impl EncodeToRecordBatch for OptionGreeks {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        HashMap::from([
-            ("type".to_string(), TYPE_NAME.to_string()),
-            (
-                KEY_INSTRUMENT_ID.to_string(),
-                self.instrument_id.to_string(),
-            ),
-        ])
+        let mut metadata = metadata_for_type(TYPE_NAME);
+        metadata.insert(
+            KEY_INSTRUMENT_ID.to_string(),
+            self.instrument_id.to_string(),
+        );
+        metadata
     }
 }
 
 impl DecodeFromRecordBatch for OptionGreeks {
     fn decode_batch(
-        _metadata: &HashMap<String, String>,
+        metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
+        let instrument_id = metadata
+            .get(KEY_INSTRUMENT_ID)
+            .ok_or(EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?
+            .parse::<InstrumentId>()
+            .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
         let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
         let record_batch = &record_batch;
         let cols = record_batch.columns();
 
-        let instrument_id_values = extract_column_string(cols, "instrument_id", 0)?;
+        let convention_values = extract_column_string(cols, "convention", 0)?;
         let delta_values = extract_column::<Float64Array>(cols, "delta", 1, DataType::Float64)?;
         let gamma_values = extract_column::<Float64Array>(cols, "gamma", 2, DataType::Float64)?;
         let vega_values = extract_column::<Float64Array>(cols, "vega", 3, DataType::Float64)?;
@@ -178,12 +181,9 @@ impl DecodeFromRecordBatch for OptionGreeks {
         let ts_event_values =
             extract_column::<UInt64Array>(cols, "ts_event", 11, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 12, DataType::UInt64)?;
-        let convention_values = extract_column_string(cols, "convention", 13)?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
-                let instrument_id = InstrumentId::from_str(instrument_id_values.value(row))
-                    .map_err(|e| EncodingError::ParseError("instrument_id", e.to_string()))?;
                 let convention = GreeksConvention::from_str(convention_values.value(row))
                     .map_err(|e| EncodingError::ParseError("convention", e.to_string()))?;
 
@@ -228,6 +228,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::arrow::KEY_TYPE_NAME;
 
     #[rstest]
     fn test_encode_decode_round_trip() {
@@ -273,8 +274,40 @@ mod tests {
 
         let metadata = original[0].metadata();
         let record_batch = OptionGreeks::encode_batch(&metadata, &original).unwrap();
-        let decoded = OptionGreeks::decode_batch(&metadata, record_batch).unwrap();
+        let schema = record_batch.schema();
+        let decoded = OptionGreeks::decode_batch(schema.metadata(), record_batch).unwrap();
 
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .map(|field| field.name().as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "convention",
+                "delta",
+                "gamma",
+                "vega",
+                "theta",
+                "rho",
+                "mark_iv",
+                "bid_iv",
+                "ask_iv",
+                "underlying_price",
+                "open_interest",
+                "ts_event",
+                "ts_init",
+                KEY_IDENTIFIER,
+            ]
+        );
+        assert_eq!(schema.field(0).data_type(), &enum_dictionary_data_type());
+        assert_eq!(
+            schema.metadata(),
+            &HashMap::from([
+                (KEY_TYPE_NAME.to_string(), "OptionGreeks".to_string()),
+                (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            ])
+        );
         assert_eq!(decoded, original);
     }
 }

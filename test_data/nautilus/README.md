@@ -4,9 +4,9 @@
 folder for the active build and use these files to pin explicit migration reads, fixed-width
 normalization, filters, and cross-precision failure behavior.
 
-`arrow/` holds the current, build-independent Arrow schema: `Decimal128(38, 16)` physical fields and
-UTC nanosecond timestamps. Ordinary runtime query, filter, unread-record, and dataframe tests read
-these files directly.
+`arrow/` holds the current, build-independent Arrow schema: `Decimal128(38, 16)` physical fields,
+UTC nanosecond timestamps, and `type_name` schema metadata. Ordinary runtime query, filter,
+unread-record, and dataframe tests read these files directly.
 
 New fixtures must use the open Arrow format unless a test explicitly targets legacy
 normalization. The files under `test_data/binance/` and the top-level
@@ -18,7 +18,9 @@ Regenerate the current-schema market-data files from the frozen 64-bit inputs wi
 cargo run --locked --manifest-path crates/persistence/Cargo.toml --example generate-arrow-fixtures
 ```
 
-Generation leaves `arrow/depths.parquet` unchanged; that file is maintained separately.
+Generation re-encodes every file through the current encoders, so the fixtures carry the schema and
+metadata that catalog writes produce. `arrow/depths.parquet` has no legacy source and is re-encoded
+in place.
 
 ## Current Arrow fixtures
 

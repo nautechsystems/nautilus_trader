@@ -125,9 +125,13 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        data::{Data, NautilusDataType, QuoteTick},
+        data::{Data, InstrumentClose, InstrumentStatus, NautilusDataType, QuoteTick},
+        enums::{InstrumentCloseType, MarketStatusAction},
         identifiers::InstrumentId,
-        instruments::{InstrumentAny, NautilusInstrumentType},
+        instruments::{
+            InstrumentAny, NautilusInstrumentType,
+            stubs::{audusd_sim, futures_contract_es},
+        },
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -340,6 +344,146 @@ mod tests {
             .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
             .unwrap();
         assert_eq!(loaded, vec![expected]);
+    }
+
+    #[rstest]
+    fn create_writer_feather_round_trips_status_and_closes_for_each_instrument() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = temp_dir.path().join("backtest").join("run-001");
+        let first = InstrumentId::from("AUD/USD.SIM");
+        let second = InstrumentId::from("GBP/USD.SIM");
+        let statuses = vec![
+            InstrumentStatus::new(
+                first,
+                MarketStatusAction::Trading,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                None,
+                None,
+                Some(true),
+                None,
+                None,
+            ),
+            InstrumentStatus::new(
+                second,
+                MarketStatusAction::Halt,
+                UnixNanos::from(2),
+                UnixNanos::from(2),
+                None,
+                None,
+                Some(false),
+                None,
+                None,
+            ),
+        ];
+        let closes = vec![
+            InstrumentClose::new(
+                first,
+                Price::from("0.66"),
+                InstrumentCloseType::EndOfSession,
+                UnixNanos::from(3),
+                UnixNanos::from(3),
+            ),
+            InstrumentClose::new(
+                second,
+                Price::from("1.250"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::from(4),
+                UnixNanos::from(4),
+            ),
+        ];
+        let config = WriterConnectConfig::new(session.to_str().unwrap(), None);
+        let registry = default_writer_factories();
+
+        let mut writer = create_writer(
+            &WriterBackendType::Feather,
+            &config,
+            WriterClock::Live,
+            &registry,
+        )
+        .unwrap();
+
+        for status in &statuses {
+            writer.write_data(Data::InstrumentStatus(*status)).unwrap();
+        }
+
+        for close in &closes {
+            writer.write_data(Data::InstrumentClose(*close)).unwrap();
+        }
+
+        writer.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        for data_type in [
+            NautilusDataType::InstrumentStatus,
+            NautilusDataType::InstrumentClose,
+        ] {
+            catalog
+                .convert_stream_to_data(
+                    "run-001",
+                    &CatalogDataType::from(data_type),
+                    Some("backtest"),
+                    None,
+                    false,
+                )
+                .unwrap();
+        }
+
+        let loaded_statuses = catalog
+            .query_typed_data::<InstrumentStatus>(None, None, None, None, None, true)
+            .unwrap();
+        let loaded_closes = catalog
+            .query_typed_data::<InstrumentClose>(None, None, None, None, None, true)
+            .unwrap();
+        assert_eq!(loaded_statuses, statuses);
+        assert_eq!(loaded_closes, closes);
+    }
+
+    #[rstest]
+    fn create_writer_feather_filters_and_converts_instruments_by_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = temp_dir.path().join("backtest").join("run-001");
+        let futures = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+        let mut record_filter = WriterRecordFilter::new();
+        record_filter.insert_instrument_type(&NautilusInstrumentType::FuturesContract);
+        let mut config = WriterConnectConfig::new(session.to_str().unwrap(), None);
+        config.record_filter = Some(record_filter);
+        let registry = default_writer_factories();
+
+        let mut writer = create_writer(
+            &WriterBackendType::Feather,
+            &config,
+            WriterClock::Live,
+            &registry,
+        )
+        .unwrap();
+        writer
+            .write_data(Data::Instrument(Box::new(InstrumentAny::CurrencyPair(
+                audusd_sim(),
+            ))))
+            .unwrap();
+        writer
+            .write_data(Data::Instrument(Box::new(futures.clone())))
+            .unwrap();
+        writer.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        catalog
+            .convert_stream_to_data(
+                "run-001",
+                &CatalogDataType::from(NautilusDataType::Instrument),
+                Some("backtest"),
+                None,
+                false,
+            )
+            .unwrap();
+
+        let loaded = catalog.query_instruments(None).unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded).unwrap(),
+            serde_json::to_value(vec![futures]).unwrap()
+        );
     }
 
     #[rstest]

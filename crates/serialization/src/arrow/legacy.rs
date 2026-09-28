@@ -25,8 +25,8 @@ use std::{
 use arrow::{
     array::{
         Array, ArrayRef, BinaryArray, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray,
-        StringArray, StringBuilder, TimestampNanosecondArray, UInt8Array, UInt8Builder,
-        UInt16Array, UInt64Array, UInt64Builder, new_null_array,
+        StringArray, StringBuilder, TimestampNanosecondArray, UInt8Array, UInt16Array, UInt64Array,
+        UInt64Builder, new_null_array,
     },
     compute::cast,
     datatypes::{DataType, Field, Schema, TimeUnit},
@@ -45,8 +45,8 @@ use nautilus_model::{
 use super::{
     ArrowSchemaProvider, FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE, KEY_IDENTIFIER,
     KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, STANDARD_TO_DECIMAL_SCALE, enum_dictionary_array,
-    enum_dictionary_data_type, fixed_decimal_data_type, price_decimal_array,
-    schema_without_identifier_column, timestamp_column, timestamp_data_type,
+    enum_dictionary_data_type, fixed_decimal_data_type, price_decimal_array, timestamp_column,
+    timestamp_data_type,
 };
 
 /// Stable identity for Arrow field names, types, and nullability.
@@ -204,32 +204,20 @@ pub fn resolve_legacy_schema(
         });
     };
     let target_fingerprint = schema_fingerprint(&current_schema);
-    let current_without_identifier =
-        schema_fingerprint(&schema_without_identifier_column(&current_schema));
-    let current_plain_strings = schema_with_plain_dictionary_strings(&current_schema);
-    let current_plain_strings_fingerprint = schema_fingerprint(&current_plain_strings);
-    let current_plain_strings_without_identifier =
-        schema_fingerprint(&schema_without_identifier_column(&current_plain_strings));
 
-    if source_fingerprint == target_fingerprint
-        || source_fingerprint == current_without_identifier
-        || source_fingerprint == current_plain_strings_fingerprint
-        || source_fingerprint == current_plain_strings_without_identifier
-    {
-        return Ok(LegacySchemaResolution {
-            kind: LegacyTranscodeKind::PassThrough,
-            source_fingerprint,
-            target_fingerprint,
-        });
-    }
-
-    let kind = registered_legacy_kind(type_name, &source_fingerprint).ok_or_else(|| {
-        LegacyArrowError::UnknownSchema {
+    // Exact v1 shapes take their transcoder before the looser by-name match can claim them
+    let kind = if let Some(kind) = registered_legacy_kind(type_name, &source_fingerprint) {
+        kind
+    } else if matches_current_schema(schema, &current_schema) {
+        LegacyTranscodeKind::PassThrough
+    } else {
+        return Err(LegacyArrowError::UnknownSchema {
             type_name: type_name.to_string(),
             file_path: file_path.to_string(),
-            fingerprint: source_fingerprint.clone(),
-        }
-    })?;
+            fingerprint: source_fingerprint,
+        });
+    };
+
     Ok(LegacySchemaResolution {
         kind,
         source_fingerprint,
@@ -237,23 +225,27 @@ pub fn resolve_legacy_schema(
     })
 }
 
-fn schema_with_plain_dictionary_strings(schema: &Schema) -> Schema {
-    let fields = schema
+// Migration re-encodes pass-through batches, so a source needs every current column by name (a
+// dictionary column may be plain `Utf8`), and any other columns must be identity columns
+fn matches_current_schema(source: &Schema, current: &Schema) -> bool {
+    let current_columns_present = current
         .fields()
         .iter()
-        .map(|field| {
-            let data_type = match field.data_type() {
-                DataType::Dictionary(_, value_type)
-                    if matches!(value_type.as_ref(), DataType::Utf8) =>
-                {
-                    DataType::Utf8
-                }
-                data_type => data_type.clone(),
-            };
-            field.as_ref().clone().with_data_type(data_type)
+        .filter(|field| field.name() != KEY_IDENTIFIER)
+        .all(|expected| {
+            source.field_with_name(expected.name()).is_ok_and(|field| {
+                field.data_type() == expected.data_type()
+                    || (matches!(expected.data_type(), DataType::Dictionary(_, value_type)
+                        if value_type.as_ref() == &DataType::Utf8)
+                        && field.data_type() == &DataType::Utf8)
+            })
+        });
+
+    current_columns_present
+        && source.fields().iter().all(|field| {
+            current.field_with_name(field.name()).is_ok()
+                || matches!(field.name().as_str(), KEY_IDENTIFIER | KEY_INSTRUMENT_ID)
         })
-        .collect::<Vec<_>>();
-    Schema::new_with_metadata(fields, schema.metadata().clone())
 }
 
 fn pass_through(batch: RecordBatch) -> LegacyTranscodeResult {
@@ -368,27 +360,12 @@ fn transcode_instrument_status(
     batch: &RecordBatch,
     file_path: &str,
 ) -> Result<RecordBatch, LegacyArrowError> {
-    let mut metadata = batch.schema().metadata().clone();
-    metadata.insert("type".to_string(), "InstrumentStatus".to_string());
-    let schema = InstrumentStatus::get_schema(Some(metadata));
+    let schema = InstrumentStatus::get_schema(Some(batch.schema().metadata().clone()));
     let instrument_id = required_column(batch, "instrument_id", file_path)?;
     let mut columns = Vec::with_capacity(schema.fields().len());
 
     for field in schema.fields() {
-        let column = if field.name() == KEY_IDENTIFIER {
-            instrument_id.clone()
-        } else if let Some(column) = batch.column_by_name(field.name()) {
-            column.clone()
-        } else if field.is_nullable() {
-            new_null_array(field.data_type(), batch.num_rows())
-        } else {
-            return Err(transcode_error(
-                "instrument_status",
-                file_path,
-                format!("required field {} is absent", field.name()),
-            ));
-        };
-
+        let column = source_status_column(batch, field, &instrument_id, file_path)?;
         let convertible_timestamp = field.data_type() == &super::timestamp_data_type()
             && column.data_type() == &DataType::UInt64;
         if column.data_type() != field.data_type() && !convertible_timestamp {
@@ -416,6 +393,36 @@ fn transcode_instrument_status(
 
     super::record_batch_with_timestamps(Arc::new(schema), columns)
         .map_err(|e| transcode_error("instrument_status", file_path, e.to_string()))
+}
+
+fn source_status_column(
+    batch: &RecordBatch,
+    field: &Field,
+    instrument_id: &ArrayRef,
+    file_path: &str,
+) -> Result<ArrayRef, LegacyArrowError> {
+    if field.name() == KEY_IDENTIFIER {
+        return Ok(instrument_id.clone());
+    }
+
+    let Some(column) = batch.column_by_name(field.name()) else {
+        if field.is_nullable() {
+            return Ok(new_null_array(field.data_type(), batch.num_rows()));
+        }
+
+        return Err(transcode_error(
+            "instrument_status",
+            file_path,
+            format!("required field {} is absent", field.name()),
+        ));
+    };
+
+    if field.data_type() == &enum_dictionary_data_type() && column.data_type() == &DataType::Utf8 {
+        return cast(column, field.data_type())
+            .map_err(|e| transcode_error("instrument_status", file_path, e.to_string()));
+    }
+
+    Ok(column.clone())
 }
 
 fn transcode_funding_rate(
@@ -457,13 +464,9 @@ fn transcode_funding_rate(
         rate_builder.append_value(value);
     }
 
-    let mut metadata = batch.schema().metadata().clone();
-    metadata.insert("type".to_string(), "FundingRateUpdate".to_string());
-    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.clone());
-    let schema = FundingRateUpdate::get_schema(Some(metadata));
+    let schema = FundingRateUpdate::get_schema(Some(batch.schema().metadata().clone()));
     let identifiers = StringArray::from(vec![instrument_id; batch.num_rows()]);
     let columns: Vec<ArrayRef> = vec![
-        Arc::new(identifiers.clone()),
         Arc::new(rate_builder.finish()),
         cast(interval, &DataType::UInt64)
             .map_err(|e| transcode_error("funding_rates", file_path, e.to_string()))?,
@@ -518,7 +521,6 @@ fn transcode_instrument_close(
     let mut batches = Vec::with_capacity(rows_by_instrument.len());
     for (instrument_id, rows) in rows_by_instrument {
         let (batch, precision) = transcode_instrument_close_rows(
-            batch,
             file_path,
             &instrument_id,
             &rows,
@@ -544,7 +546,6 @@ fn transcode_instrument_close(
     reason = "the arguments are the validated source columns for one legacy close batch"
 )]
 fn transcode_instrument_close_rows(
-    batch: &RecordBatch,
     file_path: &str,
     instrument_id: &str,
     rows: &[usize],
@@ -555,7 +556,7 @@ fn transcode_instrument_close_rows(
     expected_precision: Option<u8>,
 ) -> Result<(RecordBatch, u8), LegacyArrowError> {
     let mut prices = Vec::with_capacity(rows.len());
-    let mut type_builder = UInt8Builder::with_capacity(rows.len());
+    let mut types = Vec::with_capacity(rows.len());
     let mut event_builder = UInt64Builder::with_capacity(rows.len());
     let mut init_builder = UInt64Builder::with_capacity(rows.len());
     let mut precision = expected_precision;
@@ -615,16 +616,16 @@ fn transcode_instrument_close_rows(
         })?;
 
         prices.push(price.raw());
-        type_builder.append_value(close_type as u8);
+        types.push(close_type);
         event_builder.append_value(ts_events.value(row));
         init_builder.append_value(ts_inits.value(row));
     }
 
     let precision = precision.unwrap_or(0);
-    let mut metadata = batch.schema().metadata().clone();
-    metadata.insert("type".to_string(), "InstrumentClose".to_string());
-    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
-    metadata.insert(KEY_PRICE_PRECISION.to_string(), precision.to_string());
+    let metadata = HashMap::from([
+        (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+        (KEY_PRICE_PRECISION.to_string(), precision.to_string()),
+    ]);
     let schema = InstrumentClose::get_schema(Some(metadata));
     let identifiers = StringArray::from(vec![instrument_id; rows.len()]);
 
@@ -635,7 +636,10 @@ fn transcode_instrument_close_rows(
                 price_decimal_array(prices, "close_price")
                     .map_err(|e| transcode_error("instrument_closes", file_path, e.to_string()))?,
             ),
-            Arc::new(type_builder.finish()),
+            Arc::new(
+                enum_dictionary_array(types)
+                    .map_err(|e| transcode_error("instrument_closes", file_path, e.to_string()))?,
+            ),
             Arc::new(event_builder.finish()),
             Arc::new(init_builder.finish()),
             Arc::new(identifiers),
@@ -1425,7 +1429,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{DecodeFromRecordBatch, DecodeTypedFromRecordBatch, StringColumnRef};
+    use crate::arrow::{
+        DecodeFromRecordBatch, DecodeTypedFromRecordBatch, EncodeToRecordBatch, StringColumnRef,
+    };
 
     #[rstest]
     #[case("size", true)]
@@ -1868,14 +1874,57 @@ mod tests {
 
     #[rstest]
     fn parquet_schema_with_plain_dictionary_strings_passes_through() {
-        let schema = schema_without_identifier_column(&schema_with_plain_dictionary_strings(
-            &TradeTick::get_schema(None),
-        ));
-        let batch = RecordBatch::new_empty(Arc::new(schema));
+        let fields = TradeTick::get_schema(None)
+            .fields()
+            .iter()
+            .filter(|field| field.name() != KEY_IDENTIFIER)
+            .map(|field| match field.data_type() {
+                DataType::Dictionary(..) => field.as_ref().clone().with_data_type(DataType::Utf8),
+                _ => field.as_ref().clone(),
+            })
+            .collect::<Vec<_>>();
+
+        let batch = RecordBatch::new_empty(Arc::new(Schema::new(fields)));
         let result = transcode_legacy_record_batch("trades", "trades.parquet", batch).unwrap();
 
         assert_eq!(result.kind, LegacyTranscodeKind::PassThrough);
         assert_eq!(result.batches.len(), 1);
+    }
+
+    #[rstest]
+    fn reordered_nullable_schema_with_identity_column_passes_through() {
+        let mut fields = QuoteTick::get_schema(None)
+            .fields()
+            .iter()
+            .rev()
+            .map(|field| field.as_ref().clone().with_nullable(true))
+            .collect::<Vec<_>>();
+        fields.push(Field::new(KEY_INSTRUMENT_ID, DataType::Utf8, false));
+        let batch = RecordBatch::new_empty(Arc::new(Schema::new(fields)));
+        let result = transcode_legacy_record_batch("quotes", "quotes.parquet", batch).unwrap();
+
+        assert_eq!(result.kind, LegacyTranscodeKind::PassThrough);
+        assert_eq!(result.batches.len(), 1);
+    }
+
+    #[rstest]
+    #[case::extra_column(Some(Field::new("venue", DataType::Utf8, true)), None)]
+    #[case::missing_column(None, Some("ask_size"))]
+    fn schema_with_unexpected_columns_is_rejected(
+        #[case] extra: Option<Field>,
+        #[case] missing: Option<&str>,
+    ) {
+        let mut fields = QuoteTick::get_schema(None)
+            .fields()
+            .iter()
+            .filter(|field| Some(field.name().as_str()) != missing)
+            .map(|field| field.as_ref().clone())
+            .collect::<Vec<_>>();
+        fields.extend(extra);
+        let batch = RecordBatch::new_empty(Arc::new(Schema::new(fields)));
+        let error = transcode_legacy_record_batch("quotes", "quotes.parquet", batch).unwrap_err();
+
+        assert!(matches!(error, LegacyArrowError::UnknownSchema { .. }));
     }
 
     #[rstest]
@@ -1892,7 +1941,9 @@ mod tests {
     }
 
     #[rstest]
-    fn instrument_status_fields_are_reordered() {
+    #[case(false)]
+    #[case(true)]
+    fn instrument_status_fields_are_reordered(#[case] normalized: bool) {
         let schema = Arc::new(legacy_instrument_status_schema());
         let batch = RecordBatch::try_new(
             schema,
@@ -1910,6 +1961,13 @@ mod tests {
         )
         .unwrap();
 
+        // Migration normalizes legacy timestamps before resolving the schema
+        let batch = if normalized {
+            normalize_legacy_fixed_columns(&batch).unwrap()
+        } else {
+            batch
+        };
+
         let result =
             transcode_legacy_record_batch("instrument_status", "status.parquet", batch).unwrap();
         let output = &result.batches[0];
@@ -1923,7 +1981,6 @@ mod tests {
                 .map(|field| field.name().as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "instrument_id",
                 "action",
                 "ts_event",
                 "ts_init",
@@ -1935,9 +1992,29 @@ mod tests {
                 "identifier",
             ]
         );
-        let decoded =
-            InstrumentStatus::decode_typed_batch(output.schema().metadata(), output.clone())
-                .unwrap();
+        assert_eq!(
+            output
+                .schema()
+                .field_with_name("action")
+                .unwrap()
+                .data_type(),
+            &enum_dictionary_data_type()
+        );
+        let identifiers = output
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(identifiers.value(0), "AAPL.XNAS");
+
+        // Migration attaches the row identifier as instrument metadata before decoding
+        let mut metadata = output.schema().metadata().clone();
+        metadata.insert(
+            KEY_INSTRUMENT_ID.to_string(),
+            identifiers.value(0).to_string(),
+        );
+        let decoded = InstrumentStatus::decode_typed_batch(&metadata, output.clone()).unwrap();
         assert_eq!(decoded[0].action, MarketStatusAction::Trading);
         assert_eq!(decoded[0].instrument_id.to_string(), "AAPL.XNAS");
         assert_eq!(decoded[0].ts_event.as_u64(), 1);
@@ -2061,6 +2138,14 @@ mod tests {
                 InstrumentCloseType::ContractExpired,
             ]
         );
+
+        // Transcoded files must consolidate with files written by the current encoder
+        for batch in &result.batches {
+            let schema = batch.schema();
+            let closes = InstrumentClose::decode_batch(schema.metadata(), batch.clone()).unwrap();
+            let fresh = InstrumentClose::encode_batch(&closes[0].metadata(), &closes).unwrap();
+            assert_eq!(fresh.schema(), schema);
+        }
     }
 
     #[rstest]

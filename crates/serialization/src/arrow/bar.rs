@@ -27,27 +27,25 @@ use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_PRICE_PRECISION,
     KEY_SIZE_PRECISION, decode_required_decimal_price, decode_required_decimal_quantity,
     decode_required_timestamp, extract_column, fixed_decimal_data_type,
-    identifier_array_from_display, required_price_decimal_array, required_quantity_decimal_array,
+    identifier_array_from_display, metadata_with_type_name, required_price_decimal_array,
+    required_quantity_decimal_array,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("open", fixed_decimal_data_type(), true),
-            Field::new("high", fixed_decimal_data_type(), true),
-            Field::new("low", fixed_decimal_data_type(), true),
-            Field::new("close", fixed_decimal_data_type(), true),
-            Field::new("volume", fixed_decimal_data_type(), true),
+            Field::new("open", fixed_decimal_data_type(), false),
+            Field::new("high", fixed_decimal_data_type(), false),
+            Field::new("low", fixed_decimal_data_type(), false),
+            Field::new("close", fixed_decimal_data_type(), false),
+            Field::new("volume", fixed_decimal_data_type(), false),
             Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
             Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
-        match metadata {
-            Some(metadata) => Schema::new_with_metadata(fields, metadata),
-            None => Schema::new(fields),
-        }
+        Schema::new_with_metadata(fields, metadata_with_type_name("Bar", metadata))
     }
 }
 
@@ -214,7 +212,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{get_raw_price, get_raw_quantity};
+    use crate::arrow::{KEY_TYPE_NAME, get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -222,16 +220,18 @@ mod tests {
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
-            Field::new("open", fixed_decimal_data_type(), true),
-            Field::new("high", fixed_decimal_data_type(), true),
-            Field::new("low", fixed_decimal_data_type(), true),
-            Field::new("close", fixed_decimal_data_type(), true),
-            Field::new("volume", fixed_decimal_data_type(), true),
+            Field::new("open", fixed_decimal_data_type(), false),
+            Field::new("high", fixed_decimal_data_type(), false),
+            Field::new("low", fixed_decimal_data_type(), false),
+            Field::new("close", fixed_decimal_data_type(), false),
+            Field::new("volume", fixed_decimal_data_type(), false),
             Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
             Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
+        let mut expected_metadata = metadata;
+        expected_metadata.insert(KEY_TYPE_NAME.to_string(), "Bar".to_string());
+        let expected_schema = Schema::new_with_metadata(expected_fields, expected_metadata);
         assert_eq!(schema, expected_schema);
     }
 

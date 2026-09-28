@@ -52,6 +52,7 @@ Released on TBD (UTC).
 - Removed `nautilus_persistence::backend::catalog` - import from `backend::parquet::{catalog, paths}`
 - Removed `serialize_decimal` and `serialize_optional_decimal` - use `decimal::serialize` and `serialize_optional`
 - Removed Rust `InnerHttpClient` `Default` impl, which panicked on transport errors; use `HttpClient::builder()`
+- Removed the `instrument_id` column from funding rate, instrument status, and option Greeks Arrow files
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
@@ -105,6 +106,8 @@ Released on TBD (UTC).
 - Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
 - Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
 - Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
+- Changed catalog Arrow files to name their type in `type_name` metadata, replacing instrument `class`
+- Changed instrument status and option Greeks Arrow conversions to reject batches mixing instruments
 - Changed Polymarket taker fees to read `info.fee_schedule` instead of instrument `taker_fee`
 - Changed sandbox execution clients to require an explicit `fee_model`, including a zero-fee model
 

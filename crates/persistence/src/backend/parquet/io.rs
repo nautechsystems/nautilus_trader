@@ -36,8 +36,8 @@ use arrow::{
 use nautilus_model::{data::NautilusRecordType, instruments::InstrumentAny};
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, KEY_IDENTIFIER, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, instrument::decode_instrument_any_batch, is_nautilus_legacy_schema,
-    is_nautilus_timestamp_schema, normalize_legacy_fixed_columns,
+    KEY_SIZE_PRECISION, KEY_TYPE_NAME, instrument::decode_instrument_any_batch,
+    is_nautilus_legacy_schema, is_nautilus_timestamp_schema, normalize_legacy_fixed_columns,
     normalized_legacy_data_type as normalize_legacy_arrow_data_type, normalized_timestamp_type,
 };
 use object_store::{
@@ -64,6 +64,7 @@ pub(crate) use crate::common::paths::file_uri_to_native_path;
 pub use crate::common::paths::normalize_path_to_uri;
 
 const DEPTH10_LEN: usize = 10;
+const LEGACY_KEY_CLASS: &str = "class";
 
 /// Normalizes supported legacy Parquet physical encodings for explicit migration.
 ///
@@ -80,7 +81,7 @@ pub(crate) fn normalize_legacy_parquet_columns(batch: &RecordBatch) -> anyhow::R
     }
 
     if is_legacy_instrument_schema(batch.schema_ref()) {
-        let metadata = batch.schema().metadata().clone();
+        let metadata = legacy_instrument_metadata(batch.schema().metadata());
         if batch.num_rows() == 0 {
             return Ok(RecordBatch::new_empty(Arc::new(InstrumentAny::get_schema(
                 Some(metadata),
@@ -113,7 +114,7 @@ pub(crate) fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
     }
 
     if is_legacy_instrument_schema(schema) {
-        return InstrumentAny::get_schema(Some(schema.metadata().clone()));
+        return InstrumentAny::get_schema(Some(legacy_instrument_metadata(schema.metadata())));
     }
 
     let normalize_fixed = is_nautilus_legacy_schema(schema);
@@ -188,10 +189,20 @@ fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
 }
 
 fn is_legacy_instrument_schema(schema: &Schema) -> bool {
-    schema.metadata().contains_key("class")
+    schema.metadata().contains_key(LEGACY_KEY_CLASS)
         && schema
             .field_with_name("ts_init")
             .is_ok_and(|field| field.data_type() == &DataType::UInt64)
+}
+
+// Legacy catalogs name the instrument type under `class`; current schemas use `type_name`
+fn legacy_instrument_metadata(metadata: &HashMap<String, String>) -> HashMap<String, String> {
+    let mut metadata = metadata.clone();
+    if let Some(instrument_type) = metadata.remove(LEGACY_KEY_CLASS) {
+        metadata.insert(KEY_TYPE_NAME.to_string(), instrument_type);
+    }
+
+    metadata
 }
 
 /// Casts dictionary-encoded string columns from legacy Parquet files to plain UTF-8 columns.
@@ -763,7 +774,7 @@ pub async fn read_parquet_from_object_store(
 }
 
 /// Writes multiple `RecordBatch` items to an object store URI, with optional compression,
-/// row group sizing, and `key_value_metadata` (e.g. for instrument "class" so it survives roundtrip).
+/// row group sizing, and `key_value_metadata` (e.g. for instrument `type_name` so it survives roundtrip).
 ///
 /// # Errors
 ///
@@ -1802,7 +1813,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         let source = RecordBatch::try_new(
-            Arc::new(Schema::new_with_metadata(fields, metadata.clone())),
+            Arc::new(Schema::new_with_metadata(
+                fields,
+                expected.schema().metadata().clone(),
+            )),
             columns,
         )
         .unwrap();

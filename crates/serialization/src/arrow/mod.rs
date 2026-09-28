@@ -132,6 +132,17 @@ pub const FIXED_DECIMAL_PRECISION: u8 = 38;
 pub const FIXED_DECIMAL_SCALE: i8 = 16;
 pub(crate) const EMPTY_DEPTH_PRECISION: (u8, u8) = (0, 0);
 
+/// Returns `metadata` with the catalog type discriminator set to `type_name`.
+#[must_use]
+pub fn metadata_with_type_name(
+    type_name: &str,
+    metadata: Option<HashMap<String, String>>,
+) -> HashMap<String, String> {
+    let mut metadata = metadata.unwrap_or_default();
+    metadata.insert(KEY_TYPE_NAME.to_string(), type_name.to_string());
+    metadata
+}
+
 /// Returns the open Arrow data type used for nanosecond instants.
 #[must_use]
 pub fn timestamp_data_type() -> DataType {
@@ -1905,18 +1916,12 @@ pub fn index_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_status_to_arrow_record_batch_bytes(
     data: &[InstrumentStatus],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    InstrumentStatus::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `OptionGreeks` into an Arrow `RecordBatch`.
@@ -1925,18 +1930,12 @@ pub fn instrument_status_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn option_greeks_to_arrow_record_batch_bytes(
     data: &[OptionGreeks],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    OptionGreeks::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `InstrumentClose` into an Arrow `RecordBatch`.
@@ -1976,7 +1975,9 @@ mod tests {
             Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, OrderBookDelta, OrderBookDepth,
             QuoteTick, order::NULL_ORDER,
         },
-        enums::{AggregationSource, BarAggregation, BookAction, OrderSide, PriceType},
+        enums::{
+            AggregationSource, BarAggregation, BookAction, MarketStatusAction, OrderSide, PriceType,
+        },
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
@@ -2080,6 +2081,51 @@ mod tests {
         );
 
         let result = quotes_to_arrow_record_batch_bytes(&[first, second]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_instrument_status_to_arrow_record_batch_rejects_mixed_instruments() {
+        let status = |instrument_id: &str, ts: u64| {
+            InstrumentStatus::new(
+                InstrumentId::from(instrument_id),
+                MarketStatusAction::Trading,
+                ts.into(),
+                ts.into(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+
+        let result = instrument_status_to_arrow_record_batch_bytes(&[
+            status("AAA.XNAS", 1),
+            status("BBB.XNAS", 2),
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_option_greeks_to_arrow_record_batch_rejects_mixed_instruments() {
+        let greeks = |instrument_id: &str| OptionGreeks {
+            instrument_id: InstrumentId::from(instrument_id),
+            ..OptionGreeks::default()
+        };
+
+        let result = option_greeks_to_arrow_record_batch_bytes(&[
+            greeks("BTC-20260529-100000-C.OKX"),
+            greeks("BTC-20260529-110000-C.OKX"),
+        ]);
 
         assert!(matches!(
             result,
@@ -2516,27 +2562,21 @@ mod schema_invariant_tests {
             assert_fields_match_schema(
                 catalog_field_map(QuoteTick::get_fields()),
                 &QuoteTick::get_schema(None),
-                &[
-                    "bid_price",
-                    "ask_price",
-                    "bid_size",
-                    "ask_size",
-                    KEY_IDENTIFIER,
-                ],
+                &[KEY_IDENTIFIER],
             );
         };
         (TradeTick) => {
             assert_fields_match_schema(
                 catalog_field_map(TradeTick::get_fields()),
                 &TradeTick::get_schema(None),
-                &["price", "size", KEY_IDENTIFIER],
+                &[KEY_IDENTIFIER],
             );
         };
         (Bar) => {
             assert_fields_match_schema(
                 catalog_field_map(Bar::get_fields()),
                 &Bar::get_schema(None),
-                &["open", "high", "low", "close", "volume", KEY_IDENTIFIER],
+                &[KEY_IDENTIFIER],
             );
         };
         (MarkPriceUpdate) => {

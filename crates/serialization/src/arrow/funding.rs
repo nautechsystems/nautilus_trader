@@ -22,13 +22,12 @@ use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeFromRecordBatch, EncodeToRecordBatch,
     EncodingError, KEY_INSTRUMENT_ID,
     json::{
-        JsonFieldSpec, decode_batch, encode_batch_with_identifier, metadata_for_type,
-        schema_for_type_with_identifier,
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
     },
 };
 
 const FUNDING_RATE_UPDATE_FIELDS: &[JsonFieldSpec] = &[
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("rate", false),
     JsonFieldSpec::u64("interval", true),
     JsonFieldSpec::timestamp("next_funding_ns", true),
@@ -76,10 +75,11 @@ impl DecodeFromRecordBatch for FundingRateUpdate {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
+        decode_batch_with_metadata_fields(
             metadata,
             &record_batch,
             FUNDING_RATE_UPDATE_FIELDS,
+            &[KEY_INSTRUMENT_ID],
             Some("FundingRateUpdate"),
         )
     }
@@ -131,6 +131,17 @@ mod tests {
             &arrow::datatypes::DataType::Utf8
         );
         assert_eq!(identifiers.value(0), "BTCUSDT-PERP.BINANCE");
+        assert!(batch.schema().field_with_name("instrument_id").is_err());
+        assert_eq!(
+            batch.schema().metadata(),
+            &HashMap::from([
+                ("type_name".to_string(), "FundingRateUpdate".to_string()),
+                (
+                    KEY_INSTRUMENT_ID.to_string(),
+                    "BTCUSDT-PERP.BINANCE".to_string()
+                ),
+            ])
+        );
         let decoded = FundingRateUpdate::decode_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![update]);

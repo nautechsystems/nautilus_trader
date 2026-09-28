@@ -37,7 +37,8 @@ use super::{
     DecodeDataFromRecordBatch, EMPTY_DEPTH_PRECISION, EncodingError, KEY_IDENTIFIER,
     decode_decimal_price, decode_decimal_quantity, decode_required_timestamp, decode_required_u8,
     decode_required_u64, extract_column, fixed_decimal_data_type, identifier_array_from_display,
-    parse_metadata, price_decimal_array, price_raw_to_decimal, quantity_decimal_array,
+    metadata_with_type_name, parse_metadata, price_decimal_array, price_raw_to_decimal,
+    quantity_decimal_array,
 };
 #[cfg(test)]
 use super::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION};
@@ -82,10 +83,7 @@ impl ArrowSchemaProvider for OrderBookDepth {
         ));
         fields.push(Field::new(KEY_IDENTIFIER, DataType::Utf8, true));
 
-        match metadata {
-            Some(metadata) => Schema::new_with_metadata(fields, metadata),
-            None => Schema::new(fields),
-        }
+        Schema::new_with_metadata(fields, metadata_with_type_name("OrderBookDepth", metadata))
     }
 }
 

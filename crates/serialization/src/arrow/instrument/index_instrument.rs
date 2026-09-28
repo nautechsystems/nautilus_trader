@@ -30,12 +30,12 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
-    extract_optional_string_column_by_name, json_string_field, optional_ustr_value,
-    record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
+    extract_optional_string_column_by_name, json_string_field, metadata_with_type_name,
+    optional_ustr_value, record_batch_with_timestamps, record_batch_with_u64_timestamps,
+    timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for IndexInstrument {
@@ -54,14 +54,7 @@ impl ArrowSchemaProvider for IndexInstrument {
             Field::new("ts_init", timestamp_data_type(), false),
         ];
 
-        let mut final_metadata = HashMap::new();
-        final_metadata.insert(KEY_CLASS.to_string(), "IndexInstrument".to_string());
-
-        if let Some(meta) = metadata {
-            final_metadata.extend(meta);
-        }
-
-        Schema::new_with_metadata(fields, final_metadata)
+        Schema::new_with_metadata(fields, metadata_with_type_name("IndexInstrument", metadata))
     }
 }
 
@@ -119,11 +112,8 @@ impl EncodeToRecordBatch for IndexInstrument {
             ts_init_builder.append_value(index.ts_init.as_u64());
         }
 
-        let mut final_metadata = metadata.clone();
-        final_metadata.insert(KEY_CLASS.to_string(), "IndexInstrument".to_string());
-
         record_batch_with_timestamps(
-            Self::get_schema(Some(final_metadata)).into(),
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(id_builder.finish()),
                 Arc::new(raw_symbol_builder.finish()),

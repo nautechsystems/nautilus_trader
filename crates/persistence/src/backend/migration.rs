@@ -29,9 +29,18 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use futures::{StreamExt, TryStreamExt};
-use nautilus_model::data::NautilusRecordType;
+use nautilus_model::{
+    data::{
+        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+        MarkPriceUpdate, NautilusDataType, NautilusRecordType, OptionGreeks, OrderBookDelta,
+        OrderBookDepth, QuoteTick, TradeTick,
+    },
+    instruments::InstrumentAny,
+};
 use nautilus_serialization::arrow::{
-    KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, StringColumnRef,
+    ArrowSchemaProvider, EncodeToRecordBatch, KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_INSTRUMENT_ID,
+    KEY_TYPE_NAME, StringColumnRef,
+    instrument::decode_instrument_any_batch,
     legacy::{
         LegacyArrowError, LegacySchemaResolution, LegacyTranscodeKind, LegacyTranscodeState,
         SchemaFingerprint, resolve_legacy_schema, schema_fingerprint,
@@ -54,7 +63,8 @@ use crate::{
         record_path_prefix,
     },
     common::{
-        arrow::catalog_record_schema, paths::normalize_path_separators,
+        arrow::{catalog_record_schema, round_trip_batches, round_trip_catalog_record_batches},
+        paths::normalize_path_separators,
         storage::normalize_storage_location,
     },
 };
@@ -434,12 +444,13 @@ pub fn read_planned_migration_file(
     Ok(transcoded)
 }
 
-/// Resolves identifiers and groups batches from one source file.
+/// Resolves identifiers, re-encodes built-in batches with the current encoders, and groups
+/// batches from one source file.
 ///
 /// # Errors
 ///
-/// Returns an error when an identifier column is not string-like or a batch cannot be sliced or
-/// rebuilt with current identifier metadata.
+/// Returns an error when an identifier column is not string-like, a batch cannot be sliced or
+/// rebuilt with current identifier metadata, or a built-in batch fails its current decoder.
 pub fn prepare_migration_parts(
     file: &PlannedMigrationFile,
     batches: Vec<RecordBatch>,
@@ -449,23 +460,29 @@ pub fn prepare_migration_parts(
 
     for batch in batches {
         for (identifier, source, batch) in split_batch_by_identifier(file, batch)? {
+            if batch.num_rows() == 0 {
+                continue;
+            }
+
             let batch =
                 batch_with_identifier(&file.target_type_name, identifier.as_deref(), batch)?;
             grouped.entry((identifier, source)).or_default().push(batch);
         }
     }
 
-    Ok(grouped
+    grouped
         .into_iter()
-        .map(
-            |((identifier, identifier_source), batches)| PreparedMigrationPart {
-                row_count: batches.iter().map(RecordBatch::num_rows).sum(),
+        .map(|((identifier, identifier_source), batches)| {
+            let row_count = batches.iter().map(RecordBatch::num_rows).sum();
+            let batches = round_trip_migrated_batches(&file.target_type_name, batches)?;
+            Ok(PreparedMigrationPart {
                 identifier,
                 identifier_source,
                 batches,
-            },
-        )
-        .collect())
+                row_count,
+            })
+        })
+        .collect()
 }
 
 /// Parses a storage option expressed as `key=value`.
@@ -735,11 +752,11 @@ fn resolve_candidate_schemas(
         let schema = normalize_legacy_parquet_schema(&schema);
 
         let target_table = if candidate.target_type_name == "instruments" {
-            let Some(class) = schema.metadata().get("class") else {
+            let Some(instrument_type) = schema.metadata().get(KEY_TYPE_NAME) else {
                 unresolved.push(UnresolvedSchema {
                     path: candidate.relative_path.clone(),
                     message: format!(
-                        "Parquet instrument file {} is missing class metadata",
+                        "Parquet instrument file {} is missing type_name metadata",
                         candidate.relative_path
                     ),
                 });
@@ -747,7 +764,7 @@ fn resolve_candidate_schemas(
                 continue;
             };
 
-            format!("instruments/{class}")
+            format!("instruments/{instrument_type}")
         } else {
             candidate.target_type_name.clone()
         };
@@ -1052,6 +1069,94 @@ fn batch_with_identifier(
     )?)
 }
 
+// Built-in batches of one output file take the current encoder's exact schema and metadata, so
+// migrated files consolidate with later catalog writes
+fn round_trip_migrated_batches(
+    type_name: &str,
+    batches: Vec<RecordBatch>,
+) -> anyhow::Result<Vec<RecordBatch>> {
+    if let Ok(record_type) = type_name.parse::<NautilusRecordType>() {
+        return round_trip_catalog_record_batches(record_type, batches);
+    }
+
+    let data_type = data_type_from_data_path_prefix(type_name)?;
+
+    macro_rules! round_trip_data_type {
+        (
+            ($data_type:ident, $batches:ident);
+            (Instrument, InstrumentAny, Instrument, Instrument, $instrument_prefix:literal),
+            $(($variant:ident, $type:ident, $data:ident, $batch_variant:ident, $prefix:literal)),+ $(,)?
+        ) => {
+            match $data_type {
+                NautilusDataType::Instrument => {
+                    let mut instruments = Vec::new();
+
+                    for batch in &$batches {
+                        let metadata = batch.schema().metadata().clone();
+                        instruments.extend(decode_instrument_any_batch(&metadata, batch)?);
+                    }
+
+                    let metadata = InstrumentAny::chunk_metadata(&instruments);
+                    Ok(vec![InstrumentAny::encode_batch(&metadata, &instruments)?])
+                }
+                $(
+                    NautilusDataType::$variant => {
+                        let batches = $batches
+                            .iter()
+                            .map(project_current_columns::<$type>)
+                            .collect::<anyhow::Result<Vec<_>>>()?;
+                        round_trip_batches::<$type>(batches)
+                    }
+                )+
+                NautilusDataType::Custom { .. } => Ok($batches),
+                #[cfg(feature = "defi")]
+                NautilusDataType::Defi => {
+                    anyhow::bail!("Parquet migration does not support DeFi data")
+                }
+                #[cfg(not(feature = "defi"))]
+                #[allow(
+                    unreachable_patterns,
+                    reason = "DeFi variants can exist without this crate's defi feature"
+                )]
+                _ => anyhow::bail!("Parquet migration does not support DeFi data"),
+            }
+        };
+    }
+
+    nautilus_model::for_each_data_type!(round_trip_data_type, data_type, batches)
+}
+
+// Positional decoders read the current column order, while sources may order columns differently
+// or carry identity columns that current schemas keep in metadata. Current nullability applies so
+// a null in a required column fails here instead of decoding as a default value.
+fn project_current_columns<T: ArrowSchemaProvider>(
+    batch: &RecordBatch,
+) -> anyhow::Result<RecordBatch> {
+    let schema = batch.schema();
+    let mut fields = Vec::new();
+    let mut columns = Vec::new();
+
+    for expected in T::get_schema(None).fields() {
+        if expected.name() == KEY_IDENTIFIER {
+            continue;
+        }
+
+        let index = schema.index_of(expected.name())?;
+        fields.push(
+            schema
+                .field(index)
+                .clone()
+                .with_nullable(expected.is_nullable()),
+        );
+        columns.push(batch.column(index).clone());
+    }
+
+    Ok(RecordBatch::try_new(
+        Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone())),
+        columns,
+    )?)
+}
+
 fn record_identifier_from_path(file_path: &str, type_name: &str) -> Option<String> {
     let path_parts = file_path.split('/').collect::<Vec<_>>();
     let type_parts = type_name.split('/').collect::<Vec<_>>();
@@ -1113,9 +1218,19 @@ mod tests {
 
     use ::parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use arrow::{
-        array::Int64Array,
+        array::{BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
+    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        data::{greeks::OptionGreekValues, stubs::stub_depth10},
+        enums::{GreeksConvention, MarketStatusAction},
+        identifiers::InstrumentId,
+    };
+    use nautilus_serialization::arrow::{
+        DecodeFromRecordBatch, KEY_PRICE_PRECISION, KEY_TYPE_NAME,
+        record_batch_without_identifier_column, timestamp_array, timestamp_data_type,
     };
     use rstest::rstest;
     use tempfile::TempDir;
@@ -1371,5 +1486,310 @@ mod tests {
             Some(expected)
         );
         assert_eq!(injected.fields(), schema.fields());
+    }
+
+    #[rstest]
+    fn prepare_migration_parts_splits_legacy_status_and_matches_fresh_writes() {
+        let expected = [
+            InstrumentStatus::new(
+                InstrumentId::from("AAA.XNAS"),
+                MarketStatusAction::Trading,
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                Some("Normal trading".into()),
+                None,
+                Some(true),
+                None,
+                Some(false),
+            ),
+            InstrumentStatus::new(
+                InstrumentId::from("BBB.XNAS"),
+                MarketStatusAction::Halt,
+                UnixNanos::from(3),
+                UnixNanos::from(4),
+                None,
+                Some("MARKET_HALT".into()),
+                Some(false),
+                Some(false),
+                None,
+            ),
+        ];
+
+        // Legacy status files carried the instrument per row, with no identity metadata
+        let source = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("instrument_id", DataType::Utf8, true),
+                Field::new("action", DataType::Utf8, true),
+                Field::new("reason", DataType::Utf8, true),
+                Field::new("trading_event", DataType::Utf8, true),
+                Field::new("is_trading", DataType::Boolean, true),
+                Field::new("is_quoting", DataType::Boolean, true),
+                Field::new("is_short_sell_restricted", DataType::Boolean, true),
+                Field::new("ts_event", DataType::UInt64, true),
+                Field::new("ts_init", DataType::UInt64, true),
+            ])),
+            vec![
+                Arc::new(StringArray::from(vec!["AAA.XNAS", "BBB.XNAS"])),
+                Arc::new(StringArray::from(vec!["TRADING", "HALT"])),
+                Arc::new(StringArray::from(vec![Some("Normal trading"), None])),
+                Arc::new(StringArray::from(vec![None, Some("MARKET_HALT")])),
+                Arc::new(BooleanArray::from(vec![Some(true), Some(false)])),
+                Arc::new(BooleanArray::from(vec![None, Some(false)])),
+                Arc::new(BooleanArray::from(vec![Some(false), None])),
+                Arc::new(UInt64Array::from(vec![1, 3])),
+                Arc::new(UInt64Array::from(vec![2, 4])),
+            ],
+        )
+        .unwrap();
+
+        let parts = migrate_source_batches("instrument_status", &[source]);
+
+        assert_eq!(
+            parts
+                .iter()
+                .map(|part| (part.identifier.as_deref(), part.identifier_source))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("AAA.XNAS"), IdentifierSource::Row),
+                (Some("BBB.XNAS"), IdentifierSource::Row),
+            ]
+        );
+
+        for (part, expected) in parts.into_iter().zip(expected) {
+            assert_part_matches_fresh_write(part, &[expected]);
+        }
+    }
+
+    #[rstest]
+    fn prepare_migration_parts_reorders_legacy_greeks_and_matches_fresh_writes() {
+        let instrument_id = InstrumentId::from("BTC-20260529-100000-C.OKX");
+
+        let expected = OptionGreeks {
+            instrument_id,
+            convention: GreeksConvention::PriceAdjusted,
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                gamma: 0.012,
+                vega: 3.4,
+                theta: -1.2,
+                rho: 0.01,
+            },
+            mark_iv: Some(0.64),
+            bid_iv: None,
+            ask_iv: Some(0.66),
+            underlying_price: Some(100_000.0),
+            open_interest: None,
+            ts_event: UnixNanos::from(5),
+            ts_init: UnixNanos::from(6),
+        };
+
+        // Legacy Greeks files led with an instrument column and ended with the convention
+        let float_field = |name| Field::new(name, DataType::Float64, false);
+        let optional_float_field = |name| Field::new(name, DataType::Float64, true);
+        let source = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                vec![
+                    Field::new("instrument_id", DataType::Utf8, false),
+                    float_field("delta"),
+                    float_field("gamma"),
+                    float_field("vega"),
+                    float_field("theta"),
+                    float_field("rho"),
+                    optional_float_field("mark_iv"),
+                    optional_float_field("bid_iv"),
+                    optional_float_field("ask_iv"),
+                    optional_float_field("underlying_price"),
+                    optional_float_field("open_interest"),
+                    Field::new("ts_event", DataType::UInt64, false),
+                    Field::new("ts_init", DataType::UInt64, false),
+                    Field::new("convention", DataType::Utf8, false),
+                ],
+                HashMap::from([("type".to_string(), "OptionGreeks".to_string())]),
+            )),
+            vec![
+                Arc::new(StringArray::from(vec![instrument_id.to_string()])),
+                Arc::new(Float64Array::from(vec![0.55])),
+                Arc::new(Float64Array::from(vec![0.012])),
+                Arc::new(Float64Array::from(vec![3.4])),
+                Arc::new(Float64Array::from(vec![-1.2])),
+                Arc::new(Float64Array::from(vec![0.01])),
+                Arc::new(Float64Array::from(vec![Some(0.64)])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![Some(0.66)])),
+                Arc::new(Float64Array::from(vec![Some(100_000.0)])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(UInt64Array::from(vec![5])),
+                Arc::new(UInt64Array::from(vec![6])),
+                Arc::new(StringArray::from(vec!["PRICE_ADJUSTED"])),
+            ],
+        )
+        .unwrap();
+
+        let parts = migrate_source_batches("option_greeks", &[source]);
+
+        assert_eq!(parts.len(), 1);
+        assert_eq!(
+            parts[0].identifier.as_deref(),
+            Some("BTC-20260529-100000-C.OKX")
+        );
+        assert_eq!(
+            parts[0].batches[0].schema().metadata().get(KEY_TYPE_NAME),
+            Some(&"OptionGreeks".to_string())
+        );
+        assert_part_matches_fresh_write(parts.into_iter().next().unwrap(), &[expected]);
+    }
+
+    #[rstest]
+    fn prepare_migration_parts_rejects_null_in_required_column() {
+        let source = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                vec![
+                    Field::new("instrument_id", DataType::Utf8, false),
+                    Field::new("convention", DataType::Utf8, false),
+                    Field::new("delta", DataType::Float64, true),
+                    Field::new("gamma", DataType::Float64, false),
+                    Field::new("vega", DataType::Float64, false),
+                    Field::new("theta", DataType::Float64, false),
+                    Field::new("rho", DataType::Float64, false),
+                    Field::new("mark_iv", DataType::Float64, true),
+                    Field::new("bid_iv", DataType::Float64, true),
+                    Field::new("ask_iv", DataType::Float64, true),
+                    Field::new("underlying_price", DataType::Float64, true),
+                    Field::new("open_interest", DataType::Float64, true),
+                    Field::new("ts_event", timestamp_data_type(), false),
+                    Field::new("ts_init", timestamp_data_type(), false),
+                ],
+                HashMap::from([("type".to_string(), "OptionGreeks".to_string())]),
+            )),
+            vec![
+                Arc::new(StringArray::from(vec!["BTC-20260529-100000-C.OKX"])),
+                Arc::new(StringArray::from(vec!["BLACK_SCHOLES"])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![0.012])),
+                Arc::new(Float64Array::from(vec![3.4])),
+                Arc::new(Float64Array::from(vec![-1.2])),
+                Arc::new(Float64Array::from(vec![0.01])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(Float64Array::from(vec![None])),
+                Arc::new(timestamp_array([5]).unwrap()),
+                Arc::new(timestamp_array([6]).unwrap()),
+            ],
+        )
+        .unwrap();
+
+        let error = try_migrate_source_batches("option_greeks", &[source]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument error: Column 'delta' is declared as non-nullable but contains null values"
+        );
+    }
+
+    #[rstest]
+    fn prepare_migration_parts_selects_metadata_across_every_batch_of_a_file() {
+        let populated = stub_depth10();
+        let mut empty = populated.clone();
+        empty.bids.clear();
+        empty.asks.clear();
+        empty.bid_counts.clear();
+        empty.ask_counts.clear();
+        let expected = [empty, populated];
+
+        // A reader splits one file into batches that share the file's metadata, and a batch of
+        // empty snapshots alone would select zero precision
+        let file_metadata = OrderBookDepth::chunk_metadata(&expected);
+
+        let sources = expected
+            .iter()
+            .map(|depth| {
+                let batch =
+                    OrderBookDepth::encode_batch(&file_metadata, std::slice::from_ref(depth))
+                        .unwrap();
+                record_batch_without_identifier_column(batch).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let parts = migrate_source_batches("order_book_depths", &sources);
+
+        assert_eq!(parts.len(), 1);
+        assert_eq!(
+            parts[0]
+                .batches
+                .iter()
+                .map(|batch| batch.schema().metadata()[KEY_PRICE_PRECISION].clone())
+                .collect::<Vec<_>>(),
+            vec!["2", "2"]
+        );
+        assert_part_matches_fresh_write(parts.into_iter().next().unwrap(), &expected);
+    }
+
+    // Runs the per-batch steps of `read_planned_migration_file` without an object store
+    fn migrate_source_batches(
+        type_name: &str,
+        sources: &[RecordBatch],
+    ) -> Vec<PreparedMigrationPart> {
+        try_migrate_source_batches(type_name, sources).unwrap()
+    }
+
+    fn try_migrate_source_batches(
+        type_name: &str,
+        sources: &[RecordBatch],
+    ) -> anyhow::Result<Vec<PreparedMigrationPart>> {
+        let mut state = LegacyTranscodeState::default();
+        let mut batches = Vec::new();
+        let mut transcode_kind = LegacyTranscodeKind::PassThrough;
+
+        for source in sources {
+            let normalized = normalize_legacy_parquet_columns(source).unwrap();
+            let transcoded = transcode_legacy_record_batch_with_state(
+                type_name,
+                "legacy.parquet",
+                normalized,
+                &mut state,
+            )
+            .unwrap();
+            transcode_kind = transcoded.kind;
+            batches.extend(transcoded.batches);
+        }
+
+        let fingerprint = schema_fingerprint(sources[0].schema_ref());
+
+        let file = PlannedMigrationFile {
+            path: format!("data/{type_name}/legacy.parquet"),
+            relative_path: format!("data/{type_name}/legacy.parquet"),
+            source_type_name: type_name.to_string(),
+            target_type_name: type_name.to_string(),
+            target_table: type_name.to_string(),
+            size: 1,
+            e_tag: None,
+            version: None,
+            last_modified: String::new(),
+            source_fingerprint: fingerprint.clone(),
+            target_fingerprint: fingerprint,
+            transcode_kind,
+        };
+
+        prepare_migration_parts(&file, batches)
+    }
+
+    fn assert_part_matches_fresh_write<T>(part: PreparedMigrationPart, expected: &[T])
+    where
+        T: Clone + DecodeFromRecordBatch + EncodeToRecordBatch + PartialEq + std::fmt::Debug,
+    {
+        let fresh = T::encode_batch(&T::chunk_metadata(expected), expected).unwrap();
+
+        let mut decoded = Vec::new();
+
+        for batch in part.batches {
+            let schema = batch.schema();
+            assert_eq!(schema, fresh.schema());
+            decoded.extend(T::decode_batch(schema.metadata(), batch).unwrap());
+        }
+
+        assert_eq!(part.row_count, expected.len());
+        assert_eq!(decoded, expected);
     }
 }

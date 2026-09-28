@@ -44,7 +44,7 @@ use nautilus_model::{
 #[allow(unused)]
 use crate::arrow::{
     ArrowSchemaProvider, Data, DecodeDataFromRecordBatch, DecodeFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_TYPE_NAME,
 };
 
 pub mod betting;
@@ -128,8 +128,6 @@ pub(crate) fn decode_currency(
     ))
 }
 
-pub(crate) const KEY_CLASS: &str = "class";
-
 const INSTRUMENT_VALIDATION_FIELD: &str = "instrument";
 
 pub(crate) fn instrument_validation_error<T>(
@@ -149,7 +147,7 @@ impl ArrowSchemaProvider for InstrumentAny {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let instrument_type = metadata
             .as_ref()
-            .and_then(|m| m.get("class"))
+            .and_then(|m| m.get(KEY_TYPE_NAME))
             .map_or("CurrencyPair", |s| s.as_str());
 
         match instrument_type {
@@ -515,7 +513,8 @@ impl EncodeToRecordBatch for InstrumentAny {
             Self::PerpetualContract(_) => "PerpetualContract",
             Self::TokenizedAsset(_) => "TokenizedAsset",
         };
-        metadata.insert("class".to_string(), type_name.to_string());
+
+        metadata.insert(KEY_TYPE_NAME.to_string(), type_name.to_string());
         metadata
     }
 }
@@ -531,9 +530,9 @@ pub fn decode_instrument_any_batch(
     record_batch: &RecordBatch,
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
     let type_name = metadata
-        .get("class")
+        .get(KEY_TYPE_NAME)
         .map(String::as_str)
-        .ok_or_else(|| EncodingError::MissingMetadata("class"))?;
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_TYPE_NAME))?;
 
     match type_name {
         "Cfd" => {
@@ -663,7 +662,7 @@ pub fn decode_instrument_any_batch(
                 .collect())
         }
         _ => Err(EncodingError::ParseError(
-            "class",
+            KEY_TYPE_NAME,
             format!("Unknown instrument type: {type_name}"),
         )),
     }
@@ -697,7 +696,7 @@ mod tests {
     #[rstest]
     fn test_get_schema() {
         let mut metadata = HashMap::new();
-        metadata.insert("class".to_string(), "CurrencyPair".to_string());
+        metadata.insert(KEY_TYPE_NAME.to_string(), "CurrencyPair".to_string());
         let schema = InstrumentAny::get_schema(Some(metadata));
         assert!(schema.fields().len() >= 20);
         assert_eq!(schema.field(0).name(), "id");
@@ -1291,7 +1290,7 @@ mod tests {
     ))]
     fn test_decode_instrument_checked_constructor_error(#[case] instrument: InstrumentAny) {
         let metadata = instrument.metadata();
-        let class = metadata.get("class").unwrap();
+        let class = metadata.get(KEY_TYPE_NAME).unwrap();
         let first_row_price_precision = Instrument::price_precision(&instrument);
         let instruments = vec![instrument.clone(), instrument];
         let record_batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();

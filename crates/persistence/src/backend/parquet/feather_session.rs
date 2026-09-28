@@ -40,7 +40,7 @@ use nautilus_model::data::{
     to_variant,
 };
 use nautilus_serialization::arrow::{
-    DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, U64ColumnRef,
+    DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, KEY_TYPE_NAME, U64ColumnRef,
 };
 use object_store::path::Path as ObjectPath;
 
@@ -702,13 +702,13 @@ impl ParquetDataCatalog {
             Self::identifier_from_batch_or_path(&batch, feather_path, subdirectory, instance_id);
 
         let instrument_prefix = if catalog_data_name == "instruments" {
-            let class = batch
+            let instrument_type = batch
                 .schema()
                 .metadata()
-                .get("class")
+                .get(KEY_TYPE_NAME)
                 .cloned()
-                .ok_or_else(|| anyhow::anyhow!("Staged instrument has no class metadata"))?;
-            Some(instrument_path_prefix(&class.parse()?))
+                .ok_or_else(|| anyhow::anyhow!("Staged instrument has no type_name metadata"))?;
+            Some(instrument_path_prefix(&instrument_type.parse()?))
         } else {
             None
         };

@@ -122,21 +122,21 @@ impl CatalogDisplay for IndexPriceUpdate {
 impl CatalogDisplay for FundingRateUpdate {
     const FUNCTIONS: Option<CatalogDisplayFns> = Some(CatalogDisplayFns {
         schema: funding_rate_schema,
-        convert: convert_funding_rates_with_metadata,
+        convert: convert_funding_rates,
     });
 }
 
 impl CatalogDisplay for InstrumentStatus {
     const FUNCTIONS: Option<CatalogDisplayFns> = Some(CatalogDisplayFns {
         schema: instrument_status_schema,
-        convert: convert_instrument_status_with_metadata,
+        convert: convert_instrument_status,
     });
 }
 
 impl CatalogDisplay for OptionGreeks {
     const FUNCTIONS: Option<CatalogDisplayFns> = Some(CatalogDisplayFns {
         schema: option_greeks_schema,
-        convert: convert_option_greeks_with_metadata,
+        convert: convert_option_greeks,
     });
 }
 
@@ -256,27 +256,6 @@ fn unsupported_display_type(data_type: &NautilusDataType) -> EncodingError {
         "data_type",
         format!("unsupported display catalog data type `{data_type}`"),
     )
-}
-
-fn convert_funding_rates_with_metadata(
-    _: &HashMap<String, String>,
-    batch: &RecordBatch,
-) -> Result<RecordBatch, EncodingError> {
-    convert_funding_rates(batch)
-}
-
-fn convert_option_greeks_with_metadata(
-    _: &HashMap<String, String>,
-    batch: &RecordBatch,
-) -> Result<RecordBatch, EncodingError> {
-    convert_option_greeks(batch)
-}
-
-fn convert_instrument_status_with_metadata(
-    _: &HashMap<String, String>,
-    batch: &RecordBatch,
-) -> Result<RecordBatch, EncodingError> {
-    convert_instrument_status(batch)
 }
 
 fn append_identifier_column_if_present(
@@ -1311,10 +1290,11 @@ fn funding_rate_schema() -> Schema {
     ])
 }
 
-fn convert_funding_rates(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
-    let instrument_id_index = batch.schema().index_of("instrument_id")?;
-    let instrument_id =
-        extract_column_string(batch.columns(), "instrument_id", instrument_id_index)?;
+fn convert_funding_rates(
+    metadata: &HashMap<String, String>,
+    batch: &RecordBatch,
+) -> Result<RecordBatch, EncodingError> {
+    let instrument_id = instrument_id(metadata)?;
     let rate_index = batch.schema().index_of("rate")?;
     let rate = extract_column_string(batch.columns(), "rate", rate_index)?;
     let interval = u64_col(batch, "interval")?;
@@ -1323,7 +1303,6 @@ fn convert_funding_rates(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
     let ts_init = nanos_col(batch, "ts_init")?;
     let len = batch.num_rows();
 
-    let mut instrument_id_builder = StringBuilder::new();
     let mut rate_builder = Float64Builder::with_capacity(len);
     let mut interval_builder = UInt64Builder::with_capacity(len);
     let mut next_funding_ns_builder =
@@ -1334,7 +1313,6 @@ fn convert_funding_rates(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
         TimestampNanosecondBuilder::with_capacity(len).with_data_type(timestamp_data_type());
 
     for row in 0..len {
-        instrument_id_builder.append_value(instrument_id.value(row));
         let value = Decimal::from_str(rate.value(row))
             .map_err(|e| EncodingError::ParseError("rate", e.to_string()))?;
         rate_builder.append_value(value.to_f64().unwrap_or(f64::NAN));
@@ -1347,7 +1325,7 @@ fn convert_funding_rates(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
     RecordBatch::try_new(
         Arc::new(funding_rate_schema()),
         vec![
-            Arc::new(instrument_id_builder.finish()),
+            constant_string_column(instrument_id, len),
             Arc::new(rate_builder.finish()),
             Arc::new(interval_builder.finish()),
             Arc::new(next_funding_ns_builder.finish()),
@@ -1444,10 +1422,11 @@ fn append_optional_f64(builder: &mut Float64Builder, values: &Float64Array, row:
     }
 }
 
-fn convert_option_greeks(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
-    let instrument_id_index = batch.schema().index_of("instrument_id")?;
-    let instrument_id =
-        extract_column_string(batch.columns(), "instrument_id", instrument_id_index)?;
+fn convert_option_greeks(
+    metadata: &HashMap<String, String>,
+    batch: &RecordBatch,
+) -> Result<RecordBatch, EncodingError> {
+    let instrument_id = instrument_id(metadata)?;
     let delta = f64_col(batch, "delta")?;
     let gamma = f64_col(batch, "gamma")?;
     let vega = f64_col(batch, "vega")?;
@@ -1464,7 +1443,6 @@ fn convert_option_greeks(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
     let convention = extract_column_string(batch.columns(), "convention", convention_index)?;
     let len = batch.num_rows();
 
-    let mut instrument_id_builder = StringBuilder::new();
     let mut delta_builder = Float64Builder::with_capacity(len);
     let mut gamma_builder = Float64Builder::with_capacity(len);
     let mut vega_builder = Float64Builder::with_capacity(len);
@@ -1482,7 +1460,6 @@ fn convert_option_greeks(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
     let mut convention_builder = StringBuilder::new();
 
     for row in 0..len {
-        instrument_id_builder.append_value(instrument_id.value(row));
         delta_builder.append_value(delta.value(row));
         gamma_builder.append_value(gamma.value(row));
         vega_builder.append_value(vega.value(row));
@@ -1501,7 +1478,7 @@ fn convert_option_greeks(batch: &RecordBatch) -> Result<RecordBatch, EncodingErr
     RecordBatch::try_new(
         Arc::new(option_greeks_schema()),
         vec![
-            Arc::new(instrument_id_builder.finish()),
+            constant_string_column(instrument_id, len),
             Arc::new(delta_builder.finish()),
             Arc::new(gamma_builder.finish()),
             Arc::new(vega_builder.finish()),
@@ -1573,10 +1550,11 @@ fn append_optional_u64(
     Ok(())
 }
 
-fn convert_instrument_status(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
-    let instrument_id_index = batch.schema().index_of("instrument_id")?;
-    let instrument_id =
-        extract_column_string(batch.columns(), "instrument_id", instrument_id_index)?;
+fn convert_instrument_status(
+    metadata: &HashMap<String, String>,
+    batch: &RecordBatch,
+) -> Result<RecordBatch, EncodingError> {
+    let instrument_id = instrument_id(metadata)?;
     let action_index = batch.schema().index_of("action")?;
     let action = extract_column_string(batch.columns(), "action", action_index)?;
     let ts_event = nanos_col(batch, "ts_event")?;
@@ -1591,7 +1569,6 @@ fn convert_instrument_status(batch: &RecordBatch) -> Result<RecordBatch, Encodin
     let is_short_sell_restricted = bool_col(batch, "is_short_sell_restricted")?;
     let len = batch.num_rows();
 
-    let mut instrument_id_builder = StringBuilder::new();
     let mut action_builder = StringBuilder::new();
     let mut ts_event_builder =
         TimestampNanosecondBuilder::with_capacity(len).with_data_type(timestamp_data_type());
@@ -1604,7 +1581,6 @@ fn convert_instrument_status(batch: &RecordBatch) -> Result<RecordBatch, Encodin
     let mut is_short_sell_restricted_builder = arrow::array::BooleanBuilder::with_capacity(len);
 
     for row in 0..len {
-        instrument_id_builder.append_value(instrument_id.value(row));
         action_builder.append_value(action.value(row));
         append_timestamp(&mut ts_event_builder, &ts_event, row);
         append_timestamp(&mut ts_init_builder, &ts_init, row);
@@ -1632,7 +1608,7 @@ fn convert_instrument_status(batch: &RecordBatch) -> Result<RecordBatch, Encodin
     RecordBatch::try_new(
         Arc::new(instrument_status_schema()),
         vec![
-            Arc::new(instrument_id_builder.finish()),
+            constant_string_column(instrument_id, len),
             Arc::new(action_builder.finish()),
             Arc::new(ts_event_builder.finish()),
             Arc::new(ts_init_builder.finish()),

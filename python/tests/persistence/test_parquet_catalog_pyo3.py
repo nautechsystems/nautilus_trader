@@ -152,6 +152,12 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
 
     assert target.migrate_from_legacy_parquet_path(str(source_path), dry_run=True) == 0
     assert target.migrate_from_legacy_parquet_path(str(source_path)) == 2
+    assert [item.to_dict() for item in target.query(NautilusDataType.FundingRateUpdate)] == [
+        values["funding_rate_update"].to_dict(),
+    ]
+    assert [item.to_dict() for item in target.query(NautilusDataType.InstrumentClose)] == [
+        values["instrument_close"].to_dict(),
+    ]
 
 
 @pytest.mark.parametrize("backend", ["parquet"])
@@ -262,7 +268,17 @@ def test_raw_multi_identity_status_query_preserves_identifiers(
     )
 
     assert table.schema.metadata in (None, {})
-    assert table.column("instrument_id").to_pylist() == [str(first_id), str(second_id)]
+    assert table.column_names == [
+        "action",
+        "ts_event",
+        "ts_init",
+        "reason",
+        "trading_event",
+        "is_trading",
+        "is_quoting",
+        "is_short_sell_restricted",
+        "identifier",
+    ]
     assert table.column("identifier").to_pylist() == [str(first_id), str(second_id)]
     assert table.schema.field("ts_init").type == pa.timestamp("ns", tz="UTC")
     assert table.column("ts_init").cast(pa.int64()).to_pylist() == [1, 2]

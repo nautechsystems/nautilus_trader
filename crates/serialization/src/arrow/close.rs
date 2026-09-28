@@ -29,7 +29,7 @@ use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, decode_decimal_price, decode_required_timestamp, enum_dictionary_array,
     enum_dictionary_data_type, extract_column, extract_column_string, fixed_decimal_data_type,
-    identifier_array_from_display, price_decimal_array,
+    identifier_array_from_display, metadata_with_type_name, price_decimal_array,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -43,10 +43,7 @@ impl ArrowSchemaProvider for InstrumentClose {
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
-        match metadata {
-            Some(metadata) => Schema::new_with_metadata(fields, metadata),
-            None => Schema::new(fields),
-        }
+        Schema::new_with_metadata(fields, metadata_with_type_name("InstrumentClose", metadata))
     }
 }
 
@@ -169,7 +166,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::get_raw_price;
+    use crate::arrow::{KEY_TYPE_NAME, get_raw_price};
 
     #[rstest]
     fn test_get_schema() {
@@ -188,7 +185,9 @@ mod tests {
             Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
+        let mut expected_metadata = metadata;
+        expected_metadata.insert(KEY_TYPE_NAME.to_string(), "InstrumentClose".to_string());
+        let expected_schema = Schema::new_with_metadata(expected_fields, expected_metadata);
         assert_eq!(schema, expected_schema);
     }
 

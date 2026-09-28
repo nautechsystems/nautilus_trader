@@ -384,6 +384,7 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "instrument_status_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -404,6 +405,7 @@ pub fn py_instrument_status_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "option_greeks_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]

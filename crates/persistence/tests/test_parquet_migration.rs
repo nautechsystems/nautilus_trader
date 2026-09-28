@@ -319,6 +319,65 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
 }
 
 #[rstest]
+fn migrated_catalog_consolidates_with_fresh_writes() {
+    ensure_custom_data_registered::<RustTestCustomData>();
+    let temporary = TempDir::new().unwrap();
+    let target = temporary.path().join("migrated");
+    migrate_parquet_catalog(config(&fixture_path(), &target, false)).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let fresh_offset_ns = 86_400_000_000_000;
+
+    macro_rules! write_later_copy {
+        ($ty:ty) => {{
+            let migrated = catalog
+                .query_typed_data::<$ty>(None, None, None, None, None, true)
+                .unwrap();
+            let fresh = migrated
+                .iter()
+                .cloned()
+                .map(|mut value| {
+                    value.ts_event = (value.ts_event.as_u64() + fresh_offset_ns).into();
+                    value.ts_init = (value.ts_init.as_u64() + fresh_offset_ns).into();
+                    value
+                })
+                .collect::<Vec<_>>();
+            catalog.write_to_parquet(&fresh, None, None, None).unwrap();
+            [migrated, fresh].concat()
+        }};
+    }
+    let quotes = write_later_copy!(QuoteTick);
+    let trades = write_later_copy!(TradeTick);
+    let bars = write_later_copy!(Bar);
+    let depths = write_later_copy!(OrderBookDepth);
+
+    catalog
+        .consolidate_catalog(None, None, Some(false), None)
+        .unwrap();
+
+    macro_rules! query {
+        ($ty:ty) => {
+            catalog
+                .query_typed_data::<$ty>(None, None, None, None, None, true)
+                .unwrap()
+        };
+    }
+    assert_eq!(query!(QuoteTick), quotes);
+    assert_eq!(query!(TradeTick), trades);
+    assert_eq!(query!(Bar), bars);
+    assert_eq!(query!(OrderBookDepth), depths);
+
+    for directory in [
+        "data/quotes/AUDUSD.SIM",
+        "data/trades/ETHUSDT-PERP.BINANCE",
+        "data/bars/AUDUSD.SIM-1-MINUTE-BID-EXTERNAL",
+        "data/order_book_depths/AAPL.XNAS",
+    ] {
+        let files = fs::read_dir(target.join(directory)).unwrap().count();
+        assert_eq!(files, 1, "{directory}");
+    }
+}
+
+#[rstest]
 fn migration_dry_run_does_not_create_destination() {
     let temporary = TempDir::new().unwrap();
     let target = temporary.path().join("absent");
