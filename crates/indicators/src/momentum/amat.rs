@@ -304,6 +304,52 @@ mod tests {
     }
 
     #[rstest]
+    fn long_run_requires_fast_and_slow_ma_direction_to_agree() {
+        let mut ind = ArcherMovingAveragesTrends::new(
+            3,
+            4,
+            5,
+            Some(MovingAverageType::Simple),
+        );
+
+        for value in [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 8.0, 9.0] {
+            ind.update_raw(value);
+        }
+
+        let fast_diff = ind.fast_ma_price.back().copied().unwrap()
+            - ind.fast_ma_price.front().copied().unwrap();
+        let slow_diff = ind.slow_ma_price.back().copied().unwrap()
+            - ind.slow_ma_price.front().copied().unwrap();
+
+        assert!(fast_diff > 0.0);
+        assert!(slow_diff < 0.0);
+        assert!(!ind.long_run);
+    }
+
+    #[rstest]
+    fn short_run_requires_fast_and_slow_ma_direction_to_agree() {
+        let mut ind = ArcherMovingAveragesTrends::new(
+            3,
+            4,
+            5,
+            Some(MovingAverageType::Simple),
+        );
+
+        for value in [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 12.0, 11.0] {
+            ind.update_raw(value);
+        }
+
+        let fast_diff = ind.fast_ma_price.back().copied().unwrap()
+            - ind.fast_ma_price.front().copied().unwrap();
+        let slow_diff = ind.slow_ma_price.back().copied().unwrap()
+            - ind.slow_ma_price.front().copied().unwrap();
+
+        assert!(fast_diff < 0.0);
+        assert!(slow_diff > 0.0);
+        assert!(!ind.short_run);
+    }
+
+    #[rstest]
     fn reset_clears_internal_state() {
         let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, None);
         feed_sequence(&mut ind, 0, 50, 1);
