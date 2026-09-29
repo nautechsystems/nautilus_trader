@@ -137,6 +137,23 @@ The default `BacktestVenueConfig` mode is `OtoTriggerMode.PARTIAL`. Set `oto_tri
 promise pro rata child sizing. Verify child quantities when the parent fills partially.
 :::
 
+With `support_contingent_orders` enabled, the backtest venue sizes each child as if it covers the
+parent's whole quantity. When the parent is modified or closes, each child's remaining quantity
+covers what the parent can still hold, less what the children have filled between them: the
+parent's quantity while it works, and its filled quantity once it is canceled, expires, or is
+reduced to its filled quantity. A modify grows children only when it raises the parent's quantity,
+and closing the parent only shrinks them:
+
+- Released children keep working for the parent's filled quantity. A child with nothing left to
+  cover is canceled.
+- Reducing the parent to its filled quantity completes it, so `OtoTriggerMode.FULL` releases held
+  children at that quantity.
+- Canceling or expiring the parent cancels held children, so a partially filled parent that closes
+  this way under `OtoTriggerMode.FULL` leaves its fills without children.
+
+Reduce-only children also track the position between these events, as described in
+[Backtest reduce-only resizing](#backtest-reduce-only-resizing).
+
 #### Enforcing a full-fill trigger in strategy code
 
 If the execution context does not provide the required full-fill behavior:
