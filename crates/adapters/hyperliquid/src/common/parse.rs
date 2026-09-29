@@ -889,6 +889,28 @@ pub fn parse_trigger_order_type(is_market: bool, tpsl: &HyperliquidTpSl) -> Orde
     }
 }
 
+/// Parses trigger semantics from a REST `orderType` label.
+///
+/// REST order rows (`frontendOpenOrders`, `historicalOrders`) describe conditional orders with
+/// labels such as `"Stop Market"` or `"Take Profit Limit"`, rather than the `tpsl` and
+/// `isMarket` fields carried by WebSocket order updates.
+///
+/// # Returns
+///
+/// The trigger kind and whether the order executes as market once triggered, or `None` when
+/// the label does not describe a trigger order (for example `"Limit"` or `"Market"`).
+#[must_use]
+pub fn parse_trigger_order_type_label(label: &str) -> Option<(HyperliquidTpSl, bool)> {
+    let tpsl = if label.starts_with("Take Profit") {
+        HyperliquidTpSl::Tp
+    } else if label.starts_with("Stop") {
+        HyperliquidTpSl::Sl
+    } else {
+        return None;
+    };
+    Some((tpsl, label.ends_with("Market")))
+}
+
 /// Extracts order status from WebSocket order data.
 ///
 /// # Returns
@@ -1544,6 +1566,21 @@ mod tests {
             parse_trigger_order_type(false, &HyperliquidTpSl::Tp),
             OrderType::LimitIfTouched
         );
+    }
+
+    #[rstest]
+    #[case("Stop Market", Some((HyperliquidTpSl::Sl, true)))]
+    #[case("Stop Limit", Some((HyperliquidTpSl::Sl, false)))]
+    #[case("Take Profit Market", Some((HyperliquidTpSl::Tp, true)))]
+    #[case("Take Profit Limit", Some((HyperliquidTpSl::Tp, false)))]
+    #[case("Limit", None)]
+    #[case("Market", None)]
+    #[case("", None)]
+    fn test_parse_trigger_order_type_label(
+        #[case] label: &str,
+        #[case] expected: Option<(HyperliquidTpSl, bool)>,
+    ) {
+        assert_eq!(parse_trigger_order_type_label(label), expected);
     }
 
     #[rstest]
