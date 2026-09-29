@@ -265,16 +265,33 @@ impl SettlementRegistry {
         instrument_id: InstrumentId,
         noted_at: UnixNanos,
     ) {
-        self.inner.lock().uncertain_orders.insert(
-            venue_order_id,
-            UncertainOrder {
-                instrument_id,
-                noted_at,
-                kind: UncertainOrderKind::Submit,
-            },
-        );
+        let uncertain = UncertainOrder {
+            instrument_id,
+            noted_at,
+            kind: UncertainOrderKind::Submit,
+        };
+
+        self.inner
+            .lock()
+            .uncertain_orders
+            .entry(venue_order_id)
+            .and_modify(|existing| {
+                if existing.kind != UncertainOrderKind::SubmitClosed {
+                    *existing = uncertain;
+                }
+            })
+            .or_insert(uncertain);
 
         self.resolution_wakeup.notify_one();
+    }
+
+    /// Retains terminal-submit recovery until venue closure and trade evidence are established.
+    pub(crate) fn note_uncertain_submit_closed(&self, venue_order_id: &VenueOrderId) {
+        if let Some(order) = self.inner.lock().uncertain_orders.get_mut(venue_order_id)
+            && order.kind == UncertainOrderKind::Submit
+        {
+            order.kind = UncertainOrderKind::SubmitClosed;
+        }
     }
 
     /// Returns the orders whose venue state awaits a targeted REST read.
@@ -666,7 +683,9 @@ impl SettlementRegistry {
             .filter(|(venue_order_id, order)| order_in_scope(venue_order_id, order))
             .fold((0, 0), |(submits, stream_gaps), (_, order)| {
                 match order.kind {
-                    UncertainOrderKind::Submit => (submits + 1, stream_gaps),
+                    UncertainOrderKind::Submit | UncertainOrderKind::SubmitClosed => {
+                        (submits + 1, stream_gaps)
+                    }
                     UncertainOrderKind::StreamGap => (submits, stream_gaps + 1),
                 }
             });
@@ -2083,6 +2102,39 @@ pub(crate) mod tests {
         assert_eq!(listed[0].1.noted_at, UnixNanos::from(7_u64));
         assert!(registry.uncertain_orders().is_empty());
         assert!(registry.ensure_resolved(None, "mass status").is_ok());
+    }
+
+    #[rstest]
+    #[case::pending(false)]
+    #[case::closed(true)]
+    fn test_repeated_uncertainty_preserves_terminal_recovery(#[case] closed: bool) {
+        let registry = live_registry();
+        let venue_order_id = VenueOrderId::from("0xuncertain");
+        let instrument_id = InstrumentId::from("TOKEN-A.POLYMARKET");
+        registry.note_order_uncertain(venue_order_id, instrument_id, UnixNanos::from(7_u64));
+
+        if closed {
+            registry.note_uncertain_submit_closed(&venue_order_id);
+        }
+
+        registry.note_order_uncertain(venue_order_id, instrument_id, UnixNanos::from(19_u64));
+        let listed = registry.uncertain_orders();
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].0, venue_order_id);
+        assert_eq!(listed[0].1.instrument_id, instrument_id);
+        assert_eq!(
+            listed[0].1.noted_at,
+            UnixNanos::from(if closed { 7_u64 } else { 19_u64 })
+        );
+        assert_eq!(
+            listed[0].1.kind,
+            if closed {
+                UncertainOrderKind::SubmitClosed
+            } else {
+                UncertainOrderKind::Submit
+            }
+        );
     }
 
     #[rstest]

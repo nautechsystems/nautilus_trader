@@ -203,6 +203,10 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().get_account()
     }
 
+    fn retain_unresolved_submissions(&self) -> bool {
+        self.client.borrow().retain_unresolved_submissions()
+    }
+
     fn position_reconciliation_tolerance(&self) -> Decimal {
         self.client.borrow().position_reconciliation_tolerance()
     }

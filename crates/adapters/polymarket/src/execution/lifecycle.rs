@@ -44,6 +44,7 @@ use ustr::Ustr;
 
 use super::PolymarketExecutionClient;
 use crate::{
+    common::enums::PolymarketOrderStatus,
     execution::{
         context::OrderContextRegistry,
         reconciliation::venue_leg_filled_before_and_quantity,
@@ -119,11 +120,28 @@ impl PolymarketExecutionClient {
         let neg_risk_index = self.neg_risk_index.clone();
         let order_reservations = self.order_reservations.clone();
         let order_contexts = self.order_contexts.clone();
+        let pending_submits = self.pending_submits.clone();
         let settlement = self.settlement.clone();
 
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
             if event.instrument_id().venue != core.venue {
                 return;
+            }
+
+            if let Some(order) = core.cache().order(&event.client_order_id())
+                && order.account_id() == Some(core.account_id)
+            {
+                if let OrderEventAny::Accepted(accepted) = event
+                    && pending_submits.client_order_id(&accepted.venue_order_id)
+                        == Some(accepted.client_order_id)
+                {
+                    order_contexts
+                        .recover_context(accepted.venue_order_id, OrderContext::from(&*order));
+
+                    order_contexts.mark_accepted(accepted.venue_order_id);
+                }
+
+                order_contexts.set_closed(event.client_order_id(), order.is_closed());
             }
 
             update_order_reservation(&core, &order_reservations, event.client_order_id());
@@ -1200,17 +1218,27 @@ async fn resolve_due_uncertain_orders(
 /// Reads the venue state of an order whose submit outcome is unknown, or the trades of an order
 /// that was live during a stream gap, and applies it.
 ///
-/// Returns `true` once the state is applied, or once the resolution window passes without
-/// venue evidence so reconciliation resumes for the order's instrument.
+/// Cancels a live venue order when its local submission has closed. That recovery requires a
+/// terminal order read and matching trade evidence, even after the resolution window expires.
+/// Other recovery returns `true` after applying evidence or exhausting the resolution window,
+/// allowing reconciliation to resume for the instrument.
 async fn resolve_uncertain_order(
     http_client: &PolymarketClobHttpClient,
     ctx: &WsDispatchContext<'_>,
     ws_dispatch_state: &Mutex<WsDispatchState>,
     venue_order_id: VenueOrderId,
-    uncertain: UncertainOrder,
+    mut uncertain: UncertainOrder,
 ) -> bool {
+    if uncertain.kind == UncertainOrderKind::Submit && ctx.order_contexts.is_closed(venue_order_id)
+    {
+        ctx.settlement.note_uncertain_submit_closed(&venue_order_id);
+        uncertain.kind = UncertainOrderKind::SubmitClosed;
+    }
+
     let apply_evidence = match uncertain.kind {
-        UncertainOrderKind::Submit => apply_uncertain_order_evidence,
+        UncertainOrderKind::Submit | UncertainOrderKind::SubmitClosed => {
+            apply_uncertain_order_evidence
+        }
         UncertainOrderKind::StreamGap => apply_stream_gap_order_evidence,
     };
 
@@ -1219,6 +1247,18 @@ async fn resolve_uncertain_order(
         .await
     {
         Ok(Some(order)) => {
+            if uncertain.kind == UncertainOrderKind::SubmitClosed
+                && matches!(
+                    order.status,
+                    PolymarketOrderStatus::Live | PolymarketOrderStatus::Delayed
+                )
+            {
+                cancel_closed_order(http_client, venue_order_id).await;
+
+                // Cancellation can race a fill; read the terminal order and its trades next
+                return false;
+            }
+
             let params = GetTradesParams {
                 market: Some(order.market.to_string()),
                 after: Some(
@@ -1252,15 +1292,19 @@ async fn resolve_uncertain_order(
         }
     };
 
-    if applied {
-        if uncertain.kind == UncertainOrderKind::Submit {
-            log::info!(
-                "Resolved Polymarket order {venue_order_id} with an unknown submit outcome from \
-                 REST evidence"
-            );
-        }
+    if uncertain.kind == UncertainOrderKind::Submit && ctx.order_contexts.is_closed(venue_order_id)
+    {
+        ctx.settlement.note_uncertain_submit_closed(&venue_order_id);
+        return false;
+    }
 
+    if applied {
+        log::debug!("Resolved uncertain Polymarket order {venue_order_id} from REST evidence");
         return true;
+    }
+
+    if uncertain.kind == UncertainOrderKind::SubmitClosed {
+        return false;
     }
 
     let elapsed = ctx
@@ -1278,6 +1322,29 @@ async fn resolve_uncertain_order(
          evidence after {UNCERTAIN_ORDER_RESOLUTION_WINDOW:?}"
     );
     true
+}
+
+async fn cancel_closed_order(http_client: &PolymarketClobHttpClient, venue_order_id: VenueOrderId) {
+    log::warn!("Canceling venue order {venue_order_id} discovered after its local order closed");
+
+    match http_client.cancel_order(venue_order_id.as_str()).await {
+        Ok(response)
+            if response
+                .canceled
+                .iter()
+                .any(|id| id == venue_order_id.as_str()) =>
+        {
+            log::debug!("Venue confirmed cancellation of closed order {venue_order_id}");
+        }
+        Ok(response) => {
+            log::warn!(
+                "Venue did not confirm cancellation of closed order {venue_order_id}: {response:?}"
+            );
+        }
+        Err(e) => {
+            log::warn!("Failed to cancel closed order {venue_order_id}: {e}");
+        }
+    }
 }
 
 /// Targeted REST attempt schedule for pending trades or orders, with capped exponential backoff
@@ -2255,6 +2322,84 @@ mod tests {
     }
 
     #[rstest]
+    fn reconciled_pending_submit_records_acceptance_before_http_response() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xQUERY_ACCEPT", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let order = cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id());
+        let venue_order_id = order.venue_order_id().unwrap();
+        client
+            .pending_submits
+            .insert(venue_order_id, order.client_order_id());
+        client.ensure_order_event_subscription();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, client.core.account_id, venue_order_id);
+
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(order.strategy_id()),
+            &accepted,
+        );
+        client.settlement.note_stream_gap(UnixNanos::from(17_u64));
+
+        assert_eq!(
+            client.order_contexts.get(&venue_order_id),
+            Some(OrderContext::from(&order))
+        );
+        assert!(!client.order_contexts.mark_accepted(venue_order_id));
+        let uncertain = client.settlement.uncertain_orders();
+        assert_eq!(uncertain.len(), 1);
+        assert_eq!(uncertain[0].0, venue_order_id);
+        assert_eq!(uncertain[0].1.instrument_id, instrument.id());
+        assert_eq!(uncertain[0].1.noted_at, UnixNanos::from(17_u64));
+        assert_eq!(uncertain[0].1.kind, UncertainOrderKind::StreamGap);
+    }
+
+    #[rstest]
+    fn reconciled_acceptance_preserves_replacement_mapping() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xREPLACEMENT", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let order = cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id());
+        let old_venue_order_id = order.venue_order_id().unwrap();
+        let replacement_venue_order_id = VenueOrderId::from("V-REPLACEMENT");
+        client
+            .pending_submits
+            .insert(old_venue_order_id, order.client_order_id());
+        client
+            .order_contexts
+            .register_context(old_venue_order_id, OrderContext::from(&order));
+        client
+            .order_contexts
+            .register_context(replacement_venue_order_id, OrderContext::from(&order));
+        client.ensure_order_event_subscription();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, client.core.account_id, old_venue_order_id);
+
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(order.strategy_id()),
+            &accepted,
+        );
+
+        assert_eq!(
+            client
+                .order_contexts
+                .venue_order_id(&order.client_order_id()),
+            Some(replacement_venue_order_id)
+        );
+        assert_eq!(
+            client.order_contexts.get(&replacement_venue_order_id),
+            Some(OrderContext::from(&order))
+        );
+        assert!(!client.order_contexts.mark_accepted(old_venue_order_id));
+    }
+
+    #[rstest]
     fn order_reservations_follow_acceptance_and_reconciled_updates() {
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xRESERVATION", false, false);
@@ -2748,6 +2893,72 @@ mod tests {
 
         assert!(resolved.is_empty());
         assert_eq!(quarantined_again, vec!["trade-1".to_string()]);
+    }
+
+    #[rstest]
+    #[case::open(false, true)]
+    #[case::closed(true, false)]
+    #[tokio::test]
+    async fn uncertain_closed_order_survives_failed_read_after_resolution_window(
+        #[case] closed: bool,
+        #[case] expected_resolved: bool,
+    ) {
+        let (client, cache) =
+            test_client_with_proxy_and_http_urls(None, "http://127.0.0.1:1", "http://127.0.0.1:1");
+        let order = cache_accepted_open_order(
+            &mut cache.borrow_mut(),
+            InstrumentId::from("TOKEN-A.POLYMARKET"),
+        );
+        let venue_order_id = order.venue_order_id().unwrap();
+        client
+            .order_contexts
+            .register_context(venue_order_id, OrderContext::from(&order));
+        client
+            .order_contexts
+            .set_closed(order.client_order_id(), closed);
+        client.settlement.note_order_uncertain(
+            venue_order_id,
+            order.instrument_id(),
+            UnixNanos::default(),
+        );
+
+        let ctx = WsDispatchContext {
+            signer_type: client.config.signer_type,
+            token_instruments: &client.shared_token_instruments,
+            fill_tracker: &client.fill_tracker,
+            settlement: &client.settlement,
+            pending_submits: &client.pending_submits,
+            order_contexts: &client.order_contexts,
+            emitter: &client.emitter,
+            account_id: client.core.account_id,
+            clock: client.clock,
+            user_address: &client.secrets.address,
+            user_api_key: client.secrets.credential.api_key_str(),
+        };
+
+        let uncertain = client.settlement.uncertain_orders()[0].1;
+        let resolved = resolve_uncertain_order(
+            &client.http_client,
+            &ctx,
+            &client.ws_dispatch_state,
+            venue_order_id,
+            uncertain,
+        )
+        .await;
+        client
+            .order_contexts
+            .set_closed(order.client_order_id(), false);
+        let retained = client.settlement.uncertain_orders()[0].1;
+        let after_reopen = resolve_uncertain_order(
+            &client.http_client,
+            &ctx,
+            &client.ws_dispatch_state,
+            venue_order_id,
+            retained,
+        )
+        .await;
+        assert_eq!(resolved, expected_resolved);
+        assert_eq!(after_reopen, expected_resolved);
     }
 
     #[rstest]

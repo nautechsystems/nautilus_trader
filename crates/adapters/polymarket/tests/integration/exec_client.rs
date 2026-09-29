@@ -5471,6 +5471,176 @@ async fn test_generate_order_status_report_reconciles_identical_duplicate_trade_
 
 #[rstest]
 #[tokio::test]
+async fn test_stalled_submit_query_deduplicates_acceptance_before_cache_delivery() {
+    let state = TestServerState::default();
+    state.configure_default_order_success().await;
+    state.order_response_gate.enable();
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+    let order = make_limit_order(
+        "O-QUERY-UNKNOWN",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let ExecutionEvent::Order(submitted) = recv_execution_event(&mut rx).await else {
+        panic!("Expected submitted order event");
+    };
+
+    cache.borrow_mut().update_order(&submitted).unwrap();
+    wait_until_async(
+        || async { state.order_response_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let venue_order_id = state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(venue_order_id);
+    venue_order["asset_id"] = json!(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = json!(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["size_matched"] = json!("0");
+    venue_order["original_size"] = json!(order.quantity().to_string());
+    *state.single_order_response.lock().await = Some(venue_order);
+    *state.trades_response_override.lock().await = Some(load_json("http_empty_page.json"));
+    client
+        .query_order(QueryOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            order.client_order_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    let first = recv_execution_event(&mut rx).await;
+    state.order_response_gate.release();
+    let second = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = first else {
+        panic!("Expected one accepted event, received {first:?}");
+    };
+
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(
+        accepted.venue_order_id,
+        VenueOrderId::from(venue_order_id.as_str())
+    );
+    assert!(second.is_err(), "duplicate event: {second:?}");
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Submitted
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_missing_order_and_trades_do_not_close_unacknowledged_submit() {
+    let state = TestServerState::default();
+    state.configure_default_order_success().await;
+    state.order_response_gate.enable();
+    *state.single_order_response.lock().await = Some(Value::Null);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+    let order = make_limit_order(
+        "O-QUERY-UNKNOWN",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let ExecutionEvent::Order(submitted) = recv_execution_event(&mut rx).await else {
+        panic!("Expected submitted order event");
+    };
+
+    cache.borrow_mut().update_order(&submitted).unwrap();
+    wait_until_async(
+        || async { state.order_response_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: Some(order.client_order_id()),
+            venue_order_id: None,
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .unwrap();
+
+    state.order_response_gate.release();
+
+    assert_eq!(report, None);
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 1);
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Submitted
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_report_recovers_canceled_when_no_trades() {
     // When the venue has no record of the order and no trades exist for it,
     // surface `Canceled` (not `Rejected`) so the engine retires the local entry

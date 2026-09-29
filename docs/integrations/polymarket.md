@@ -945,6 +945,10 @@ until the venue state is known. Terminal trades apply through the settlement rec
 order status accepts the order and releases its fills. The status waits while any trade is still
 provisional or while confirmed trades do not yet cover the venue's matched quantity.
 
+`QueryOrder` commands made while a signed submission awaits acknowledgement use the same settlement path.
+They apply venue trade IDs directly, so buffered WebSocket trades and the later submit response do
+not repeat acceptance or count the same fill twice.
+
 ##### Report gating
 
 Reports that cover the order or its instrument fail until that read applies or reading stops, so
@@ -954,6 +958,14 @@ reconciliation does not infer fills from partial venue state.
 
 Reading stops after 10 minutes without applying the venue state. The adapter logs a warning, lifts
 the report gate, and leaves the order `Submitted`.
+
+If the local order closes before recovery completes, the adapter cancels any venue order still
+reported as live or delayed. Recovery then requires a terminal order read and trade evidence covering
+its matched quantity. Cancellation alone does not establish that no fill occurred. Failed or empty
+reads and the 10-minute timeout do not end this recovery, even if a late fill reopens the local order.
+If the venue keeps returning an empty order lookup, the report gate remains closed indefinitely for
+that order, its instrument, and account-wide reports. Fills that the engine cannot apply remain
+visible through the settlement report gate.
 
 ### Position management
 
@@ -1392,17 +1404,18 @@ With `open_check_open_only=False`, the missing-order path works as follows:
 1. At `open_check_missing_retries=5`, schedule a targeted order-status query, subject to per-cycle
    query limits and throttling. This is the fifth eligible miss, not five additional queries.
 1. Reconcile a returned report with its fills. A failed or incomplete targeted query defers
-   resolution. If complete targeted coverage returns no report, the engine resolves `SUBMITTED`
-   or `ACCEPTED` as `REJECTED`, and `PARTIALLY_FILLED` as `CANCELED`. Pending update or cancel states
-   remain in flight.
+   resolution. If complete targeted coverage returns no report, the engine retains unacknowledged
+   Polymarket submissions. It resolves `ACCEPTED` as `REJECTED`, and `PARTIALLY_FILLED` as `CANCELED`.
+   Pending update or cancel states remain in flight.
 
 Polymarket first attempts [single-order recovery from trades](#single-order-recovery-from-trades)
-when its order lookup is empty. For a cached order, empty trade history produces a `CANCELED`
-report with `ORDER_NOT_FOUND_AT_VENUE`; pending trades instead preserve a non-terminal state.
+when its order lookup is empty. For a previously accepted cached order, empty trade history produces
+a `CANCELED` report with `ORDER_NOT_FOUND_AT_VENUE`. An order that was never accepted remains
+unresolved; pending trades instead preserve a non-terminal state.
 
 :::warning
 A successful empty order lookup plus empty trade history cannot distinguish venue cancellation
-from replica lag. The fallback can therefore close a local order during sustained lag. The
+from replica lag. The fallback can therefore close a previously accepted local order during sustained lag. The
 settling window and retry count reduce this risk; they do not prove that an order no longer exists.
 :::
 
@@ -1456,8 +1469,9 @@ order from trade history alone:
   returns `Canceled` with the recovered `filled_qty`. Targeted reconciliation applies the associated
   fill reports before closing the remainder. If terminal quantity is still unaccounted for, the
   engine defers the terminal transition rather than discarding the missing fills.
-- Cached order, no trades: returns `Canceled` with
+- Previously accepted cached order, no trades: returns `Canceled` with
   `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
+- Cached order that was never accepted, no trades: returns `None`, preserving its unresolved state.
 - Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query preserves
   the locally applied matched quantity while terminal REST recovery waits for `CONFIRMED` or
   `FAILED`.

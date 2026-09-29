@@ -185,7 +185,8 @@ impl OrderFillTrackerMap {
         }
     }
 
-    /// Registers the order, then drains and prepares its buffered fills under one lock.
+    /// Registers the order without resetting recovered fills,
+    /// then drains its buffered fills under one lock.
     ///
     /// Registration and the drain are a single critical section, so a concurrent
     /// [`Self::accept_or_buffer_fill`] cannot read the order as unregistered and buffer a fill into
@@ -200,7 +201,8 @@ impl OrderFillTrackerMap {
         let mut guard = self.inner.lock();
         guard
             .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+            .entry(venue_order_id)
+            .or_insert_with(|| new_order_state(submitted_qty, order_side));
         take_and_prepare_fills(&mut guard, venue_order_id, client_order_id)
     }
 
@@ -221,7 +223,8 @@ impl OrderFillTrackerMap {
         }
         guard
             .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+            .entry(venue_order_id)
+            .or_insert_with(|| new_order_state(submitted_qty, order_side));
         Some(take_and_prepare_fills(
             &mut guard,
             venue_order_id,
@@ -597,6 +600,30 @@ mod tests {
 
     fn pusd() -> Currency {
         Currency::pUSD()
+    }
+
+    #[rstest]
+    fn submit_ack_registration_preserves_recovered_fills() {
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("V-RECOVERED");
+        tracker.register_and_take_pending_fills(
+            venue_order_id,
+            None,
+            Quantity::from("100"),
+            OrderSide::Buy,
+        );
+        tracker.record_fill(&venue_order_id, Quantity::from("25"));
+        let drained = tracker.register_and_take_pending_fills(
+            venue_order_id,
+            None,
+            Quantity::from("100"),
+            OrderSide::Buy,
+        );
+        assert!(drained.is_empty());
+        assert_eq!(
+            tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::from("25"))
+        );
     }
 
     #[rstest]

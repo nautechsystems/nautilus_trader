@@ -143,6 +143,8 @@ pub(crate) enum SettlementAction {
 pub(crate) enum UncertainOrderKind {
     /// The submit outcome is unknown.
     Submit,
+    /// The local order closed before its submit resolved; venue cancellation and trades remain due.
+    SubmitClosed,
     /// The order was live while the user stream was disconnected, and the stream does not replay
     /// trades missed during the outage.
     StreamGap,

@@ -157,6 +157,8 @@ impl PolymarketExecutionClient {
                 clock,
             );
 
+            pending_submits.insert(expected_venue_order_id, order.client_order_id());
+
             match submitter.post_limit_order_submission(submission).await {
                 Ok(response) => {
                     let fok_order_id = fok_check_order_id(&response, tif);
@@ -694,6 +696,10 @@ impl PolymarketExecutionClient {
                             submission.expected_base_qty,
                             &emitter,
                             clock,
+                        );
+                        pending_submits.insert(
+                            submission.expected_venue_order_id,
+                            batch_order.order.client_order_id(),
                         );
                         prepared_orders.push(batch_order);
                         submissions.push(submission);

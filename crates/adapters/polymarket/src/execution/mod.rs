@@ -404,6 +404,10 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
+    fn retain_unresolved_submissions(&self) -> bool {
+        true
+    }
+
     fn register_external_order(
         &self,
         _client_order_id: ClientOrderId,

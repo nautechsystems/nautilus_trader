@@ -5347,21 +5347,18 @@ async fn test_reconcile_mass_status_sorts_events_chronologically() {
 }
 
 #[rstest]
-#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally)]
-#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved)]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_inflight_order_generates_rejection_after_max_retries(
-    #[case] policy: SubmissionRecoveryPolicy,
     #[values(false, true)] submission: bool,
 ) {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
-        submission_recovery_policy: policy,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -5396,21 +5393,7 @@ async fn test_inflight_order_generates_rejection_after_max_retries(
 
     let diagnostics = ctx.manager.take_submission_recovery_exhaustions();
     let order = ctx.get_order(&client_order_id).unwrap();
-    let expected = if submission && policy == SubmissionRecoveryPolicy::RetainUnresolved {
-        vec![SubmissionRecoveryExhausted {
-            trader_id: order.trader_id(),
-            client_id: Some(test_client_id()),
-            strategy_id: order.strategy_id(),
-            instrument_id,
-            client_order_id,
-            source: SubmissionRecoverySource::Inflight,
-            retry_count: 1,
-            ts_event: ctx.clock.borrow().timestamp_ns(),
-        }]
-    } else {
-        Vec::new()
-    };
-    assert_eq!(diagnostics, expected);
+    assert_eq!(diagnostics, Vec::new());
     assert!(
         ctx.manager
             .take_submission_recovery_exhaustions()
@@ -5481,9 +5464,11 @@ async fn test_submission_registry_preserves_identity_and_bounded_queries(#[case]
                 .register_submission(&duplicate, Some(ClientId::from("OTHER")));
         } else {
             assert!(result.queries.is_empty());
-            assert_eq!(result.events.len(), 1);
-            assert!(matches!(&result.events[0], OrderEventAny::Rejected(event)
-                if event.reason == "INFLIGHT_TIMEOUT"));
+            assert!(result.events.is_empty());
+            assert_eq!(
+                ctx.get_order(&client_order_id).unwrap().status(),
+                OrderStatus::Submitted
+            );
             assert_eq!(
                 ctx.manager.take_submission_recovery_exhaustions(),
                 vec![SubmissionRecoveryExhausted {
@@ -5743,10 +5728,20 @@ async fn test_submission_registry_survives_unacknowledged_command_response(
     }
 
     assert!(result.queries.is_empty());
-    assert!(
-        matches!(&result.events[..], [OrderEventAny::Rejected(event)]
+
+    if tracking {
+        assert!(result.events.is_empty());
+        assert_eq!(
+            ctx.get_order(&client_order_id).unwrap().status(),
+            OrderStatus::Submitted
+        );
+    } else {
+        assert!(
+            matches!(&result.events[..], [OrderEventAny::Rejected(event)]
         if event.client_order_id == client_order_id && event.reason == "INFLIGHT_TIMEOUT")
-    );
+        );
+    }
+
     let expected = if tracking {
         vec![SubmissionRecoveryExhausted {
             trader_id: initialized.trader_id,
@@ -5865,18 +5860,14 @@ async fn test_submission_registry_interleaved_missing_checks_preserve_budget(
     }
 
     assert_eq!(queries, usize::from(tracked));
-    assert_eq!(resolutions.len(), usize::from(tracked));
+    assert!(resolutions.is_empty());
     assert_eq!(
         client.order_report_query_count.get(),
         if tracked { 4 } else { 5 }
     );
     assert_eq!(
         ctx.get_order(&client_order_id).unwrap().status(),
-        if tracked {
-            OrderStatus::Canceled
-        } else {
-            pending_status
-        }
+        pending_status
     );
     assert_eq!(diagnostics.len(), usize::from(tracked));
     if tracked {
@@ -5885,6 +5876,209 @@ async fn test_submission_registry_interleaved_missing_checks_preserve_budget(
         assert_eq!(diagnostics[0].retry_count, 2);
         assert_eq!(diagnostics[0].ts_event, UnixNanos::from(404_000_000));
     }
+}
+
+#[rstest]
+#[case::submitted(false)]
+#[case::pending_cancel(true)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_retained_submission_survives_recovery_and_accepts_late_evidence(
+    #[case] pending_cancel: bool,
+    #[values(false, true)] client_retention: bool,
+) {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        submission_recovery_policy: if client_retention {
+            SubmissionRecoveryPolicy::ResolveLocally
+        } else {
+            SubmissionRecoveryPolicy::RetainUnresolved
+        },
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+    let mut client = MockExecutionClient::new(vec![]);
+    client.retain_unresolved_submissions = client_retention;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    let client_order_id = ClientOrderId::from("O-RETAINED");
+    let mut order = create_submitted_order(
+        "O-RETAINED",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+
+    if pending_cancel {
+        order
+            .apply(OrderEventAny::PendingCancel(
+                OrderPendingCancelSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(test_account_id())
+                    .build(),
+            ))
+            .unwrap();
+    }
+
+    ctx.add_order(order.clone());
+    ctx.manager
+        .register_submission(order.init_event(), Some(test_client_id()));
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
+
+    let exhausted = ctx.manager.check_inflight_orders();
+    assert_eq!(
+        ctx.manager.take_submission_recovery_exhaustions(),
+        vec![SubmissionRecoveryExhausted {
+            trader_id: order.trader_id(),
+            client_id: Some(test_client_id()),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id,
+            source: SubmissionRecoverySource::Inflight,
+            retry_count: 1,
+            ts_event: ctx.clock.borrow().timestamp_ns(),
+        }]
+    );
+    let mut duplicate = order.init_event().clone();
+    duplicate.strategy_id = StrategyId::from("OTHER-002");
+    ctx.manager
+        .register_submission(&duplicate, Some(ClientId::from("OTHER")));
+    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.clear_recon_tracking(&client_order_id, true);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
+    let missing = ctx.manager.check_open_orders(&[&client]).await;
+    let repeated = ctx.manager.check_inflight_orders();
+    let queries = ctx.manager.check_open_order_queries();
+    let accepted =
+        TestOrderEventStubs::accepted(&order, test_account_id(), VenueOrderId::from("V-LATE"));
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+    ctx.manager.confirm_submission_outcome(&client_order_id);
+
+    assert!(exhausted.events.is_empty());
+    assert!(exhausted.queries.is_empty());
+    assert!(missing.is_empty());
+    assert!(repeated.events.is_empty());
+    assert!(repeated.queries.is_empty());
+    assert!(queries.is_empty());
+    assert!(
+        ctx.manager
+            .take_submission_recovery_exhaustions()
+            .is_empty()
+    );
+    assert_eq!(client.order_report_query_count.get(), 0);
+    assert_eq!(
+        ctx.cache.borrow().order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_submission_retention_is_scoped_to_client(
+    #[values(false, true)] explicit_client: bool,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let mut protected = MockExecutionClient::new(Vec::new());
+    protected.retain_unresolved_submissions = true;
+    let ordinary_id = ClientId::from("ORDINARY");
+    let ordinary = MockExecutionClient::for_venue(ordinary_id, test_venue(), Vec::new());
+    assert!(
+        ctx.manager
+            .check_open_orders(&[&protected, &ordinary])
+            .await
+            .is_empty()
+    );
+
+    let protected_order = create_submitted_order(
+        "O-PROTECTED",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    let ordinary_order = create_submitted_order(
+        "O-ORDINARY",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "2.0",
+        "3001.00",
+    );
+
+    for (order, client_id) in [
+        (&protected_order, test_client_id()),
+        (&ordinary_order, ordinary_id),
+    ] {
+        ctx.add_order_with_client_id(order.clone(), client_id);
+        ctx.manager
+            .register_submission(order.init_event(), explicit_client.then_some(client_id));
+    }
+
+    ctx.advance_both(dst::time::Duration::from_millis(101))
+        .await;
+    let result = ctx.manager.check_inflight_orders();
+
+    for event in &result.events {
+        ctx.cache.borrow_mut().update_order(event).unwrap();
+    }
+
+    assert!(result.queries.is_empty());
+    assert_eq!(result.events.len(), 1);
+
+    let OrderEventAny::Rejected(rejected) = &result.events[0] else {
+        panic!("Expected timeout rejection, was {:?}", result.events[0]);
+    };
+
+    assert_eq!(rejected.client_order_id, ordinary_order.client_order_id());
+    assert_eq!(rejected.reason, "INFLIGHT_TIMEOUT");
+    assert_eq!(
+        ctx.get_order(&ordinary_order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Rejected
+    );
+    assert_eq!(
+        ctx.get_order(&protected_order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Submitted
+    );
+    assert_eq!(
+        ctx.manager.take_submission_recovery_exhaustions(),
+        vec![SubmissionRecoveryExhausted {
+            trader_id: protected_order.trader_id(),
+            client_id: Some(test_client_id()),
+            strategy_id: protected_order.strategy_id(),
+            instrument_id: protected_order.instrument_id(),
+            client_order_id: protected_order.client_order_id(),
+            source: SubmissionRecoverySource::Inflight,
+            retry_count: 1,
+            ts_event: ctx.clock.borrow().timestamp_ns(),
+        }]
+    );
 }
 
 #[cfg_attr(
@@ -13029,6 +13223,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
 }
 
 struct MockExecutionClient {
+    retain_unresolved_submissions: bool,
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
@@ -13052,6 +13247,7 @@ struct MockExecutionClient {
 impl MockExecutionClient {
     fn new(order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
+            retain_unresolved_submissions: false,
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
@@ -13075,6 +13271,7 @@ impl MockExecutionClient {
 
     fn for_venue(client_id: ClientId, venue: Venue, order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
+            retain_unresolved_submissions: false,
             client_id,
             account_id: test_account_id(),
             venue,
@@ -13098,6 +13295,7 @@ impl MockExecutionClient {
 
     fn failing(client_id: ClientId, venue: Venue) -> Self {
         Self {
+            retain_unresolved_submissions: false,
             client_id,
             account_id: test_account_id(),
             venue,
@@ -13163,6 +13361,10 @@ impl MockExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for MockExecutionClient {
+    fn retain_unresolved_submissions(&self) -> bool {
+        self.retain_unresolved_submissions
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
@@ -14419,16 +14621,16 @@ async fn test_check_open_orders_skips_excluded_missing_order() {
 }
 
 #[rstest]
-#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally, 1)]
-#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved, 1)]
-#[case::retain_unresolved_multiple_checks(SubmissionRecoveryPolicy::RetainUnresolved, 3)]
+#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally, false, 1)]
+#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved, false, 1)]
+#[case::retain_unresolved_multiple_checks(SubmissionRecoveryPolicy::RetainUnresolved, false, 3)]
+#[case::client_required(SubmissionRecoveryPolicy::ResolveLocally, true, 1)]
 #[tokio::test]
-async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
+async fn test_check_open_orders_submitted_missing_at_venue_obeys_recovery_policy(
     #[case] policy: SubmissionRecoveryPolicy,
+    #[case] client_retention: bool,
     #[case] budget: u32,
 ) {
-    // A SUBMITTED order with no venue_order_id that the venue doesn't know
-    // about should eventually be rejected after retries are exhausted.
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: budget,
@@ -14452,8 +14654,9 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
     ctx.add_order(order);
     ctx.cache.borrow_mut().update_order(&submitted).unwrap();
 
-    // Venue returns no reports, order was never placed
-    let mock_client = MockExecutionClient::new(vec![]);
+    // Neither bulk nor targeted reads establish the submission outcome
+    let mut mock_client = MockExecutionClient::new(vec![]);
+    mock_client.retain_unresolved_submissions = client_retention;
     let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     for _ in 1..budget {
@@ -14467,19 +14670,10 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
     }
     let events = ctx.manager.check_open_orders(&clients).await;
 
-    assert_eq!(events.len(), 1);
-    assert_eq!(mock_client.order_report_query_count.get(), 1);
-
-    if let OrderEventAny::Rejected(rejected) = &events[0] {
-        assert_eq!(rejected.client_order_id, ClientOrderId::from("O-001"));
-        assert_eq!(rejected.reason, "NOT_FOUND_AT_VENUE");
-    } else {
-        panic!("Expected OrderRejected event, was {:?}", events[0]);
-    }
-
     let client_order_id = ClientOrderId::from("O-001");
     let order = ctx.get_order(&client_order_id).unwrap();
-    let expected = if policy == SubmissionRecoveryPolicy::RetainUnresolved {
+
+    let expected = if policy == SubmissionRecoveryPolicy::RetainUnresolved || client_retention {
         vec![SubmissionRecoveryExhausted {
             trader_id: order.trader_id(),
             client_id: Some(test_client_id()),
@@ -14499,6 +14693,33 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
             .take_submission_recovery_exhaustions()
             .is_empty()
     );
+
+    if policy == SubmissionRecoveryPolicy::RetainUnresolved || client_retention {
+        let queries_before = mock_client.order_report_query_count.get();
+        let repeated = ctx.manager.check_open_orders(&clients).await;
+        assert!(events.is_empty());
+        assert!(repeated.is_empty());
+        assert_eq!(mock_client.order_report_query_count.get(), queries_before);
+        assert_eq!(
+            ctx.cache
+                .borrow()
+                .order(&ClientOrderId::from("O-001"))
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
+        return;
+    }
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(mock_client.order_report_query_count.get(), 1);
+
+    if let OrderEventAny::Rejected(rejected) = &events[0] {
+        assert_eq!(rejected.client_order_id, ClientOrderId::from("O-001"));
+        assert_eq!(rejected.reason, "NOT_FOUND_AT_VENUE");
+    } else {
+        panic!("Expected OrderRejected event, was {:?}", events[0]);
+    }
 }
 
 #[rstest]

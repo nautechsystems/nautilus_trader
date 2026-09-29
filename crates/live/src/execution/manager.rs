@@ -154,6 +154,7 @@ pub struct ExecutionManager {
     order_inflight_checks: IndexMap<ClientOrderId, InflightCheck>,
     submissions: IndexMap<ClientOrderId, SubmissionRecoveryState>,
     submission_exhaustions: Vec<SubmissionRecoveryExhausted>,
+    submission_retention: IndexMap<ClientId, AccountId>,
     order_query_recency: RecencyMap<ClientOrderId>,
     order_query_pending: IndexSet<ClientOrderId>,
     order_recon_retries: IndexMap<ClientOrderId, u32>,
@@ -182,6 +183,7 @@ impl Debug for ExecutionManager {
             .field("order_inflight_checks", &self.order_inflight_checks)
             .field("submissions", &self.submissions)
             .field("submission_exhaustions", &self.submission_exhaustions)
+            .field("submission_retention", &self.submission_retention)
             .field("order_query_recency", &self.order_query_recency)
             .field("order_query_pending", &self.order_query_pending)
             .field("order_recon_retries", &self.order_recon_retries)
@@ -220,6 +222,7 @@ impl ExecutionManager {
             order_inflight_checks: IndexMap::new(),
             submissions: IndexMap::new(),
             submission_exhaustions: Vec::new(),
+            submission_retention: IndexMap::new(),
             order_query_recency: RecencyMap::default(),
             order_query_pending: IndexSet::new(),
             order_recon_retries: IndexMap::new(),
@@ -258,8 +261,9 @@ impl ExecutionManager {
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
         self.confirm_submission_outcome(&client_order_id);
 
-        if self.order_inflight_checks.contains_key(&client_order_id)
-            && self.submission_recovery_pending(client_order_id)
+        if self.submission_recovery_pending(client_order_id)
+            && (self.order_inflight_checks.contains_key(&client_order_id)
+                || self.submission_is_retained(client_order_id))
         {
             return;
         }
@@ -270,7 +274,8 @@ impl ExecutionManager {
     /// Registers a submission's identity before execution dispatch or cache insertion.
     ///
     /// With submission tracking enabled, duplicate registration preserves the current
-    /// recovery budget. Both policies still use the existing local resolution behavior.
+    /// recovery budget until acknowledgement or exhaustion. After exhaustion, duplicate
+    /// registration preserves the unresolved identity without restarting recovery.
     pub fn register_submission(
         &mut self,
         initialized: &OrderInitialized,
@@ -278,7 +283,9 @@ impl ExecutionManager {
     ) {
         let client_order_id = initialized.client_order_id;
 
-        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved {
+        if self.submissions.contains_key(&client_order_id)
+            || self.submission_retention_enabled(client_order_id, client_id)
+        {
             self.confirm_submission_outcome(&client_order_id);
 
             if self.submissions.contains_key(&client_order_id)
@@ -321,7 +328,7 @@ impl ExecutionManager {
     }
 
     fn track_submission(&mut self, initialized: &OrderInitialized, client_id: Option<ClientId>) {
-        if self.config.submission_recovery_policy != SubmissionRecoveryPolicy::RetainUnresolved
+        if !self.submission_retention_enabled(initialized.client_order_id, client_id)
             || self
                 .config
                 .filtered_client_order_ids
@@ -361,7 +368,7 @@ impl ExecutionManager {
     fn submission_recovery_pending(&self, client_order_id: ClientOrderId) -> bool {
         self.submissions
             .get(&client_order_id)
-            .is_some_and(|submission| !submission.exhausted && !submission.venue_confirmed)
+            .is_some_and(|submission| !submission.venue_confirmed)
             && self
                 .cache
                 .borrow()
@@ -404,9 +411,11 @@ impl ExecutionManager {
         client_order_id: ClientOrderId,
         source: SubmissionRecoverySource,
         retry_count: u32,
-    ) {
-        if !self.submissions.contains_key(&client_order_id) {
-            return;
+    ) -> bool {
+        if !self.submissions.contains_key(&client_order_id)
+            && !self.submission_retention_enabled(client_order_id, None)
+        {
+            return false;
         }
 
         let budget = match source {
@@ -414,43 +423,58 @@ impl ExecutionManager {
             SubmissionRecoverySource::MissingOrder => self.config.open_check_missing_retries,
         };
 
-        if retry_count < budget
-            || self
-                .get_order(client_order_id)
-                .is_some_and(|order| !Self::submission_is_unacknowledged(&order))
-        {
-            return;
+        if retry_count < budget {
+            return false;
+        }
+
+        if let Some(order) = self.get_order(client_order_id) {
+            if !Self::submission_is_unacknowledged(&order) {
+                return false;
+            }
+
+            let client_id = self.cache.borrow().client_id(&client_order_id).copied();
+            self.track_submission(order.init_event(), client_id);
         }
 
         let Some(submission) = self.submissions.get_mut(&client_order_id) else {
-            return;
+            return false;
         };
 
-        if submission.exhausted || submission.venue_confirmed {
-            return;
+        if submission.venue_confirmed {
+            return false;
         }
 
-        submission.exhausted = true;
-        self.submission_exhaustions
-            .push(SubmissionRecoveryExhausted {
-                trader_id: submission.trader_id,
-                client_id: submission
-                    .client_id
-                    .or_else(|| self.cache.borrow().client_id(&client_order_id).copied()),
-                strategy_id: submission.strategy_id,
-                instrument_id: submission.instrument_id,
-                client_order_id,
-                source,
-                retry_count,
-                ts_event: self.clock.borrow().timestamp_ns(),
-            });
+        if !submission.exhausted {
+            submission.exhausted = true;
+            self.submission_exhaustions
+                .push(SubmissionRecoveryExhausted {
+                    trader_id: submission.trader_id,
+                    client_id: submission
+                        .client_id
+                        .or_else(|| self.cache.borrow().client_id(&client_order_id).copied()),
+                    strategy_id: submission.strategy_id,
+                    instrument_id: submission.instrument_id,
+                    client_order_id,
+                    source,
+                    retry_count,
+                    ts_event: self.clock.borrow().timestamp_ns(),
+                });
+
+            log::warn!(
+                "Submission recovery exhausted for {client_order_id}, retaining unacknowledged order pending venue evidence"
+            );
+        }
+
+        self.clear_recon_tracking(&client_order_id, true);
+        true
     }
 
     /// Takes exhaustion diagnostics produced by recovery checks since the previous call.
     ///
     /// Hosts apply the returned reconciliation events before publishing these diagnostics,
     /// so subscribers cannot invalidate a prepared local resolution through reentrancy.
-    /// Diagnostics describe query exhaustion, not retention or an authoritative venue outcome.
+    /// Diagnostics describe query exhaustion for retained submissions,
+    /// not an authoritative venue outcome.
     pub fn take_submission_recovery_exhaustions(&mut self) -> Vec<SubmissionRecoveryExhausted> {
         std::mem::take(&mut self.submission_exhaustions)
     }
@@ -485,9 +509,11 @@ impl ExecutionManager {
     /// Clears reconciliation tracking state for an order.
     ///
     /// An active submission's identity and budget survive pre-dispatch cleanup until
-    /// native state or a matching venue report acknowledges it, or recovery exhausts its budget.
+    /// native state or a matching venue report acknowledges it. Exhaustion removes timers
+    /// and query bookkeeping but preserves the unresolved submission identity.
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
-        if self.submission_recovery_pending(*client_order_id) {
+        let pending = self.submission_recovery_pending(*client_order_id);
+        if pending && !self.submission_is_retained(*client_order_id) {
             return;
         }
 
@@ -503,7 +529,7 @@ impl ExecutionManager {
                 .order_ref(client_order_id)
                 .is_some_and(|order| Self::submission_is_unacknowledged(&order));
 
-        if !keep_confirmation {
+        if !pending && !keep_confirmation {
             self.submissions.shift_remove(client_order_id);
         }
         self.order_recon_retries.shift_remove(client_order_id);
@@ -1699,7 +1725,8 @@ impl ExecutionManager {
     ///
     /// For retries below `inflight_max_retries`, generates `QueryOrder` commands to poll
     /// the venue for the order's current status. At max retries, generates terminal events
-    /// (rejection or cancellation) based on the order's status.
+    /// (rejection or cancellation) based on the order's status. Orders never accepted are
+    /// retained when the recovery policy or their client requires definitive venue evidence.
     pub fn check_inflight_orders(&mut self) -> InflightCheckResult {
         let mut result = InflightCheckResult::default();
         let now = dst::time::Instant::now();
@@ -1732,89 +1759,137 @@ impl ExecutionManager {
                 continue;
             }
 
-            if let Some(check) = self.order_inflight_checks.get_mut(&client_order_id) {
-                if let Some(last_query_at) = check.last_query_at
-                    && now
-                        .checked_duration_since(last_query_at)
-                        .is_none_or(|elapsed| elapsed < threshold)
-                {
+            let Some(check) = self.order_inflight_checks.get_mut(&client_order_id) else {
+                continue;
+            };
+
+            if let Some(last_query_at) = check.last_query_at
+                && now
+                    .checked_duration_since(last_query_at)
+                    .is_none_or(|elapsed| elapsed < threshold)
+            {
+                continue;
+            }
+
+            check.retry_count += 1;
+            check.last_query_at = Some(now);
+            self.order_query_recency.mark(client_order_id);
+            self.order_recon_retries
+                .insert(client_order_id, check.retry_count);
+
+            if check.retry_count >= self.config.inflight_max_retries {
+                let retry_count = check.retry_count;
+
+                if self.exhaust_submission(
+                    client_order_id,
+                    SubmissionRecoverySource::Inflight,
+                    retry_count,
+                ) {
                     continue;
                 }
 
-                check.retry_count += 1;
-                check.last_query_at = Some(now);
-                self.order_query_recency.mark(client_order_id);
-                self.order_recon_retries
-                    .insert(client_order_id, check.retry_count);
+                let ts_now = self.clock.borrow().timestamp_ns();
 
-                if check.retry_count >= self.config.inflight_max_retries {
-                    let retry_count = check.retry_count;
-                    self.exhaust_submission(
-                        client_order_id,
-                        SubmissionRecoverySource::Inflight,
-                        retry_count,
-                    );
-                    let ts_now = self.clock.borrow().timestamp_ns();
-
-                    if let Some(order) = self.get_order(client_order_id) {
-                        match order.status() {
-                            OrderStatus::Submitted => {
-                                // Generate rejection for submitted orders that never got accepted
-                                if let Some(event) = create_reconciliation_rejected(
-                                    &order,
-                                    Some("INFLIGHT_TIMEOUT"),
-                                    ts_now,
-                                ) {
-                                    result.events.push(event);
-                                }
-                            }
-                            OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
-                                // Generate cancellation for orders stuck in pending modify/cancel
-                                let event = OrderEventAny::Canceled(OrderCanceled::new(
-                                    order.trader_id(),
-                                    order.strategy_id(),
-                                    order.instrument_id(),
-                                    order.client_order_id(),
-                                    UUID4::new(),
-                                    ts_now,
-                                    ts_now,
-                                    true, // reconciliation
-                                    order.venue_order_id(),
-                                    order.account_id(),
-                                    None,
-                                ));
+                if let Some(order) = self.get_order(client_order_id) {
+                    match order.status() {
+                        OrderStatus::Submitted => {
+                            // Generate rejection for submitted orders that never got accepted
+                            if let Some(event) = create_reconciliation_rejected(
+                                &order,
+                                Some("INFLIGHT_TIMEOUT"),
+                                ts_now,
+                            ) {
                                 result.events.push(event);
                             }
-                            _ => {
-                                // Order already resolved, just clear tracking
-                            }
+                        }
+                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
+                            // Generate cancellation for orders stuck in pending modify/cancel
+                            let event = OrderEventAny::Canceled(OrderCanceled::new(
+                                order.trader_id(),
+                                order.strategy_id(),
+                                order.instrument_id(),
+                                order.client_order_id(),
+                                UUID4::new(),
+                                ts_now,
+                                ts_now,
+                                true, // reconciliation
+                                order.venue_order_id(),
+                                order.account_id(),
+                                None,
+                            ));
+                            result.events.push(event);
+                        }
+                        _ => {
+                            // Order already resolved, just clear tracking
                         }
                     }
-
-                    // Remove from inflight checks regardless of whether order exists
-                    self.clear_recon_tracking(&client_order_id, true);
-                } else if let Some(order) = self.get_order(client_order_id) {
-                    // Intermediate retry: query the venue for current order status
-                    let ts_now = self.clock.borrow().timestamp_ns();
-                    let client_id = self.cache.borrow().client_id(&client_order_id).copied();
-                    let query = TradingCommand::QueryOrder(QueryOrder::new(
-                        order.trader_id(),
-                        client_id,
-                        order.strategy_id(),
-                        order.instrument_id(),
-                        order.client_order_id(),
-                        order.venue_order_id(),
-                        UUID4::new(),
-                        ts_now,
-                        None,
-                        None, // correlation_id
-                    ));
-                    result.queries.push(query);
                 }
+
+                self.clear_recon_tracking(&client_order_id, true);
+            } else if let Some(order) = self.get_order(client_order_id) {
+                // Intermediate retry: query the venue for current order status
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let client_id = self.cache.borrow().client_id(&client_order_id).copied();
+                let query = TradingCommand::QueryOrder(QueryOrder::new(
+                    order.trader_id(),
+                    client_id,
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    order.venue_order_id(),
+                    UUID4::new(),
+                    ts_now,
+                    None,
+                    None, // correlation_id
+                ));
+                result.queries.push(query);
             }
         }
 
         result
+    }
+
+    pub(crate) fn register_submission_retention(&mut self, client: &dyn ExecutionClient) {
+        if client.retain_unresolved_submissions() {
+            self.submission_retention
+                .insert(client.client_id(), client.account_id());
+        }
+    }
+
+    fn submission_retention_enabled(
+        &self,
+        client_order_id: ClientOrderId,
+        client_id: Option<ClientId>,
+    ) -> bool {
+        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved {
+            return true;
+        }
+
+        if self.submission_retention.is_empty() {
+            return false;
+        }
+
+        let cache = self.cache.borrow();
+
+        if let Some(client_id) = client_id.or_else(|| cache.client_id(&client_order_id).copied()) {
+            return self.submission_retention.contains_key(&client_id);
+        }
+
+        cache
+            .order_ref(&client_order_id)
+            .and_then(|order| order.account_id())
+            .is_some_and(|account_id| {
+                self.submission_retention
+                    .values()
+                    .any(|id| *id == account_id)
+            })
+    }
+
+    fn submission_is_retained(&self, client_order_id: ClientOrderId) -> bool {
+        self.submissions
+            .get(&client_order_id)
+            .is_some_and(|submission| submission.exhausted)
+            && self.submission_recovery_pending(client_order_id)
     }
 
     fn filtered_open_orders_for_reconciliation(&self) -> Vec<OrderAny> {
@@ -1827,6 +1902,7 @@ impl ExecutionManager {
             .into_iter()
             .filter(|order| {
                 seen_client_order_ids.insert(order.client_order_id())
+                    && !self.submission_is_retained(order.client_order_id())
                     && !self
                         .config
                         .filtered_client_order_ids
@@ -1915,6 +1991,10 @@ impl ExecutionManager {
         command_id: UUID4,
         clients: &[&dyn ExecutionClient],
     ) -> OpenOrderReportCheck {
+        for client in clients {
+            self.register_submission_retention(*client);
+        }
+
         let filtered_orders = self.filtered_open_orders_for_reconciliation();
         let active_order_ids: IndexSet<ClientOrderId> =
             filtered_orders.iter().map(Order::client_order_id).collect();
@@ -3162,9 +3242,9 @@ impl ExecutionManager {
     }
 
     fn confirm_submitted_report(&mut self, report: &OrderStatusReport) -> bool {
-        if self.config.submission_recovery_policy == SubmissionRecoveryPolicy::RetainUnresolved
-            && report.order_status == OrderStatus::Submitted
+        if report.order_status == OrderStatus::Submitted
             && let Some(client_order_id) = report.client_order_id
+            && self.submission_retention_enabled(client_order_id, None)
             && let Some(order) = self.get_order(client_order_id)
             && self
                 .submissions
@@ -3333,6 +3413,10 @@ impl ExecutionManager {
     fn prepare_missing_order_query(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
         let order = self.get_order(client_order_id)?;
 
+        if self.submission_is_retained(client_order_id) {
+            return None;
+        }
+
         // The order may have closed while the report request was in flight;
         // the check must come before the retry increment or the stale empty
         // response recreates tracking state that nothing prunes afterwards.
@@ -3355,7 +3439,7 @@ impl ExecutionManager {
             return None;
         }
 
-        if order.status() == OrderStatus::Submitted && Self::submission_is_unacknowledged(&order) {
+        if order.is_inflight() && Self::submission_is_unacknowledged(&order) {
             let client_id = self.cache.borrow().client_id(&client_order_id).copied();
             self.track_submission(order.init_event(), client_id);
         }
@@ -3409,14 +3493,31 @@ impl ExecutionManager {
             .unwrap_or_default();
         let ts_now = self.clock.borrow().timestamp_ns();
 
+        // The targeted query was scheduled only after the missing-order budget was reached.
+        // An interleaved inflight check can subsequently overwrite the shared retry counter.
+        let exhausted_retries = retries.max(self.config.open_check_missing_retries);
+
+        if self.submission_recovery_pending(client_order_id)
+            && !self.order_inflight_checks.contains_key(&client_order_id)
+        {
+            self.exhaust_submission(
+                client_order_id,
+                SubmissionRecoverySource::MissingOrder,
+                exhausted_retries,
+            );
+            return events;
+        }
+
         match order.status() {
             OrderStatus::Accepted | OrderStatus::Submitted => {
-                if order.status() == OrderStatus::Submitted {
-                    self.exhaust_submission(
+                if order.status() == OrderStatus::Submitted
+                    && self.exhaust_submission(
                         client_order_id,
                         SubmissionRecoverySource::MissingOrder,
-                        retries,
-                    );
+                        exhausted_retries,
+                    )
+                {
+                    return events;
                 }
                 log::warn!(
                     "Order {client_order_id} not found at venue after {retries} retries and a targeted query, marking as REJECTED"

@@ -2304,7 +2304,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn find_client_for_command(&self, command: &TradingCommand) -> Option<&ExecutionClientAdapter> {
+    /// Returns the execution client selected by the command routing rules.
+    pub fn find_client_for_command(
+        &self,
+        command: &TradingCommand,
+    ) -> Option<&ExecutionClientAdapter> {
         if let Some(client_id) = command.client_id()
             && let Some(adapter) = self.clients.get(&client_id)
         {

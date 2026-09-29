@@ -43,6 +43,7 @@ struct RegistryInner {
     contexts: AHashMap<VenueOrderId, OrderContext>,
     client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
     accepted: AHashSet<VenueOrderId>,
+    closed: AHashSet<ClientOrderId>,
 }
 
 impl OrderContextRegistry {
@@ -53,6 +54,16 @@ impl OrderContextRegistry {
         guard
             .client_to_venue
             .insert(context.identity.client_order_id, venue_order_id);
+    }
+
+    /// Restores captured context without replacing a newer client-to-venue mapping.
+    pub(crate) fn recover_context(&self, venue_order_id: VenueOrderId, context: OrderContext) {
+        let mut guard = self.inner.lock();
+        guard.contexts.entry(venue_order_id).or_insert(context);
+        guard
+            .client_to_venue
+            .entry(context.identity.client_order_id)
+            .or_insert(venue_order_id);
     }
 
     /// Returns the context for a tracked order, if known.
@@ -75,6 +86,24 @@ impl OrderContextRegistry {
     /// across the submit confirmation and the WS stream.
     pub(crate) fn mark_accepted(&self, venue_order_id: VenueOrderId) -> bool {
         self.inner.lock().accepted.insert(venue_order_id)
+    }
+
+    pub(crate) fn set_closed(&self, client_order_id: ClientOrderId, closed: bool) {
+        let mut guard = self.inner.lock();
+
+        if closed {
+            guard.closed.insert(client_order_id);
+        } else {
+            guard.closed.remove(&client_order_id);
+        }
+    }
+
+    pub(crate) fn is_closed(&self, venue_order_id: VenueOrderId) -> bool {
+        let guard = self.inner.lock();
+        guard
+            .contexts
+            .get(&venue_order_id)
+            .is_some_and(|context| guard.closed.contains(&context.identity.client_order_id))
     }
 }
 
@@ -111,6 +140,44 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unregistered(false)]
+    #[case::replacement_registered(true)]
+    fn test_recovered_context_preserves_replacement(#[case] replacement_registered: bool) {
+        let registry = OrderContextRegistry::default();
+        let original_id = VenueOrderId::from("V-ORIGINAL");
+        let replacement_id = VenueOrderId::from("V-REPLACEMENT");
+        let captured = test_context();
+
+        let current = OrderContext {
+            quantity: Quantity::from("23.45"),
+            price: Some(Price::from("0.6789")),
+            ..captured
+        };
+
+        if replacement_registered {
+            registry.register_context(original_id, captured);
+            registry.register_context(replacement_id, current);
+        }
+
+        registry.recover_context(original_id, captured);
+        registry.recover_context(original_id, captured);
+
+        assert_eq!(registry.get(&original_id), Some(captured));
+        assert_eq!(
+            registry.get(&replacement_id),
+            replacement_registered.then_some(current)
+        );
+        assert_eq!(
+            registry.venue_order_id(&captured.identity.client_order_id),
+            Some(if replacement_registered {
+                replacement_id
+            } else {
+                original_id
+            })
+        );
+    }
+
+    #[rstest]
     #[case(TimeInForce::Gtc)]
     #[case(TimeInForce::Fok)]
     #[case(TimeInForce::Ioc)]
@@ -139,6 +206,22 @@ mod tests {
 
         assert!(registry.mark_accepted(vid), "first mark is new");
         assert!(!registry.mark_accepted(vid), "second mark is a no-op");
+    }
+
+    #[rstest]
+    fn test_closed_order_is_recognized_when_context_arrives_late_and_can_reopen() {
+        let registry = OrderContextRegistry::default();
+        let context = test_context();
+        let venue_order_id = VenueOrderId::from("V-LATE");
+        registry.set_closed(context.identity.client_order_id, true);
+        registry.register_context(venue_order_id, context);
+
+        assert!(registry.is_closed(venue_order_id));
+        assert!(!registry.is_closed(VenueOrderId::from("V-OTHER")));
+
+        registry.set_closed(context.identity.client_order_id, false);
+
+        assert!(!registry.is_closed(venue_order_id));
     }
 
     #[rstest]

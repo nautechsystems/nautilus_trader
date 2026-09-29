@@ -372,13 +372,14 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 
 `submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` enables
 submission identity tracking, exhaustion diagnostics, and preservation of the submission's recovery
-budget until acknowledgement. Both policies still resolve locally, but preserving the budget can
-change resolution timing. Retention after recovery exhaustion is not implemented yet.
+budget until acknowledgement. Exhausted unacknowledged submissions remain unresolved, with further
+automatic per-order recovery queries stopped. Clients can also require this protection independently
+of the configured policy. Polymarket enables this protection automatically.
 
 With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
 `reconciliation.SubmissionRecoveryExhausted` when an unacknowledged submission reaches an existing
 recovery limit. The diagnostic carries the original submission identity, recovery source, check
-count, and event timestamp. It is published after processing the local resolution events, once per
+count, and event timestamp. It is published after processing reconciliation events, once per
 tracked submission. It is not an order event and does not establish a venue outcome.
 
 A cancel or modify dispatched before acknowledgement shares the submission's remaining recovery
@@ -387,23 +388,28 @@ Acknowledgement retires it without transferring recovery to an overlapping comma
 dispatched after acknowledgement starts its own in-flight check at dispatch, even if its pending
 event has not arrived, and uses the existing command cleanup rules. For example, a `PARTIALLY_FILLED`
 order status report stops a pending cancel's timeout under both policies. That cleanup rule does
-not apply to standalone fill reports. With `ResolveLocally`, command dispatch starts a fresh recovery budget, and
-native fill or `Triggered` events do not retire the pending command's timeout.
+not apply to standalone fill reports. Without submission tracking (`ResolveLocally` and no client-required
+retention), command dispatch starts a fresh recovery budget, and native fill or `Triggered` events do
+not retire the pending command's timeout.
 
 A matching `Submitted` report with a venue order ID retires the original submission's recovery.
 Incoming reports and bulk or targeted query responses use the same confirmation checks.
 The registry remembers report-only confirmation, including for cached orders not yet registered
-for recovery, so duplicate submission registration cannot restart the timeout. An applied
+for recovery, so duplicate submission registration cannot restart the timeout. Exhausted submission
+identity also remains in the registry until venue evidence resolves it; duplicate registration and
+cancel or modify dispatch cannot restart its automatic recovery. An applied
 `OrderUpdated` with venue identity also confirms the submission; local updates without venue
 identity do not. Missing-order bookkeeping does not register an acknowledged submission again.
 Later commands do not produce submission-exhaustion diagnostics.
 
 `LiveNode` registers submission identity before dispatch. Direct `ExecutionManager` callers use
 `register_submission` for submissions; `register_inflight` only starts command recovery and does not
-infer submission identity from the cache.
+infer submission identity from the cache. `LiveNode` registers client-required retention automatically.
+Direct manager hosts must select `RetainUnresolved` or run `check_open_orders` with their clients
+before relying on client-required retention in inflight checks.
 
 The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
-of `N` permits `N - 1` intermediate order queries before local resolution. Missing-order checks use
+of `N` permits `N - 1` intermediate order queries before exhaustion. Missing-order checks use
 `open_check_missing_retries` and require completed, matching client coverage plus a successful
 targeted query with no order found before reporting exhaustion. Failed or deferred targeted queries
 do not produce that diagnostic.
@@ -715,8 +721,12 @@ reconciliation completes, giving the system time to stabilize.
 | **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                |
 
 The in-flight checker produces the submit and cancel/update timeout results after exhausting the
-configured retries. [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance)
-distinguishes these local policy resolutions from venue-reported outcomes.
+configured retries, unless the order has never been accepted and submission retention applies.
+`SubmissionRecoveryPolicy::RetainUnresolved` retains those orders, and Polymarket requires retention
+regardless of the configured policy. Retention stops automatic per-order recovery queries while
+allowing later venue evidence to resolve the order.
+[Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance) distinguishes
+local policy resolutions from venue-reported outcomes.
 
 A missing open-order report does not by itself prove a pending modify or cancel outcome, so the
 consistency checks below leave those states unresolved until another check can determine the venue
@@ -726,7 +736,8 @@ state.
 
 :::info[Full-history checks]
 The *Not found* rows apply only in full-history mode (`open_check_open_only=False`);
-open-only mode is the default.
+open-only mode is the default. Submission retention also applies here: an unacknowledged
+`SUBMITTED` order remains unresolved when the policy or its client requires retention.
 :::
 
 | Cache status       | Venue status | Resolution   | Rationale                                                           |
@@ -767,9 +778,10 @@ When the open-order loop exhausts retries, the engine issues one targeted
 `GenerateOrderStatusReport` probe before applying a terminal state or leaving an ambiguous
 pending cancel/update unresolved. If the venue returns the order, reconciliation proceeds and
 missing-order tracking clears. If a pending state remains unresolved, the engine also resets the
-in-flight count before checking again after the configured threshold. With `RetainUnresolved`
-selected, a tracked submission that has not been acknowledged keeps its original in-flight
-budget instead. Repeated missing-order checks therefore cannot postpone its timeout indefinitely.
+in-flight count before checking again after the configured threshold. When `RetainUnresolved` or
+the registered client requires retention, a tracked submission that has not been acknowledged keeps
+its original in-flight budget instead. Repeated missing-order checks cannot postpone exhaustion of
+that budget; exhaustion retains the unresolved submission without a synthetic terminal event.
 
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for

@@ -217,7 +217,9 @@ starting unless a documented compatibility path handles that specific condition.
 ### Terminal reconciliation provenance
 
 The `reconciliation` field identifies an event generated through reconciliation. It does not by
-itself distinguish a venue status report from a local policy resolution:
+itself distinguish a venue status report from a local policy resolution. The local policy resolutions
+below apply when submission retention does not require the order to remain unresolved; explicit venue
+status reports still reconcile retained orders:
 
 | Evidence path                                                       | Prior status                        | Terminal event                  | Available event provenance                                                                        |
 | ------------------------------------------------------------------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -226,6 +228,13 @@ itself distinguish a venue status report from a local policy resolution:
 | In-flight retry exhaustion                                          | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
 | Full-history order remains missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                               |
 | Full-history order remains missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
+
+The `submission_recovery_policy` setting defaults to `SubmissionRecoveryPolicy::ResolveLocally`.
+With `SubmissionRecoveryPolicy::RetainUnresolved`, orders that have never been accepted retain their
+unacknowledged state after recovery exhaustion, including a pending cancel or update. The Polymarket
+client requires this behavior regardless of the configured policy. Automatic per-order recovery
+queries stop, but later venue events and reports can still resolve the order. Already accepted orders
+continue to use the local resolution rules above.
 
 :::warning[Local terminal state is not venue confirmation]
 The first row is backed by an explicit venue status. The remaining rows restore a terminal local

@@ -2,8 +2,9 @@
 
 Use this reference to locate implementation boundaries and representative checks for selected
 [design principles](design_principles.md). Each section records its source baseline separately.
-Source links resolve relative to this document's revision; a baseline identifies the revision used
-for that section's evidence, not a guarantee about later changes.
+Source links resolve relative to this document's revision. A baseline identifies the revision used
+for that section's evidence unless labeled historical; later behavior uses the linked source and
+tests at this document's revision. Neither establishes a guarantee about future changes.
 
 The entries describe Rust source and test coverage. They do not certify every adapter, Python
 entry point, configuration, or failure mode. The named tests are source references, not a record
@@ -11,18 +12,25 @@ of a test run.
 
 ## Evidence and outcome provenance
 
-Source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
+Historical source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
+The submission-retention behavior below is covered by the linked source and tests at this document's revision.
 
 The [execution policies](../concepts/execution/policies.md#terminal-reconciliation-provenance)
 distinguish venue evidence from local policy resolution. In the Rust live execution manager,
 `check_inflight_orders` generates a rejection with reason `INFLIGHT_TIMEOUT` for a submitted order
-when the configured retry limit expires. Pending updates and cancellations instead generate
-`OrderCanceled`. These events carry `reconciliation=true`.
+when the configured retry limit expires and submission retention does not apply. Pending updates and
+cancellations instead generate `OrderCanceled` unless they belong to an order that was never accepted
+and requires retention. These events carry `reconciliation=true`. The manager retains unacknowledged
+orders under `SubmissionRecoveryPolicy::RetainUnresolved` or when the order's client returns `true`
+from `retain_unresolved_submissions`.
 
 - **Implementation**: [Execution manager](../../crates/live/src/execution/manager.rs),
-  `check_inflight_orders`.
+  `check_inflight_orders`, `register_submission_retention`, `submission_is_retained`, and
+  `resolve_missing_order`.
 - **Representative checks**: [Manager integration tests](../../crates/live/tests/integration/manager.rs),
   `test_inflight_order_generates_rejection_after_max_retries`,
+  `test_retained_submission_survives_recovery_and_accepts_late_evidence`,
+  `test_check_open_orders_submitted_missing_at_venue_obeys_recovery_policy`,
   `test_inflight_pending_update_generates_canceled`, and
   `test_inflight_pending_cancel_generates_canceled`.
 - **Limit**: Retry exhaustion does not establish a venue outcome. The reconciliation flag alone

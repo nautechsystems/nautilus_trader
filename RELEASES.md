@@ -132,6 +132,7 @@ Released on TBD (UTC).
 
 - Fixed unnecessary Python borrow errors in default actor, strategy, and execution algorithm callbacks
 - Fixed duplicate error logging for propagated order-command failures
+- Fixed `RetainUnresolved` locally closing unacknowledged orders after recovery exhaustion
 - Fixed `Strategy.cancel_all_orders` returning only the first individual cancellation error
 - Fixed `Strategy` ignoring `log_rejected_due_post_only_as_warning` for post-only rejections
 - Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
@@ -267,6 +268,9 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation of resolved, unredeemed balances (#4963), thanks for reporting @seungpyoson
 - Fixed Polymarket reconciliation closing auto-redeemed positions at the entry price before settlement
 - Fixed Polymarket fills matched during a user WebSocket outage never applying after reconnect
+- Fixed Polymarket unknown submissions being rejected locally after recovery exhaustion
+- Fixed Polymarket late submit evidence repeating acceptance or fills and overwriting replacement order mappings
+- Fixed Polymarket uncertain order recovery losing venue cancellation duties after local closure
 - Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp

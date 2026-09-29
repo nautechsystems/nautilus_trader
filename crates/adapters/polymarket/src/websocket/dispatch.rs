@@ -609,8 +609,12 @@ fn dispatch_order_update(
         None
     };
 
-    let local_client_order_id =
-        promoted_client_order_id.or_else(|| ctx.pending_submits.client_order_id(&venue_order_id));
+    let local_client_order_id = promoted_client_order_id.or_else(|| {
+        ctx.order_contexts
+            .get(&venue_order_id)
+            .and_then(|_| ctx.pending_submits.client_order_id(&venue_order_id))
+    });
+
     report.client_order_id = local_client_order_id;
     let (is_accepted, mut buffered_fills) = take_status_update_fills(&report, ctx);
 
@@ -1056,7 +1060,8 @@ pub(crate) fn apply_rest_trade_evidence(
 /// order's acceptance; the order status then registers and accepts the order and releases them.
 /// The status is withheld while any trade of the order is still provisional, or while confirmed
 /// trades do not yet cover the venue's matched quantity, so the order never reports a state
-/// ahead of its fills.
+/// ahead of its fills. Locally closed orders and replaced-leg cancellations still apply trades
+/// but do not emit the order status.
 pub(crate) fn apply_uncertain_order_evidence(
     venue_order_id: VenueOrderId,
     order: &PolymarketOpenOrder,
@@ -1098,6 +1103,13 @@ pub(crate) fn apply_uncertain_order_evidence(
 
     for fill in buffered_fills {
         emit_buffered_order_filled(&context, &fill, ctx);
+    }
+
+    if ctx.order_contexts.is_closed(venue_order_id)
+        || (report.order_status == OrderStatus::Canceled
+            && state.suppress_modify_cancel_reemit(venue_order_id))
+    {
+        return true;
     }
 
     emit_tracked_order_status(&report, &context, report.ts_last, ctx);
@@ -1577,18 +1589,19 @@ fn emit_tracked_order_status(
     }
 }
 
-/// Emits `OrderAccepted` for a tracked order if acceptance has not yet been emitted.
+/// Emits `OrderAccepted` at most once for a tracked order across submit and stream evidence.
 ///
-/// Acceptance is also emitted on the submit happy path; the registry's dedup set ensures it
-/// fires exactly once across the submit confirmation and the WS stream, including when a fill or
-/// cancel races ahead of the acceptance message.
+/// Locally closed orders consume the acceptance marker without emitting an event, so late fills
+/// cannot replay acceptance even if the order subsequently reopens.
 fn ensure_accepted(
     context: &OrderContext,
     venue_order_id: VenueOrderId,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
-    if !ctx.order_contexts.mark_accepted(venue_order_id) {
+    if !ctx.order_contexts.mark_accepted(venue_order_id)
+        || ctx.order_contexts.is_closed(venue_order_id)
+    {
         return;
     }
 
@@ -3176,6 +3189,7 @@ mod tests {
 
     #[rstest]
     #[case::open_order(PolymarketOrderStatus::Live, None, true, false)]
+    #[case::canceled_order(PolymarketOrderStatus::Canceled, None, true, false)]
     #[case::confirmed_fill(
         PolymarketOrderStatus::Matched,
         Some(PolymarketTradeStatus::Confirmed),
@@ -3194,6 +3208,8 @@ mod tests {
         #[case] trade_status: Option<PolymarketTradeStatus>,
         #[case] expected_applied: bool,
         #[case] expected_fill: bool,
+        #[values(false, true)] locally_closed: bool,
+        #[values(false, true)] replacement_promoted: bool,
     ) {
         let mut order: PolymarketOpenOrder =
             serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
@@ -3230,6 +3246,7 @@ mod tests {
             instrument.id(),
             client_order_id.as_str(),
         );
+        order_contexts.set_closed(client_order_id, locally_closed);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3251,6 +3268,20 @@ mod tests {
         };
 
         let mut state = WsDispatchState::default();
+
+        if replacement_promoted {
+            let replacement_id = VenueOrderId::from("V-REPLACEMENT");
+            assert!(state.begin_modify(client_order_id, venue_order_id, instrument.id()));
+            assert!(state.set_modify_replacement(
+                client_order_id,
+                replacement_id,
+                Quantity::from("25"),
+                Quantity::from("25"),
+                Price::from("0.6"),
+            ));
+            assert!(state.claim_modify_replacement(replacement_id).is_some());
+            order_contexts.mark_accepted(venue_order_id);
+        }
 
         let applied =
             apply_uncertain_order_evidence(venue_order_id, &order, &trades, &ctx, &mut state);
@@ -3276,7 +3307,10 @@ mod tests {
             .collect();
 
         assert_eq!(applied, expected_applied);
-        assert_eq!(accepted.count(), usize::from(expected_applied));
+        assert_eq!(
+            accepted.count(),
+            usize::from(expected_applied && !locally_closed && !replacement_promoted)
+        );
         assert_eq!(fill_tracker.contains(&venue_order_id), expected_applied);
 
         if expected_fill {
@@ -3294,7 +3328,28 @@ mod tests {
             assert!(fills.is_empty());
         }
 
-        assert_eq!(events.len(), usize::from(expected_applied) + fills.len());
+        let canceled = events
+            .iter()
+            .filter(|event| {
+                matches!(event, ExecutionEvent::Order(OrderEventAny::Canceled(canceled))
+                if canceled.client_order_id == client_order_id
+                    && canceled.venue_order_id == Some(venue_order_id))
+            })
+            .count();
+
+        let expected_cancel = usize::from(
+            order_status == PolymarketOrderStatus::Canceled
+                && !locally_closed
+                && !replacement_promoted,
+        );
+
+        assert_eq!(canceled, expected_cancel);
+        assert_eq!(
+            events.len(),
+            usize::from(expected_applied && !locally_closed && !replacement_promoted)
+                + fills.len()
+                + expected_cancel
+        );
     }
 
     #[rstest]
@@ -5224,6 +5279,7 @@ mod tests {
         #[case] status: PolymarketOrderStatus,
         #[case] expected_terminal: &str,
         #[case] expected_order_status: OrderStatus,
+        #[values(false, true)] context_before_update: bool,
     ) {
         let mut terminal_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
         terminal_order.status = Some(status.into());
@@ -5241,12 +5297,16 @@ mod tests {
         let pending_submits = PendingSubmitTracker::default();
         pending_submits.insert(venue_order_id, client_order_id);
         let order_contexts = OrderContextRegistry::default();
-        register_context(
-            &order_contexts,
-            venue_order_id,
-            instrument.id(),
-            client_order_id.as_str(),
-        );
+
+        if context_before_update {
+            register_context(
+                &order_contexts,
+                venue_order_id,
+                instrument.id(),
+                client_order_id.as_str(),
+            );
+        }
+
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -5276,6 +5336,22 @@ mod tests {
             receiver.try_recv().is_err(),
             "a buffered fill must emit no event before the order is registered",
         );
+
+        if !context_before_update {
+            dispatch_user_message(
+                &UserWsMessage::Order(terminal_order.clone()),
+                &ctx,
+                &mut state,
+            );
+            assert!(receiver.try_recv().is_err());
+            assert!(!fill_tracker.contains(&venue_order_id));
+            register_context(
+                &order_contexts,
+                venue_order_id,
+                instrument.id(),
+                client_order_id.as_str(),
+            );
+        }
 
         // The order update registers the order and drains the buffered fill
         dispatch_user_message(&UserWsMessage::Order(terminal_order), &ctx, &mut state);

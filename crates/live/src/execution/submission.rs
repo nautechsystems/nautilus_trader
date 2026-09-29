@@ -21,10 +21,10 @@ use serde::{Deserialize, Serialize};
 
 /// Policy when recovery queries cannot establish a submission's venue outcome.
 ///
-/// Local resolution is the default. Retention adds submission tracking, exhaustion diagnostics,
-/// and preservation of the submission budget until acknowledgement. Commands dispatched before
-/// acknowledgement share that budget; later commands use the existing inflight recovery and cleanup rules.
-/// Both variants still resolve locally. Retention after recovery exhaustion is not implemented yet.
+/// When a registered client's `ExecutionClient::retain_unresolved_submissions` returns `true`,
+/// the manager retains its unacknowledged orders regardless of this setting. `LiveNode` registers
+/// this requirement automatically. Retention stops the manager's automatic per-order recovery
+/// queries; later venue events and reports can still resolve the order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(
@@ -46,7 +46,7 @@ pub enum SubmissionRecoveryPolicy {
     /// Selects local resolution using the existing timeout and missing-order policies.
     #[default]
     ResolveLocally,
-    /// Enables tracking, diagnostics, and budget preservation for unacknowledged submissions.
+    /// Retains unacknowledged orders without further automatic per-order recovery queries.
     RetainUnresolved,
 }
 
@@ -62,8 +62,8 @@ pub enum SubmissionRecoverySource {
 /// A submission's recovery budget expired without establishing its venue outcome.
 ///
 /// This diagnostic is not an order event and does not change order status.
-/// The live node publishes it after applying the existing local resolution.
-/// It does not imply that the order is retained or establish a venue outcome.
+/// The live node publishes it after processing reconciliation events.
+/// The manager retains the unresolved submission; exhaustion does not establish a venue outcome.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubmissionRecoveryExhausted {
     /// Trader which submitted the order.

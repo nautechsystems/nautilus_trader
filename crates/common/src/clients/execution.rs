@@ -58,6 +58,15 @@ pub trait ExecutionClient {
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
 
+    /// Returns whether unacknowledged orders require venue evidence before local closure.
+    ///
+    /// `LiveNode` registers this requirement with the live execution manager automatically.
+    /// Registered clients retain these orders after recovery exhaustion, even when local timeout
+    /// or missing-order resolution is enabled.
+    fn retain_unresolved_submissions(&self) -> bool {
+        false
+    }
+
     /// Returns the maximum absolute position difference tolerated during reconciliation.
     fn position_reconciliation_tolerance(&self) -> Decimal {
         DEFAULT_POSITION_RECONCILIATION_TOLERANCE

@@ -483,7 +483,7 @@ pub(super) fn handle_unknown_submit_result(
         expected_venue_order_id
     );
 
-    order_contexts.register_context(expected_venue_order_id, OrderContext::from(order));
+    order_contexts.recover_context(expected_venue_order_id, OrderContext::from(order));
     pending_submits.insert(expected_venue_order_id, order.client_order_id());
 
     drain_pending_reports_for_known_order(
@@ -665,7 +665,7 @@ pub(super) fn handle_order_response(
                     let decision = order_response_decision(response.status);
                     let ts_now = clock.get_time_ns();
 
-                    order_contexts.register_context(venue_order_id, OrderContext::from(order));
+                    order_contexts.recover_context(venue_order_id, OrderContext::from(order));
                     settlement.note_order_accepted(
                         expected_venue_order_id,
                         venue_order_id,
@@ -1408,7 +1408,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_confirm_modify_replacement_preserves_shared_context() {
+    fn test_confirm_modify_replacement_preserves_shared_context(
+        #[values(None, Some(false), Some(true))] late_submit_success: Option<bool>,
+    ) {
         let instrument = test_instrument();
         let order = test_limit_order("O-CONTEXT-REPLACE", instrument.id());
         let old_id = VenueOrderId::from("V-CONTEXT-OLD");
@@ -1416,6 +1418,7 @@ mod tests {
         let original = OrderContext::from(&order);
         let registry = OrderContextRegistry::default();
         registry.register_context(old_id, original);
+        registry.mark_accepted(old_id);
         let quantity = Quantity::from("12.34");
         let price = Price::from("0.6789");
         let mut state = WsDispatchState::default();
@@ -1430,7 +1433,7 @@ mod tests {
         let state = Arc::new(Mutex::new(state));
         let tracker = Arc::new(OrderFillTrackerMap::new());
         let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
-        let (emitter, _receiver) = test_emitter();
+        let (emitter, mut receiver) = test_emitter();
 
         let promoted = confirm_modify_replacement(
             &order,
@@ -1443,7 +1446,53 @@ mod tests {
             &state,
         );
 
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(ExecutionEvent::Order(OrderEventAny::Updated(_)))
+        ));
+        let pending_cancels = PendingCancelTracker::default();
+        let clock = nautilus_core::time::get_atomic_clock_realtime();
+
+        let deferred = match late_submit_success {
+            Some(true) => handle_order_response(
+                Ok(successful_order_response(
+                    old_id,
+                    Some(OrderResponseStatus::Live),
+                )),
+                &order,
+                old_id,
+                &emitter,
+                clock,
+                &tracker,
+                &settlement,
+                &registry,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            ),
+            Some(false) => handle_unknown_submit_result(
+                &order,
+                old_id,
+                "submit response timed out after replacement",
+                None,
+                &emitter,
+                clock,
+                &tracker,
+                &settlement,
+                &registry,
+                &PendingSubmitTracker::default(),
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            ),
+            None => None,
+        };
+
         assert!(promoted);
+        assert!(deferred.is_none());
+        assert!(receiver.try_recv().is_err());
         assert_eq!(registry.get(&old_id), Some(original));
         assert_eq!(
             registry.get(&new_id),

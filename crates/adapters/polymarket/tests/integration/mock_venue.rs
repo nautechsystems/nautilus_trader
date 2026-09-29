@@ -178,6 +178,7 @@ pub(super) struct TestServerState {
     pub(super) market_cancel_delete_count: Arc<tokio::sync::Mutex<usize>>,
     pub(super) market_cancel_request_gate: Arc<RequestGate>,
     pub(super) order_request_gate: Arc<RequestGate>,
+    pub(super) order_response_gate: Arc<RequestGate>,
     pub(super) batch_order_request_gate: Arc<RequestGate>,
     pub(super) open_order_ids: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub(super) orders_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -255,6 +256,7 @@ impl Default for TestServerState {
             market_cancel_delete_count: Arc::new(tokio::sync::Mutex::new(0)),
             market_cancel_request_gate: Arc::new(RequestGate::default()),
             order_request_gate: Arc::new(RequestGate::default()),
+            order_response_gate: Arc::new(RequestGate::default()),
             batch_order_request_gate: Arc::new(RequestGate::default()),
             open_order_ids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
@@ -494,6 +496,7 @@ async fn handle_post_order(
     }
 
     record_open_order_ids(&state, std::slice::from_ref(&body)).await;
+    state.order_response_gate.wait().await;
     let mut response = (status, Json(body)).into_response();
     response
         .headers_mut()

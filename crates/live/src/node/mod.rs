@@ -225,13 +225,17 @@ impl LiveNode {
         kernel: NautilusKernel,
         runner: AsyncRunner,
         config: LiveNodeConfig,
-        exec_manager: ExecutionManager,
+        mut exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
         socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
         thread_owner: Rc<()>,
     ) -> Self {
+        for client in &exec_clients {
+            exec_manager.register_submission_retention(client);
+        }
+
         Self {
             kernel,
             runner: Some(runner),
@@ -2163,7 +2167,7 @@ impl LiveNode {
     fn publish_submission_recovery_exhaustions(&mut self) {
         for diagnostic in self.exec_manager.take_submission_recovery_exhaustions() {
             log::warn!(
-                "Submission recovery exhausted for {}: {:?} after {} checks; local resolution policy remains in effect",
+                "Submission recovery exhausted for {}: {:?} after {} checks; submission remains unresolved pending venue evidence",
                 diagnostic.client_order_id,
                 diagnostic.source,
                 diagnostic.retry_count,
@@ -2680,15 +2684,30 @@ impl LiveNode {
     }
 
     fn observe_exec_command_before_dispatch(&mut self, cmd: &TradingCommand) {
+        let submission_client_id = if matches!(
+            cmd,
+            TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_)
+        ) {
+            self.kernel
+                .exec_engine
+                .borrow()
+                .find_client_for_command(cmd)
+                .map(|client| client.client_id())
+        } else {
+            None
+        };
+
         match cmd {
             TradingCommand::SubmitOrder(submit) => {
-                self.exec_manager
-                    .register_submission(&submit.order_init, submit.client_id);
+                self.exec_manager.register_submission(
+                    &submit.order_init,
+                    submission_client_id.or(submit.client_id),
+                );
             }
             TradingCommand::SubmitOrderList(submit) => {
                 for order_init in &submit.order_inits {
                     self.exec_manager
-                        .register_submission(order_init, submit.client_id);
+                        .register_submission(order_init, submission_client_id.or(submit.client_id));
                 }
             }
             TradingCommand::ModifyOrder(modify) => {
@@ -6947,6 +6966,7 @@ mod tests {
         let expected_status = match pending_status {
             Some(status) if !first_fill => status,
             Some(_) => OrderStatus::Canceled,
+            None if policy == SubmissionRecoveryPolicy::RetainUnresolved => OrderStatus::Submitted,
             None => OrderStatus::Rejected,
         };
         let diagnostics = Rc::new(RefCell::new(Vec::new()));
@@ -6957,7 +6977,7 @@ mod tests {
                 let cache = cache.borrow_mut();
                 let order = cache.order(&diagnostic.client_order_id).unwrap();
                 assert_eq!(order.status(), expected_status);
-                assert!(diagnostic.ts_event <= order.ts_last());
+                assert!(diagnostic.ts_event >= order.ts_last());
                 diagnostics.borrow_mut().push(diagnostic.clone());
             }
         });
@@ -10184,6 +10204,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_submission_confirmation_prevents_duplicate_tracking(
         #[values(false, true)] report_confirmation: bool,
+        #[values(false, true)] exhausted: bool,
     ) {
         let (mut node, order, _) = venue_evidence_node(SubmissionRecoveryPolicy::RetainUnresolved);
         let client_order_id = order.client_order_id();
@@ -10200,6 +10221,19 @@ mod tests {
         )));
         advance_clock(Duration::from_millis(101)).await;
         assert_eq!(node.exec_manager.check_inflight_orders().queries.len(), 1);
+
+        if exhausted {
+            advance_clock(Duration::from_millis(101)).await;
+            let result = node.exec_manager.check_inflight_orders();
+            assert!(result.events.is_empty());
+            assert!(result.queries.is_empty());
+            assert_eq!(
+                node.exec_manager
+                    .take_submission_recovery_exhaustions()
+                    .len(),
+                1
+            );
+        }
 
         if report_confirmation {
             node.process_exec_event(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
@@ -11556,11 +11590,22 @@ mod tests {
         );
         advance_clock(Duration::from_millis(101)).await;
         let result = node.exec_manager.check_inflight_orders();
-        assert_eq!(result.events.len(), 1);
-        assert!(matches!(
-            result.events[0],
-            OrderEventAny::Rejected(_) | OrderEventAny::Canceled(_)
-        ));
+        assert!(result.events.is_empty());
+        assert!(result.queries.is_empty());
+        let cached = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        assert_eq!(
+            cached.status(),
+            if invalid == "local_update" {
+                OrderStatus::Submitted
+            } else {
+                OrderStatus::PendingCancel
+            }
+        );
         let diagnostics = node.exec_manager.take_submission_recovery_exhaustions();
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].client_order_id, client_order_id);
@@ -11734,6 +11779,58 @@ mod tests {
             &order, account_id,
         )));
         (node, order, instrument)
+    }
+
+    #[rstest]
+    #[case::partial("0.400", OrderStatus::PartiallyFilled)]
+    #[case::full("1.000", OrderStatus::Filled)]
+    #[tokio::test(start_paused = true)]
+    async fn test_retained_submission_resolves_late_fill(
+        #[case] quantity: &str,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let (mut node, order, instrument) =
+            venue_evidence_node(SubmissionRecoveryPolicy::RetainUnresolved);
+        let client_order_id = order.client_order_id();
+
+        for _ in 0..2 {
+            advance_clock(Duration::from_millis(101)).await;
+            assert!(node.exec_manager.check_inflight_orders().events.is_empty());
+        }
+
+        assert_eq!(
+            node.exec_manager
+                .take_submission_recovery_exhaustions()
+                .len(),
+            1
+        );
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-LATE-RETAINED")),
+            None,
+            Some(Price::from("100.00")),
+            Some(Quantity::from(quantity)),
+            Some(LiquiditySide::Taker),
+            None,
+            None,
+            Some(AccountId::from("TEST-001")),
+        );
+        node.process_exec_event(ExecutionEvent::Order(fill));
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+        let cache = node.kernel.cache.borrow();
+        let cached = cache.order_ref(&client_order_id).unwrap();
+        assert_eq!(cached.status(), expected_status);
+        assert_eq!(cached.filled_qty(), Quantity::from(quantity));
+        assert_eq!(cached.trade_ids(), vec![&TradeId::from("T-LATE-RETAINED")]);
+        assert!(result.events.is_empty());
+        assert!(result.queries.is_empty());
+        assert!(
+            node.exec_manager
+                .take_submission_recovery_exhaustions()
+                .is_empty()
+        );
     }
 
     #[rstest]
