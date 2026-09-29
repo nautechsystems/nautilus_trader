@@ -2533,6 +2533,7 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
         .add_strategy(OpenOptionOnQuote::new(option_id, Quantity::from(1)))
         .unwrap();
 
+    // Out of the money, so the close fills at `close_price` and a timer-first expiry at zero
     let mut data = vec![
         quote_with_size(
             option_id,
@@ -2543,7 +2544,7 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
         ),
         trade(
             underlying_id,
-            "160.00",
+            "140.00",
             "100",
             expiration_ns.as_u64() - 1_000,
         ),

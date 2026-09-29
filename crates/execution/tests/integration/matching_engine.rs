@@ -14616,12 +14616,11 @@ fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) 
 }
 
 #[rstest]
-#[case(None, "0.00")]
-#[case(Some("7.50"), "7.50")]
+#[case(None)]
+#[case(Some("7.50"))]
 fn test_option_physical_settlement_delivers_underlying(
     account_id: AccountId,
     #[case] close_price: Option<&str>,
-    #[case] expected_option_price: &str,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
@@ -14730,7 +14729,9 @@ fn test_option_physical_settlement_delivers_underlying(
     assert_eq!(close_fill.instrument_id, option.id());
     assert_eq!(close_fill.order_side, OrderSide::Sell);
     assert_eq!(close_fill.last_qty, position.quantity);
-    assert_eq!(close_fill.last_px, Price::from(expected_option_price));
+
+    // Delivery at strike carries the intrinsic value, so a close price must not add it again
+    assert_eq!(close_fill.last_px, Price::from("0.00"));
     assert_eq!(close_fill.position_id, Some(position.id));
 
     // Underlying leg buys at strike (long call exercise: receive underlying).
@@ -19139,6 +19140,91 @@ fn test_option_physical_settlement_scales_quantity_and_side(
         assert_eq!(order.is_reduce_only(), index == 0);
     }
     assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+#[case::rounds_to_zero(Quantity::from(1))]
+#[case::rounds_up(Quantity::from(3))]
+fn test_option_physical_settlement_rejects_fractional_delivery(
+    account_id: AccountId,
+    #[case] quantity: Quantity,
+) {
+    let expiry = UnixNanos::from(2_000_000_000_000_000_000_u64);
+    let mut underlying = futures_contract_es(Some(UnixNanos::default()), Some(expiry));
+    underlying.multiplier = Quantity::from(100);
+    let underlying = InstrumentAny::FuturesContract(underlying);
+    let mut option = option_contract(
+        underlying.id().symbol.as_str(),
+        underlying.id().venue.as_str(),
+        expiry,
+        OptionKind::Call,
+    );
+    option.multiplier = Quantity::from(50);
+    let option = InstrumentAny::OptionContract(option);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_trade(TradeTick::new(
+            underlying.id(),
+            Price::from("160.00"),
+            Quantity::from(1),
+            AggressorSide::NoAggressor,
+            TradeId::from("UNDERLYING"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    let position =
+        open_long_option_position(&cache, &option, account_id, quantity, Price::from("5.00"));
+    let handler = order_event_handler_with_cache(cache.clone());
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(expiry);
+    let mut engine = get_order_matching_engine(
+        option,
+        Some(clock),
+        Some(cache.clone()),
+        Some(AccountType::Margin),
+        None,
+    );
+
+    engine.process_instrument_expiration(expiry);
+
+    // A retry would settle against the corrected definition, so the failure must stay terminal
+    let mut corrected = futures_contract_es(Some(UnixNanos::default()), Some(expiry));
+    corrected.multiplier = Quantity::from(50);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(corrected))
+        .unwrap();
+    engine.process_instrument_expiration(expiry);
+
+    let events = get_order_event_handler_messages(&handler);
+    let cache = cache.borrow();
+    let order_ids: Vec<ClientOrderId> = cache
+        .orders(None, None, None, None, None)
+        .into_iter()
+        .map(|order| order.client_order_id())
+        .collect();
+    let open_positions: Vec<(PositionId, Quantity)> = cache
+        .positions_open(None, None, None, None, None)
+        .into_iter()
+        .map(|position| (position.id, position.quantity))
+        .collect();
+    assert_eq!(events.len(), 1);
+
+    let OrderEventAny::Canceled(canceled) = &events[0] else {
+        panic!("Expected only the expiry cancel of the in-flight opening order")
+    };
+
+    assert_eq!(canceled.client_order_id, ClientOrderId::from("OPT-OPEN-1"));
+    assert!(!engine.is_expiration_processed());
+    assert_eq!(order_ids, vec![ClientOrderId::from("OPT-OPEN-1")]);
+    assert_eq!(open_positions, vec![(position.id, quantity)]);
 }
 
 #[rstest]
