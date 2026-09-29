@@ -17,6 +17,7 @@
 
 use std::{
     collections::HashMap,
+    io::{self, ErrorKind},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -501,12 +502,18 @@ async fn canceled_request_releases_partial_response() {
             .unwrap();
         ready.send(()).unwrap();
         let mut byte = [0];
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(3), stream.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
+        let read = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut byte))
+            .await
+            .unwrap();
+
+        // Closing a socket with unread received bytes sends a reset instead of EOF on some
+        // platforms; both mean the canceled request released the connection
+        assert!(
+            matches!(
+                read.as_ref().map_err(io::Error::kind),
+                Ok(0) | Err(ErrorKind::ConnectionReset)
+            ),
+            "connection was not released: {read:?}"
         );
     });
     let client = HttpClient::builder()
