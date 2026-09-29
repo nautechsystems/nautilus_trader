@@ -2254,22 +2254,10 @@ impl KrakenSpotHttpClient {
             // Kraken spells a pair two ways, so resolve the row and compare instrument ids rather
             // than the row's spelling against the cached `raw_symbol`.
             let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-            if let Some(ref target_id) = instrument_id {
-                match resolved.as_ref().map(Instrument::id) {
-                    Some(id) if id == *target_id => {}
-                    // Another instrument: not ours, and nothing is missing.
-                    Some(_) => continue,
-                    // Unresolvable: it may have been the requested one, so flag the gap rather
-                    // than reporting an empty set as complete.
-                    None => {
-                        log::warn!(
-                            "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                            order.descr.pair
-                        );
-                        complete = false;
-                        continue;
-                    }
-                }
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
             let instrument = resolved.ok_or_else(|| {
@@ -2321,22 +2309,10 @@ impl KrakenSpotHttpClient {
 
             for (order_id, order) in &closed_orders {
                 let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-                if let Some(ref target_id) = instrument_id {
-                    match resolved.as_ref().map(Instrument::id) {
-                        Some(id) if id == *target_id => {}
-                        // Another instrument: not ours, and nothing is missing.
-                        Some(_) => continue,
-                        // Unresolvable: it may have been the requested one, so flag the gap rather
-                        // than reporting an empty set as complete.
-                        None => {
-                            log::warn!(
-                                "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                                order.descr.pair
-                            );
-                            complete = false;
-                            continue;
-                        }
-                    }
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
                 // A historical record can reference an instrument absent from the current
@@ -2432,22 +2408,10 @@ impl KrakenSpotHttpClient {
 
             for (trade_id, trade) in &trades {
                 let resolved = self.get_instrument_by_raw_symbol(trade.pair.as_str());
-                if let Some(ref target_id) = instrument_id {
-                    match resolved.as_ref().map(Instrument::id) {
-                        Some(id) if id == *target_id => {}
-                        // Another instrument: not ours, and nothing is missing.
-                        Some(_) => continue,
-                        // Unresolvable: it may have been the requested one, so flag the gap rather
-                        // than reporting an empty set as complete.
-                        None => {
-                            log::warn!(
-                                "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                                trade.pair
-                            );
-                            complete = false;
-                            continue;
-                        }
-                    }
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
                 // As above: historical fills outlive the listing, so preserve the usable rows.

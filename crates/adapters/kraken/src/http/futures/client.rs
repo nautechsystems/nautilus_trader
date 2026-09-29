@@ -1788,22 +1788,10 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&order.symbol);
-            if let Some(ref target_id) = instrument_id {
-                match resolved.as_ref().map(Instrument::id) {
-                    Some(id) if id == *target_id => {}
-                    // Another instrument: not ours, and nothing is missing.
-                    Some(_) => continue,
-                    // Unresolvable: it may have been the requested one, so flag the gap rather
-                    // than reporting an empty set as complete.
-                    None => {
-                        log::warn!(
-                            "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                            order.symbol
-                        );
-                        complete = false;
-                        continue;
-                    }
-                }
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
             if let Some(instrument) = resolved {
@@ -1862,22 +1850,10 @@ impl KrakenFuturesHttpClient {
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
                 let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
-                if let Some(ref target_id) = instrument_id {
-                    match resolved.as_ref().map(Instrument::id) {
-                        Some(id) if id == *target_id => {}
-                        // Another instrument: not ours, and nothing is missing.
-                        Some(_) => continue,
-                        // Unresolvable: it may have been the requested one, so flag the gap rather
-                        // than reporting an empty set as complete.
-                        None => {
-                            log::warn!(
-                                "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                                event.symbol
-                            );
-                            complete = false;
-                            continue;
-                        }
-                    }
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
                 if let Some(instrument) = resolved {
@@ -2036,22 +2012,10 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&fill.symbol);
-            if let Some(ref target_id) = instrument_id {
-                match resolved.as_ref().map(Instrument::id) {
-                    Some(id) if id == *target_id => {}
-                    // Another instrument: not ours, and nothing is missing.
-                    Some(_) => continue,
-                    // Unresolvable: it may have been the requested one, so flag the gap rather
-                    // than reporting an empty set as complete.
-                    None => {
-                        log::warn!(
-                            "Scoped read: instrument not in cache for {}, marking the set incomplete",
-                            fill.symbol
-                        );
-                        complete = false;
-                        continue;
-                    }
-                }
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
             if let Some(instrument) = resolved {

@@ -4396,11 +4396,11 @@ async fn test_spot_scoped_fill_reports_match_the_resolved_instrument() {
     assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
 }
 
-/// The scope must hold when instruments arrived through the cache APIs.
+/// Scoped reads must hold when instruments arrived through the cache APIs.
 ///
-/// `cache_instruments` populates the instrument cache without the `AssetPairs` fetch that records
-/// the altname index, so this client resolves fewer rows. A scoped read for an instrument it does
-/// not hold must still return nothing rather than every instrument's rows.
+/// Such a client never sees the `AssetPairs` response, so its aliases can only come from the
+/// instruments themselves. It must resolve an altname-spelled record, and must still return
+/// nothing for an instrument it does not hold.
 #[rstest]
 #[tokio::test]
 async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
@@ -4411,7 +4411,7 @@ async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
     let source = legacy_pair_spot_client(addr).await;
     let instruments = source.request_instruments(None).await.unwrap();
 
-    // A second client fed only through the cache API, so its altname index is never populated.
+    // A second client fed only through the cache API, so it never sees the AssetPairs response.
     let client = KrakenSpotHttpClient::with_credentials(
         "test_api_key".to_string(),
         "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
@@ -4447,8 +4447,7 @@ async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
     );
 
     // An altname-spelled row must resolve too. `XXBTZEUR` is keyed one way and spelled `XBTEUR`
-    // by OpenOrders, and this client never saw the AssetPairs response, so the alias can only
-    // come from the instrument itself.
+    // by OpenOrders, so the alias can only come from the instrument itself here.
     *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
     let altname = client
         .request_order_status_reports(
@@ -4482,7 +4481,7 @@ async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
         .unwrap();
     assert!(
         absent.is_empty(),
-        "not held must match nothing even without the alias index: {absent:?}"
+        "not held must match nothing on a cache-supplied client: {absent:?}"
     );
 }
 

@@ -556,8 +556,9 @@ flag.
 - A spot instrument whose altname differs from its `AssetPairs` key carries the altname in its
   `info` map, so a client whose instruments arrive through `cache_instrument` or
   `cache_instruments` resolves altname-spelled records without refetching `AssetPairs`.
-- An open order whose pair cannot be resolved to a cached instrument fails the read, rather than
-  being omitted from an otherwise successful one.
+- On an unscoped read, an open order whose pair cannot be resolved to a cached instrument fails the
+  read, rather than being omitted from an otherwise successful one. A scoped read skips a record it
+  cannot resolve, since it cannot belong to the requested instrument.
 - A closed order or fill that cannot be resolved is logged as a warning and skipped, preserving the
   records that do resolve. Historical records routinely outlive the loaded instrument set.
 

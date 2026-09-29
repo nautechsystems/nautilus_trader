@@ -39,7 +39,7 @@ use rust_decimal_macros::dec;
 
 use crate::{
     common::{
-        consts::KRAKEN_VENUE,
+        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_VENUE},
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
             KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
@@ -620,8 +620,6 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
 fn pair_altname_info(pair_name: &str, altname: &str) -> Option<Params> {
-    use crate::common::consts::KRAKEN_ALTNAME_KEY;
-
     if altname == pair_name {
         return None;
     }
