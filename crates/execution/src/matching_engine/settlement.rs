@@ -364,11 +364,12 @@ impl OrderMatchingEngine {
         option_close_price: Option<Price>,
     ) -> [OptionSettlementLeg; 2] {
         let multiplier = self.instrument.multiplier();
-        let underlying_qty = Quantity::from_decimal_dp(
-            position.quantity.as_decimal() * multiplier.as_decimal(),
-            underlying_instrument.size_precision(),
-        )
-        .expect("Invalid underlying settlement quantity");
+        let position_qty = position.quantity.as_decimal();
+        let underlying_multiplier = underlying_instrument.multiplier().as_decimal();
+        let underlying_precision = underlying_instrument.size_precision();
+        let underlying_qty = position_qty * multiplier.as_decimal() / underlying_multiplier;
+        let underlying_qty = Quantity::from_decimal_dp(underlying_qty, underlying_precision)
+            .expect("Invalid underlying settlement quantity");
 
         let underlying_side = if self.instrument.option_kind() == Some(OptionKind::Call) {
             position.side

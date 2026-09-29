@@ -156,6 +156,7 @@ Released on TBD (UTC).
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed custom fill books falling back to historical liquidity or exceeding their available quantity
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
+- Fixed oversized futures delivery when physically settling options in backtests and sandbox execution
 - Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
 - Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io

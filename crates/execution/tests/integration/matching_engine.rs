@@ -18950,6 +18950,7 @@ fn test_quote_quantity_without_market_rejects(
 )]
 fn test_option_physical_settlement_scales_quantity_and_side(
     account_id: AccountId,
+    #[values(false, true)] futures: bool,
     #[case] kind: OptionKind,
     #[case] opening_side: OrderSide,
     #[case] closing_side: OrderSide,
@@ -18957,10 +18958,32 @@ fn test_option_physical_settlement_scales_quantity_and_side(
     #[case] spot: &str,
 ) {
     let expiry = UnixNanos::from(2_000_000_000_000_000_000_u64);
-    let mut option = option_contract("AAPL", "OPRA", expiry, kind);
-    option.multiplier = Quantity::from(100);
+
+    let (underlying, multiplier, delivery_quantity) = if futures {
+        let mut underlying = futures_contract_es(Some(UnixNanos::default()), Some(expiry));
+        underlying.multiplier = Quantity::from(50);
+        (
+            InstrumentAny::FuturesContract(underlying),
+            Quantity::from(50),
+            Quantity::from(2),
+        )
+    } else {
+        (
+            InstrumentAny::Equity(underlying_equity("OPRA")),
+            Quantity::from(100),
+            Quantity::from(200),
+        )
+    };
+
+    let mut option = option_contract(
+        underlying.id().symbol.as_str(),
+        underlying.id().venue.as_str(),
+        expiry,
+        kind,
+    );
+    option.asset_class = underlying.asset_class();
+    option.multiplier = multiplier;
     let option = InstrumentAny::OptionContract(option);
-    let underlying = InstrumentAny::Equity(underlying_equity("OPRA"));
     let cache = Rc::new(RefCell::new(Cache::default()));
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
     cache
@@ -19047,7 +19070,7 @@ fn test_option_physical_settlement_scales_quantity_and_side(
             1,
             underlying.id(),
             delivery_side,
-            Quantity::from(200),
+            delivery_quantity,
             Price::from("149.00"),
             None,
         ),
@@ -19074,6 +19097,39 @@ fn test_option_physical_settlement_scales_quantity_and_side(
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(fill.ts_event, expiry);
         assert_eq!(fill.ts_init, expiry);
+
+        if index == 0 {
+            let mut closed_position = position.clone();
+            closed_position.apply(fill);
+
+            let premium = if opening_side == OrderSide::Buy {
+                dec!(-10)
+            } else {
+                dec!(10)
+            } * multiplier.as_decimal();
+
+            assert_eq!(
+                closed_position.realized_pnl,
+                Some(Money::from_decimal(premium, Currency::USD()).unwrap()),
+            );
+        } else {
+            let mut delivery_fill = fill.clone();
+            delivery_fill.position_id = Some(PositionId::from("UNDERLYING-POSITION"));
+            let delivered_position = Position::new(&underlying, delivery_fill);
+
+            let points = match (kind, opening_side) {
+                (OptionKind::Call, OrderSide::Buy) => dec!(22),
+                (OptionKind::Call, OrderSide::Sell) => dec!(-22),
+                (OptionKind::Put, OrderSide::Buy) => dec!(18),
+                (OptionKind::Put, OrderSide::Sell) => dec!(-18),
+            };
+
+            assert_eq!(
+                delivered_position.unrealized_pnl(Price::from(spot)),
+                Money::from_decimal(points * multiplier.as_decimal(), Currency::USD()).unwrap(),
+            );
+        }
+
         let cache = cache.borrow();
         let order = cache.order(&fill.client_order_id).unwrap();
         assert_eq!(order.order_side(), side);
