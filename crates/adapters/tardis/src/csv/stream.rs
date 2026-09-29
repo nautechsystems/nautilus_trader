@@ -73,6 +73,7 @@ struct DeltaStreamIterator {
     last_ts_init: Option<UnixNanos>,
     last_is_snapshot: bool,
     seen_first_snapshot: bool,
+    skipped_before_snapshot: usize,
     limit: Option<usize>,
     deltas_emitted: usize,
 
@@ -122,6 +123,7 @@ impl DeltaStreamIterator {
             last_ts_init: None,
             last_is_snapshot: false,
             seen_first_snapshot: false,
+            skipped_before_snapshot: 0,
             limit,
             deltas_emitted: 0,
             pending: None,
@@ -184,6 +186,18 @@ impl Iterator for DeltaStreamIterator {
                 None => match self.read_record() {
                     Ok(Some(data)) => data,
                     Ok(None) => {
+                        if !self.seen_first_snapshot && self.skipped_before_snapshot > 0 {
+                            log::warn!(
+                                "No snapshot row found in Tardis CSV: all {} row(s) were \
+                                 pre-snapshot buffered records and have been skipped, zero deltas \
+                                 will be produced (see https://docs.tardis.dev/faq/order-books)",
+                                self.skipped_before_snapshot,
+                            );
+                            // Reset so a repeated call after exhaustion (out-of-spec but
+                            // harmless) does not log the same summary again.
+                            self.skipped_before_snapshot = 0;
+                        }
+
                         if self.buffer.is_empty() {
                             return None;
                         }
@@ -200,17 +214,24 @@ impl Iterator for DeltaStreamIterator {
             // Tardis documents that a file may open with buffered updates received before the
             // exchange sent the initial snapshot after a connection restart; these rows have no
             // book state to apply against and should be skipped (see
-            // https://docs.tardis.dev/faq/order-books).
+            // https://docs.tardis.dev/faq/order-books). Skipped rows are counted rather than
+            // logged individually: a trimmed file with no snapshot row at all would otherwise
+            // emit one warning per row, drowning out the fact that the whole file was dropped.
             if !self.seen_first_snapshot {
                 if !data.is_snapshot {
+                    self.skipped_before_snapshot += 1;
+                    continue;
+                }
+
+                if self.skipped_before_snapshot > 0 {
                     log::warn!(
-                        "Skipping pre-snapshot buffered delta record for {}/{} at local_timestamp={} \
-                         (received before the first snapshot row)",
+                        "Skipped {} pre-snapshot buffered delta record(s) for {}/{} (received \
+                         before the first snapshot row, see \
+                         https://docs.tardis.dev/faq/order-books)",
+                        self.skipped_before_snapshot,
                         data.exchange,
                         data.symbol,
-                        data.local_timestamp,
                     );
-                    continue;
                 }
                 self.seen_first_snapshot = true;
             }
@@ -380,6 +401,7 @@ struct BatchedDeltasStreamIterator {
     last_ts_init: Option<UnixNanos>,
     last_is_snapshot: bool,
     seen_first_snapshot: bool,
+    skipped_before_snapshot: usize,
     limit: Option<usize>,
     deltas_emitted: usize,
 }
@@ -439,6 +461,7 @@ impl BatchedDeltasStreamIterator {
             last_ts_init: None,
             last_is_snapshot: false,
             seen_first_snapshot: false,
+            skipped_before_snapshot: 0,
             limit,
             deltas_emitted: 0,
         })
@@ -493,17 +516,25 @@ impl BatchedDeltasStreamIterator {
                     // Tardis documents that a file may open with buffered updates received
                     // before the exchange sent the initial snapshot after a connection
                     // restart; these rows have no book state to apply against and should be
-                    // skipped (see https://docs.tardis.dev/faq/order-books).
+                    // skipped (see https://docs.tardis.dev/faq/order-books). Skipped rows are
+                    // counted rather than logged individually: a trimmed file with no snapshot
+                    // row at all would otherwise emit one warning per row, drowning out the fact
+                    // that the whole file was dropped.
                     if !self.seen_first_snapshot {
                         if !data.is_snapshot {
+                            self.skipped_before_snapshot += 1;
+                            continue;
+                        }
+
+                        if self.skipped_before_snapshot > 0 {
                             log::warn!(
-                                "Skipping pre-snapshot buffered delta record for {}/{} at \
-                                 local_timestamp={} (received before the first snapshot row)",
+                                "Skipped {} pre-snapshot buffered delta record(s) for {}/{} \
+                                 (received before the first snapshot row, see \
+                                 https://docs.tardis.dev/faq/order-books)",
+                                self.skipped_before_snapshot,
                                 data.exchange,
                                 data.symbol,
-                                data.local_timestamp,
                             );
-                            continue;
                         }
                         self.seen_first_snapshot = true;
                     }
@@ -568,6 +599,17 @@ impl BatchedDeltasStreamIterator {
                 }
                 Ok(false) => {
                     // End of file
+                    if !self.seen_first_snapshot && self.skipped_before_snapshot > 0 {
+                        log::warn!(
+                            "No snapshot row found in Tardis CSV: all {} row(s) were \
+                             pre-snapshot buffered records and have been skipped, zero deltas \
+                             will be produced (see https://docs.tardis.dev/faq/order-books)",
+                            self.skipped_before_snapshot,
+                        );
+                        // Reset so a repeated call after exhaustion (out-of-spec but harmless)
+                        // does not log the same summary again.
+                        self.skipped_before_snapshot = 0;
+                    }
                     break;
                 }
                 Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),

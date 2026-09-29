@@ -182,6 +182,7 @@ pub fn load_deltas<P: AsRef<Path>>(
     let mut last_ts_init: Option<UnixNanos> = None;
     let mut last_is_snapshot = false;
     let mut seen_first_snapshot = false;
+    let mut skipped_before_snapshot: usize = 0;
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
@@ -198,17 +199,23 @@ pub fn load_deltas<P: AsRef<Path>>(
         // Tardis documents that a file may open with buffered updates received before the
         // exchange sent the initial snapshot after a connection restart; these rows have no
         // book state to apply against and should be skipped (see
-        // https://docs.tardis.dev/faq/order-books).
+        // https://docs.tardis.dev/faq/order-books). Skipped rows are counted rather than logged
+        // individually: a trimmed file with no snapshot row at all would otherwise emit one
+        // warning per row, drowning out the fact that the whole file was dropped.
         if !seen_first_snapshot {
             if !data.is_snapshot {
+                skipped_before_snapshot += 1;
+                continue;
+            }
+
+            if skipped_before_snapshot > 0 {
                 log::warn!(
-                    "Skipping pre-snapshot buffered delta record for {}/{} at local_timestamp={} \
-                     (received before the first snapshot row)",
+                    "Skipped {skipped_before_snapshot} pre-snapshot buffered delta record(s) for \
+                     {}/{} (received before the first snapshot row, see \
+                     https://docs.tardis.dev/faq/order-books)",
                     data.exchange,
                     data.symbol,
-                    data.local_timestamp,
                 );
-                continue;
             }
             seen_first_snapshot = true;
         }
@@ -270,6 +277,14 @@ pub fn load_deltas<P: AsRef<Path>>(
         last_ts_init = Some(ts_init);
 
         deltas.push(delta);
+    }
+
+    if !seen_first_snapshot && skipped_before_snapshot > 0 {
+        log::warn!(
+            "No snapshot row found in Tardis CSV: all {skipped_before_snapshot} row(s) were \
+             pre-snapshot buffered records and have been skipped, zero deltas will be produced \
+             (see https://docs.tardis.dev/faq/order-books)"
+        );
     }
 
     // Set F_LAST flag for final delta
