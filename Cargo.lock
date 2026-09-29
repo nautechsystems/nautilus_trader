@@ -6592,7 +6592,6 @@ dependencies = [
  "async-trait",
  "blake3",
  "bon",
- "bytes",
  "codspeed-criterion-compat",
  "datafusion",
  "futures",

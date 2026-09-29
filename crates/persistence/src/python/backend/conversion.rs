@@ -38,7 +38,7 @@ use serde_json::json;
 
 use crate::{
     catalog::{
-        traits::{CatalogMetadata, NautilusDataTypePrefix, NautilusRecordTypePrefix},
+        traits::CatalogMetadata,
         types::{CatalogDataType, data_type_from_data_path_prefix},
     },
     writer::filter::WriterRecordFilter,
@@ -88,11 +88,36 @@ pub fn nautilus_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<Naut
 ///
 /// Extraction accepts `NautilusDataType`, `NautilusRecordType`, and `NautilusInstrumentType`, so
 /// the generated stubs name that union rather than `typing.Any`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PyCatalogDataType(CatalogDataType);
 
 impl PyCatalogDataType {
+    pub(crate) const fn new(data_type: CatalogDataType) -> Self {
+        Self(data_type)
+    }
+
     pub(crate) fn into_inner(self) -> CatalogDataType {
         self.0
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyCatalogDataType {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self.0 {
+            CatalogDataType::Data(data_type) => {
+                Ok(Bound::new(py, PyNautilusDataType::new(data_type))?.into_any())
+            }
+            CatalogDataType::Record(record_type) => {
+                Ok(Bound::new(py, PyNautilusRecordType::new(record_type))?.into_any())
+            }
+            CatalogDataType::Instrument(instrument_type) => {
+                Ok(Bound::new(py, PyNautilusInstrumentType::new(instrument_type))?.into_any())
+            }
+        }
     }
 }
 
@@ -152,7 +177,7 @@ pub(crate) fn writer_record_filter_from_py(
     if let Some(record_types) = record_types {
         let record_types = record_types.cast::<PyList>()?;
         for item in record_types.iter() {
-            filter.insert_prefix(catalog_filter_prefix_from_py(&item)?, None);
+            filter.insert(catalog_filter_family_from_py(&item)?, None);
         }
     }
 
@@ -167,29 +192,29 @@ pub(crate) fn writer_record_filter_from_py(
                 Some(identifiers.extract::<Vec<String>>()?)
             };
 
-            filter.insert_prefix(catalog_filter_prefix_from_py(&record_type)?, identifiers);
+            filter.insert(catalog_filter_family_from_py(&record_type)?, identifiers);
         }
     }
 
     Ok((!filter.is_empty()).then_some(filter))
 }
 
-fn catalog_filter_prefix_from_py(value: &Bound<'_, PyAny>) -> PyResult<String> {
+pub(crate) fn catalog_filter_family_from_py(value: &Bound<'_, PyAny>) -> PyResult<CatalogDataType> {
     if let Ok(record_type) = value.extract::<PyRef<'_, PyNautilusRecordType>>() {
-        return Ok(record_type.inner().path_prefix().into_owned());
+        return Ok(CatalogDataType::Record(record_type.inner()));
     }
 
     if let Ok(data_type) = value.extract::<PyRef<'_, PyNautilusDataType>>() {
-        return Ok(data_type.inner().path_prefix().into_owned());
+        return Ok(CatalogDataType::Data(data_type.inner()));
     }
 
     if let Ok(value) = value.extract::<String>() {
         if let Ok(record_type) = value.parse::<NautilusRecordType>() {
-            return Ok(record_type.path_prefix().into_owned());
+            return Ok(CatalogDataType::Record(record_type));
         }
 
         return data_type_from_data_path_prefix(&value)
-            .map(|data_type| data_type.path_prefix().into_owned())
+            .map(CatalogDataType::Data)
             .map_err(to_pytype_err);
     }
 

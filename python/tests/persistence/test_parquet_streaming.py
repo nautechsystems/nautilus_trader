@@ -153,10 +153,13 @@ def test_streaming_feather_writer_accepts_python_custom_data(tmp_path: Path) -> 
     assert result[0].data.ts_init == 12
 
 
-@pytest.mark.parametrize("include", ["custom", "RustTestCustomData", "custom/RustTestCustomData"])
+@pytest.mark.parametrize(
+    "include",
+    ["custom/RustTestCustomData", NautilusDataType.Custom("RustTestCustomData")],
+)
 def test_streaming_feather_writer_include_types_match_custom_data(
     tmp_path: Path,
-    include: str,
+    include: object,
 ) -> None:
     """
     Verify streaming feather writer include types match custom data.

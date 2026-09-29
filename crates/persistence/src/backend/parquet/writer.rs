@@ -132,7 +132,6 @@ impl ParquetWriter {
             clock,
             config.rotation_config.clone(),
             None,
-            None,
             config.flush_interval_ms,
             config.record_filter.clone(),
         )?;
@@ -370,8 +369,6 @@ impl Drop for ParquetWriter {
                 );
             }
         }
-
-        self.core.flush_on_drop("ParquetWriter");
     }
 }
 

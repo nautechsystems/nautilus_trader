@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::catalog::types::CatalogDataType;
+
 /// Result of converting one Feather file.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeatherConversionSummary {
-    pub type_name: String,
+    pub data_type: CatalogDataType,
     pub identifier: Option<String>,
     pub feather_path: String,
     pub native_version: Option<i64>,

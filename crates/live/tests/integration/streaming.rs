@@ -41,7 +41,7 @@ use nautilus_model::{
     enums::{AggressorSide, BookAction, OrderSide, OrderType},
     identifiers::{AccountId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
-    types::{Price, Quantity},
+    types::{ERROR_PRICE, Price, Quantity},
 };
 use nautilus_persistence::{
     backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogDataType,
@@ -94,7 +94,11 @@ impl Drop for CatalogTempDir {
     }
 }
 
-fn feather_files_under(root: &std::path::Path, family: &str) -> Vec<std::path::PathBuf> {
+fn feather_files_under(
+    root: &std::path::Path,
+    family: &str,
+    extension: &str,
+) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -106,7 +110,7 @@ fn feather_files_under(root: &std::path::Path, family: &str) -> Vec<std::path::P
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "feather")
+            } else if path.to_string_lossy().ends_with(&format!(".{extension}"))
                 && path.to_string_lossy().contains(family)
             {
                 files.push(path);
@@ -234,7 +238,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
 
     // Every quote write rotates (`max_size: 1`), so at least one file per quote proves each
     // rotation fired synchronously inside its publish callback.
-    let quote_files = feather_files_under(&run_dir, "quotes");
+    let quote_files = feather_files_under(&run_dir, "quotes", "feather");
     assert!(
         quote_files.len() >= quotes.len(),
         "expected at least one feather file per quote write, found {}",
@@ -326,9 +330,10 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
 #[rstest]
 #[tokio::test(flavor = "current_thread")]
 async fn test_livenode_streaming_auto_flush_persists_before_stop() {
-    // With `NoRotation`, any feather file present before `stop()` proves the
-    // auto-flush boundary fired synchronously from inside a publish callback on
-    // the LiveNode runtime thread.
+    // With `NoRotation` the quotes stay in one open `.feather.partial` file until `stop()`.
+    // Bytes in that file before `stop()` prove the auto-flush boundary fired synchronously
+    // from inside a publish callback on the LiveNode runtime thread; unflushed bytes stay in
+    // the write buffer.
     let catalog_dir = CatalogTempDir::new("auto-flush");
     let instance_id = UUID4::new();
     let run_dir = catalog_dir
@@ -374,10 +379,13 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         std::thread::sleep(Duration::from_millis(2));
     }
 
+    let open_files = feather_files_under(&run_dir, "quotes", "feather.partial");
+    assert_eq!(open_files.len(), 1);
     assert!(
-        !feather_files_under(&run_dir, "quotes").is_empty(),
+        std::fs::metadata(&open_files[0]).unwrap().len() > 0,
         "expected auto-flush to persist quotes before stop",
     );
+    assert!(feather_files_under(&run_dir, "quotes", "feather").is_empty());
 
     node.stop().await.unwrap();
     node.dispose();
@@ -397,5 +405,130 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
             .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
             .unwrap(),
         quotes,
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "current_thread")]
+async fn test_livenode_streaming_records_quotes_published_after_stop() {
+    // Shutdown still dispatches drained events after `stop()`, so the writer must record them
+    // until `dispose()` closes it.
+    let catalog_dir = CatalogTempDir::new("after-stop");
+    let instance_id = UUID4::new();
+
+    let streaming = StreamingConfig::new(
+        catalog_dir.path().to_string_lossy().into_owned(),
+        "file".to_string(),
+        1_000,
+        false,
+        RotationConfig::NoRotation,
+    );
+
+    let config = LiveNodeConfig {
+        environment: Environment::Live,
+        instance_id: Some(instance_id),
+        exec_engine: LiveExecutionEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        delay_post_stop: Duration::ZERO,
+        timeout_connection: Duration::ZERO,
+        timeout_disconnection: Duration::ZERO,
+        streaming: Some(streaming),
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("LiveStreamingNode".to_string(), Some(config)).unwrap();
+    node.start().await.unwrap();
+
+    let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+    let quotes = vec![
+        quote(instrument_id, "3000.00", "3000.10", 1_000),
+        quote(instrument_id, "3000.05", "3000.15", 2_000),
+    ];
+    let quotes_topic = switchboard::get_quotes_topic(instrument_id);
+
+    msgbus::publish_quote(quotes_topic, &quotes[0]);
+    node.stop().await.unwrap();
+    msgbus::publish_quote(quotes_topic, &quotes[1]);
+    node.dispose();
+
+    let mut catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .convert_stream_to_data(
+            &instance_id.to_string(),
+            &CatalogDataType::from(NautilusDataType::QuoteTick),
+            Some("live"),
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap(),
+        quotes,
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "current_thread")]
+async fn test_livenode_streaming_stop_returns_recorded_write_error() {
+    let catalog_dir = CatalogTempDir::new("stop-error");
+    let instance_id = UUID4::new();
+    let run_uri = format!(
+        "{}/live/{instance_id}",
+        catalog_dir.path().to_string_lossy()
+    );
+
+    let streaming = StreamingConfig::new(
+        catalog_dir.path().to_string_lossy().into_owned(),
+        "file".to_string(),
+        1_000,
+        false,
+        RotationConfig::NoRotation,
+    );
+
+    let config = LiveNodeConfig {
+        environment: Environment::Live,
+        instance_id: Some(instance_id),
+        exec_engine: LiveExecutionEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        delay_post_stop: Duration::ZERO,
+        timeout_connection: Duration::ZERO,
+        timeout_disconnection: Duration::ZERO,
+        streaming: Some(streaming),
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("LiveStreamingNode".to_string(), Some(config)).unwrap();
+    node.start().await.unwrap();
+
+    // An error price cannot be encoded, so the writer records the failure for its next flush
+    let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+
+    let invalid = QuoteTick::new(
+        instrument_id,
+        ERROR_PRICE,
+        ERROR_PRICE,
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    msgbus::publish_quote(switchboard::get_quotes_topic(instrument_id), &invalid);
+
+    let error = node.stop().await.unwrap_err();
+    node.dispose();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "failed while finalizing kernel shutdown: Failed to flush streaming writer at \
+             {run_uri}: Invalid argument error: Metadata 'price_precision' is 255, maximum \
+             supported catalog scale is 16"
+        ),
     );
 }

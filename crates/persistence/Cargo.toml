@@ -70,7 +70,6 @@ arrow = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
-bytes = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }

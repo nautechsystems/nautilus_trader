@@ -165,6 +165,16 @@ impl StreamingSinkSubscription {
         }
     }
 
+    /// Flushes the sink without removing its message-bus subscriptions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying sink cannot be flushed.
+    pub fn flush(&self) -> anyhow::Result<()> {
+        refresh_writer_clock(&self.clock_bridge);
+        self.sink.borrow_mut().flush()
+    }
+
     /// Unsubscribes and closes the sink.
     /// # Errors
     ///

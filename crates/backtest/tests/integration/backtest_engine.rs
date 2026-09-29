@@ -7241,3 +7241,54 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
     engine.run(None, None, None, false).unwrap();
     assert_eq!(engine.get_result().iterations, 1);
 }
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_end_returns_streaming_write_error() {
+    use nautilus_common::msgbus::{self, switchboard};
+    use nautilus_model::types::ERROR_PRICE;
+    use nautilus_system::config::{RotationConfig, StreamingConfig};
+
+    let directory = tempfile::tempdir().unwrap();
+    let catalog_path = directory.path().to_string_lossy().into_owned();
+    let instance_id = UUID4::new();
+
+    let config = BacktestEngineConfig {
+        instance_id: Some(instance_id),
+        streaming: Some(StreamingConfig::new(
+            catalog_path.clone(),
+            "file".to_string(),
+            1_000,
+            false,
+            RotationConfig::NoRotation,
+        )),
+        ..Default::default()
+    };
+
+    let mut engine = BacktestEngine::new(config).unwrap();
+
+    // An error price cannot be encoded, so the writer records the failure for its close
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+    let invalid = QuoteTick::new(
+        instrument_id,
+        ERROR_PRICE,
+        ERROR_PRICE,
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    msgbus::publish_quote(switchboard::get_quotes_topic(instrument_id), &invalid);
+
+    let error = engine.end().unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Failed to close streaming writer at {catalog_path}/backtest/{instance_id}: Invalid \
+             argument error: Metadata 'price_precision' is 255, maximum supported catalog scale \
+             is 16"
+        ),
+    );
+}

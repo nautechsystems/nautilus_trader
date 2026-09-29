@@ -917,7 +917,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use nautilus_model::data::Data;
+    use nautilus_model::data::{Data, NautilusDataType};
     use rstest::rstest;
 
     use super::{
@@ -962,7 +962,7 @@ mod tests {
                 .converted
                 .push((file.to_string(), record_promoted));
             Ok(Some(FeatherConversionSummary {
-                type_name: "quotes".to_string(),
+                data_type: NautilusDataType::QuoteTick.into(),
                 identifier: None,
                 feather_path: file.to_string(),
                 native_version: Some(1),

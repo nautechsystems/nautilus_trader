@@ -25,6 +25,12 @@
 //! so parsing behaves identically on every platform. Call sites must use these
 //! helpers instead of splitting raw paths on `/`.
 
+use std::path::PathBuf;
+
+use nautilus_model::data::NautilusDataType;
+
+use crate::catalog::types::{CatalogDataType, catalog_data_type_from_path};
+
 /// Persistence-owned static path prefix used by streaming/session writers.
 pub trait CatalogPathPrefix {
     /// Returns the record family prefix.
@@ -181,6 +187,23 @@ pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
     }
 }
 
+/// Returns the local directory a streaming writer appends its Feather files to.
+///
+/// Streaming writers append to open local files, so remote storage URIs are rejected.
+///
+/// # Errors
+///
+/// Returns an error if `path` is not a local path or `file://` URI, or if a relative path cannot
+/// be resolved against the current directory.
+pub(crate) fn local_writer_directory(path: &str) -> anyhow::Result<PathBuf> {
+    let uri = normalize_path_to_uri(path)?;
+    anyhow::ensure!(
+        uri.starts_with("file://"),
+        "Streaming writers append to local files, writer path must be local, was {path}"
+    );
+    Ok(PathBuf::from(file_uri_to_native_path(&uri)))
+}
+
 /// Checks if a path is absolute on any supported platform.
 #[must_use]
 fn is_absolute_path(path: &str) -> bool {
@@ -248,21 +271,21 @@ pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     uri.strip_prefix("file://").unwrap_or(uri).to_string()
 }
 
-/// Returns the data-type segment of a Feather session path like
-/// `backtest/{run_id}/data/{type}/{...}/file.feather`.
+/// Returns the catalog type staged by a Feather session path like
+/// `backtest/{run_id}/{type}/{...}/file.feather`.
 ///
-/// Custom data is encoded as `data/custom/{type_name}/...`; the returned value
-/// is `custom/{type_name}` for those paths.
+/// Custom data is staged under `data/custom/{type_name}/...`. Instrument files return the
+/// aggregate instrument family, because their class folder names no staged type.
 ///
 /// # Errors
 ///
 /// Returns an error if the path does not contain the `{kind}/{instance_id}/...`
 /// prefix or does not have a recognizable type segment.
-pub(crate) fn type_name_from_session_feather_path(
+pub(crate) fn catalog_data_type_from_session_feather_path(
     path: &str,
     kind: &str,
     instance_id: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<CatalogDataType> {
     let components = extract_path_components(path);
     let type_index = session_type_index(&components, kind, instance_id, path)?;
     if has_custom_data_prefix(&components, type_index) {
@@ -272,7 +295,9 @@ pub(crate) fn type_name_from_session_feather_path(
             )
         })?;
 
-        return Ok(format!("custom/{type_name}"));
+        return Ok(CatalogDataType::from(NautilusDataType::Custom {
+            type_name: type_name.clone(),
+        }));
     }
 
     let type_segment = components[type_index].as_str();
@@ -287,7 +312,7 @@ pub(crate) fn type_name_from_session_feather_path(
         type_segment
     };
 
-    Ok(type_name.to_string())
+    catalog_data_type_from_path(type_name)
 }
 
 /// Returns the optional identifier (instrument id, bar type, ...) segment of a
@@ -308,6 +333,11 @@ pub(crate) fn identifier_from_session_feather_path(
         }
 
         return Some(components[identifier_start].clone());
+    }
+
+    // Instrument files sit in a class folder, which names no identifier
+    if components[type_index] == "instruments" {
+        return None;
     }
 
     let identifier = components.get(type_index + 1)?;
@@ -523,27 +553,29 @@ mod tests {
         // layout, not under writer staging paths).
         let path = "backtest/run-1/quotes/EURUSD.SIM/0001.feather";
         assert_eq!(
-            type_name_from_session_feather_path(path, "backtest", "run-1").unwrap(),
-            "quotes",
+            catalog_data_type_from_session_feather_path(path, "backtest", "run-1").unwrap(),
+            CatalogDataType::from(NautilusDataType::QuoteTick),
         );
         assert_eq!(
             identifier_from_session_feather_path(path, "backtest", "run-1").as_deref(),
             Some("EURUSD.SIM"),
         );
         assert_eq!(
-            type_name_from_session_feather_path(
+            catalog_data_type_from_session_feather_path(
                 "backtest/run-1/quotes_1000-1.feather",
                 "backtest",
                 "run-1",
             )
             .unwrap(),
-            "quotes",
+            CatalogDataType::from(NautilusDataType::QuoteTick),
         );
 
         let custom = "backtest/run-1/data/custom/MyType/inst/0001.feather";
         assert_eq!(
-            type_name_from_session_feather_path(custom, "backtest", "run-1").unwrap(),
-            "custom/MyType",
+            catalog_data_type_from_session_feather_path(custom, "backtest", "run-1").unwrap(),
+            CatalogDataType::from(NautilusDataType::Custom {
+                type_name: "MyType".to_string(),
+            }),
         );
         assert_eq!(
             identifier_from_session_feather_path(custom, "backtest", "run-1").as_deref(),
@@ -568,14 +600,19 @@ mod tests {
         Some("custom")
     )]
     #[case::type_without_identifier("backtest/run-1/quotes/0001.feather", "quotes", None)]
+    #[case::instrument_class_folder(
+        "backtest/run-1/instruments/currency_pair/instruments_1.feather",
+        "instruments",
+        None
+    )]
     fn session_feather_paths_recover_type_and_identifier_from_layouts(
         #[case] path: &str,
         #[case] expected_type: &str,
         #[case] expected_identifier: Option<&str>,
     ) {
         assert_eq!(
-            type_name_from_session_feather_path(path, "backtest", "run-1").unwrap(),
-            expected_type,
+            catalog_data_type_from_session_feather_path(path, "backtest", "run-1").unwrap(),
+            catalog_data_type_from_path(expected_type).unwrap(),
         );
         assert_eq!(
             identifier_from_session_feather_path(path, "backtest", "run-1").as_deref(),
@@ -600,7 +637,8 @@ mod tests {
         #[case] path: &str,
         #[case] expected: &str,
     ) {
-        let error = type_name_from_session_feather_path(path, "backtest", "run-1").unwrap_err();
+        let error =
+            catalog_data_type_from_session_feather_path(path, "backtest", "run-1").unwrap_err();
 
         assert_eq!(error.to_string(), expected);
         assert_eq!(
@@ -613,8 +651,8 @@ mod tests {
     fn session_feather_paths_recover_type_and_identifier_with_backslashes() {
         let path = r"backtest\run-1\quotes\EURUSD.SIM\0001.feather";
         assert_eq!(
-            type_name_from_session_feather_path(path, "backtest", "run-1").unwrap(),
-            "quotes",
+            catalog_data_type_from_session_feather_path(path, "backtest", "run-1").unwrap(),
+            CatalogDataType::from(NautilusDataType::QuoteTick),
         );
         assert_eq!(
             identifier_from_session_feather_path(path, "backtest", "run-1").as_deref(),

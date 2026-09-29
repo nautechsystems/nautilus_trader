@@ -61,6 +61,13 @@ def _read_arrow_bytes(data: bytes) -> pa.Table:
     return pa.ipc.open_stream(pa.py_buffer(data)).read_all()
 
 
+def _legacy_table(staged: pa.Table) -> pa.Table:
+    # Legacy files carry the schema metadata a staged file keeps per row
+    [metadata_json] = set(staged.column("nautilus_metadata_json").to_pylist())
+    table = staged.drop_columns(["identifier", "nautilus_metadata_id", "nautilus_metadata_json"])
+    return table.replace_schema_metadata(json.loads(metadata_json)["schema_metadata"])
+
+
 def _record_batch_bytes(batch: pa.RecordBatch) -> bytes:
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, batch.schema) as writer:
@@ -145,7 +152,7 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
         [feather_path] = staging.rglob("*.feather")
         directory = source_path / "data" / type_name
         directory.mkdir(parents=True)
-        table = _read_arrow_bytes(feather_path.read_bytes())
+        table = _legacy_table(_read_arrow_bytes(feather_path.read_bytes()))
         pq.write_table(table, directory / "python.parquet")
 
     target = ParquetDataCatalog(str(target_path))

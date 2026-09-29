@@ -17,17 +17,17 @@
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_model::{
-    data::NautilusRecordType,
-    instruments::{InstrumentAny, NautilusInstrumentType},
+    data::{NautilusDataType, NautilusRecordType},
+    instruments::NautilusInstrumentType,
 };
 
-use crate::{catalog::traits::NautilusRecordTypePrefix, common::paths::CatalogPathPrefix};
+use crate::catalog::types::CatalogDataType;
 
 /// Typed record-family filter shared by streaming writer backends.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WriterRecordFilter {
-    entries: AHashMap<String, Option<AHashSet<String>>>,
-    instrument_types: AHashSet<String>,
+    entries: AHashMap<CatalogDataType, Option<AHashSet<String>>>,
+    instrument_types: AHashSet<NautilusInstrumentType>,
 }
 
 impl WriterRecordFilter {
@@ -42,27 +42,21 @@ impl WriterRecordFilter {
     pub fn from_record_types(record_types: impl IntoIterator<Item = NautilusRecordType>) -> Self {
         let mut filter = Self::new();
         for record_type in record_types {
-            filter.insert(&record_type, None);
+            filter.insert(record_type, None);
         }
 
         filter
     }
 
-    /// Adds one record family with optional identifier restriction.
-    pub fn insert(&mut self, record_type: &NautilusRecordType, identifiers: Option<Vec<String>>) {
-        let prefix = record_type.path_prefix().into_owned();
-        self.insert_prefix(prefix, identifiers);
-    }
-
-    /// Adds one catalog path prefix with optional identifier restriction.
-    pub fn insert_prefix(&mut self, prefix: impl Into<String>, identifiers: Option<Vec<String>>) {
+    /// Adds one data or record family with optional identifier restriction.
+    pub fn insert(&mut self, family: impl Into<CatalogDataType>, identifiers: Option<Vec<String>>) {
         let identifiers = identifiers.map(|values| values.into_iter().collect());
-        self.entries.insert(prefix.into(), identifiers);
+        self.entries.insert(family.into(), identifiers);
     }
 
     /// Adds one concrete instrument family.
-    pub fn insert_instrument_type(&mut self, instrument_type: &NautilusInstrumentType) {
-        self.instrument_types.insert(instrument_type.to_string());
+    pub fn insert_instrument_type(&mut self, instrument_type: NautilusInstrumentType) {
+        self.instrument_types.insert(instrument_type);
     }
 
     /// Returns whether this filter carries no restrictions.
@@ -71,33 +65,36 @@ impl WriterRecordFilter {
         self.entries.is_empty() && self.instrument_types.is_empty()
     }
 
-    /// Returns whether this filter mentions a record prefix.
+    /// Returns whether this filter allows records of `family`.
     #[must_use]
-    pub fn contains_prefix(&self, record_prefix: &str) -> bool {
+    pub fn contains(&self, family: &CatalogDataType) -> bool {
         self.is_empty()
-            || self.entries.contains_key(record_prefix)
-            || (!self.instrument_types.is_empty() && record_prefix == InstrumentAny::path_prefix())
+            || self.entries.contains_key(family)
+            || (!self.instrument_types.is_empty() && is_instrument_family(family))
     }
 
-    /// Returns whether record prefix and optional identifier pass this filter.
+    /// Returns whether a record of `data_type` and optional identifier passes this filter.
+    ///
+    /// An instrument record passes its class as [`CatalogDataType::Instrument`].
     #[must_use]
-    pub fn allows(
-        &self,
-        record_prefix: &str,
-        identifier: Option<&str>,
-        instrument_type: Option<&str>,
-    ) -> bool {
+    pub fn allows(&self, data_type: &CatalogDataType, identifier: Option<&str>) -> bool {
         if self.is_empty() {
             return true;
         }
 
-        let Some(identifiers) = self.entries.get(record_prefix) else {
-            return record_prefix == InstrumentAny::path_prefix()
-                && !self.instrument_types.is_empty()
+        let instrument_type = match data_type {
+            CatalogDataType::Instrument(instrument_type) => Some(instrument_type),
+            _ => None,
+        };
+
+        let family = catalog_family(data_type);
+
+        let Some(identifiers) = self.entries.get(&family) else {
+            return is_instrument_family(&family)
                 && instrument_type.is_some_and(|value| self.instrument_types.contains(value));
         };
 
-        if record_prefix == InstrumentAny::path_prefix()
+        if is_instrument_family(&family)
             && !self.instrument_types.is_empty()
             && !instrument_type.is_some_and(|value| self.instrument_types.contains(value))
         {
@@ -111,4 +108,17 @@ impl WriterRecordFilter {
             }
         }
     }
+}
+
+/// Returns the family a writer stages `data_type` under; every instrument class is one family.
+#[must_use]
+pub(crate) fn catalog_family(data_type: &CatalogDataType) -> CatalogDataType {
+    match data_type {
+        CatalogDataType::Instrument(_) => CatalogDataType::Data(NautilusDataType::Instrument),
+        other => other.clone(),
+    }
+}
+
+fn is_instrument_family(family: &CatalogDataType) -> bool {
+    *family == CatalogDataType::Data(NautilusDataType::Instrument)
 }

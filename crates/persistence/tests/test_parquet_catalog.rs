@@ -5125,7 +5125,7 @@ fn test_convert_stream_to_data_rejects_instrument_class() {
 
     assert_eq!(
         error.to_string(),
-        "Stream conversion stages instruments under the aggregate family, not Equity; \
+        "Streams stage instruments under the aggregate family, not Equity; \
          pass the Instrument data type",
         "Should name the aggregate family for class selectors",
     );
@@ -5148,7 +5148,7 @@ fn test_convert_stream_to_data_rejects_unsupported_family() {
 
     assert_eq!(
         error.to_string(),
-        "Stream conversion does not support Defi",
+        "Streams do not support Defi",
         "Should reject families streams cannot stage",
     );
 }

@@ -16,21 +16,20 @@
 //! Streaming writer factory registry and connections.
 use std::{
     fmt::{Debug, Display},
+    fs, io,
     sync::Arc,
 };
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use nautilus_common::live::block_on_nautilus_with;
 use nautilus_core::Params;
-use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 
 use super::{
     feather::{RotationConfig, WriterClock},
     filter::WriterRecordFilter,
     traits::StreamingDataSink,
 };
-use crate::common::{backend_name::backend_type, storage::create_storage_backend_from_path};
+use crate::common::{backend_name::backend_type, paths::local_writer_directory};
 
 /// Built-in Feather streaming writer registry key.
 pub const FEATHER_WRITER_FACTORY_NAME: &str = "Feather";
@@ -106,20 +105,31 @@ pub fn create_writer(
     )
 }
 
-/// Deletes existing objects below writer connection URI.
+/// Deletes existing files below the writer directory.
 ///
 /// # Errors
 ///
-/// Returns an error if storage cannot be opened or listing/deleting objects fails.
+/// Returns an error if the writer directory is not local or deleting it fails.
 pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Result<()> {
-    let storage = create_storage_backend_from_path(&config.uri, config.storage_options.clone())?;
-    block_on_nautilus_with(|| async {
-        for path in storage.list_files("", None).await? {
-            storage.object_store.delete(&ObjectPath::from(path)).await?;
-        }
+    let directory = local_writer_directory(&config.uri)?;
 
-        Ok::<(), anyhow::Error>(())
-    })
+    // Keep the directory itself, which can be a mount point or a symlink to the real output
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+        }
+    }
+
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
@@ -141,7 +151,6 @@ mod tests {
     use crate::{
         backend::{default_writer_factories, parquet::catalog::ParquetDataCatalog},
         catalog::types::CatalogDataType,
-        common::paths::CatalogPathPrefix,
     };
 
     fn quote(ts_init: u64) -> QuoteTick {
@@ -160,79 +169,85 @@ mod tests {
     fn replace_existing_writer_data_removes_local_files() {
         let directory = TempDir::new().unwrap();
         let stale_file = directory.path().join("stale.feather");
+        let stale_type_directory = directory.path().join("quotes");
         std::fs::write(&stale_file, b"stale").unwrap();
+        std::fs::create_dir(&stale_type_directory).unwrap();
+        std::fs::write(stale_type_directory.join("quotes_0.feather"), b"stale").unwrap();
         let config =
             WriterConnectConfig::new(format!("file://{}", directory.path().display()), None);
 
         replace_existing_writer_data(&config).unwrap();
 
-        assert!(!stale_file.exists());
+        assert!(directory.path().is_dir());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 
     #[rstest]
     fn writer_record_filter_allows_empty_and_record_family_filters() {
+        let quotes = CatalogDataType::from(NautilusDataType::QuoteTick);
+        let trades = CatalogDataType::from(NautilusDataType::TradeTick);
         let empty = WriterRecordFilter::new();
-        assert!(empty.contains_prefix("quotes"));
-        assert!(empty.allows("quotes", None, None));
-        assert!(empty.allows("trades", Some("AUD/USD.SIM"), None));
+        assert!(empty.contains(&quotes));
+        assert!(empty.allows(&quotes, None));
+        assert!(empty.allows(&trades, Some("AUD/USD.SIM")));
 
         let mut filter = WriterRecordFilter::new();
-        filter.insert_prefix("quotes", None);
-        assert!(filter.contains_prefix("quotes"));
-        assert!(!filter.contains_prefix("trades"));
-        assert!(filter.allows("quotes", None, None));
-        assert!(filter.allows("quotes", Some("AUD/USD.SIM"), None));
-        assert!(!filter.allows("trades", Some("AUD/USD.SIM"), None));
+        filter.insert(NautilusDataType::QuoteTick, None);
+        assert!(filter.contains(&quotes));
+        assert!(!filter.contains(&trades));
+        assert!(filter.allows(&quotes, None));
+        assert!(filter.allows(&quotes, Some("AUD/USD.SIM")));
+        assert!(!filter.allows(&trades, Some("AUD/USD.SIM")));
     }
 
     #[rstest]
     fn writer_record_filter_restricts_by_instrument_type() {
         let mut filter = WriterRecordFilter::new();
-        filter.insert_instrument_type(&NautilusInstrumentType::FuturesContract);
+        filter.insert_instrument_type(NautilusInstrumentType::FuturesContract);
 
-        assert!(filter.contains_prefix(InstrumentAny::path_prefix()));
+        assert!(filter.contains(&NautilusDataType::Instrument.into()));
         assert!(filter.allows(
-            InstrumentAny::path_prefix(),
+            &CatalogDataType::Instrument(NautilusInstrumentType::FuturesContract),
             Some("ESM4.GLBX"),
-            Some("FuturesContract")
         ));
         assert!(!filter.allows(
-            InstrumentAny::path_prefix(),
+            &CatalogDataType::Instrument(NautilusInstrumentType::Equity),
             Some("AAPL.XNAS"),
-            Some("Equity")
         ));
-        assert!(!filter.allows("quotes", Some("ESM4.GLBX"), None));
+        assert!(!filter.allows(&NautilusDataType::QuoteTick.into(), Some("ESM4.GLBX")));
     }
 
     #[rstest]
     fn writer_record_filter_allows_data_and_instrument_type_union() {
         let mut filter = WriterRecordFilter::new();
-        filter.insert_prefix("bars", None);
-        filter.insert_instrument_type(&NautilusInstrumentType::FuturesContract);
+        filter.insert(NautilusDataType::Bar, None);
+        filter.insert_instrument_type(NautilusInstrumentType::FuturesContract);
 
-        assert!(filter.allows("bars", Some("ESM4.GLBX"), None));
+        assert!(filter.allows(&NautilusDataType::Bar.into(), Some("ESM4.GLBX")));
         assert!(filter.allows(
-            InstrumentAny::path_prefix(),
+            &CatalogDataType::Instrument(NautilusInstrumentType::FuturesContract),
             Some("ESM4.GLBX"),
-            Some("FuturesContract")
         ));
         assert!(!filter.allows(
-            InstrumentAny::path_prefix(),
+            &CatalogDataType::Instrument(NautilusInstrumentType::Equity),
             Some("AAPL.XNAS"),
-            Some("Equity")
         ));
     }
 
     #[rstest]
     fn writer_record_filter_restricts_by_identifier() {
+        let quotes = CatalogDataType::from(NautilusDataType::QuoteTick);
         let mut filter = WriterRecordFilter::new();
-        filter.insert_prefix("quotes", Some(vec!["AUD/USD.SIM".to_string()]));
+        filter.insert(
+            NautilusDataType::QuoteTick,
+            Some(vec!["AUD/USD.SIM".to_string()]),
+        );
 
-        assert!(filter.contains_prefix("quotes"));
-        assert!(filter.allows("quotes", Some("AUD/USD.SIM"), None));
-        assert!(!filter.allows("quotes", Some("GBP/USD.SIM"), None));
-        assert!(!filter.allows("quotes", None, None));
-        assert!(!filter.allows("trades", Some("AUD/USD.SIM"), None));
+        assert!(filter.contains(&quotes));
+        assert!(filter.allows(&quotes, Some("AUD/USD.SIM")));
+        assert!(!filter.allows(&quotes, Some("GBP/USD.SIM")));
+        assert!(!filter.allows(&quotes, None));
+        assert!(!filter.allows(&NautilusDataType::TradeTick.into(), Some("AUD/USD.SIM")));
     }
 
     #[rstest]
@@ -446,7 +461,7 @@ mod tests {
         let session = temp_dir.path().join("backtest").join("run-001");
         let futures = InstrumentAny::FuturesContract(futures_contract_es(None, None));
         let mut record_filter = WriterRecordFilter::new();
-        record_filter.insert_instrument_type(&NautilusInstrumentType::FuturesContract);
+        record_filter.insert_instrument_type(NautilusInstrumentType::FuturesContract);
         let mut config = WriterConnectConfig::new(session.to_str().unwrap(), None);
         config.record_filter = Some(record_filter);
         let registry = default_writer_factories();
@@ -504,6 +519,41 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("No writer factory registered for 'Missing'"),
+        );
+    }
+
+    #[rstest]
+    #[case::feather(WriterBackendType::Feather)]
+    // Without the cloud feature, the Parquet writer rejects an S3 URI before the local-path check
+    #[cfg_attr(feature = "cloud", case::parquet(WriterBackendType::Parquet))]
+    fn create_writer_rejects_remote_staging_uri(#[case] backend: WriterBackendType) {
+        let config = WriterConnectConfig::new("s3://bucket/backtest/run-001", None);
+
+        let error = create_writer(
+            &backend,
+            &config,
+            WriterClock::Live,
+            &default_writer_factories(),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Streaming writers append to local files, writer path must be local, was \
+             s3://bucket/backtest/run-001",
+        );
+    }
+
+    #[rstest]
+    fn replace_existing_writer_data_rejects_remote_uri() {
+        let config = WriterConnectConfig::new("s3://bucket/backtest/run-001", None);
+
+        let error = replace_existing_writer_data(&config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Streaming writers append to local files, writer path must be local, was \
+             s3://bucket/backtest/run-001",
         );
     }
 

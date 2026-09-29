@@ -55,6 +55,8 @@ Released on TBD (UTC).
 - Removed Rust `InnerHttpClient` `Default` impl, which panicked on transport errors; use `HttpClient::builder()`
 - Removed Rust fixed-width Arrow decoders `decode_price`, `decode_quantity`, and `validate_precision_bytes`
 - Removed the `instrument_id` column from funding rate, instrument status, and option Greeks Arrow files
+- Removed `StreamingFeatherWriter` `fs_protocol` and `fs_storage_options`; pass a local path (#5115), thanks @faysou
+- Replaced Rust `flush_streaming` with `close_streaming_writer` and `reopen_streaming_writer` (#5115), thanks @faysou
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
@@ -77,7 +79,12 @@ Released on TBD (UTC).
 - Changed same-thread `LiveNode` replacement to require dropping the previous node, even after `dispose()`
 - Changed `RiskEngine` to reject orders when accounts, prices, or required funding cannot be established
 - Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
-- Changed kernel-wired Feather stream files to per-instrument directories
+- Changed streaming Feather output to one file per data type and per instrument class (#5115), thanks @faysou
+- Changed streaming to stage Feather files on local paths only, rejecting remote paths (#5115), thanks @faysou
+- Changed Feather flushes to append to the open `.feather.partial` file; closing seals it (#5115), thanks @faysou
+- Changed `StreamingFeatherWriter` rotation time and file info to use catalog type selectors (#5115), thanks @faysou
+- Changed `StreamingFeatherWriter.include_types` to reject unknown names, including `"custom"` (#5115), thanks @faysou
+- Changed Rust `WriterRecordFilter` to take `CatalogDataType` values in place of path prefixes (#5115), thanks @faysou
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
@@ -153,6 +160,9 @@ Released on TBD (UTC).
 - Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
 - Fixed typed catalog decode for kernel Feather streams of quotes, trades, bars, and related types
+- Fixed streaming Feather writers sealing a new file on every flush (#5115), thanks @faysou
+- Fixed Parquet promotion precision for an empty order book depth staged with populated ones (#5115), thanks @faysou
+- Fixed a Feather writer panic when a mixed-instrument batch crossed the rotation size limit (#5115), thanks @faysou
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions
@@ -316,6 +326,7 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust exchange rate calculations
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
+- Optimized staged Feather files to one dictionary-encoded record batch per flush (#5115), thanks @faysou
 - Optimized HTTP client construction by reusing loaded platform TLS roots across clients
 - Optimized position replay duplicate-fill checks to use the trade ID set (#5096), thanks @mirooon
 - Optimized per-order overhead in account balance updates, order matching, and event publishing

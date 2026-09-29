@@ -879,17 +879,16 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
         ),
     ],
 )
-def test_streaming_feather_writer_uses_per_instrument_paths(
+def test_streaming_feather_writer_uses_one_file_per_type(
     tmp_path: Path,
     data_name: object,
     data_factory: object,
 ) -> None:
     """
-    Test streaming feather writer uses per instrument paths.
+    Test streaming feather writer stages every instrument of a type in one file.
     """
     path = tmp_path / f"streaming_{data_name}"
     path.mkdir()
-    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
     writer = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
@@ -897,12 +896,13 @@ def test_streaming_feather_writer_uses_per_instrument_paths(
         include_types=[data_name],
     )
 
-    writer.write(data_factory(instrument_id))
+    writer.write(data_factory(InstrumentId.from_str("ETHUSDT.BINANCE")))
+    writer.write(data_factory(InstrumentId.from_str("BTCUSDT.BINANCE")))
     writer.close()
 
-    files = list(path.glob(f"{data_name}/{instrument_id}/*.feather"))
-    assert len(files) == 1
-    assert files[0].stat().st_size > 0
+    assert [file.relative_to(path).as_posix() for file in path.rglob("*.feather")] == [
+        f"{data_name}/{data_name}_0.feather",
+    ]
 
 
 def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) -> None:
@@ -920,7 +920,7 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
     )
     writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
     writer.close()
-    assert len(list(path.glob(f"quotes/{instrument_id}/*.feather"))) == 1
+    assert len(list(path.glob("quotes/*.feather"))) == 1
 
     replacement = StreamingFeatherWriter(
         path=str(path),
@@ -931,27 +931,31 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
     )
     replacement.close()
 
-    assert list(path.glob(f"quotes/{instrument_id}/*.feather")) == []
+    assert list(path.glob("quotes/*.feather")) == []
 
 
-def test_streaming_feather_writer_replace_rejects_remote_root() -> None:
+def test_streaming_feather_writer_rejects_unknown_include_type(tmp_path: Path) -> None:
     """
-    Test streaming feather writer replace rejects remote root.
+    Test streaming feather writer rejects an unknown include type.
     """
-    with pytest.raises(
-        OSError,
-        match="replace=True for remote streaming paths requires a non-empty prefix",
-    ):
+    with pytest.raises(TypeError, match="Invalid `NautilusDataType`: 'not_a_type'"):
         StreamingFeatherWriter(
-            path="test-bucket",
+            path=str(tmp_path),
             cache=Cache(),
             clock=Clock.new_test(),
-            fs_protocol="s3",
-            fs_storage_options={
-                "access_key_id": "not-a-key",
-                "secret_access_key": "not-a-secret",
-            },
-            replace=True,
+            include_types=["not_a_type"],
+        )
+
+
+def test_streaming_feather_writer_rejects_remote_path() -> None:
+    """
+    Test streaming feather writer rejects a remote path.
+    """
+    with pytest.raises(OSError, match="writer path must be local, was s3://test-bucket/stream"):
+        StreamingFeatherWriter(
+            path="s3://test-bucket/stream",
+            cache=Cache(),
+            clock=Clock.new_test(),
         )
 
 
@@ -1037,7 +1041,7 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
 
     writer.write(quote)
 
-    next_rotation_rust = writer.get_next_rotation_time("quotes", str(quote.instrument_id))
+    next_rotation_rust = writer.get_next_rotation_time(NautilusDataType.QuoteTick)
     next_rotation_python = _next_rotation_python(now)
     expected_ns = pd.Timestamp(expected).value
 

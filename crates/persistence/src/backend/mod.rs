@@ -22,7 +22,7 @@ use tokio::runtime::Handle;
 
 use crate::{
     catalog::factory as catalog_factory,
-    common::storage,
+    common::paths,
     writer::{factory as writer_factory, feather as feather_writer, traits as writer_traits},
 };
 
@@ -110,18 +110,12 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
         writer_factory::FEATHER_WRITER_FACTORY_NAME.to_string(),
         Arc::new(
             |config: &writer_factory::WriterConnectConfig, clock: feather_writer::WriterClock| {
-                let storage = storage::create_storage_backend_from_path(
-                    &config.uri,
-                    config.storage_options.clone(),
-                )?;
                 Ok(Box::new(
                     feather_writer::FeatherWriter::new(
-                        storage.base_path.clone(),
-                        storage.object_store.clone(),
+                        paths::local_writer_directory(&config.uri)?,
                         clock,
                         config.rotation_config.clone(),
                         None,
-                        Some(feather_writer::FeatherWriter::default_per_instrument_types()),
                         config.flush_interval_ms,
                     )
                     .with_record_filter(config.record_filter.clone()),

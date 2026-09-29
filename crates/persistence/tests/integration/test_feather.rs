@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashSet, fs::File, rc::Rc, sync::Arc};
+use std::{
+    fs::{self, File},
+    sync::{Arc, atomic::AtomicU64},
+};
 
 use datafusion::arrow::ipc::reader::StreamReader;
-use nautilus_common::clock::{Clock, VirtualClock};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -26,26 +28,22 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig, WriterClock};
-use object_store::{ObjectStore, local::LocalFileSystem};
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog,
+    writer::feather::{FeatherWriter, RotationConfig, WriterClock},
+};
 use rstest::rstest;
 use tempfile::TempDir;
 
 #[rstest]
-#[tokio::test]
-async fn test_write_data_enum_quote() {
+fn test_write_data_enum_quote() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
 
     let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
+        temp_dir.path().to_path_buf(),
+        clock,
         RotationConfig::NoRotation,
-        None,
         None,
         None,
     );
@@ -61,24 +59,18 @@ async fn test_write_data_enum_quote() {
     );
 
     writer.write_data(Data::Quote(quote)).unwrap();
-    writer.flush().await.unwrap();
+    writer.close().unwrap();
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_write_data_enum_all_types() {
+fn test_write_data_enum_all_types() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
 
     let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
+        temp_dir.path().to_path_buf(),
+        clock,
         RotationConfig::NoRotation,
-        None,
         None,
         None,
     );
@@ -126,24 +118,18 @@ async fn test_write_data_enum_all_types() {
     );
     writer.write_data(Data::FundingRate(funding_rate)).unwrap();
 
-    writer.flush().await.unwrap();
+    writer.close().unwrap();
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_write_data_orderbook_deltas() {
+fn test_write_data_orderbook_deltas() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
 
     let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
+        temp_dir.path().to_path_buf(),
+        clock,
         RotationConfig::NoRotation,
-        None,
         None,
         None,
     );
@@ -163,29 +149,23 @@ async fn test_write_data_orderbook_deltas() {
     );
 
     let deltas = OrderBookDeltas::new(instrument_id, vec![delta1, delta2]);
-
     // Test writing OrderBookDeltas via write_data
     writer
         .write_data(Data::BookDeltas(Box::new(deltas)))
         .unwrap();
-    writer.flush().await.unwrap();
+    writer.close().unwrap();
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_auto_flush() {
+fn test_auto_flush() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let shared_time = Arc::new(AtomicU64::new(0));
+    let clock = WriterClock::Test(Arc::clone(&shared_time));
 
     let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
+        temp_dir.path().to_path_buf(),
+        clock,
         RotationConfig::NoRotation,
-        None,
         None,
         Some(100), // 100ms flush interval
     );
@@ -200,14 +180,18 @@ async fn test_auto_flush() {
         UnixNanos::from(1000),
     );
 
-    // Write first quote
+    // Write first quote; the interval has not elapsed so no bytes reach disk yet
     writer.write(quote).unwrap();
+    let partial = temp_dir
+        .path()
+        .join("quotes")
+        .join("quotes_0.feather.partial");
+    assert_eq!(fs::metadata(&partial).unwrap().len(), 0);
 
-    // Note: VirtualClock doesn't have set_time_ns, so we can't easily test auto-flush
-    // with time advancement. Instead, we test that check_flush is called during write.
-    // For a proper test, we'd need a mock clock or use LiveClock with time advancement.
+    // Advance the shared time source past the 100ms flush interval
+    shared_time.store(200_000_000, std::sync::atomic::Ordering::Relaxed);
 
-    // Write second quote - check_flush will be called but won't flush if time hasn't advanced
+    // Second write hits the auto-flush boundary and appends both quotes to the same file
     let quote2 = QuoteTick::new(
         InstrumentId::from("AUD/USD.SIM"),
         Price::from("1.1"),
@@ -219,25 +203,23 @@ async fn test_auto_flush() {
     );
     writer.write(quote2).unwrap();
 
-    // Verify that writes succeeded (check_flush was called, even if it didn't flush)
-    // The flush_interval_ms is set, so check_flush runs but won't flush without time advancement
+    let rows = StreamReader::try_new(File::open(&partial).unwrap(), None)
+        .unwrap()
+        .map(|batch| batch.unwrap().num_rows())
+        .sum::<usize>();
+    assert_eq!(rows, 2);
+    assert_eq!(temp_dir.path().read_dir().unwrap().count(), 1);
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_close() {
+fn test_close() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
 
     let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
+        temp_dir.path().to_path_buf(),
+        clock,
         RotationConfig::NoRotation,
-        None,
         None,
         None,
     );
@@ -254,8 +236,8 @@ async fn test_close() {
 
     writer.write(quote).unwrap();
 
-    // Close should flush and clear writers
-    writer.close().await.unwrap();
+    // Close should seal and clear writers
+    writer.close().unwrap();
 }
 
 // Note: Message bus subscription test is skipped due to async/sync boundary complexity.
@@ -266,212 +248,110 @@ async fn test_close() {
 // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3913,
 // where a leading BookAction::Clear delta poisoned file metadata with 0 precision.
 #[rstest]
-#[tokio::test]
-async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
+#[case::clear_first(vec![
+    OrderBookDelta::clear(InstrumentId::from("AUD/USD.SIM"), 0, UnixNanos::from(1000), UnixNanos::from(1000)),
+    book_add(InstrumentId::from("AUD/USD.SIM"), Price::new(1.23, 2), Quantity::new(100.0, 6), 2000),
+])]
+#[case::all_sentinels(vec![
+    OrderBookDelta::clear(InstrumentId::from("AUD/USD.SIM"), 0, UnixNanos::from(1000), UnixNanos::from(1000)),
+    OrderBookDelta::clear(InstrumentId::from("AUD/USD.SIM"), 1, UnixNanos::from(2000), UnixNanos::from(2000)),
+])]
+fn test_write_orderbook_deltas_round_trip_precision(#[case] deltas: Vec<OrderBookDelta>) {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut writer = run_writer(temp_dir.path());
 
-    let mut per_instrument = HashSet::new();
-    per_instrument.insert("order_book_deltas".to_string());
-
-    let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
-        RotationConfig::NoRotation,
-        None,
-        Some(per_instrument),
-        None,
-    );
-
-    let instrument_id = InstrumentId::from("AUD/USD.SIM");
-    let clear = OrderBookDelta::clear(
-        instrument_id,
-        0,
-        UnixNanos::from(1000),
-        UnixNanos::from(1000),
-    );
-
-    let add = OrderBookDelta::new(
-        instrument_id,
-        BookAction::Add,
-        BookOrder {
-            side: OrderSide::Buy.into(),
-            price: Price::new(1.23, 2),
-            size: Quantity::new(100.0, 6),
-            order_id: 1,
-        },
-        0,
-        1,
-        UnixNanos::from(2000),
-        UnixNanos::from(2000),
-    );
-
-    let deltas = OrderBookDeltas::new(instrument_id, vec![clear, add]);
-
+    let book_deltas = OrderBookDeltas::new(InstrumentId::from("AUD/USD.SIM"), deltas.clone());
     writer
-        .write_data(Data::BookDeltas(Box::new(deltas)))
+        .write_data(Data::BookDeltas(Box::new(book_deltas)))
         .unwrap();
-    writer.flush().await.unwrap();
-
-    let feather_path = find_feather_file(temp_dir.path());
-    let file = File::open(&feather_path).unwrap();
-    let reader = StreamReader::try_new(file, None).unwrap();
-    let metadata = reader.schema().metadata().clone();
+    writer.close().unwrap();
 
     assert_eq!(
-        metadata.get("price_precision"),
-        Some(&"2".to_string()),
-        "file metadata should reflect real price precision, not the CLEAR sentinel",
-    );
-    assert_eq!(
-        metadata.get("size_precision"),
-        Some(&"6".to_string()),
-        "file metadata should reflect real size precision, not the CLEAR sentinel",
+        read_run(temp_dir.path()),
+        deltas.into_iter().map(Data::from).collect::<Vec<_>>(),
     );
 }
 
-// Regression test for the all-sentinel fallback: a batch containing only
-// BookAction::Clear rows has no real precision to derive, so file metadata
-// legitimately carries price_precision=0, size_precision=0.
 #[rstest]
-#[tokio::test]
-async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
+fn test_write_batch_keeps_each_instrument_precision_in_one_file() {
     let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
-
-    let mut per_instrument = HashSet::new();
-    per_instrument.insert("order_book_deltas".to_string());
-
-    let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
-        RotationConfig::NoRotation,
-        None,
-        Some(per_instrument),
-        None,
-    );
-
-    let instrument_id = InstrumentId::from("AUD/USD.SIM");
-    let clear1 = OrderBookDelta::clear(
-        instrument_id,
-        0,
-        UnixNanos::from(1000),
-        UnixNanos::from(1000),
-    );
-    let clear2 = OrderBookDelta::clear(
-        instrument_id,
-        1,
-        UnixNanos::from(2000),
-        UnixNanos::from(2000),
-    );
-
-    let deltas = OrderBookDeltas::new(instrument_id, vec![clear1, clear2]);
-
-    writer
-        .write_data(Data::BookDeltas(Box::new(deltas)))
-        .unwrap();
-    writer.flush().await.unwrap();
-
-    let feather_path = find_feather_file(temp_dir.path());
-    let file = File::open(&feather_path).unwrap();
-    let reader = StreamReader::try_new(file, None).unwrap();
-    let metadata = reader.schema().metadata().clone();
-
-    assert_eq!(metadata.get("price_precision"), Some(&"0".to_string()));
-    assert_eq!(metadata.get("size_precision"), Some(&"0".to_string()));
-}
-
-// Regression test for the mixed-instrument routing in write_batch. When a
-// batch contains deltas for multiple instruments, each instrument's rows
-// must land in its own file with its own precision metadata.
-#[rstest]
-#[tokio::test]
-async fn test_write_batch_partitions_by_instrument() {
-    let temp_dir = TempDir::new().unwrap();
-    let base_path = temp_dir.path().to_str().unwrap().to_string();
-    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
-
-    let mut per_instrument = HashSet::new();
-    per_instrument.insert("order_book_deltas".to_string());
-
-    let mut writer = FeatherWriter::new(
-        base_path,
-        store,
-        WriterClock::from_shared_clock(&clock).0,
-        RotationConfig::NoRotation,
-        None,
-        Some(per_instrument),
-        None,
-    );
-
+    let mut writer = run_writer(temp_dir.path());
     let instrument_a = InstrumentId::from("AUD/USD.SIM");
     let instrument_b = InstrumentId::from("BTC/USD.BINANCE");
-
-    let make_add = |instrument_id, price: f64, price_prec, size: f64, size_prec, ts| {
-        OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            BookOrder {
-                side: OrderSide::Buy.into(),
-                price: Price::new(price, price_prec),
-                size: Quantity::new(size, size_prec),
-                order_id: 1,
-            },
-            0,
-            1,
-            UnixNanos::from(ts),
-            UnixNanos::from(ts),
-        )
-    };
-
     let deltas = vec![
-        make_add(instrument_a, 1.23, 2, 100.0, 0, 1000),
-        make_add(instrument_b, 20_000.0, 4, 0.123_456_78, 8, 2000),
-        make_add(instrument_a, 1.24, 2, 50.0, 0, 3000),
-        make_add(instrument_b, 20_100.0, 4, 0.25, 8, 4000),
+        book_add(
+            instrument_a,
+            Price::new(1.23, 2),
+            Quantity::new(100.0, 0),
+            1000,
+        ),
+        book_add(
+            instrument_b,
+            Price::new(20_000.0, 4),
+            Quantity::new(0.123_456_78, 8),
+            2000,
+        ),
+        book_add(
+            instrument_a,
+            Price::new(1.24, 2),
+            Quantity::new(50.0, 0),
+            3000,
+        ),
+        book_add(
+            instrument_b,
+            Price::new(20_100.0, 4),
+            Quantity::new(0.25, 8),
+            4000,
+        ),
     ];
 
-    writer.write_batch(deltas).unwrap();
-    writer.flush().await.unwrap();
+    writer.write_batch(deltas.clone()).unwrap();
+    writer.close().unwrap();
 
     let files = collect_feather_files(temp_dir.path());
     assert_eq!(
         files.len(),
-        2,
-        "expected one file per instrument, found {files:?}"
+        1,
+        "expected one file for the type, found {files:?}"
     );
+    assert_eq!(
+        read_run(temp_dir.path()),
+        deltas.into_iter().map(Data::from).collect::<Vec<_>>(),
+    );
+}
 
-    let mut by_instrument = std::collections::HashMap::new();
+fn book_add(instrument_id: InstrumentId, price: Price, size: Quantity, ts: u64) -> OrderBookDelta {
+    OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder {
+            side: OrderSide::Buy.into(),
+            price,
+            size,
+            order_id: 1,
+        },
+        0,
+        1,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
 
-    for path in files {
-        let reader = StreamReader::try_new(File::open(&path).unwrap(), None).unwrap();
-        let metadata = reader.schema().metadata().clone();
-        let instrument_id = metadata
-            .get("instrument_id")
-            .expect("instrument_id metadata")
-            .clone();
-        by_instrument.insert(instrument_id, metadata);
-    }
+// Writes into the backtest run folder `read_run` reads back
+fn run_writer(root: &std::path::Path) -> FeatherWriter {
+    FeatherWriter::new(
+        root.join("backtest").join("run-001"),
+        WriterClock::Test(Arc::new(AtomicU64::new(0))),
+        RotationConfig::NoRotation,
+        None,
+        None,
+    )
+}
 
-    let metadata_a = by_instrument.get("AUD/USD.SIM").expect("AUD/USD.SIM file");
-    assert_eq!(metadata_a.get("price_precision"), Some(&"2".to_string()));
-    assert_eq!(metadata_a.get("size_precision"), Some(&"0".to_string()));
-
-    let metadata_b = by_instrument
-        .get("BTC/USD.BINANCE")
-        .expect("BTC/USD.BINANCE file");
-    assert_eq!(metadata_b.get("price_precision"), Some(&"4".to_string()));
-    assert_eq!(metadata_b.get("size_precision"), Some(&"8".to_string()));
+fn read_run(root: &std::path::Path) -> Vec<Data> {
+    ParquetDataCatalog::new(root, None, None, None, None)
+        .read_backtest("run-001")
+        .unwrap()
 }
 
 fn collect_feather_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -489,20 +369,4 @@ fn collect_feather_files_into(dir: &std::path::Path, out: &mut Vec<std::path::Pa
             out.push(path);
         }
     }
-}
-
-fn find_feather_file(dir: &std::path::Path) -> std::path::PathBuf {
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            let found = find_feather_file(&path);
-            if !found.as_os_str().is_empty() {
-                return found;
-            }
-        } else if path.extension().and_then(|s| s.to_str()) == Some("feather") {
-            return path;
-        }
-    }
-
-    std::path::PathBuf::new()
 }

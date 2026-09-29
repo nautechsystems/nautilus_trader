@@ -1114,7 +1114,7 @@ impl BacktestEngine {
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
 
-        let streaming_result = self.kernel.flush_streaming();
+        let streaming_result = self.kernel.close_streaming_writer();
 
         self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
@@ -1222,6 +1222,13 @@ impl BacktestEngine {
 
         // Reset all iterator cursors to beginning (data persists)
         self.data_iterator.reset_all_cursors();
+
+        // `end` closed the streaming writer, so the next run needs it open again
+        if let Err(e) = self.kernel.reopen_streaming_writer()
+            && reset_error.is_none()
+        {
+            reset_error = Some(e);
+        }
 
         clear_command_queues();
 

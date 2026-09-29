@@ -532,9 +532,7 @@ class StreamingFeatherWriter:
         path: str,
         cache: common.Cache,
         clock: common.Clock,
-        fs_protocol: str | None = None,
-        fs_storage_options: typing.Mapping[str, str] | None = None,
-        include_types: typing.Sequence[str] | None = None,
+        include_types: typing.Sequence[typing.Any] | None = None,
         record_types: typing.Any | None = None,
         record_filters: typing.Any | None = None,
         rotation_mode: int = 3,
@@ -552,9 +550,15 @@ class StreamingFeatherWriter:
     def close(self) -> None: ...
     @property
     def is_closed(self) -> bool: ...
-    def get_current_file_info(self) -> dict[str, tuple[int, str]]: ...
+    def get_current_file_info(
+        self,
+    ) -> dict[
+        model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
+        tuple[int, str],
+    ]: ...
     def get_next_rotation_time(
-        self, type_str: str, instrument_id: str | None = None
+        self,
+        data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
     ) -> int | None: ...
 
 @typing.final

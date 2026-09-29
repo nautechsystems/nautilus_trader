@@ -21,7 +21,10 @@ use nautilus_common::live::block_on_nautilus_with;
 use nautilus_model::data::{CustomData, Data};
 
 use super::{
-    feather::{FeatherWriteCommand, FeatherWriter, RotationConfig, WriterClock, feather_error},
+    feather::{
+        FEATHER_EXTENSION, FEATHER_PARTIAL_EXTENSION, FeatherWriteCommand, FeatherWriter,
+        RotationConfig, WriterClock, feather_error,
+    },
     filter::WriterRecordFilter,
     promotion::{
         PromotionDriver, PromotionResult, PromotionScope, PromotionSink, PromotionTimer,
@@ -29,7 +32,13 @@ use super::{
     },
     run::FeatherSessionSource,
 };
-use crate::common::{conversion::FeatherConversionSummary, storage::StorageBackend};
+use crate::{
+    catalog::types::CatalogDataType,
+    common::{
+        conversion::FeatherConversionSummary, paths::local_writer_directory,
+        storage::StorageBackend,
+    },
+};
 
 type StagingResult<T> = Result<T, String>;
 
@@ -40,9 +49,9 @@ enum StagingMessage {
     WriteCustom(CustomData, RecordBatch, SyncSender<StagingReply>),
     WriteAny(FeatherWriteCommand, SyncSender<StagingReply>),
     Flush(SyncSender<StagingReply>),
+    Seal(SyncSender<StagingReply>),
     Close(SyncSender<StagingReply>),
     IsClosed(SyncSender<StagingReply>),
-    BufferedTotals(SyncSender<StagingReply>),
     Stop,
 }
 
@@ -50,7 +59,6 @@ enum StagingReply {
     Operation(StagingResult<()>),
     ShouldWriteCustom(bool),
     Closed(bool),
-    BufferedTotals(u64, u64),
 }
 
 struct StagingClient {
@@ -118,6 +126,10 @@ impl StagingClient {
         self.request(StagingMessage::Flush)
     }
 
+    fn seal(&self) -> anyhow::Result<()> {
+        self.request(StagingMessage::Seal)
+    }
+
     fn close(&self) -> anyhow::Result<()> {
         self.request(StagingMessage::Close)
     }
@@ -125,13 +137,6 @@ impl StagingClient {
     fn is_closed(&self) -> anyhow::Result<bool> {
         match self.query(StagingMessage::IsClosed)? {
             StagingReply::Closed(closed) => Ok(closed),
-            _ => anyhow::bail!("Staging worker returned an unexpected reply"),
-        }
-    }
-
-    fn buffered_totals(&self) -> anyhow::Result<(u64, u64)> {
-        match self.query(StagingMessage::BufferedTotals)? {
-            StagingReply::BufferedTotals(bytes, rows) => Ok((bytes, rows)),
             _ => anyhow::bail!("Staging worker returned an unexpected reply"),
         }
     }
@@ -215,27 +220,19 @@ fn run_staging_worker(mut writer: FeatherWriter, rx: &Receiver<StagingMessage>) 
                 let _ = reply.send(StagingReply::Operation(result));
             }
             StagingMessage::Flush(reply) => {
-                let result = block_on_nautilus_with(|| async {
-                    writer.flush().await.map_err(feather_error)
-                })
-                .map_err(|e| e.to_string());
-
+                let result = writer.flush().map_err(|e| e.to_string());
+                let _ = reply.send(StagingReply::Operation(result));
+            }
+            StagingMessage::Seal(reply) => {
+                let result = writer.seal().map_err(|e| e.to_string());
                 let _ = reply.send(StagingReply::Operation(result));
             }
             StagingMessage::Close(reply) => {
-                let result = block_on_nautilus_with(|| async {
-                    writer.close().await.map_err(feather_error)
-                })
-                .map_err(|e| e.to_string());
-
+                let result = writer.close().map_err(|e| e.to_string());
                 let _ = reply.send(StagingReply::Operation(result));
             }
             StagingMessage::IsClosed(reply) => {
                 let _ = reply.send(StagingReply::Closed(writer.is_closed()));
-            }
-            StagingMessage::BufferedTotals(reply) => {
-                let (bytes, rows) = writer.buffered_totals();
-                let _ = reply.send(StagingReply::BufferedTotals(bytes, rows));
             }
             StagingMessage::Stop => break,
         }
@@ -349,21 +346,17 @@ where
         storage: StorageBackend,
         clock: WriterClock,
         rotation_config: RotationConfig,
-        included_types: Option<HashSet<String>>,
-        per_instrument_types: Option<HashSet<String>>,
+        included_types: Option<HashSet<CatalogDataType>>,
         flush_interval_ms: Option<u64>,
         record_filter: Option<WriterRecordFilter>,
     ) -> anyhow::Result<Self> {
         let writer = FeatherWriter::new(
-            storage.base_path.clone(),
-            storage.object_store.clone(),
+            local_writer_directory(&storage.original_uri)?,
             clock.clone(),
             rotation_config,
             included_types,
-            per_instrument_types,
             flush_interval_ms,
         )
-        .with_catalog_identifier_column()
         .with_record_filter(record_filter);
         let last_promotion_ns = clock.timestamp_ns();
 
@@ -409,7 +402,7 @@ where
             interval_ms,
             move || {
                 let result = (|| {
-                    staging.flush()?;
+                    staging.seal()?;
                     let files = list_session_feather_files(
                         &source.storage,
                         &source.kind,
@@ -460,7 +453,7 @@ where
         use_ts_event_for_ts_init: bool,
         delete_feather_after_commit: bool,
     ) -> anyhow::Result<Option<PromotionWork<B>>> {
-        self.flush()?;
+        self.staging.client.seal()?;
         let files = list_session_feather_files(&source.storage, &source.kind, &source.instance_id)?;
         let files = self.promotion_driver.schedule_new(files)?;
         if files.is_empty() {
@@ -515,17 +508,28 @@ where
     pub(crate) fn warn_if_orphan_feather_present(&self, writer_name: &str) {
         let storage = self.storage.clone();
 
-        let result = block_on_nautilus_with(move || async move {
-            storage.list_files("", Some(".feather")).await
-        });
+        let result =
+            block_on_nautilus_with(move || async move { storage.list_files("", None).await });
 
         match result {
-            Ok(files) if !files.is_empty() => log::warn!(
-                "{writer_name} found {} orphan Feather file(s) under run session '{}'",
-                files.len(),
-                self.storage.original_uri
-            ),
-            Ok(_) => {}
+            Ok(files) => {
+                let partial = files
+                    .iter()
+                    .filter(|file| file.ends_with(&format!(".{FEATHER_PARTIAL_EXTENSION}")))
+                    .count();
+                let sealed = files
+                    .iter()
+                    .filter(|file| file.ends_with(&format!(".{FEATHER_EXTENSION}")))
+                    .count();
+
+                if sealed + partial > 0 {
+                    log::warn!(
+                        "{writer_name} found {sealed} orphan Feather file(s) and {partial} \
+                         unsealed Feather file(s) under run session '{}'",
+                        self.storage.original_uri
+                    );
+                }
+            }
             Err(e) => log::warn!(
                 "Skipping orphan-feather scan for run '{}' (recursive list failed: {e})",
                 self.storage.original_uri
@@ -582,24 +586,6 @@ where
 
     pub(crate) fn is_closed(&self) -> anyhow::Result<bool> {
         self.staging.client.is_closed()
-    }
-
-    pub(crate) fn flush_on_drop(&self, writer_name: &str) {
-        let Ok((buffered_bytes, buffered_rows)) = self.staging.client.buffered_totals() else {
-            log::warn!("{writer_name} could not inspect buffered staging data during drop");
-            return;
-        };
-
-        if buffered_bytes == 0 && buffered_rows == 0 {
-            return;
-        }
-
-        if let Err(e) = self.staging.client.flush() {
-            log::warn!(
-                "{writer_name} drop failed to flush staging; discarded {buffered_bytes} \
-                 buffered byte(s) across {buffered_rows} row(s): {e}"
-            );
-        }
     }
 
     pub(crate) fn stop_promotion_timer(&mut self) {

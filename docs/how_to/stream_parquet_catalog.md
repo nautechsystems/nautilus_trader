@@ -25,9 +25,10 @@ streaming = StreamingConfig(
 engine_config = BacktestEngineConfig(streaming=streaming)
 ```
 
-Pass `engine_config` as the `engine` argument to `BacktestRunConfig`. The runtime owns the sink and closes it at
-shutdown. Run data stages under `<catalog_path>/<backtest|sandbox|live>/<instance_id>`; the catalog
-root contains the promoted data used by queries.
+Pass `engine_config` as the `engine` argument to `BacktestRunConfig`. The runtime owns the sink: a backtest closes it
+when the run ends, and a live node flushes it on stop and closes it on dispose, so events processed during shutdown are
+still staged. Run data stages under `<catalog_path>/<backtest|sandbox|live>/<instance_id>`, which must be
+local; the catalog root contains the promoted data used by queries.
 
 | Setting                       | Default | Meaning                                                |
 | ----------------------------- | ------- | ------------------------------------------------------ |
@@ -40,14 +41,14 @@ These are Parquet writer defaults. They are independent of defaults for other wr
 
 ## Understand query visibility
 
-The shared writer core owns filtering, Feather buffering, rotation, and promotion scheduling.
+The shared writer core owns filtering, Feather file appends, rotation, and promotion scheduling.
 The Parquet backend converts sealed files and records replay identities for completed promotions.
 
 ```mermaid
 flowchart LR
-    Event[Matching event] --> Buffer[Feather buffer]
-    Buffer --> Flush[Flush or rotate]
-    Flush --> Stage[Staged Feather files]
+    Event[Matching event] --> Open[Open .feather.partial file]
+    Open --> Seal[Seal on rotation, promotion, or close]
+    Seal --> Stage[Sealed .feather files]
     Stage --> Trigger{Promotion triggered?}
     Trigger -->|No| Retain[Retain staged files]
     Trigger -->|Yes| Commit[Write catalog files]
@@ -55,9 +56,15 @@ flowchart LR
     Commit --> Cleanup[Optional source cleanup]
 ```
 
-A staging flush makes buffered records available for promotion; it does not promise immediate catalog
-visibility. With no commit interval, records remain staged until close-time promotion or manual
-conversion. Queries see the records after promotion succeeds.
+Each data or record type stages one open file under the run folder, and instruments stage one file
+per instrument class. Rows of every identifier share their type's file and carry an `identifier`
+column, which promotion uses to write each identifier's catalog directory.
+
+A flush appends the records buffered since the previous flush to the open file as one Arrow record
+batch, without starting a new file. Promotion first seals the open files, so each promotion takes the
+records written so far; it does not promise immediate catalog visibility. With no commit interval,
+records remain staged until close-time promotion or manual conversion. Queries see the records after
+promotion succeeds.
 
 A positive interval starts a wall-clock promotion timer for a live clock, including quiet periods.
 Backtests use their supplied test clock and check the interval during write or flush operations;
@@ -82,8 +89,9 @@ requires all files from a promotion to become visible together.
 
 ### Overlapping schema-group intervals
 
-Promotion groups restored Feather batches by schema, including precision metadata. Groups are split
-by schema rather than by time, so two groups for one identifier can share a `ts_init` interval. One
+Promotion groups restored Feather batches by identifier and by schema, including precision metadata.
+Groups are split by schema rather than by time, so two groups for one identifier can share a
+`ts_init` interval. One
 Feather file produces two such groups when its records differ in schema, for example an empty order
 book depth staged alongside a populated one for the same instrument. The catalog filename also
 carries a hash of the promotion identity.

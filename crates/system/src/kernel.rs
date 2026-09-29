@@ -73,14 +73,12 @@ use nautilus_model::identifiers::{ClientId, TraderId};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::{
     backend::default_writer_factories,
-    catalog::traits::NautilusDataTypePrefix,
     config::StreamingConfig,
     writer::{
         factory::{WriterConnectConfig, create_writer, replace_existing_writer_data},
         feather::{RotationConfig as WriterRotationConfig, WriterClock},
         filter::WriterRecordFilter,
         subscription::StreamingSinkSubscription,
-        traits::StreamingDataSink,
     },
 };
 use nautilus_portfolio::portfolio::Portfolio;
@@ -136,9 +134,7 @@ pub struct NautilusKernel {
     event_store_replay: bool,
     state_save_armed: bool,
     #[cfg(feature = "streaming")]
-    streaming_writer: Option<Rc<RefCell<StreamingDataSink>>>,
-    #[cfg(feature = "streaming")]
-    streaming_subscriptions: Option<StreamingSinkSubscription>,
+    streaming_writer: Option<(String, StreamingSinkSubscription)>,
 }
 
 impl Debug for NautilusKernel {
@@ -201,6 +197,51 @@ impl NautilusKernelDependencies {
 
 impl NautilusKernel {
     #[cfg(feature = "streaming")]
+    fn setup_streaming_writer(
+        environment: Environment,
+        instance_id: UUID4,
+        config: &StreamingConfig,
+        clock: &Rc<RefCell<dyn Clock>>,
+    ) -> anyhow::Result<(String, StreamingSinkSubscription)> {
+        let environment = environment.to_string().to_ascii_lowercase();
+
+        let base_uri = match config.fs_protocol.as_str() {
+            "file" => config.catalog_path.trim_end_matches('/').to_string(),
+            _ if config.catalog_path.contains("://") => {
+                config.catalog_path.trim_end_matches('/').to_string()
+            }
+            protocol => format!("{protocol}://{}", config.catalog_path.trim_end_matches('/')),
+        };
+
+        let uri = format!("{base_uri}/{environment}/{instance_id}");
+        let mut connect = WriterConnectConfig::new(&uri, None);
+        connect.rotation_config = writer_rotation_config(&config.rotation_config);
+        connect.flush_interval_ms = Some(config.flush_interval_ms);
+        connect.params.clone_from(&config.params);
+        connect.record_filter = Self::writer_record_filter(config);
+
+        if config.replace_existing {
+            replace_existing_writer_data(&connect)?;
+        }
+
+        let (writer_clock, bridge) = WriterClock::from_shared_clock(clock);
+        let sink = create_writer(
+            &config.writer_backend,
+            &connect,
+            writer_clock,
+            &default_writer_factories(),
+        )?;
+        let subscription = StreamingSinkSubscription::subscribe_named(
+            Rc::new(RefCell::new(sink)),
+            bridge.map(|atomic| (Rc::clone(clock), atomic)),
+            uri.clone(),
+        );
+
+        log::info!("Writing data and events to {uri}");
+        Ok((uri, subscription))
+    }
+
+    #[cfg(feature = "streaming")]
     fn writer_record_filter(config: &StreamingConfig) -> Option<WriterRecordFilter> {
         let mut filter = config
             .record_types
@@ -210,19 +251,19 @@ impl NautilusKernel {
 
         if let Some(data_types) = &config.data_types {
             for data_type in data_types {
-                filter.insert_prefix(data_type.path_prefix().into_owned(), None);
+                filter.insert(data_type.clone(), None);
             }
         }
 
         if let Some(instrument_types) = &config.instrument_types {
             for instrument_type in instrument_types {
-                filter.insert_instrument_type(instrument_type);
+                filter.insert_instrument_type(*instrument_type);
             }
         }
 
         if let Some(entries) = &config.record_filters {
             for entry in entries {
-                filter.insert(&entry.record_type, entry.identifiers.clone());
+                filter.insert(entry.record_type, entry.identifiers.clone());
             }
         }
 
@@ -419,50 +460,12 @@ impl NautilusKernel {
         let ts_created = clock.borrow().timestamp_ns();
 
         #[cfg(feature = "streaming")]
-        let (streaming_writer, streaming_subscriptions) = match config.streaming() {
-            Some(streaming_config) => {
-                let environment = config.environment().to_string().to_ascii_lowercase();
-                let base_uri = match streaming_config.fs_protocol.as_str() {
-                    "file" => streaming_config
-                        .catalog_path
-                        .trim_end_matches('/')
-                        .to_string(),
-                    _ if streaming_config.catalog_path.contains("://") => streaming_config
-                        .catalog_path
-                        .trim_end_matches('/')
-                        .to_string(),
-                    protocol => format!(
-                        "{protocol}://{}",
-                        streaming_config.catalog_path.trim_end_matches('/'),
-                    ),
-                };
-                let uri = format!("{base_uri}/{environment}/{instance_id}");
-                let rotation_config = writer_rotation_config(&streaming_config.rotation_config);
-                let mut connect = WriterConnectConfig::new(&uri, None);
-                connect.rotation_config = rotation_config;
-                connect.flush_interval_ms = Some(streaming_config.flush_interval_ms);
-                connect.params.clone_from(&streaming_config.params);
-                connect.record_filter = Self::writer_record_filter(&streaming_config);
-                if streaming_config.replace_existing {
-                    replace_existing_writer_data(&connect)?;
-                }
-                let (writer_clock, bridge) = WriterClock::from_shared_clock(&clock);
-                let writer = Rc::new(RefCell::new(create_writer(
-                    &streaming_config.writer_backend,
-                    &connect,
-                    writer_clock,
-                    &default_writer_factories(),
-                )?));
-                let handler = StreamingSinkSubscription::subscribe_named(
-                    writer.clone(),
-                    bridge.map(|atomic| (Rc::clone(&clock), atomic)),
-                    uri.clone(),
-                );
-                log::info!("Writing data and events to {uri}");
-                (Some(writer), Some(handler))
-            }
-            None => (None, None),
-        };
+        let streaming_writer = config
+            .streaming()
+            .map(|streaming| {
+                Self::setup_streaming_writer(config.environment(), instance_id, &streaming, &clock)
+            })
+            .transpose()?;
 
         Ok(Self {
             name,
@@ -487,8 +490,6 @@ impl NautilusKernel {
             state_save_armed: false,
             #[cfg(feature = "streaming")]
             streaming_writer,
-            #[cfg(feature = "streaming")]
-            streaming_subscriptions,
         })
     }
 
@@ -940,7 +941,7 @@ impl NautilusKernel {
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
         save_result?;
-        self.flush_streaming()
+        self.flush_streaming_writer()
     }
 
     /// Saves actor and strategy state at most once for the current trader run.
@@ -1051,15 +1052,8 @@ impl NautilusKernel {
             event_store.seal(ts_dispose);
         }
 
-        #[cfg(feature = "streaming")]
-        {
-            if let Some(subscriptions) = self.streaming_subscriptions.take()
-                && let Err(e) = subscriptions.close()
-            {
-                log::warn!("Failed to close streaming writer: {e}");
-            }
-
-            drop(self.streaming_writer.take());
+        if let Err(e) = self.close_streaming_writer() {
+            log::warn!("{e}");
         }
 
         self.data_engine.borrow_mut().dispose();
@@ -1072,19 +1066,77 @@ impl NautilusKernel {
         log::info!("Disposed");
     }
 
-    /// Flushes configured streaming output.
+    /// Reopens the configured streaming writer after [`Self::close_streaming_writer`].
+    ///
+    /// A reset engine runs again under the same instance ID, so the writer reopens in the same
+    /// run folder and keeps the files the previous run wrote there.
     ///
     /// # Errors
     ///
-    /// Returns an error if buffered output cannot be written to the configured object store.
-    pub fn flush_streaming(&mut self) -> anyhow::Result<()> {
+    /// Returns an error if the writer cannot be created.
+    pub fn reopen_streaming_writer(&mut self) -> anyhow::Result<()> {
         #[cfg(feature = "streaming")]
-        if let Some(writer) = &self.streaming_writer {
-            writer
-                .borrow_mut()
-                .flush()
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        if self.streaming_writer.is_none()
+            && let Some(mut config) = self.config.streaming()
+        {
+            config.replace_existing = false;
+            self.streaming_writer = Some(Self::setup_streaming_writer(
+                self.config.environment(),
+                self.instance_id,
+                &config,
+                &self.clock,
+            )?);
         }
+
+        Ok(())
+    }
+
+    // Live shutdown still processes drained events after this, so the writer stays subscribed
+    // until dispose closes it.
+    #[cfg(feature = "streaming")]
+    fn flush_streaming_writer(&self) -> anyhow::Result<()> {
+        match &self.streaming_writer {
+            Some((destination, writer)) => writer.flush().map_err(|e| {
+                anyhow::anyhow!("Failed to flush streaming writer at {destination}: {e}")
+            }),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(not(feature = "streaming"))]
+    #[expect(
+        clippy::unnecessary_wraps,
+        clippy::unused_self,
+        reason = "matches the streaming variant's signature"
+    )]
+    fn flush_streaming_writer(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Closes the configured streaming writer, sealing its open files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a write recorded since the last flush failed, or if sealing or
+    /// promoting the writer's files fails.
+    #[cfg(feature = "streaming")]
+    pub fn close_streaming_writer(&mut self) -> anyhow::Result<()> {
+        match self.streaming_writer.take() {
+            Some((destination, writer)) => writer.close().map_err(|e| {
+                anyhow::anyhow!("Failed to close streaming writer at {destination}: {e}")
+            }),
+            None => Ok(()),
+        }
+    }
+
+    /// Closes the configured streaming writer, sealing its open files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a write recorded since the last flush failed, or if sealing or
+    /// promoting the writer's files fails.
+    #[cfg(not(feature = "streaming"))]
+    pub fn close_streaming_writer(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -1478,7 +1530,7 @@ mod streaming_tests {
         );
 
         msgbus::publish_any(MStr::from("data.custom"), &custom);
-        kernel.flush_streaming().unwrap();
+        kernel.close_streaming_writer().unwrap();
 
         let custom_path = directory
             .path()
