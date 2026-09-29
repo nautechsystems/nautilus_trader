@@ -35,6 +35,7 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
+//! - `arrow`: Enables Apache Arrow data support.
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
@@ -56,6 +57,7 @@
 pub mod common;
 pub mod config;
 pub mod data;
+pub mod data_types;
 pub mod execution;
 pub mod factories;
 pub mod http;

@@ -111,4 +111,8 @@ pub enum BybitWsPublicChannel {
     Kline,
     /// Ticker updates.
     Tickers,
+    /// Public liquidation updates.
+    #[serde(rename = "allLiquidation")]
+    #[strum(serialize = "allLiquidation")]
+    AllLiquidation,
 }

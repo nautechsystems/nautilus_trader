@@ -42,18 +42,22 @@ use super::{
     messages::{
         BybitWsAccountExecution, BybitWsAccountExecutionFast, BybitWsAccountOrder,
         BybitWsAccountPosition, BybitWsAccountWallet, BybitWsAuthResponse, BybitWsFrame,
-        BybitWsKline, BybitWsOrderResponse, BybitWsOrderbookDepthMsg, BybitWsResponse,
-        BybitWsSubscriptionMsg, BybitWsTickerLinear, BybitWsTickerOptionMsg, BybitWsTrade,
+        BybitWsKline, BybitWsLiquidation, BybitWsOrderResponse, BybitWsOrderbookDepthMsg,
+        BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinear, BybitWsTickerOptionMsg,
+        BybitWsTrade,
     },
 };
-use crate::common::{
-    consts::BYBIT_QUOTE_DEPTH,
-    enums::{BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
-    parse::{
-        bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
-        parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
-        parse_price_with_precision, parse_quantity_with_precision,
+use crate::{
+    common::{
+        consts::BYBIT_QUOTE_DEPTH,
+        enums::{BybitOrderSide, BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
+        parse::{
+            bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
+            parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
+            parse_price_with_precision, parse_quantity_with_precision,
+        },
     },
+    data_types::BybitLiquidation,
 };
 
 /// Classifies a parsed JSON value into a typed Bybit WebSocket frame.
@@ -134,6 +138,11 @@ pub fn parse_bybit_ws_frame(value: serde_json::Value) -> BybitWsFrame {
             }
             return serde_json::from_value(value.clone())
                 .map_or_else(|_| BybitWsFrame::Unknown(value), BybitWsFrame::TickerLinear);
+        }
+
+        if topic.starts_with(BybitWsPublicChannel::AllLiquidation.as_ref()) {
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsFrame::Unknown(value), BybitWsFrame::Liquidation);
         }
 
         if topic.starts_with(BybitWsPrivateChannel::Order.as_ref()) {
@@ -227,6 +236,50 @@ pub fn parse_ws_trade_tick(
         ts_init,
     )
     .context("failed to construct TradeTick from Bybit trade message")
+}
+
+/// Parses a WebSocket liquidation entry into a [`BybitLiquidation`].
+///
+/// Bybit reports the side of the liquidated position, so `Buy` maps to
+/// [`PositionSide::Long`] and `Sell` maps to [`PositionSide::Short`].
+///
+/// # Errors
+///
+/// Returns an error if the side is neither `Buy` nor `Sell`, or if the price, size, or
+/// timestamp cannot be parsed.
+pub fn parse_ws_liquidation(
+    liquidation: &BybitWsLiquidation,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<BybitLiquidation> {
+    let position_side = match liquidation.side {
+        BybitOrderSide::Buy => PositionSide::Long,
+        BybitOrderSide::Sell => PositionSide::Short,
+        side @ BybitOrderSide::Unknown => {
+            anyhow::bail!("Invalid liquidation side: expected Buy or Sell, was {side:?}")
+        }
+    };
+
+    let bankruptcy_price = parse_price_with_precision(
+        &liquidation.p,
+        instrument.price_precision(),
+        "liquidation.p",
+    )?;
+    let quantity = parse_quantity_with_precision(
+        &liquidation.v,
+        instrument.size_precision(),
+        "liquidation.v",
+    )?;
+    let ts_event = parse_millis_i64(liquidation.t, "liquidation.T")?;
+
+    Ok(BybitLiquidation::new(
+        instrument.id(),
+        position_side,
+        bankruptcy_price,
+        quantity,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses an order book depth message into [`OrderBookDeltas`].
@@ -1088,6 +1141,7 @@ mod tests {
             AggregationSource, BarAggregation, OrderType, PositionSide, PriceType, TriggerType,
         },
         identifiers::PositionId,
+        types::{Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -1101,8 +1155,8 @@ mod tests {
         },
         http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
         websocket::messages::{
-            BybitWsAccountExecutionMsg, BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg,
-            BybitWsTickerOptionMsg, BybitWsTradeMsg,
+            BybitWsAccountExecutionMsg, BybitWsLiquidationMsg, BybitWsOrderbookDepthMsg,
+            BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
         },
     };
 
@@ -1142,6 +1196,78 @@ mod tests {
             "9dc75fca-4bdd-4773-9f78-6f5d7ab2a110"
         );
         assert_eq!(tick.ts_event, UnixNanos::new(1_709_891_679_000_000_000));
+    }
+
+    #[rstest]
+    fn parse_bybit_ws_frame_routes_all_liquidation_topic() {
+        let value: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+
+        let frame = parse_bybit_ws_frame(value);
+
+        match frame {
+            BybitWsFrame::Liquidation(msg) => {
+                assert_eq!(msg.topic, Ustr::from("allLiquidation.BTCUSDT"));
+                assert_eq!(msg.msg_type, Ustr::from("snapshot"));
+                assert_eq!(msg.ts, 1_739_502_303_204);
+                assert_eq!(msg.data.len(), 2);
+                assert_eq!(msg.data[0].t, 1_739_502_302_929);
+                assert_eq!(msg.data[0].s, Ustr::from("BTCUSDT"));
+                assert_eq!(msg.data[0].side, BybitOrderSide::Buy);
+                assert_eq!(msg.data[0].v, "0.015");
+                assert_eq!(msg.data[0].p, "96250.5");
+                assert_eq!(msg.data[1].t, 1_739_502_303_011);
+                assert_eq!(msg.data[1].s, Ustr::from("BTCUSDT"));
+                assert_eq!(msg.data[1].side, BybitOrderSide::Sell);
+                assert_eq!(msg.data[1].v, "1.250");
+                assert_eq!(msg.data[1].p, "97410.0");
+            }
+            other => panic!("Expected Liquidation, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::buy_is_long(0, PositionSide::Long, "96250.5", "0.015", 1_739_502_302_929_000_000)]
+    #[case::sell_is_short(1, PositionSide::Short, "97410.0", "1.250", 1_739_502_303_011_000_000)]
+    fn parse_ws_liquidation_into_bybit_liquidation(
+        #[case] index: usize,
+        #[case] expected_side: PositionSide,
+        #[case] expected_price: &str,
+        #[case] expected_quantity: &str,
+        #[case] expected_ts_event: u64,
+    ) {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_all_liquidation.json");
+        let msg: BybitWsLiquidationMsg = serde_json::from_str(&json).unwrap();
+
+        let liquidation = parse_ws_liquidation(&msg.data[index], &instrument, TS).unwrap();
+
+        assert_eq!(
+            liquidation.instrument_id,
+            InstrumentId::from("BTCUSDT-LINEAR.BYBIT")
+        );
+        assert_eq!(liquidation.position_side, expected_side);
+        assert_eq!(liquidation.bankruptcy_price, Price::from(expected_price));
+        assert_eq!(liquidation.quantity, Quantity::from(expected_quantity));
+        assert_eq!(liquidation.ts_event, UnixNanos::new(expected_ts_event));
+        assert_eq!(liquidation.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ws_liquidation_rejects_unknown_side() {
+        let instrument = linear_instrument();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+        value["data"][0]["S"] = serde_json::json!("");
+        let msg: BybitWsLiquidationMsg = serde_json::from_value(value).unwrap();
+
+        let err = parse_ws_liquidation(&msg.data[0], &instrument, TS).unwrap_err();
+
+        assert_eq!(msg.data[0].side, BybitOrderSide::Unknown);
+        assert_eq!(
+            err.to_string(),
+            "Invalid liquidation side: expected Buy or Sell, was Unknown"
+        );
     }
 
     #[rstest]

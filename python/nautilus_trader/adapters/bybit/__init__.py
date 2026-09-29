@@ -31,6 +31,7 @@ __all__ = [
     "BybitEnvironment",
     "BybitExecutionClientConfig",
     "BybitExecutionClientFactory",
+    "BybitLiquidation",
     "BybitMarginAction",
     "BybitMarginBorrowResult",
     "BybitMarginRepayResult",

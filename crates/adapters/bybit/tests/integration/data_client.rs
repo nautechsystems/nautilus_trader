@@ -45,6 +45,7 @@ use nautilus_bybit::{
     },
     config::BybitDataClientConfig,
     data::BybitDataClient,
+    data_types::BybitLiquidation,
 };
 use nautilus_common::{
     clients::DataClient,
@@ -54,7 +55,8 @@ use nautilus_common::{
         data::{
             DataResponse, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
             RequestInstruments, RequestOptionChainReferencePrice, SubscribeBookDeltas,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeQuotes,
+            SubscribeCustomData, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeCustomData, UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -63,10 +65,10 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::Data,
-    enums::BookType,
+    data::{CustomData, Data, DataType},
+    enums::{BookType, PositionSide},
     identifiers::{InstrumentId, OptionSeriesId},
-    types::Price,
+    types::{Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -84,6 +86,7 @@ struct TestServerState {
     ticker_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     ticker_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     book_updates: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    liquidation_frame: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -97,6 +100,7 @@ impl Default for TestServerState {
             ticker_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             ticker_response: Arc::new(tokio::sync::Mutex::new(None)),
             book_updates: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            liquidation_frame: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -323,6 +327,19 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 {
                                     break;
                                 }
+                            } else if first_topic.starts_with("allLiquidation") {
+                                let liquidation_msg =
+                                    state.liquidation_frame.lock().await.clone().unwrap_or_else(
+                                        || load_test_data("ws_all_liquidation.json"),
+                                    );
+
+                                if socket
+                                    .send(Message::Text(liquidation_msg.to_string().into()))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -440,6 +457,81 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
         instrument_poll_interval_secs: None,
         transport_backend: Default::default(),
     }
+}
+
+fn liquidation_data_type(instrument_id: Option<&str>, identifier: Option<&str>) -> DataType {
+    let metadata = instrument_id.map(|instrument_id| {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "instrument_id".to_string(),
+            Value::String(instrument_id.to_string()),
+        );
+        metadata
+    });
+
+    DataType::new(
+        "BybitLiquidation",
+        metadata,
+        identifier.map(ToString::to_string),
+    )
+}
+
+fn subscribe_custom_data(data_type: DataType) -> SubscribeCustomData {
+    SubscribeCustomData::new(
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn unsubscribe_custom_data(data_type: DataType) -> UnsubscribeCustomData {
+    UnsubscribeCustomData::new(
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+async fn recv_custom_data(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    count: usize,
+) -> Vec<CustomData> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while events.len() < count {
+            if let DataEvent::Data(Data::Custom(custom)) = rx.recv().await.unwrap() {
+                events.push(custom);
+            }
+        }
+
+        events
+    })
+    .await
+    .expect("timeout waiting for custom data")
+}
+
+fn as_liquidation(custom: &CustomData) -> &BybitLiquidation {
+    custom
+        .data
+        .as_any()
+        .downcast_ref::<BybitLiquidation>()
+        .expect("expected BybitLiquidation")
+}
+
+async fn wait_for_server_topics(state: &TestServerState, expected: &[&str]) {
+    wait_until_async(
+        || async { *state.subscriptions.lock().await == expected },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 #[rstest]
@@ -1201,5 +1293,259 @@ async fn test_data_client_book_quote_topic_lifetime(
     )
     .await;
     assert!(state.subscriptions.lock().await.is_empty());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::metadata_only(None)]
+#[case::with_identifier(Some("bybit-liquidations"))]
+#[tokio::test]
+async fn test_data_client_subscribe_liquidations_emits_subscribed_data_type(
+    #[case] identifier: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let data_type = liquidation_data_type(Some("BTCUSDT-LINEAR.BYBIT"), identifier);
+
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSDT"]).await;
+    let events = recv_custom_data(&mut rx, 2).await;
+    let long = as_liquidation(&events[0]);
+    let short = as_liquidation(&events[1]);
+
+    assert_eq!(events[0].data_type, data_type);
+    assert_eq!(events[0].data_type.topic(), data_type.topic());
+    assert_eq!(events[0].data_type.identifier(), identifier);
+    assert_eq!(events[1].data_type, data_type);
+    assert_eq!(long.instrument_id, instrument_id);
+    assert_eq!(long.position_side, PositionSide::Long);
+    assert_eq!(long.bankruptcy_price, Price::from("96250.5"));
+    assert_eq!(long.quantity, Quantity::from("0.015"));
+    assert_eq!(long.ts_event, UnixNanos::new(1_739_502_302_929_000_000));
+    assert_eq!(short.instrument_id, instrument_id);
+    assert_eq!(short.position_side, PositionSide::Short);
+    assert_eq!(short.bankruptcy_price, Price::from("97410.0"));
+    assert_eq!(short.quantity, Quantity::from("1.250"));
+    assert_eq!(short.ts_event, UnixNanos::new(1_739_502_303_011_000_000));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_unsubscribe_liquidations() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let data_type = liquidation_data_type(Some("BTCUSDT-LINEAR.BYBIT"), None);
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSDT"]).await;
+
+    client
+        .unsubscribe(&unsubscribe_custom_data(data_type))
+        .unwrap();
+
+    wait_for_server_topics(&state, &[]).await;
+    assert!(state.subscriptions.lock().await.is_empty());
+    assert!(state.subscription_events.lock().await.is_empty());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_subscribe_liquidations_routes_inverse_to_inverse_client() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut frame = load_test_data("ws_all_liquidation.json");
+    frame["topic"] = "allLiquidation.BTCUSD".into();
+    frame["data"][0]["s"] = "BTCUSD".into();
+    frame["data"][0]["v"] = "1500".into();
+    frame["data"][1]["s"] = "BTCUSD".into();
+    frame["data"][1]["v"] = "25000".into();
+    *state.liquidation_frame.lock().await = Some(frame);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Inverse];
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTCUSD-INVERSE.BYBIT");
+    let data_type = liquidation_data_type(Some("BTCUSD-INVERSE.BYBIT"), None);
+
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+
+    // Only the inverse stream resolves BTCUSD to the inverse instrument
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSD"]).await;
+    let events = recv_custom_data(&mut rx, 2).await;
+    let long = as_liquidation(&events[0]);
+    let short = as_liquidation(&events[1]);
+
+    assert_eq!(events[0].data_type, data_type);
+    assert_eq!(events[1].data_type, data_type);
+    assert_eq!(long.instrument_id, instrument_id);
+    assert_eq!(long.position_side, PositionSide::Long);
+    assert_eq!(long.bankruptcy_price, Price::from("96250.5"));
+    assert_eq!(long.quantity, Quantity::from("1500"));
+    assert_eq!(long.ts_event, UnixNanos::new(1_739_502_302_929_000_000));
+    assert_eq!(short.instrument_id, instrument_id);
+    assert_eq!(short.position_side, PositionSide::Short);
+    assert_eq!(short.bankruptcy_price, Price::from("97410.0"));
+    assert_eq!(short.quantity, Quantity::from("25000"));
+    assert_eq!(short.ts_event, UnixNanos::new(1_739_502_303_011_000_000));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::spot(
+    Some("BTCUSDT-SPOT.BYBIT"),
+    "Liquidations not available for Spot instruments"
+)]
+#[case::option(
+    Some("BTC-26DEC25-100000-C-OPTION.BYBIT"),
+    "Liquidations not available for Option instruments"
+)]
+#[case::missing_instrument_id(None, "BybitLiquidation requires `instrument_id` metadata")]
+#[case::invalid_instrument_id(
+    Some("BTCUSDT-LINEAR"),
+    concat!(
+        "Invalid instrument_id metadata `BTCUSDT-LINEAR`: invalid `InstrumentId` value ",
+        "'BTCUSDT-LINEAR': missing '.' separator between symbol and venue components",
+    )
+)]
+#[case::other_venue(
+    Some("BTCUSDT-PERP.BINANCE"),
+    "BybitLiquidation requires a BYBIT instrument, received BTCUSDT-PERP.BINANCE"
+)]
+#[case::unknown_product(
+    Some("BTCUSDT.BYBIT"),
+    "Liquidations require a -LINEAR or -INVERSE instrument, received BTCUSDT.BYBIT"
+)]
+#[case::inverse_without_client(
+    Some("BTCUSD-INVERSE.BYBIT"),
+    "no WebSocket client for product type"
+)]
+#[tokio::test]
+async fn test_data_client_subscribe_liquidations_rejects(
+    #[case] instrument_id: Option<&str>,
+    #[case] expected_error: &str,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let data_type = liquidation_data_type(instrument_id, None);
+
+    let error = client
+        .subscribe(subscribe_custom_data(data_type))
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_unsupported_custom_data_type_is_ignored() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let unsupported = DataType::new("BybitOpenInterest", None, None);
+
+    client
+        .subscribe(subscribe_custom_data(unsupported.clone()))
+        .unwrap();
+    client
+        .unsubscribe(&unsubscribe_custom_data(unsupported))
+        .unwrap();
+    client
+        .subscribe(subscribe_custom_data(liquidation_data_type(
+            Some("BTCUSDT-LINEAR.BYBIT"),
+            None,
+        )))
+        .unwrap();
+
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSDT"]).await;
+    assert_eq!(
+        *state.subscription_events.lock().await,
+        vec![("allLiquidation.BTCUSDT".to_string(), true)],
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_duplicate_liquidation_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let data_type = liquidation_data_type(Some("BTCUSDT-LINEAR.BYBIT"), None);
+    let other_data_type = liquidation_data_type(Some("BTCUSDT-LINEAR.BYBIT"), Some("other"));
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSDT"]).await;
+    recv_custom_data(&mut rx, 2).await;
+
+    // Repeating the request must not acquire another transport reference
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+    let error = client
+        .subscribe(subscribe_custom_data(other_data_type))
+        .unwrap_err();
+    client
+        .unsubscribe(&unsubscribe_custom_data(data_type.clone()))
+        .unwrap();
+    wait_for_server_topics(&state, &[]).await;
+
+    let mut frame = load_test_data("ws_all_liquidation.json");
+    frame["data"][0]["T"] = 1_739_502_310_000_u64.into();
+    frame["data"][1]["T"] = 1_739_502_310_500_u64.into();
+    *state.liquidation_frame.lock().await = Some(frame);
+    client
+        .subscribe(subscribe_custom_data(data_type.clone()))
+        .unwrap();
+    wait_for_server_topics(&state, &["allLiquidation.BTCUSDT"]).await;
+    let events = recv_custom_data(&mut rx, 2).await;
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Already subscribed to liquidations for BTCUSDT-LINEAR.BYBIT as {}",
+            data_type.topic()
+        ),
+    );
+    assert_eq!(events[0].data_type, data_type);
+    assert_eq!(events[1].data_type, data_type);
+    assert_eq!(
+        as_liquidation(&events[0]).ts_event,
+        UnixNanos::new(1_739_502_310_000_000_000)
+    );
+    assert_eq!(
+        as_liquidation(&events[1]).ts_event,
+        UnixNanos::new(1_739_502_310_500_000_000)
+    );
+
     client.disconnect().await.unwrap();
 }
