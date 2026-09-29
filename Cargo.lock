@@ -6846,7 +6846,6 @@ dependencies = [
  "bytes",
  "futures",
  "indexmap 2.14.2",
- "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",

@@ -345,8 +345,8 @@ impl LiveNodeBuilder {
 
     /// Set the streaming configuration.
     ///
-    /// The Rust live runtime does not support this setting yet.
-    /// `build()` returns an error when it is set.
+    /// The node streams data and events to local Feather files and, with a catalog configured,
+    /// promotes them into it. Stop flushes the writer and dispose closes it.
     #[cfg(feature = "streaming")]
     #[must_use]
     pub fn with_streaming_config(mut self, config: StreamingConfig) -> Self {

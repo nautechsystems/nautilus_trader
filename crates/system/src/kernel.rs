@@ -45,8 +45,6 @@ use std::{
 
 #[cfg(feature = "streaming")]
 use anyhow::Context;
-#[cfg(feature = "streaming")]
-use jiff::tz::TimeZone;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
@@ -73,10 +71,11 @@ use nautilus_model::identifiers::{ClientId, TraderId};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::{
     backend::default_writer_factories,
-    config::StreamingConfig,
+    common::paths::environment_directory,
+    config::{DataCatalogConfig, StreamingConfig},
     writer::{
         factory::{WriterConnectConfig, create_writer, replace_existing_writer_data},
-        feather::{RotationConfig as WriterRotationConfig, WriterClock},
+        feather::WriterClock,
         filter::WriterRecordFilter,
         subscription::StreamingSinkSubscription,
     },
@@ -203,22 +202,26 @@ impl NautilusKernel {
         config: &StreamingConfig,
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<(String, StreamingSinkSubscription)> {
-        let environment = environment.to_string().to_ascii_lowercase();
+        config.validate()?;
 
-        let base_uri = match config.fs_protocol.as_str() {
-            "file" => config.catalog_path.trim_end_matches('/').to_string(),
-            _ if config.catalog_path.contains("://") => {
-                config.catalog_path.trim_end_matches('/').to_string()
-            }
-            protocol => format!("{protocol}://{}", config.catalog_path.trim_end_matches('/')),
-        };
-
-        let uri = format!("{base_uri}/{environment}/{instance_id}");
-        let mut connect = WriterConnectConfig::new(&uri, None);
-        connect.rotation_config = writer_rotation_config(&config.rotation_config);
+        let writer_path = config.writer_path.trim_end_matches('/');
+        let uri = format!(
+            "{writer_path}/{}/{instance_id}",
+            environment_directory(environment)
+        );
+        let catalog = config
+            .catalog
+            .as_ref()
+            .map(DataCatalogConfig::connect_config);
+        let mut connect = WriterConnectConfig::new(&uri, catalog);
+        connect.rotation_config = config.rotation_config.to_writer_rotation_config()?;
         connect.flush_interval_ms = Some(config.flush_interval_ms);
         connect.params.clone_from(&config.params);
         connect.record_filter = Self::writer_record_filter(config);
+        connect.promotion_interval_ms = config.promotion_interval_ms;
+        connect.promote_on_close = config.promote_on_close;
+        connect.delete_feather_after_promotion = config.delete_feather_after_promotion;
+        connect.use_ts_event_for_ts_init = config.use_ts_event_for_ts_init;
 
         if config.replace_existing {
             replace_existing_writer_data(&connect)?;
@@ -226,7 +229,7 @@ impl NautilusKernel {
 
         let (writer_clock, bridge) = WriterClock::from_shared_clock(clock);
         let sink = create_writer(
-            &config.writer_backend,
+            &config.writer_backend(),
             &connect,
             writer_clock,
             &default_writer_factories(),
@@ -1225,27 +1228,6 @@ impl NautilusKernel {
     }
 }
 
-#[cfg(feature = "streaming")]
-fn writer_rotation_config(config: &crate::config::RotationConfig) -> WriterRotationConfig {
-    match config {
-        crate::config::RotationConfig::Size { max_size } => WriterRotationConfig::Size {
-            max_size: *max_size,
-        },
-        crate::config::RotationConfig::Interval { interval_ns } => WriterRotationConfig::Interval {
-            interval_ns: interval_ns.as_u64(),
-        },
-        crate::config::RotationConfig::ScheduledDates {
-            interval_ns,
-            schedule_ns,
-        } => WriterRotationConfig::ScheduledDates {
-            interval_ns: interval_ns.as_u64(),
-            rotation_time: *schedule_ns,
-            rotation_timezone: TimeZone::UTC,
-        },
-        crate::config::RotationConfig::NoRotation => WriterRotationConfig::NoRotation,
-    }
-}
-
 #[cfg(all(test, feature = "python"))]
 mod tests {
     use nautilus_common::messages::system::ShutdownSystem;
@@ -1339,7 +1321,6 @@ mod streaming_tests {
         messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
         msgbus::{self, MStr, ShareableMessageHandler},
     };
-    use nautilus_core::DurationNanos;
     use nautilus_model::{
         data::{CustomData, DataType, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
@@ -1347,7 +1328,7 @@ mod streaming_tests {
     };
     use nautilus_persistence::{
         backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
-        test_data::RustTestCustomData, writer::feather::RotationConfig as WriterRotationConfig,
+        test_data::RustTestCustomData,
     };
     use nautilus_serialization::ensure_custom_data_registered;
     use rstest::rstest;
@@ -1355,71 +1336,6 @@ mod streaming_tests {
 
     use super::*;
     use crate::config::{KernelConfig, RotationConfig, StreamingConfig};
-
-    #[rstest]
-    #[case(
-        RotationConfig::Size { max_size: 17 },
-        WriterRotationConfig::Size { max_size: 17 }
-    )]
-    #[case(
-        RotationConfig::Interval {
-            interval_ns: DurationNanos::new(23),
-        },
-        WriterRotationConfig::Interval {
-            interval_ns: 23,
-        }
-    )]
-    #[case(
-        RotationConfig::ScheduledDates {
-            interval_ns: DurationNanos::new(31),
-            schedule_ns: UnixNanos::from(37),
-        },
-        WriterRotationConfig::ScheduledDates {
-            interval_ns: 31,
-            rotation_time: UnixNanos::from(37),
-            rotation_timezone: TimeZone::UTC,
-        }
-    )]
-    #[case(RotationConfig::NoRotation, WriterRotationConfig::NoRotation)]
-    fn test_writer_rotation_config(
-        #[case] config: RotationConfig,
-        #[case] expected: WriterRotationConfig,
-    ) {
-        let actual = writer_rotation_config(&config);
-
-        match (actual, expected) {
-            (
-                WriterRotationConfig::Size { max_size: actual },
-                WriterRotationConfig::Size { max_size: expected },
-            )
-            | (
-                WriterRotationConfig::Interval {
-                    interval_ns: actual,
-                },
-                WriterRotationConfig::Interval {
-                    interval_ns: expected,
-                },
-            ) => assert_eq!(actual, expected),
-            (
-                WriterRotationConfig::ScheduledDates {
-                    interval_ns: actual_interval,
-                    rotation_time: actual_time,
-                    rotation_timezone: actual_timezone,
-                },
-                WriterRotationConfig::ScheduledDates {
-                    interval_ns: expected_interval,
-                    rotation_time: expected_time,
-                    rotation_timezone: expected_timezone,
-                },
-            ) => {
-                assert_eq!(actual_interval, expected_interval);
-                assert_eq!(actual_time, expected_time);
-                assert_eq!(actual_timezone, expected_timezone);
-            }
-            (WriterRotationConfig::NoRotation, WriterRotationConfig::NoRotation) => {}
-            (actual, expected) => panic!("rotation mismatch: {actual:?} != {expected:?}"),
-        }
-    }
 
     #[rstest]
     fn test_configured_catalog_serves_builtin_quotes() {
@@ -1505,7 +1421,7 @@ mod streaming_tests {
         let instance_id = UUID4::new();
         let mut streaming = StreamingConfig::new(
             directory.path().to_string_lossy().into_owned(),
-            "file".to_string(),
+            None,
             1_000,
             false,
             RotationConfig::NoRotation,
@@ -1538,6 +1454,100 @@ mod streaming_tests {
             .join(instance_id.to_string())
             .join("data/custom");
         assert!(!custom_path.exists());
+        kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_invalid_streaming_config_fails_before_replacing_files() {
+        let directory = tempdir().unwrap();
+        let instance_id = UUID4::new();
+        let run_directory = directory
+            .path()
+            .join("backtest")
+            .join(instance_id.to_string());
+        std::fs::create_dir_all(&run_directory).unwrap();
+        let existing = run_directory.join("existing.feather");
+        std::fs::write(&existing, b"preserve").unwrap();
+
+        let mut streaming = StreamingConfig::new(
+            directory.path().to_string_lossy().into_owned(),
+            None,
+            1_000,
+            true,
+            RotationConfig::NoRotation,
+        );
+        streaming.promotion_interval_ms = Some(1_000);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let error = NautilusKernel::setup_streaming_writer(
+            Environment::Backtest,
+            instance_id,
+            &streaming,
+            &clock,
+        )
+        .err()
+        .unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            "promotion_interval_ms requires catalog: promotion needs a catalog"
+        );
+        assert_eq!(std::fs::read(&existing).unwrap(), b"preserve");
+    }
+
+    #[rstest]
+    fn test_configured_streaming_promotes_into_separate_catalog() {
+        let writer_directory = tempdir().unwrap();
+        let catalog_directory = tempdir().unwrap();
+        let catalog_path = catalog_directory.path().join("catalog");
+        let instance_id = UUID4::new();
+
+        let mut streaming = StreamingConfig::new(
+            writer_directory.path().to_string_lossy().into_owned(),
+            Some(DataCatalogConfig::new(
+                catalog_path.to_string_lossy().into_owned(),
+                None,
+                None,
+            )),
+            1_000,
+            false,
+            RotationConfig::NoRotation,
+        );
+        streaming.data_types = Some(vec![NautilusDataType::QuoteTick]);
+
+        let config = KernelConfig {
+            instance_id: Some(instance_id),
+            streaming: Some(streaming),
+            ..KernelConfig::default()
+        };
+
+        let mut kernel =
+            NautilusKernel::new("SeparateCatalogStreamingTest".to_string(), config).unwrap();
+
+        let quote = QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.00001"),
+            Price::from("1.00003"),
+            Quantity::from("100_000"),
+            Quantity::from("200_000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+
+        msgbus::publish_quote(MStr::from("data.quotes.SIM.AUD/USD"), &quote);
+        kernel.close_streaming_writer().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+        let promoted = catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap();
+        let run_directory = writer_directory
+            .path()
+            .join("backtest")
+            .join(instance_id.to_string());
+        assert_eq!(promoted, vec![quote]);
+        assert!(run_directory.join("quotes").is_dir());
+        assert!(!catalog_path.join("backtest").exists());
         kernel.dispose();
     }
 }

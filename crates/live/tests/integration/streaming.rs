@@ -135,7 +135,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
     // Unreachable auto-flush interval: only size rotation can produce feather files before stop
     let streaming = StreamingConfig::new(
         catalog_dir.path().to_string_lossy().into_owned(),
-        "file".to_string(),
+        None,
         3_600_000,
         false,
         RotationConfig::Size { max_size: 1 },
@@ -261,7 +261,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             .convert_stream_to_data(
                 &instance_id.to_string(),
                 &CatalogDataType::from(data_type),
-                Some("live"),
+                Environment::Live,
                 None,
                 false,
             )
@@ -301,7 +301,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             .convert_stream_to_data(
                 &instance_id.to_string(),
                 &CatalogDataType::from(record_type),
-                Some("live"),
+                Environment::Live,
                 None,
                 false,
             )
@@ -343,7 +343,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
 
     let streaming = StreamingConfig::new(
         catalog_dir.path().to_string_lossy().into_owned(),
-        "file".to_string(),
+        None,
         1,
         false,
         RotationConfig::NoRotation,
@@ -395,7 +395,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         .convert_stream_to_data(
             &instance_id.to_string(),
             &CatalogDataType::from(NautilusDataType::QuoteTick),
-            Some("live"),
+            Environment::Live,
             None,
             false,
         )
@@ -418,7 +418,7 @@ async fn test_livenode_streaming_records_quotes_published_after_stop() {
 
     let streaming = StreamingConfig::new(
         catalog_dir.path().to_string_lossy().into_owned(),
-        "file".to_string(),
+        None,
         1_000,
         false,
         RotationConfig::NoRotation,
@@ -458,7 +458,7 @@ async fn test_livenode_streaming_records_quotes_published_after_stop() {
         .convert_stream_to_data(
             &instance_id.to_string(),
             &CatalogDataType::from(NautilusDataType::QuoteTick),
-            Some("live"),
+            Environment::Live,
             None,
             false,
         )
@@ -483,7 +483,7 @@ async fn test_livenode_streaming_stop_returns_recorded_write_error() {
 
     let streaming = StreamingConfig::new(
         catalog_dir.path().to_string_lossy().into_owned(),
-        "file".to_string(),
+        None,
         1_000,
         false,
         RotationConfig::NoRotation,

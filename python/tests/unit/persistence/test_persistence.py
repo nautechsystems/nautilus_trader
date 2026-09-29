@@ -55,12 +55,15 @@ from nautilus_trader.model import Venue
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import BarDataWrangler
 from nautilus_trader.persistence import DataBackendSession
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence import OrderBookDepthDataWrangler
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import QuoteTickDataWrangler
+from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import RustTestCustomData
 from nautilus_trader.persistence import StreamingFeatherWriter
+from nautilus_trader.persistence import StreamingWriter
 from nautilus_trader.persistence import TradeTickDataWrangler
 from tests.providers import TEST_DATA_DIR
 from tests.providers import TestInstrumentProvider
@@ -991,6 +994,41 @@ def test_streaming_feather_writer_rejects_remote_path() -> None:
         )
 
 
+def test_streaming_writer_promotes_into_catalog(tmp_path: Path) -> None:
+    """
+    Test streaming writer with a catalog promotes its Feather files into that catalog.
+    """
+    catalog_path = tmp_path / "catalog"
+    writer = StreamingWriter(
+        str(tmp_path / "stream" / "backtest" / "run-1"),
+        Clock.new_test(),
+        catalog=DataCatalogConfig(path=str(catalog_path)),
+    )
+    quote = TestDataProviderPyo3.quote_tick()
+
+    writer.write(quote)
+    writer.close()
+
+    assert writer.backend == "Parquet"
+    assert ParquetDataCatalog(str(catalog_path)).query_quote_ticks() == [quote]
+
+
+def test_streaming_writer_without_catalog_keeps_feather_files(tmp_path: Path) -> None:
+    """
+    Test streaming writer without a catalog keeps only the Feather files.
+    """
+    path = tmp_path / "stream"
+    writer = StreamingWriter(str(path), Clock.new_test())
+
+    writer.write(TestDataProviderPyo3.quote_tick())
+    writer.close()
+
+    assert writer.backend == "Feather"
+    assert [file.relative_to(path).as_posix() for file in path.rglob("*.feather")] == [
+        "quotes/quotes_0.feather",
+    ]
+
+
 def test_streaming_feather_writer_close(tmp_path: Path) -> None:
     """
     Test streaming feather writer close.
@@ -1017,19 +1055,21 @@ def test_streaming_feather_writer_rotation_modes(tmp_path: Path) -> None:
     cache = Cache()
     clock = Clock.new_test()
 
-    for mode, kwargs in [
-        (0, {"max_file_size": 1024 * 1024}),
-        (1, {"rotation_interval_ns": 3600_000_000_000}),
-        (3, {}),
-    ]:
-        path = str(tmp_path / f"streaming_{mode}")
+    for index, rotation_config in enumerate(
+        [
+            RotationConfig.size(1024 * 1024),
+            RotationConfig.interval(3600_000_000_000),
+            RotationConfig.no_rotation(),
+            None,
+        ],
+    ):
+        path = str(tmp_path / f"streaming_{index}")
         os.makedirs(path, exist_ok=True)
         writer = StreamingFeatherWriter(
             path=path,
             cache=cache,
             clock=clock,
-            rotation_mode=mode,
-            **kwargs,
+            rotation_config=rotation_config,
         )
         assert writer is not None
 
@@ -1064,10 +1104,11 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
         path=path,
         cache=Cache(),
         clock=clock,
-        rotation_mode=2,
-        rotation_interval_ns=86_400_000_000_000,
-        rotation_time_ns=1_800_000_000_000,
-        rotation_timezone="America/New_York",
+        rotation_config=RotationConfig.scheduled_dates(
+            86_400_000_000_000,
+            1_800_000_000_000,
+            timezone="America/New_York",
+        ),
     )
     quote = TestDataProviderPyo3.quote_tick()
 

@@ -7258,7 +7258,7 @@ fn test_end_returns_streaming_write_error() {
         instance_id: Some(instance_id),
         streaming: Some(StreamingConfig::new(
             catalog_path.clone(),
-            "file".to_string(),
+            None,
             1_000,
             false,
             RotationConfig::NoRotation,

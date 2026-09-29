@@ -38,7 +38,7 @@ python = [
   "pyo3-stub-gen",
   "streaming",
 ]
-streaming = ["dep:jiff", "nautilus-data/streaming", "nautilus-persistence"]
+streaming = ["nautilus-data/streaming", "nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.cargo-machete]
@@ -75,7 +75,6 @@ serde_json = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
-jiff = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

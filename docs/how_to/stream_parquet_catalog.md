@@ -6,38 +6,66 @@ staging lifecycle.
 
 ## Configure the writer
 
-Select `Parquet` explicitly. `Feather` stages records for manual conversion; it does not automatically
-promote them into a catalog.
+Give `StreamingConfig` a local `writer_path` for the Feather files and a `catalog` to promote them
+into. Without a `catalog`, the writer keeps only the Feather files for manual conversion.
 
 ```python
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import StreamingConfig
 
 streaming = StreamingConfig(
-    catalog_path="./catalog",
-    writer_backend="Parquet",
-    params={
-        "parquet_commit_interval_ms": 5_000,
-        "promote_on_close": True,
-        "delete_feather_after_commit": False,
-    },
+    writer_path="./stream",
+    catalog=DataCatalogConfig(path="./catalog"),
+    promotion_interval_ms=5_000,
+    promote_on_close=True,
+    delete_feather_after_promotion=False,
 )
 engine_config = BacktestEngineConfig(streaming=streaming)
 ```
 
 Pass `engine_config` as the `engine` argument to `BacktestRunConfig`. The runtime owns the sink: a backtest closes it
 when the run ends, and a live node flushes it on stop and closes it on dispose, so events processed during shutdown are
-still staged. Run data stages under `<catalog_path>/<backtest|sandbox|live>/<instance_id>`, which must be
-local; the catalog root contains the promoted data used by queries.
+still staged. Run data stages under `<writer_path>/<backtest|sandbox|live>/<instance_id>`, which must be
+local because the writer appends to open files. The catalog holds the promoted data used by queries
+and can be local or remote, such as `DataCatalogConfig(path="bucket/catalog", fs_protocol="s3")`.
+The catalog's `catalog_backend` selects the writer that promotes into it. The Parquet writer
+creates a missing local catalog directory.
 
-| Setting                       | Default | Meaning                                                |
-| ----------------------------- | ------- | ------------------------------------------------------ |
-| `parquet_commit_interval_ms`  | Unset   | No interval-based promotion; zero also disables it.    |
-| `promote_on_close`            | `true`  | Promote staged files when the sink closes.             |
-| `delete_feather_after_commit` | `false` | Retain source Feather files after a successful commit. |
-| `use_ts_event_for_ts_init`    | `false` | Preserve initialization timestamps during promotion.   |
+| Setting                          | Default | Meaning                                                   |
+| -------------------------------- | ------- | --------------------------------------------------------- |
+| `promotion_interval_ms`          | Unset   | No interval-based promotion; must be positive when set.   |
+| `promote_on_close`               | `true`  | Promote staged files when the sink closes.                |
+| `delete_feather_after_promotion` | `false` | Retain source Feather files after a successful promotion. |
+| `use_ts_event_for_ts_init`       | `false` | Preserve initialization timestamps during promotion.      |
 
-These are Parquet writer defaults. They are independent of defaults for other writer backends.
+The runtime validates the config before it opens the writer. Without a `catalog`,
+`promotion_interval_ms` must be unset, and `delete_feather_after_promotion` and
+`use_ts_event_for_ts_init` must be false.
+
+To stage runs inside the catalog directory, set `writer_path` and the catalog `path` to the same
+local directory. `ParquetDataCatalog.convert_stream_to_data()` writes into the catalog it is opened
+on, so manual conversion of a run staged elsewhere writes into a catalog opened at `writer_path`.
+
+### Rotate files
+
+`rotation_config` seals a type's open file and starts a new one by size, by interval, or on a
+schedule. The default, `RotationConfig.no_rotation()`, seals files only for promotion and close.
+
+```python
+from nautilus_trader.persistence import RotationConfig
+
+RotationConfig.size(1_073_741_824)
+RotationConfig.interval(3_600_000_000_000)
+RotationConfig.scheduled_dates(
+    86_400_000_000_000,
+    1_800_000_000_000,
+    timezone="America/New_York",
+)
+```
+
+`scheduled_dates` takes an interval duration in nanoseconds and a time of day in nanoseconds since
+midnight, in its IANA `timezone`, which defaults to `UTC`. Sizes and intervals must be positive.
 
 ## Understand query visibility
 
@@ -63,7 +91,7 @@ column, so promoted files have the same schema as files written directly to the 
 
 A flush appends the records buffered since the previous flush to the open file as one Arrow record
 batch, without starting a new file. Promotion first seals the open files, so each promotion takes the
-records written so far; it does not promise immediate catalog visibility. With no commit interval,
+records written so far; it does not promise immediate catalog visibility. With no promotion interval,
 records remain staged until close-time promotion or manual conversion. Queries see the records after
 promotion succeeds.
 
@@ -74,7 +102,7 @@ when that interval is due. Closing waits for pending work and, by default, promo
 
 ## Retain and recover staged files
 
-Keep `delete_feather_after_commit=False` to retain the Feather source after successful promotion.
+Keep `delete_feather_after_promotion=False` to retain the Feather source after successful promotion.
 Enable it only when source cleanup is desired. Cleanup follows a successful commit; it is separate
 from making catalog data queryable. Promotion identities prevent a repeated completed source from
 being imported again.
@@ -82,7 +110,9 @@ being imported again.
 Use explicit close and handle its error. Dropping a writer only provides best-effort cleanup and is
 not evidence of successful promotion. If a promotion fails, preserve its staged files and investigate
 the error before retrying. With `promote_on_close=False`, closing can intentionally leave a completed
-run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`.
+run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`. Pass the
+run's `environment`, such as `Environment.LIVE`, to convert a run outside the default backtest
+folder.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
 crashed process leaves its open files unlocked. Recovery seals each unlocked partial file: it keeps

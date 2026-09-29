@@ -263,8 +263,7 @@ mod streaming_tests {
     #[rstest]
     fn test_streaming_config_builder_valid() {
         let config = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -276,8 +275,7 @@ mod streaming_tests {
     #[rstest]
     fn test_streaming_config_zero_flush_interval_rejected() {
         let result = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(0)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -289,26 +287,22 @@ mod streaming_tests {
     }
 
     #[rstest]
-    fn test_streaming_config_empty_catalog_path_rejected() {
+    fn test_streaming_config_empty_writer_path_rejected() {
         let result = StreamingConfig::builder()
-            .catalog_path(String::new())
-            .fs_protocol("file".to_string())
+            .writer_path(String::new())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
             .build();
 
-        assert!(
-            matches!(result, Err(ConfigError::EmptyField { field }) if field == "catalog_path")
-        );
+        assert!(matches!(result, Err(ConfigError::EmptyField { field }) if field == "writer_path"));
     }
 
     #[rstest]
     fn test_streaming_config_toml_round_trip() {
         let config: StreamingConfig = toml::from_str(
             r#"
-catalog_path = "/data/catalog"
-fs_protocol = "file"
+writer_path = "/data/stream"
 flush_interval_ms = 1000
 replace_existing = false
 
@@ -318,8 +312,8 @@ max_size = 1048576
         )
         .unwrap();
 
-        assert_eq!(config.catalog_path, "/data/catalog");
-        assert_eq!(config.fs_protocol, "file");
+        assert_eq!(config.writer_path, "/data/stream");
+        assert!(config.catalog.is_none());
         assert_eq!(config.flush_interval_ms, 1000);
         assert!(!config.replace_existing);
         assert!(matches!(
@@ -334,8 +328,7 @@ max_size = 1048576
     fn test_streaming_config_with_no_rotation_toml() {
         let config: StreamingConfig = toml::from_str(
             r#"
-catalog_path = "/data/catalog"
-fs_protocol = "file"
+writer_path = "/data/stream"
 flush_interval_ms = 500
 replace_existing = true
 rotation_config = "no_rotation"

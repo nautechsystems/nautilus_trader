@@ -456,6 +456,19 @@ Postgres cache backing through `LiveNodeBuilder`; this does not restore the gene
 `DatabaseConfig` workflow. See
 [cache database configuration](docs/how_to/configure_live_trading.md#cache-database-configuration).
 
+`StreamingConfig` writes Feather files to a local `writer_path` and promotes them into an optional
+`catalog`, which can be remote. It takes rotation through one `RotationConfig`, with intervals and
+the time of day in integer nanoseconds:
+
+| v1 `StreamingConfig` fields                              | v2 `StreamingConfig` argument                                          |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `catalog_path`, `fs_protocol`, `fs_rust_storage_options` | `writer_path` for Feather files, plus `catalog=DataCatalogConfig(...)` |
+| `rotation_mode=SIZE`, `max_file_size`                    | `rotation_config=RotationConfig.size(max_size)`                        |
+| `rotation_mode=INTERVAL`, `rotation_interval`            | `rotation_config=RotationConfig.interval(interval_ns)`                 |
+| `rotation_mode=SCHEDULED_DATES`, `rotation_interval`     | `rotation_config=RotationConfig.scheduled_dates(interval_ns, ...)`     |
+| `rotation_time`, `rotation_timezone`                     | `schedule_ns` and `timezone` of `RotationConfig.scheduled_dates`       |
+| `rotation_mode=NO_ROTATION`                              | `rotation_config=RotationConfig.no_rotation()`, or omit it             |
+
 Custom Rust cache database adapters used with live orders must implement the batch
 `index_order_clients` operation. The default trait implementation rejects non-empty claims.
 

@@ -498,21 +498,6 @@ pub enum RotationConfig {
     NoRotation,
 }
 
-impl RotationConfig {
-    /// Creates scheduled rotation using UTC.
-    ///
-    /// This keeps timezone ownership in writer backend when callers expose
-    /// only a time-of-day schedule without a timezone field.
-    #[must_use]
-    pub const fn scheduled_utc(interval_ns: u64, rotation_time: UnixNanos) -> Self {
-        Self::ScheduledDates {
-            interval_ns,
-            rotation_time,
-            rotation_timezone: jiff::tz::TimeZone::UTC,
-        }
-    }
-}
-
 /// Streams encoded data into one local Feather file per data or record type, and per class for
 /// instruments.
 ///

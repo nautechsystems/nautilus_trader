@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
 
-use nautilus_common::live::get_runtime;
+use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
@@ -5357,7 +5357,7 @@ fn test_convert_stream_to_data_no_files() {
     let result = catalog.convert_stream_to_data(
         "test_instance",
         &NautilusDataType::QuoteTick.into(),
-        Some("backtest"),
+        Environment::Backtest,
         None,
         false,
     );
@@ -5373,7 +5373,7 @@ fn test_convert_stream_to_data_rejects_instrument_class() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusInstrumentType::Equity.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5396,7 +5396,7 @@ fn test_convert_stream_to_data_rejects_unsupported_family() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusDataType::Defi.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5450,7 +5450,7 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
         .convert_stream_to_data(
             "test_instance_flat",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5534,7 +5534,7 @@ fn test_convert_stream_to_data_keeps_flat_stream_file_with_identifiers() {
         .convert_stream_to_data(
             "test_instance_flat_filter",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             Some(&identifiers),
             false,
         )
@@ -5595,7 +5595,7 @@ fn test_convert_stream_to_data_ignores_flat_stream_file_with_non_timestamp_suffi
         .convert_stream_to_data(
             "test_instance_flat_suffix",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5685,7 +5685,7 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusDataType::QuoteTick.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5805,7 +5805,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
         .convert_stream_to_data(
             "test_instance_bars",
             &NautilusDataType::Bar.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )

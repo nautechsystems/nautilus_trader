@@ -21,6 +21,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::enums::Environment;
 use nautilus_core::{
     UnixNanos,
     python::{to_pytype_err, to_pyvalue_err},
@@ -1828,7 +1829,7 @@ impl PyParquetDataCatalog {
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
     /// - `data_type`: The stored family to convert (data type or record type).
-    /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
+    /// - `environment`: The environment of the run, which names the folder holding its feather files (default: `Environment.BACKTEST`)
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
     ///
@@ -1843,35 +1844,34 @@ impl PyParquetDataCatalog {
     /// catalog.convert_stream_to_data(
     ///     "instance-123",
     ///     NautilusDataType.QuoteTick,
-    ///     subdirectory="backtest"
+    ///     environment=Environment.BACKTEST
     /// )
     ///
     /// # Convert live run data with identifier filtering
     /// catalog.convert_stream_to_data(
     ///     "instance-456",
     ///     NautilusDataType.TradeTick,
-    ///     subdirectory="live",
+    ///     environment=Environment.LIVE,
     ///     identifiers=["EUR/USD.SIM"]
     /// )
     /// ```
-    #[pyo3(signature = (instance_id, data_type, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[pyo3(signature = (instance_id, data_type, environment=Environment::Backtest, identifiers=None, use_ts_event_for_ts_init=false))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
         data_type: PyCatalogDataType,
-        subdirectory: Option<&str>,
+        environment: Environment,
         identifiers: Option<Vec<String>>,
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
         let data_type = data_type.into_inner();
-        let subdir = subdirectory.unwrap_or("backtest");
 
         self.inner
             .convert_stream_to_data(
                 instance_id,
                 &data_type,
-                Some(subdir),
+                environment,
                 identifiers.as_deref(),
                 use_ts_event_for_ts_init,
             )

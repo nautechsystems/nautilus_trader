@@ -493,7 +493,7 @@ class ParquetDataCatalog:
         self,
         instance_id: str,
         data_type: model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType,
-        subdirectory: str | None = None,
+        environment: common.Environment = common.Environment.BACKTEST,
         identifiers: typing.Sequence[str] | None = None,
         use_ts_event_for_ts_init: bool = False,
     ) -> None: ...
@@ -516,6 +516,8 @@ class RotationConfig:
     def interval_ns(self) -> int | None: ...
     @property
     def schedule_ns(self) -> int | None: ...
+    @property
+    def timezone(self) -> str | None: ...
     @staticmethod
     def no_rotation() -> RotationConfig: ...
     @staticmethod
@@ -523,7 +525,9 @@ class RotationConfig:
     @staticmethod
     def interval(interval_ns: int) -> RotationConfig: ...
     @staticmethod
-    def scheduled_dates(interval_ns: int, schedule_ns: int) -> RotationConfig: ...
+    def scheduled_dates(
+        interval_ns: int, schedule_ns: int, timezone: str = ...
+    ) -> RotationConfig: ...
 
 @typing.final
 class StreamingFeatherWriter:
@@ -535,11 +539,7 @@ class StreamingFeatherWriter:
         include_types: typing.Sequence[typing.Any] | None = None,
         record_types: typing.Any | None = None,
         record_filters: typing.Any | None = None,
-        rotation_mode: int = 3,
-        max_file_size: int = 1073741824,
-        rotation_interval_ns: int | None = None,
-        rotation_time_ns: int | None = None,
-        rotation_timezone: str = "UTC",
+        rotation_config: RotationConfig | None = None,
         flush_interval_ms: int | None = None,
         replace: bool = False,
     ) -> None: ...
@@ -564,11 +564,7 @@ class StreamingFeatherWriter:
 @typing.final
 class StreamingWriter:
     def __init__(
-        self,
-        backend: str,
-        path: str,
-        clock: common.Clock,
-        storage_options: typing.Mapping[str, str] | None = None,
+        self, path: str, clock: common.Clock, catalog: DataCatalogConfig | None = None
     ) -> None: ...
     @property
     def backend(self) -> str: ...
@@ -787,9 +783,9 @@ class RustTestTypedMapCustomData:
 @typing.final
 class StreamingConfig:
     @property
-    def catalog_path(self) -> str: ...
+    def writer_path(self) -> str: ...
     @property
-    def fs_protocol(self) -> str: ...
+    def catalog(self) -> DataCatalogConfig | None: ...
     @property
     def flush_interval_ms(self) -> int: ...
     @property
@@ -797,13 +793,13 @@ class StreamingConfig:
     @property
     def rotation_config(self) -> RotationConfig: ...
     @property
-    def rotation_mode(self) -> str: ...
+    def promotion_interval_ms(self) -> int | None: ...
     @property
-    def max_file_size(self) -> int | None: ...
+    def promote_on_close(self) -> bool: ...
     @property
-    def rotation_interval_ns(self) -> int | None: ...
+    def delete_feather_after_promotion(self) -> bool: ...
     @property
-    def schedule_ns(self) -> int | None: ...
+    def use_ts_event_for_ts_init(self) -> bool: ...
     @property
     def writer_backend(self) -> str: ...
     @property
@@ -818,21 +814,20 @@ class StreamingConfig:
     def record_filters(self) -> dict | None: ...
     def __new__(
         cls,
-        catalog_path: str,
-        fs_protocol: str | None = None,
+        writer_path: str,
+        catalog: DataCatalogConfig | None = None,
         flush_interval_ms: int = ...,
         replace_existing: bool = ...,
         rotation_config: RotationConfig | None = None,
-        writer_backend: str | None = None,
+        promotion_interval_ms: int | None = None,
+        promote_on_close: bool = ...,
+        delete_feather_after_promotion: bool = ...,
+        use_ts_event_for_ts_init: bool = ...,
         data_types: typing.Any | None = None,
         record_types: typing.Any | None = None,
         instrument_types: typing.Any | None = None,
         record_filters: typing.Any | None = None,
         params: dict | None = None,
-        rotation_mode: str | None = None,
-        max_file_size: int | None = None,
-        rotation_interval_ns: int | None = None,
-        schedule_ns: int | None = None,
     ) -> StreamingConfig: ...
 
 @typing.final
