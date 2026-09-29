@@ -94,6 +94,7 @@ use crate::{
         client::OKXWebSocketClient,
         dispatch::{
             AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
+            format_order_response_reason,
         },
         messages::OKXWsMessage,
         parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
@@ -1087,11 +1088,10 @@ impl OKXExecutionClient {
                     if let Some((code, msg)) = resps.first().and_then(|r| {
                         r.s_code.as_deref().and_then(|code| {
                             (code != OKX_SUCCESS_CODE)
-                                .then_some((code, r.s_msg.as_deref().unwrap_or("unknown")))
+                                .then_some((code, r.s_msg.as_deref().unwrap_or("")))
                         })
                     }) {
-                        let reason =
-                            format!("cancel-algo-order-rejected: s_code={code}, s_msg={msg}");
+                        let reason = format_order_response_reason(code, msg, "");
                         let failure = classify_okx_venue_code(code, reason.clone());
                         let is_rejected = matches!(failure, CommandFailure::VenueRejected(_));
                         emit_cancel_failure(

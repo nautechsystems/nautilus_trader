@@ -267,9 +267,12 @@ impl OKXHttpClient {
 
     /// Activates an account feature such as USDC order book trading.
     ///
-    /// This does not run at client start. Call it once per master account and
-    /// once per sub-account before trading a `Crypto-USDC` instrument if that
-    /// account has not already traded USDC.
+    /// This does not run at client start. Call it only after OKX rejects a
+    /// `Crypto-USDC` order with error code `54109`. Activation is shared between a
+    /// master account and its sub-accounts, so one successful call covers all of
+    /// them. Error code `51773` means the account does not support activation, not
+    /// that USDC trading is unavailable; a successful order confirms the account can
+    /// trade the instrument.
     ///
     /// # Errors
     ///

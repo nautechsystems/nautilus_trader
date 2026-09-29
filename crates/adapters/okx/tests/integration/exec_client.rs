@@ -37,7 +37,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use futures_util::StreamExt;
 use nautilus_common::{
@@ -2488,13 +2488,13 @@ fn test_algo_cancel_rejection_emits_for_nonzero_scode() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
 
-    if let ExecutionEvent::Order(event) = &events[0] {
-        assert!(
-            format!("{event:?}").contains("CancelRejected"),
-            "expected CancelRejected event, was {event:?}"
-        );
-    } else {
-        panic!("expected ExecutionEvent::Order, was {:?}", events[0]);
+    match &events[0] {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, ClientOrderId::new("O-001"));
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::new("v-algo-1")));
+            assert_eq!(event.reason, Ustr::from("OKX error 51000: Order not found"));
+        }
+        other => panic!("Expected one OrderCancelRejected, was {other:?}"),
     }
 }
 
@@ -2551,6 +2551,77 @@ fn test_algo_cancel_rejection_missing_context_does_not_panic() {
     let events = drain_events(&mut rx);
     // First item has context -> emits rejection; second has no context -> logs warning
     assert_eq!(events.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_algo_order_venue_rejection_emits_order_cancel_rejected() {
+    let router = Router::new()
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/cancel-algos",
+            post(|| async {
+                Json(load_test_data("http_cancel_algo_order_rejected.json")).into_response()
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let client_order_id = ClientOrderId::new("OALGOCANCELREJECT1");
+    let venue_order_id = VenueOrderId::new("algo-1");
+    let command_id = UUID4::new();
+    let order = build_test_stop_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = CancelOrder {
+        trader_id,
+        client_id: Some(*OKX_CLIENT_ID),
+        strategy_id: order.strategy_id(),
+        instrument_id: order.instrument_id(),
+        client_order_id,
+        venue_order_id: Some(venue_order_id),
+        command_id,
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    client.cancel_order(cmd).unwrap();
+
+    match recv_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected) if rejected.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        OrderEventAny::CancelRejected(rejected) => {
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(rejected.venue_order_id, Some(venue_order_id));
+            assert_eq!(
+                rejected.reason,
+                Ustr::from("OKX error 51000: Parameter algoId error")
+            );
+        }
+        other => panic!("Expected OrderCancelRejected event, was {other:?}"),
+    }
 }
 
 #[rstest]

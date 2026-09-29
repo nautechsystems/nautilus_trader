@@ -1082,9 +1082,9 @@ fn dispatch_tracked_algo_order_message(
                 );
             } else {
                 let reason = if msg.fail_code.is_empty() {
-                    "OKX algo order failed"
+                    "OKX algo order failed".to_string()
                 } else {
-                    msg.fail_code.as_str()
+                    format_order_response_reason(&msg.fail_code, "", "")
                 };
                 let rejected = OrderRejected::new(
                     emitter.trader_id(),
@@ -1092,7 +1092,7 @@ fn dispatch_tracked_algo_order_message(
                     context.identity.instrument_id,
                     client_order_id,
                     account_id,
-                    Ustr::from(reason),
+                    Ustr::from(reason.as_str()),
                     UUID4::new(),
                     ts_event,
                     ts_init,
@@ -2406,17 +2406,6 @@ fn emit_send_failed_modify(
     );
 }
 
-fn format_order_response_reason(s_code: &str, s_msg: &str, sub_code: &str) -> String {
-    match (s_msg.is_empty(), sub_code.is_empty(), s_code.is_empty()) {
-        (false, true, _) => s_msg.to_string(),
-        (false, false, _) => format!("{s_msg} (subCode={sub_code})"),
-        (true, false, false) => format!("sCode={s_code} subCode={sub_code}"),
-        (true, false, true) => format!("subCode={sub_code}"),
-        (true, true, false) => format!("sCode={s_code}"),
-        (true, true, true) => String::new(),
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct AlgoCancelContext {
     pub client_order_id: ClientOrderId,
@@ -2463,13 +2452,14 @@ pub fn emit_algo_cancel_rejections(
         }
 
         if let Some(ctx) = contexts.get(i) {
+            let reason = format_order_response_reason(code, msg, "");
             let ts = clock.get_time_ns();
             emitter.emit_order_cancel_rejected_event(
                 ctx.strategy_id,
                 ctx.instrument_id,
                 ctx.client_order_id,
                 ctx.venue_order_id,
-                msg,
+                &reason,
                 ts,
             );
         } else {
@@ -2493,6 +2483,19 @@ pub fn emit_batch_cancel_failure(
             "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {error}",
             ctx.client_order_id
         );
+    }
+}
+
+pub(crate) fn format_order_response_reason(s_code: &str, s_msg: &str, sub_code: &str) -> String {
+    match (s_code.is_empty(), s_msg.is_empty(), sub_code.is_empty()) {
+        (false, false, true) => format!("OKX error {s_code}: {s_msg}"),
+        (false, false, false) => format!("OKX error {s_code}: {s_msg} (subCode={sub_code})"),
+        (false, true, true) => format!("OKX error {s_code}"),
+        (false, true, false) => format!("OKX error {s_code} (subCode={sub_code})"),
+        (true, false, true) => s_msg.to_string(),
+        (true, false, false) => format!("{s_msg} (subCode={sub_code})"),
+        (true, true, false) => format!("subCode={sub_code}"),
+        (true, true, true) => String::new(),
     }
 }
 
@@ -3567,16 +3570,23 @@ mod tests {
             &events[0],
             ExecutionEvent::Order(OrderEventAny::Rejected(rejected))
                 if rejected.client_order_id == client_order_id
-                    && rejected.reason == Ustr::from("51008")
+                    && rejected.reason == Ustr::from("OKX error 51008")
         ));
         assert!(state.contains_terminal(&client_order_id));
     }
 
     #[rstest]
-    #[case("51000", "Rejected", "", "Rejected")]
-    #[case("51000", "Rejected", "51004", "Rejected (subCode=51004)")]
-    #[case("51000", "", "51004", "sCode=51000 subCode=51004")]
-    #[case("51000", "", "", "sCode=51000")]
+    #[case("51000", "Rejected", "", "OKX error 51000: Rejected")]
+    #[case(
+        "51000",
+        "Rejected",
+        "51004",
+        "OKX error 51000: Rejected (subCode=51004)"
+    )]
+    #[case("51000", "", "", "OKX error 51000")]
+    #[case("51000", "", "51004", "OKX error 51000 (subCode=51004)")]
+    #[case("", "Rejected", "", "Rejected")]
+    #[case("", "Rejected", "51004", "Rejected (subCode=51004)")]
     #[case("", "", "51004", "subCode=51004")]
     #[case("", "", "", "")]
     fn test_format_order_response_reason(
@@ -3690,7 +3700,7 @@ mod tests {
         let events = drain_execution_events(&mut receiver);
         assert_eq!(events.len(), 1);
         let rejected_id = ClientOrderId::from("ORPI002");
-        let reason = response["data"]
+        let s_msg = response["data"]
             .as_array()
             .unwrap()
             .iter()
@@ -3698,6 +3708,7 @@ mod tests {
             .unwrap()["sMsg"]
             .as_str()
             .unwrap();
+        let reason = format!("OKX error 54051: {s_msg}");
 
         match &events[0] {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) if !amend => {

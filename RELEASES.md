@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Lighter `use_gtd` to choose venue or local GTD expiry (#4997), thanks @graceyangfan
 - Added Lighter transport batching for batch cancellation and cancel-all requests (#4470)
+- Added OKX error codes to order, modify, and cancel rejection reasons as `OKX error <code>: <message>`
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Added Polymarket settlement evidence registry with targeted REST trade resolution (#4876)
@@ -347,7 +348,9 @@ Released on TBD (UTC).
 - Documented Binance order book synchronization, recovery limits, and snapshot pacing
 - Documented Hyperliquid inferred-fill commissions as unset
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
+- Documented OKX rejection reason format with venue error codes
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
+- Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Updated Databento and Tardis integration guides with new URL overrides
 - Updated OKX Rust exec tester example to use cross margin
 
