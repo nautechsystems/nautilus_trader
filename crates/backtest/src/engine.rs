@@ -2481,8 +2481,9 @@ mod tests {
     use nautilus_model::{
         data::{Data, InstrumentStatus, QuoteTick},
         enums::{
-            AccountType, BookType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType,
-            OrderSide, OrderStatus, OrderType, PositionSide, TriggerType,
+            AccountType, BookType, ContingencyType, LiquiditySide, MarketStatus,
+            MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+            TriggerType,
         },
         events::OrderEventAny,
         identifiers::{AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, Venue},
@@ -2579,6 +2580,164 @@ mod tests {
     impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy);
+
+    // How the canceled order's submit and acceptance events come to be deferred
+    #[derive(Clone, Copy, Debug)]
+    enum DeferredAcceptance {
+        // Limit order submitted earlier in the canceling handler
+        Initialized,
+        // Emulated stop-limit order released by the quote being handled
+        Released,
+        // OCO sibling of a leg submitted earlier in the canceling handler
+        OcoSibling,
+    }
+
+    // Cancels a resting order while its submit and acceptance events are deferred
+    #[derive(Debug)]
+    struct DeferredAcceptanceCancelStrategy {
+        core: StrategyCore,
+        instrument_id: InstrumentId,
+        scenario: DeferredAcceptance,
+        cancel_all: bool,
+        quote_count: usize,
+        target: Option<ClientOrderId>,
+    }
+
+    impl DeferredAcceptanceCancelStrategy {
+        const STRATEGY_ID: &str = "DEFERRED-CANCEL-001";
+
+        fn new(
+            instrument_id: InstrumentId,
+            scenario: DeferredAcceptance,
+            cancel_all: bool,
+        ) -> Self {
+            Self {
+                core: StrategyCore::new(StrategyConfig {
+                    strategy_id: Some(StrategyId::from(Self::STRATEGY_ID)),
+                    ..Default::default()
+                }),
+                instrument_id,
+                scenario,
+                cancel_all,
+                quote_count: 0,
+                target: None,
+            }
+        }
+
+        fn oco_leg(
+            &self,
+            client_order_id: &str,
+            sibling_id: &str,
+            side: OrderSide,
+            price: &str,
+        ) -> OrderAny {
+            OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(self.trader_id().unwrap())
+                .strategy_id(StrategyId::from(Self::STRATEGY_ID))
+                .instrument_id(self.instrument_id)
+                .client_order_id(ClientOrderId::from(client_order_id))
+                .side(side)
+                .quantity(Quantity::from("1.000"))
+                .price(Price::from(price))
+                .contingency_type(ContingencyType::Oco)
+                .linked_order_ids(vec![ClientOrderId::from(sibling_id)])
+                .build()
+        }
+
+        fn submit(&mut self) -> anyhow::Result<()> {
+            let instrument_id = self.instrument_id;
+            let quantity = Quantity::from("1.000");
+            let price = Price::from("900.00");
+
+            match self.scenario {
+                DeferredAcceptance::Initialized => {
+                    let order = self.order().limit(
+                        instrument_id,
+                        OrderSide::Buy,
+                        quantity,
+                        price,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                    self.target = Some(order.client_order_id());
+                    self.submit_order(order, None, None, None)
+                }
+                DeferredAcceptance::Released => {
+                    let order = self.order().stop_limit(
+                        instrument_id,
+                        OrderSide::Buy,
+                        quantity,
+                        price,
+                        Price::from("1002.00"),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(TriggerType::Default),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                    self.target = Some(order.client_order_id());
+                    self.submit_order(order, None, None, None)
+                }
+                DeferredAcceptance::OcoSibling => {
+                    let leg = self.oco_leg("O-OCO-A", "O-OCO-B", OrderSide::Buy, "900.00");
+                    let sibling = self.oco_leg("O-OCO-B", "O-OCO-A", OrderSide::Sell, "1100.00");
+                    self.target = Some(leg.client_order_id());
+                    self.submit_order_list(vec![leg, sibling], None, None, None)
+                }
+            }
+        }
+    }
+
+    impl DataActor for DeferredAcceptanceCancelStrategy {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.subscribe_quotes(self.instrument_id, None, None);
+            Ok(())
+        }
+
+        fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+            self.quote_count += 1;
+
+            if self.quote_count == 1 {
+                self.submit()?;
+            }
+
+            // The second quote triggers and releases the emulated order before this handler
+            let cancel_quote = match self.scenario {
+                DeferredAcceptance::Released => 2,
+                DeferredAcceptance::Initialized | DeferredAcceptance::OcoSibling => 1,
+            };
+
+            if self.quote_count != cancel_quote {
+                return Ok(());
+            }
+
+            if self.cancel_all {
+                self.cancel_all_orders(self.instrument_id, None, None, true, None)
+            } else {
+                self.cancel_order(self.target.unwrap(), None, None)
+            }
+        }
+    }
+
+    nautilus_strategy!(DeferredAcceptanceCancelStrategy);
 
     struct TestSimulationModule {
         process_count: Rc<Cell<u32>>,
@@ -3217,6 +3376,83 @@ mod tests {
             cached_order.events().last(),
             Some(OrderEventAny::Filled(_))
         ));
+    }
+
+    #[rstest]
+    fn test_immediate_cancel_of_order_with_deferred_acceptance(
+        #[values(
+            DeferredAcceptance::Initialized,
+            DeferredAcceptance::Released,
+            DeferredAcceptance::OcoSibling
+        )]
+        scenario: DeferredAcceptance,
+        #[values(true, false)] cancel_all: bool,
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let mut engine = create_immediate_engine(&crypto_perpetual_ethusdt);
+        let instrument_id = crypto_perpetual_ethusdt.id;
+        engine
+            .add_strategy(DeferredAcceptanceCancelStrategy::new(
+                instrument_id,
+                scenario,
+                cancel_all,
+            ))
+            .unwrap();
+        let quote = |bid: &str, ask: &str, ts: u64| {
+            Data::Quote(QuoteTick::new(
+                instrument_id,
+                Price::from(bid),
+                Price::from(ask),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                UnixNanos::from(ts),
+                UnixNanos::from(ts),
+            ))
+        };
+        engine
+            .add_data(
+                vec![
+                    quote("1000.00", "1001.00", 1),
+                    quote("1002.00", "1003.00", 2),
+                ],
+                None,
+                true,
+                true,
+            )
+            .unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+
+        assert!(
+            engine.venues[&instrument_id.venue]
+                .borrow()
+                .get_open_orders(Some(instrument_id))
+                .is_empty()
+        );
+        let cache = engine.kernel.cache.borrow();
+        let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+        let expected_orders = match scenario {
+            DeferredAcceptance::OcoSibling => 2,
+            DeferredAcceptance::Initialized | DeferredAcceptance::Released => 1,
+        };
+        assert_eq!(orders.len(), expected_orders);
+
+        for order in &orders {
+            assert_eq!(order.status(), OrderStatus::Canceled);
+            assert!(
+                matches!(
+                    order.events().as_slice(),
+                    [
+                        ..,
+                        OrderEventAny::Submitted(_),
+                        OrderEventAny::Accepted(_),
+                        OrderEventAny::Canceled(_),
+                    ]
+                ),
+                "unexpected events {:?}",
+                order.events(),
+            );
+        }
     }
 
     #[rstest]

@@ -3446,7 +3446,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let order = match self.order_snapshot(command.client_order_id) {
+        let mut order = match self.order_snapshot(command.client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -3456,6 +3456,20 @@ impl OrderMatchingEngine {
                 return;
             }
         };
+
+        // Leave the order resting rather than purge it without an event
+        if let Err(e) = self.apply_deferred_acceptance(&mut order) {
+            self.generate_order_cancel_rejected(
+                command.trader_id,
+                command.strategy_id,
+                account_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                Ustr::from(e.to_string().as_str()),
+            );
+            return;
+        }
 
         if !order.is_inflight() && !order.is_open() {
             self.purge_stale_core_entry(command.client_order_id);
@@ -6653,6 +6667,40 @@ impl OrderMatchingEngine {
         }
     }
 
+    // The core only holds orders this engine accepted, so a locally active cached status means
+    // the submit and acceptance events went through a deferring event handler and are not
+    // applied yet. Applies them to the snapshot, as `accept_order` applies its acceptance, so a
+    // cancellation dispatched now follows them
+    fn apply_deferred_acceptance(&mut self, order: &mut OrderAny) -> anyhow::Result<()> {
+        if !order.is_active_local() || !self.core.order_exists(order.client_order_id()) {
+            return Ok(());
+        }
+
+        let account_id = match order.account_id() {
+            Some(account_id) => account_id,
+            None => *self
+                .account_ids
+                .get(&order.trader_id())
+                .ok_or_else(|| anyhow::anyhow!("No account ID for {}", order.trader_id()))?,
+        };
+        let ts_now = self.clock.borrow().timestamp_ns();
+        order.apply(OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        )))?;
+
+        let venue_order_id = self.ids_generator.get_venue_order_id(order)?;
+        let event = self.create_order_accepted(order, venue_order_id);
+        order.apply(event)?;
+        Ok(())
+    }
+
     fn cancel_contingent_orders(&mut self, order: &OrderAny, excluded: &[ClientOrderId]) {
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
@@ -6661,10 +6709,15 @@ impl OrderMatchingEngine {
                     continue;
                 }
 
-                let contingent_order = match self.order_snapshot(*client_order_id) {
+                let mut contingent_order = match self.order_snapshot(*client_order_id) {
                     Some(order) => order,
                     None => panic!("Cannot find contingent order for {client_order_id}"),
                 };
+
+                if let Err(e) = self.apply_deferred_acceptance(&mut contingent_order) {
+                    log::error!("Cannot cancel contingent order {client_order_id}: {e}");
+                    continue;
+                }
 
                 if contingent_order.is_active_local() {
                     // order is not on the exchange yet
