@@ -25,7 +25,10 @@ echo "Checking copyright years (expected: 2015-${CURRENT_YEAR} or later)..."
 # Use ripgrep to find all copyright lines with years (much faster than sed+grep loop)
 # Format: filename:line_number:Copyright (C) 2015-YYYY
 git grep -n -I -E "Copyright [(]C[)] 2015-[0-9]{4}" -- '*.rs' '*.py' \
-  > "$COPYRIGHT_TMP_DIR/year_headers" || [[ $? -eq 1 ]]
+  > "$COPYRIGHT_TMP_DIR/year_headers" || {
+  status=$?
+  [[ $status -eq 1 ]] || exit "$status"
+}
 while IFS=: read -r file _ line_content; do
   # Extract year from pattern "2015-YYYY"
   if [[ "$line_content" =~ 2015-([0-9]{4}) ]]; then
@@ -39,7 +42,10 @@ while IFS=: read -r file _ line_content; do
 done < "$COPYRIGHT_TMP_DIR/year_headers"
 
 # Get list of files with copyright headers (sorted for comm)
-{ git grep -l -I -F "Copyright (C)" -- '*.rs' '*.py' || [[ $? -eq 1 ]]; } |
+{ git grep -l -I -F "Copyright (C)" -- '*.rs' '*.py' || {
+  status=$?
+  [[ $status -eq 1 ]] || exit "$status"
+}; } |
   sort > "$COPYRIGHT_TMP_DIR/files_with_headers"
 
 # Get all tracked files (sorted for comm)
