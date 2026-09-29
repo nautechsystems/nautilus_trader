@@ -92,9 +92,10 @@ impl BacktestNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if building an engine from a config fails and
-    /// [`BacktestRunConfig::raise_exception`] is enabled for that config.
-    /// Returns an error if this node has been disposed.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building an engine from a config fails and
+    ///   [`BacktestRunConfig::raise_exception`] is enabled for that config.
     pub fn build(&mut self) -> anyhow::Result<()> {
         self.ensure_not_disposed()?;
 
@@ -148,9 +149,10 @@ impl BacktestNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if building, data loading, or engine execution fails and
-    /// [`BacktestRunConfig::raise_exception`] is enabled for the run config.
-    /// Returns an error if this node has been disposed.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building, data loading, or engine execution fails and
+    ///   [`BacktestRunConfig::raise_exception`] is enabled for the run config.
     pub fn run(&mut self) -> anyhow::Result<Vec<BacktestResult>> {
         self.ensure_not_disposed()?;
 
