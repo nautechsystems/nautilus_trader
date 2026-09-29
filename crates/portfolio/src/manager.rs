@@ -3899,7 +3899,7 @@ mod tests {
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
 
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
 
         let mut order = OrderTestBuilder::new(OrderType::Market)
@@ -4154,7 +4154,7 @@ mod tests {
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
 
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
 
         let mut order = OrderTestBuilder::new(OrderType::Market)
@@ -4240,7 +4240,7 @@ mod tests {
         let account = CashAccount::new(account_state, true, false);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let mut instrument = currency_pair_btcusdt();
         instrument.size_increment = Quantity::from("0.005000");
         let instrument = InstrumentAny::CurrencyPair(instrument);
@@ -4320,7 +4320,7 @@ mod tests {
 
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
 
@@ -4385,7 +4385,7 @@ mod tests {
         let account = CashAccount::new(account_state, true, false);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         let fill = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
@@ -4623,7 +4623,7 @@ mod tests {
         let account = multi_currency_cash_account_with_usd_locked(1_000.0, 200.0);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         cache
             .borrow_mut()
@@ -4659,7 +4659,7 @@ mod tests {
         let account = multi_currency_cash_account_with_usd_locked(1_000.0, 200.0);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         cache
             .borrow_mut()
@@ -4695,7 +4695,7 @@ mod tests {
         let account = multi_currency_cash_account_with_usd_locked(1_000.0, 50.0);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         cache
             .borrow_mut()
@@ -4731,7 +4731,7 @@ mod tests {
         let account = multi_currency_cash_account_with_usd_locked_and_borrowing(100.0, 50.0, true);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         cache
             .borrow_mut()
@@ -4767,7 +4767,7 @@ mod tests {
         let account = multi_currency_betting_account_with_gbp_locked(1_000.0, 200.0);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = betting();
         cache
             .borrow_mut()
@@ -4820,7 +4820,7 @@ mod tests {
             .borrow_mut()
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         let fill = buy_audusd_fill("10000", "0.80000", 20.0);
         let position = Position::new(
@@ -4864,7 +4864,7 @@ mod tests {
             .borrow_mut()
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         let fill = buy_audusd_fill("10000", "0.80000", 20.0);
         let position = Position::new(
@@ -4920,7 +4920,7 @@ mod tests {
             .borrow_mut()
             .add_account(AccountAny::Cash(account.clone()))
             .unwrap();
-        let manager = AccountsManager::new(clock, cache.clone());
+        let manager = AccountsManager::new(clock, Rc::clone(&cache));
         let instrument = audusd_sim();
         // Buy AUD/USD on an AUD-only account: produces negative USD pnl on a missing currency,
         // which the documented Python-parity branch rejects even with `allow_borrowing=true`.
