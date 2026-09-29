@@ -1663,11 +1663,11 @@ adapter selects each side's size as follows:
 - With [effective deltas](#effective-deltas), an active book delta subscription, and book updates not
   gated pending a valid snapshot, a side takes its size from the maintained local book when its top
   price matches. Before the first snapshot, or when the top does not match, its size is zero.
-- Without a maintained local book, or while book updates are gated pending a valid snapshot, a side
+- Without effective deltas, or while book updates are gated pending a valid snapshot, a side
   keeps the previous quote size when its top price matches. A moved or unknown side has zero size.
 
-The adapter ignores events older than the last emitted quote or maintained local book. It also
-rejects locked, crossed, out-of-range, and off-grid events.
+The adapter ignores events older than the last emitted quote or, with effective deltas, the local
+book. It also rejects locked, crossed, out-of-range, and off-grid events.
 
 An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
 `drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
@@ -1688,6 +1688,23 @@ Polymarket also sends hashed book updates that omit fields included in the serve
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
 verification because their exact hash preimage is unavailable. Snapshots without a hash remain
 compatible.
+
+#### Price change bursts
+
+Polymarket reports a match as a burst of `price_change` messages that share one timestamp. When the
+taker order rests a remainder, that remainder arrives first, followed by one removal for each
+opposite-side level it consumed, and a `book` event closes the burst. Each message's `best_bid` and
+`best_ask` already reflect the completed match, so applying the messages one at a time can cross the
+book until the consumed levels are removed.
+
+A book delta subscription keeps a local book from its first accepted snapshot. When a
+`price_change` batch leaves that book crossed, with a bid above an ask, the adapter appends deletes
+for the bids above that asset's `best_bid` and the asks below its `best_ask`. The emitted batch then
+leaves the book uncrossed, and the venue's later removals of those levels delete nothing. Batches
+that leave the book uncrossed, including a book locked at one price, pass through unchanged.
+
+A missing `best_bid` or `best_ask` leaves its side unpruned, and an invalid one skips pruning. The
+adapter logs a warning whenever an emitted batch leaves the book crossed.
 
 #### Live recovery validation
 
@@ -1718,7 +1735,9 @@ CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
   reconnect at the ceiling, unsubscribe during recovery, and shutdown during a reconnect.
 
 `--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
-`--rounds` sets the number of rounds (12 by default).
+`--rounds` sets the number of rounds (12 by default). `--tokens` takes comma-separated outcome
+token IDs from six distinct open, order-accepting markets to test instead of the most traded
+markets, since a quiet book can miss the recovery waits.
 
 Two venue behaviors limit what the harness can force:
 
@@ -1741,7 +1760,8 @@ snapshot batches (see [Data client options](#data-client-options)):
   snapshots emit nothing, and the final record carries `F_LAST`.
 - Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
   passes through unchanged to seed the new book epoch.
-- Incremental `price_change` batches remain unchanged and update the local comparison state.
+- Incremental `price_change` batches follow [price change bursts](#price-change-bursts) handling
+  and update the local comparison state.
 - When book deltas are subscribed, the maintained comparison book can supply matching sizes to
   `best_bid_ask` quote ticks. This can change those quote sizes and their unchanged-quote
   suppression, and the carried sizes can affect later `price_change` quotes. Trades are unchanged.
