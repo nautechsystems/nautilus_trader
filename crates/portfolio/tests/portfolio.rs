@@ -3156,6 +3156,94 @@ fn test_order_accept_updates_margin_init(
 }
 
 #[rstest]
+fn test_margin_partial_fill_updates_margin_init_from_leaves_qty(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("1.00000"))
+        .build();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        uuid4(),
+    );
+    let accepted = order_accepted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        VenueOrderId::new("1"),
+        uuid4(),
+    );
+    let filled = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::new("1"),
+        account_id,
+        TradeId::new("1"),
+        OrderSide::Buy,
+        OrderType::Limit,
+        Quantity::from("40"),
+        Price::from("1.00000"),
+        Currency::USD(),
+        LiquiditySide::Maker,
+        Some(PositionId::new("P-001")),
+        None,
+    );
+
+    for event in [
+        OrderEventAny::Submitted(submitted),
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+    ] {
+        portfolio.cache().borrow_mut().update_order(&event).unwrap();
+        msgbus::send_order_event(MessagingSwitchboard::portfolio_update_order(), event);
+    }
+
+    let margins = portfolio.instrument_initial_margins(&Venue::from("SIM"), None);
+    assert_eq!(
+        margins,
+        IndexMap::from([(instrument_audusd.id(), Money::from("1.80 USD"))])
+    );
+}
+
+#[rstest]
 fn test_initialize_orders_cash_account_with_base_currency() {
     let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
         Symbol::from("AUD/USD"),
