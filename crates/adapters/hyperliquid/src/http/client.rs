@@ -78,7 +78,8 @@ use crate::{
             derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
             normalize_or_validate_wire_price, order_to_hyperliquid_request_with_optional_decimals,
             parse_combined_account_balances_and_margins, parse_spot_account_balances,
-            parse_trigger_order_type, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            parse_trigger_order_type, parse_trigger_order_type_label, round_to_sig_figs,
+            time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -2406,19 +2407,9 @@ impl HyperliquidHttpClient {
                 continue;
             }
 
-            let order_type = entry.order.order_type.as_deref().unwrap_or_default();
-            let tpsl = if order_type.starts_with("Take Profit") {
-                Some(crate::common::enums::HyperliquidTpSl::Tp)
-            } else if order_type.starts_with("Stop") {
-                Some(crate::common::enums::HyperliquidTpSl::Sl)
-            } else {
-                None
-            };
-            let is_market = entry
-                .order
-                .order_type
-                .as_deref()
-                .is_some_and(|label| label.ends_with("Market"));
+            let label = entry.order.order_type.as_deref().unwrap_or_default();
+            let tpsl = parse_trigger_order_type_label(label).map(|(tpsl, _)| tpsl);
+            let is_market = label.ends_with("Market");
             let historical_order_type = match tpsl.as_ref() {
                 Some(tpsl) => parse_trigger_order_type(is_market, tpsl),
                 None if is_market => OrderType::Market,
@@ -2443,6 +2434,7 @@ impl HyperliquidHttpClient {
                 tpsl,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: None,
             };
 
             match parse_order_status_report_from_basic(
@@ -2581,6 +2573,7 @@ impl HyperliquidHttpClient {
             tpsl: None,
             trigger_activated: None,
             trailing_stop: None,
+            order_type: None,
         };
 
         let mut report = parse_order_status_report_from_basic(
