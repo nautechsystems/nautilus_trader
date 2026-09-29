@@ -17,13 +17,10 @@
 //!
 //! The JSON error schema is described in the OKX documentation under
 //! *REST API > Error Codes* - <https://www.okx.com/docs-v5/en/#error-codes>.
-//! The types below mirror that structure and are reused across the entire
-//! crate.
 
 use std::time::Duration;
 
 use nautilus_network::http::{HttpClientError, StatusCode};
-use serde::Deserialize;
 use thiserror::Error;
 
 use crate::common::consts::should_retry_error_code;
@@ -51,22 +48,6 @@ pub enum BuildError {
     /// Limit exceeds maximum allowed value.
     #[error("Limit exceeds maximum of 300")]
     LimitTooHigh,
-}
-
-/// Represents the JSON structure of an error response returned by the OKX API.
-#[derive(Clone, Debug, Deserialize)]
-pub struct OKXErrorResponse {
-    /// The top-level error object included in the OKX error response.
-    pub error: OKXErrorMessage,
-}
-
-/// Contains the specific error details provided by the OKX API.
-#[derive(Clone, Debug, Deserialize)]
-pub struct OKXErrorMessage {
-    /// A human-readable explanation of the error condition.
-    pub message: String,
-    /// A short identifier or category for the error, as returned by OKX.
-    pub name: String,
 }
 
 /// A typed error enumeration for the OKX HTTP client.

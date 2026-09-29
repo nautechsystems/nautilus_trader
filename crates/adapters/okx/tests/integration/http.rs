@@ -6112,6 +6112,164 @@ async fn test_http_okx_error_falls_back_to_s_code_when_s_msg_empty() {
 }
 
 #[rstest]
+#[case::invalid_access_key(
+    StatusCode::UNAUTHORIZED,
+    "http_error_invalid_access_key.json",
+    "50111",
+    "Invalid OK-ACCESS-KEY",
+    "OKX error 50111: Invalid OK-ACCESS-KEY",
+    false,
+    1
+)]
+#[case::rate_limit(
+    StatusCode::TOO_MANY_REQUESTS,
+    "http_error_rate_limit.json",
+    "50011",
+    "Too Many Requests",
+    "Temporary OKX error 50011: Too Many Requests",
+    true,
+    3
+)]
+#[tokio::test]
+async fn test_http_okx_error_without_data_on_non_2xx(
+    #[case] status: StatusCode,
+    #[case] fixture: &'static str,
+    #[case] expected_code: &str,
+    #[case] expected_message: &str,
+    #[case] expected_display: &str,
+    #[case] retryable: bool,
+    #[case] expected_attempts: usize,
+) {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
+
+    let router = Router::new().route(
+        "/api/v5/account/balance",
+        get(move || {
+            let counter = Arc::clone(&counter);
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                (status, Json(load_test_data(fixture))).into_response()
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        2,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let error = client.get_balance().await.unwrap_err();
+
+    match (&error, retryable) {
+        (
+            OKXHttpError::RetryableOkxError {
+                error_code,
+                message,
+                retry_after: None,
+            },
+            true,
+        )
+        | (
+            OKXHttpError::OkxError {
+                error_code,
+                message,
+            },
+            false,
+        ) => {
+            assert_eq!(error_code, expected_code);
+            assert_eq!(message, expected_message);
+        }
+        _ => panic!("unexpected OKX error classification: {error:?}"),
+    }
+
+    assert_eq!(error.to_string(), expected_display);
+
+    let expected_failure = if retryable {
+        CommandFailure::Ambiguous(expected_display.to_string())
+    } else {
+        CommandFailure::VenueRejected(expected_display.to_string())
+    };
+
+    assert_eq!(classify_okx_http_failure(&error), expected_failure);
+    assert_eq!(attempt_count.load(Ordering::SeqCst), expected_attempts);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_not_found_json_body_is_unexpected_status() {
+    let router = Router::new().route(
+        "/api/v5/trade/orders-algo-pending",
+        get(|| async {
+            (
+                StatusCode::NOT_FOUND,
+                Json(load_test_data("http_error_not_found.json")),
+            )
+                .into_response()
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        2,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let params = GetAlgoOrdersParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Swap)
+        .build()
+        .unwrap();
+
+    let error = client.get_order_algo_pending(params).await.unwrap_err();
+
+    match error {
+        OKXHttpError::UnexpectedStatus { status, body } => {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            assert_eq!(
+                serde_json::from_str::<Value>(&body).unwrap(),
+                load_test_data("http_error_not_found.json")
+            );
+        }
+        other => panic!("expected UnexpectedStatus: {other:?}"),
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_http_malformed_json_response() {
     let router = Router::new().route(

@@ -190,6 +190,13 @@ fn spot_quote_priority(symbol: &str) -> u8 {
     })
 }
 
+// OKX omits `data` from gateway errors such as authentication failures
+#[derive(Deserialize)]
+struct OKXErrorEnvelope {
+    code: String,
+    msg: String,
+}
+
 fn resolve_okx_error_code(response_body: &[u8], envelope_code: &str) -> String {
     if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(response_body)
         && let Some(s_code) = payload
@@ -1108,9 +1115,9 @@ impl OKXRawHttpClient {
                         );
                     }
 
-                    if let Ok(parsed_error) = deserialize_okx_response::<T>(&resp.body) {
-                        let error_code = resolve_okx_error_code(&resp.body, &parsed_error.code);
-                        let message = resolve_okx_error_message(&resp.body, &parsed_error.msg);
+                    if let Ok(envelope) = serde_json::from_slice::<OKXErrorEnvelope>(&resp.body) {
+                        let error_code = resolve_okx_error_code(&resp.body, &envelope.code);
+                        let message = resolve_okx_error_message(&resp.body, &envelope.msg);
                         return Err(OKXHttpError::from_venue_response(
                             error_code,
                             message,
