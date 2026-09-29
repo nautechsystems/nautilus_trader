@@ -92,6 +92,43 @@ def test_parse_pyo3_items_tolerates_attribute_with_trailing_comment() -> None:
     assert items[0]["in_pymethods"] is True
 
 
+def test_parse_pyo3_items_keeps_doc_after_parameter_attribute() -> None:
+    """
+    Test parse pyo3 items keeps the doc of a function after a parameter attribute.
+    """
+    # Arrange: the parameter attribute must not swallow the next function's doc comment
+    lines = [
+        "#[pymethods]",
+        "impl PyCatalog {",
+        "    pub fn query(",
+        "        &mut self,",
+        '        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<',
+        "            '_,",
+        "            PyAny,",
+        "        >,",
+        "    ) -> PyResult<()> {",
+        "        Ok(())",
+        "    }",
+        "}",
+        "",
+        "/// Reads a run.",
+        "#[pyfunction]",
+        "pub fn py_read_run() -> PyResult<()> {",
+        "    Ok(())",
+        "}",
+    ]
+
+    # Act
+    items = generate_docstrings.parse_pyo3_items(lines)
+
+    # Assert
+    assert len(items) == 1
+    assert items[0]["fn_name"] == "py_read_run"
+    assert items[0]["doc_start"] == 13
+    assert items[0]["doc_end"] == 13
+    assert items[0]["insert_line"] == 13
+
+
 def test_parse_pyo3_items_captures_multiline_result_signature() -> None:
     """
     Test parse pyo3 items captures multiline result signature.

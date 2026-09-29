@@ -106,3 +106,109 @@ pub(crate) fn arrow_record_batches_from_pybytes(data: Vec<u8>) -> PyResult<Vec<R
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| PyIOError::new_err(format!("Failed to decode Arrow IPC bytes: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use arrow::{
+        array::{Int64Array, StringArray},
+        datatypes::{DataType, Field, Schema},
+        record_batch::RecordBatch,
+    };
+    use rstest::rstest;
+
+    use super::{arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema, *};
+
+    #[rstest]
+    fn arrow_ipc_schema_rejects_mismatched_fields_with_io_error() {
+        pyo3::Python::initialize();
+        let integers = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![1]))],
+        )
+        .unwrap();
+        let strings = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Utf8,
+                false,
+            )])),
+            vec![Arc::new(StringArray::from(vec!["one"]))],
+        )
+        .unwrap();
+
+        let error =
+            arrow_ipc_data_schema(&NautilusDataType::QuoteTick, &[integers, strings], false)
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "OSError: Arrow IPC result batches do not share one physical schema",
+        );
+    }
+
+    #[rstest]
+    fn arrow_ipc_record_schema_is_canonical_when_empty() {
+        let schema = arrow_ipc_record_schema(NautilusRecordType::AccountState, &[]).unwrap();
+
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .map(|field| field.name().as_str())
+                .collect::<Vec<_>>(),
+            [
+                "account_id",
+                "account_type",
+                "base_currency",
+                "balances",
+                "margins",
+                "is_reported",
+                "event_id",
+                "ts_event",
+                "ts_init",
+                "info",
+            ],
+        );
+    }
+
+    #[rstest]
+    fn arrow_ipc_record_batches_use_unified_metadata() {
+        let fields = vec![Field::new("value", DataType::Int64, false)];
+        let first = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                fields.clone(),
+                HashMap::from([("identifier".to_string(), "A.TEST".to_string())]),
+            )),
+            vec![Arc::new(Int64Array::from(vec![1]))],
+        )
+        .unwrap();
+        let second = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                fields,
+                HashMap::from([("identifier".to_string(), "B.TEST".to_string())]),
+            )),
+            vec![Arc::new(Int64Array::from(vec![2]))],
+        )
+        .unwrap();
+
+        let schema = arrow_ipc_record_schema(
+            NautilusRecordType::AccountState,
+            &[first.clone(), second.clone()],
+        )
+        .unwrap();
+        let batches = arrow_ipc_batches(&schema, vec![first, second]).unwrap();
+
+        assert!(schema.metadata().is_empty());
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.schema().as_ref() == &schema)
+        );
+    }
+}

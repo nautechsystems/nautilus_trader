@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+//! Python conversions for catalog bindings.
 
 use nautilus_core::{
     Params,
@@ -27,26 +27,11 @@ use nautilus_model::{
         instruments::PyNautilusInstrumentType,
     },
 };
-use pyo3::{
-    Borrowed,
-    exceptions::PyIOError,
-    prelude::*,
-    types::{PyDict, PyList},
-};
+use pyo3::{Borrowed, prelude::*, types::PyDict};
 use pyo3_stub_gen::impl_stub_type;
 use serde_json::json;
 
-use crate::{
-    catalog::{
-        traits::CatalogMetadata,
-        types::{CatalogDataType, data_type_from_data_path_prefix},
-    },
-    writer::filter::WriterRecordFilter,
-};
-
-pub(crate) fn to_pyio_err(error: impl Display) -> PyErr {
-    PyIOError::new_err(error.to_string())
-}
+use crate::catalog::{traits::CatalogMetadata, types::CatalogDataType};
 
 pub(crate) fn catalog_metadata_to_pydict(
     py: Python<'_>,
@@ -88,12 +73,12 @@ pub fn nautilus_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<Naut
 ///
 /// Extraction accepts `NautilusDataType`, `NautilusRecordType`, and `NautilusInstrumentType`, so
 /// the generated stubs name that union rather than `typing.Any`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PyCatalogDataType(CatalogDataType);
 
 impl PyCatalogDataType {
-    pub(crate) const fn new(data_type: CatalogDataType) -> Self {
-        Self(data_type)
+    pub(crate) const fn new(catalog_type: CatalogDataType) -> Self {
+        Self(catalog_type)
     }
 
     pub(crate) fn into_inner(self) -> CatalogDataType {
@@ -124,8 +109,8 @@ impl<'py> IntoPyObject<'py> for PyCatalogDataType {
 impl<'py> FromPyObject<'_, 'py> for PyCatalogDataType {
     type Error = PyErr;
 
-    fn extract(data_type: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
-        catalog_data_type_from_py(&data_type).map(Self)
+    fn extract(catalog_type: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        catalog_data_type_from_py(&catalog_type).map(Self)
     }
 }
 
@@ -133,16 +118,18 @@ impl_stub_type!(
     PyCatalogDataType = PyNautilusDataType | PyNautilusRecordType | PyNautilusInstrumentType
 );
 
-pub(crate) fn catalog_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<CatalogDataType> {
-    if let Ok(data_type) = data_type.extract::<PyRef<'_, PyNautilusDataType>>() {
+pub(crate) fn catalog_data_type_from_py(
+    catalog_type: &Bound<'_, PyAny>,
+) -> PyResult<CatalogDataType> {
+    if let Ok(data_type) = catalog_type.extract::<PyRef<'_, PyNautilusDataType>>() {
         return Ok(CatalogDataType::from(data_type.inner()));
     }
 
-    if let Ok(record_type) = data_type.extract::<PyRef<'_, PyNautilusRecordType>>() {
+    if let Ok(record_type) = catalog_type.extract::<PyRef<'_, PyNautilusRecordType>>() {
         return Ok(CatalogDataType::Record(record_type.inner()));
     }
 
-    if let Ok(instrument_type) = data_type.extract::<PyRef<'_, PyNautilusInstrumentType>>() {
+    if let Ok(instrument_type) = catalog_type.extract::<PyRef<'_, PyNautilusInstrumentType>>() {
         return Ok(CatalogDataType::Instrument(instrument_type.inner()));
     }
 
@@ -166,59 +153,4 @@ pub(crate) fn write_record_params_from_py(
     }
 
     Ok((!params.is_empty()).then_some(params))
-}
-
-pub(crate) fn writer_record_filter_from_py(
-    record_types: Option<&Bound<'_, PyAny>>,
-    record_filters: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<WriterRecordFilter>> {
-    let mut filter = WriterRecordFilter::new();
-
-    if let Some(record_types) = record_types {
-        let record_types = record_types.cast::<PyList>()?;
-        for item in record_types.iter() {
-            filter.insert(catalog_filter_family_from_py(&item)?, None);
-        }
-    }
-
-    if let Some(record_filters) = record_filters {
-        let record_filters = record_filters.cast::<PyDict>()?;
-        for (record_type, identifiers) in record_filters {
-            let identifiers = if identifiers.is_none() {
-                None
-            } else if let Ok(identifier) = identifiers.extract::<String>() {
-                Some(vec![identifier])
-            } else {
-                Some(identifiers.extract::<Vec<String>>()?)
-            };
-
-            filter.insert(catalog_filter_family_from_py(&record_type)?, identifiers);
-        }
-    }
-
-    Ok((!filter.is_empty()).then_some(filter))
-}
-
-pub(crate) fn catalog_filter_family_from_py(value: &Bound<'_, PyAny>) -> PyResult<CatalogDataType> {
-    if let Ok(record_type) = value.extract::<PyRef<'_, PyNautilusRecordType>>() {
-        return Ok(CatalogDataType::Record(record_type.inner()));
-    }
-
-    if let Ok(data_type) = value.extract::<PyRef<'_, PyNautilusDataType>>() {
-        return Ok(CatalogDataType::Data(data_type.inner()));
-    }
-
-    if let Ok(value) = value.extract::<String>() {
-        if let Ok(record_type) = value.parse::<NautilusRecordType>() {
-            return Ok(CatalogDataType::Record(record_type));
-        }
-
-        return data_type_from_data_path_prefix(&value)
-            .map(CatalogDataType::Data)
-            .map_err(to_pytype_err);
-    }
-
-    Err(to_pytype_err(
-        "filter key must be NautilusRecordType, NautilusDataType, or str",
-    ))
 }

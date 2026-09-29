@@ -18,15 +18,17 @@
 use std::fmt::Display;
 
 use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
-use nautilus_core::{DurationNanos, Params, UnixNanos};
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
     instruments::NautilusInstrumentType,
 };
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
 use crate::{
-    catalog::factory::PARQUET_CATALOG_FACTORY_NAME, common::backend_name::backend_type,
+    catalog::factory::{CatalogConnectConfig, PARQUET_CATALOG_FACTORY_NAME},
+    common::{backend_name::backend_type, paths::local_writer_directory},
     writer::factory::WriterBackendType,
 };
 
@@ -48,11 +50,11 @@ backend_type!(
         reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
     )
 )]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.persistence", from_py_object, eq)
+    pyo3::pyclass(module = "nautilus_trader.persistence", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -73,8 +75,6 @@ pub struct DataCatalogConfig {
     catalog_backend: CatalogBackendType,
     /// Backend-specific catalog parameters.
     params: Option<Params>,
-    #[serde(default)]
-    fs_rust_storage_options: Option<ahash::AHashMap<String, String>>,
     /// Whether the catalog rejects response write-back.
     #[serde(default)]
     #[builder(default)]
@@ -95,46 +95,8 @@ impl DataCatalogConfig {
             fs_protocol: fs_protocol.unwrap_or_else(default_fs_protocol),
             catalog_backend: catalog_backend.unwrap_or_default(),
             params: None,
-            fs_rust_storage_options: None,
             read_only: false,
         }
-    }
-
-    /// Sets native object-store connection options.
-    #[must_use]
-    pub fn with_storage_options(
-        mut self,
-        options: Option<ahash::AHashMap<String, String>>,
-    ) -> Self {
-        self.fs_rust_storage_options = options;
-        self
-    }
-
-    /// Returns native object-store options.
-    #[must_use]
-    pub fn fs_rust_storage_options(&self) -> Option<&ahash::AHashMap<String, String>> {
-        self.fs_rust_storage_options.as_ref()
-    }
-
-    /// Creates the configured catalog through the built-in factory registry.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the backend is unavailable or its connection cannot be opened.
-    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::DataCatalog> {
-        let mut connect = crate::catalog::factory::CatalogConnectConfig::from_path_and_protocol(
-            &self.path,
-            Some(&self.fs_protocol),
-            self.fs_rust_storage_options.clone(),
-        );
-        connect.params.clone_from(&self.params);
-        let factories = crate::backend::default_catalog_factories();
-        let name = self.catalog_backend.to_string();
-        factories
-            .get(&name)
-            .ok_or_else(|| anyhow::anyhow!("No catalog factory registered for '{name}'"))?(
-            &connect
-        )
     }
 
     /// Returns a copy with catalog registration name set.
@@ -193,6 +155,55 @@ impl DataCatalogConfig {
     pub const fn params(&self) -> Option<&Params> {
         self.params.as_ref()
     }
+
+    /// Returns the connection settings catalog and writer factories open this catalog with.
+    #[must_use]
+    pub fn connect_config(&self) -> CatalogConnectConfig {
+        let fs_protocol = match self.fs_protocol.as_str() {
+            "file" => None,
+            protocol => Some(protocol),
+        };
+        let mut connect =
+            CatalogConnectConfig::from_path_and_protocol(&self.path, fs_protocol, None);
+        connect.params.clone_from(&self.params);
+        connect
+    }
+
+    /// Returns the streaming writer backend that promotes into this catalog.
+    #[must_use]
+    pub fn writer_backend(&self) -> WriterBackendType {
+        match &self.catalog_backend {
+            CatalogBackendType::Parquet => WriterBackendType::Parquet,
+            CatalogBackendType::External(name) => WriterBackendType::External(name.clone()),
+        }
+    }
+}
+
+/// The rotation policy of a streaming writer, without its parameters.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq, FromRepr, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.persistence",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")
+)]
+pub enum RotationMode {
+    Size,
+    Interval,
+    ScheduledDates,
+    NoRotation,
 }
 
 /// Configuration for file rotation in streaming output.
@@ -207,12 +218,12 @@ pub enum RotationConfig {
     /// Rotate based on a time interval.
     Interval {
         /// Interval in nanoseconds.
-        interval_ns: DurationNanos,
+        interval_ns: u64,
     },
     /// Rotate based on scheduled dates.
     ScheduledDates {
         /// Interval in nanoseconds.
-        interval_ns: DurationNanos,
+        interval_ns: u64,
         /// Start of the scheduled rotation period.
         schedule_ns: UnixNanos,
     },
@@ -221,6 +232,17 @@ pub enum RotationConfig {
 }
 
 impl RotationConfig {
+    /// Returns the rotation policy without its parameters.
+    #[must_use]
+    pub const fn mode(&self) -> RotationMode {
+        match self {
+            Self::Size { .. } => RotationMode::Size,
+            Self::Interval { .. } => RotationMode::Interval,
+            Self::ScheduledDates { .. } => RotationMode::ScheduledDates,
+            Self::NoRotation => RotationMode::NoRotation,
+        }
+    }
+
     /// Converts the public streaming configuration into the writer's runtime form.
     #[must_use]
     pub fn to_writer_rotation_config(&self) -> crate::writer::feather::RotationConfig {
@@ -229,15 +251,12 @@ impl RotationConfig {
                 max_size: *max_size,
             },
             Self::Interval { interval_ns } => crate::writer::feather::RotationConfig::Interval {
-                interval_ns: interval_ns.as_u64(),
+                interval_ns: *interval_ns,
             },
             Self::ScheduledDates {
                 interval_ns,
                 schedule_ns,
-            } => crate::writer::feather::RotationConfig::scheduled_utc(
-                interval_ns.as_u64(),
-                *schedule_ns,
-            ),
+            } => crate::writer::feather::RotationConfig::scheduled_utc(*interval_ns, *schedule_ns),
             Self::NoRotation => crate::writer::feather::RotationConfig::NoRotation,
         }
     }
@@ -254,6 +273,15 @@ pub struct StreamingRecordFilterConfig {
 }
 
 /// Configuration streaming live or backtest runs to a persistence writer.
+///
+/// The writer appends Feather files under the local `writer_path`, in one
+/// `{backtest|live|sandbox}/{instance_id}` directory per run. With a `catalog`, the writer for
+/// that catalog's backend also promotes the files into it; without one, the Feather files are the
+/// only output.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the booleans are independent writer lifecycle and promotion options"
+)]
 #[cfg_attr(
     feature = "python",
     expect(
@@ -273,20 +301,30 @@ pub struct StreamingRecordFilterConfig {
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]
 pub struct StreamingConfig {
-    /// Path to the data catalog.
-    pub catalog_path: String,
-    /// Filesystem protocol for the catalog.
-    pub fs_protocol: String,
-    /// Flush interval in milliseconds.
+    /// Local directory the writer appends Feather files to.
+    pub writer_path: String,
+    /// Catalog that receives promoted data; omit to keep only the Feather files.
+    pub catalog: Option<DataCatalogConfig>,
+    /// Interval in milliseconds for flushing open files to disk.
     pub flush_interval_ms: u64,
     /// Whether to replace existing files.
     pub replace_existing: bool,
     /// Rotation configuration.
     pub rotation_config: RotationConfig,
-    /// Writer backend (`Feather`, `Parquet`, or external factory name).
+    /// Interval in milliseconds for promoting sealed files into `catalog`; omit for no interval.
+    pub promotion_interval_ms: Option<u64>,
+    /// Whether closing the writer promotes remaining files into `catalog`.
+    #[serde(default = "default_promote_on_close")]
+    #[builder(default = default_promote_on_close())]
+    pub promote_on_close: bool,
+    /// Whether Feather files are deleted after a successful promotion.
     #[serde(default)]
     #[builder(default)]
-    pub writer_backend: WriterBackendType,
+    pub delete_feather_after_promotion: bool,
+    /// Whether promotion replaces `ts_init` with `ts_event`.
+    #[serde(default)]
+    #[builder(default)]
+    pub use_ts_event_for_ts_init: bool,
     /// Optional data families to write.
     pub data_types: Option<Vec<NautilusDataType>>,
     /// Optional record families to write.
@@ -317,19 +355,22 @@ impl StreamingConfig {
     /// Creates new [`StreamingConfig`] instance.
     #[must_use]
     pub fn new(
-        catalog_path: String,
-        fs_protocol: String,
+        writer_path: String,
+        catalog: Option<DataCatalogConfig>,
         flush_interval_ms: u64,
         replace_existing: bool,
         rotation_config: RotationConfig,
     ) -> Self {
         Self {
-            catalog_path,
-            fs_protocol,
+            writer_path,
+            catalog,
             flush_interval_ms,
             replace_existing,
             rotation_config,
-            writer_backend: WriterBackendType::default(),
+            promotion_interval_ms: None,
+            promote_on_close: default_promote_on_close(),
+            delete_feather_after_promotion: false,
+            use_ts_event_for_ts_init: false,
             data_types: None,
             record_types: None,
             instrument_types: None,
@@ -347,14 +388,20 @@ impl StreamingConfig {
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
-        errors.check(
-            !self.catalog_path.trim().is_empty(),
-            ConfigError::empty_field("catalog_path"),
-        );
-        errors.check(
-            !self.fs_protocol.trim().is_empty(),
-            ConfigError::empty_field("fs_protocol"),
-        );
+        if self.writer_path.trim().is_empty() {
+            errors.push(ConfigError::empty_field("writer_path"));
+        } else {
+            errors.check(
+                local_writer_directory(&self.writer_path).is_ok(),
+                ConfigError::invalid_value(
+                    "writer_path",
+                    format!(
+                        "must be a local path because streaming appends to local files, was {}",
+                        self.writer_path
+                    ),
+                ),
+            );
+        }
 
         let flush_interval_ms = self.flush_interval_ms;
         errors.check(
@@ -364,6 +411,35 @@ impl StreamingConfig {
                 format!("must be a positive number of milliseconds, was {flush_interval_ms}"),
             ),
         );
+
+        if let Some(promotion_interval_ms) = self.promotion_interval_ms {
+            errors.check(
+                promotion_interval_ms > 0,
+                ConfigError::range(
+                    "promotion_interval_ms",
+                    "must be a positive number of milliseconds; omit the field for no interval",
+                ),
+            );
+        }
+
+        if self.catalog.is_none() {
+            for (field, is_set) in [
+                (
+                    "promotion_interval_ms",
+                    self.promotion_interval_ms.is_some(),
+                ),
+                (
+                    "delete_feather_after_promotion",
+                    self.delete_feather_after_promotion,
+                ),
+                ("use_ts_event_for_ts_init", self.use_ts_event_for_ts_init),
+            ] {
+                errors.check(
+                    !is_set,
+                    ConfigError::invalid_value(field, "requires a catalog to promote into"),
+                );
+            }
+        }
 
         if let Some(data_types) = &self.data_types {
             errors.check(
@@ -407,6 +483,19 @@ impl StreamingConfig {
 
         errors.into_result()
     }
+
+    /// Returns the writer backend: `Feather` without a catalog, otherwise the catalog's backend.
+    #[must_use]
+    pub fn writer_backend(&self) -> WriterBackendType {
+        self.catalog.as_ref().map_or(
+            WriterBackendType::Feather,
+            DataCatalogConfig::writer_backend,
+        )
+    }
+}
+
+const fn default_promote_on_close() -> bool {
+    true
 }
 
 pub(crate) fn default_fs_protocol() -> String {
@@ -448,11 +537,6 @@ mod tests {
     #[rstest]
     fn catalog_backend_type_display_roundtrips_built_ins() {
         assert_eq!(CatalogBackendType::Parquet.to_string(), "Parquet");
-        assert_eq!(CatalogBackendType::Parquet.to_string(), "Parquet");
-        assert_eq!(
-            "Parquet".parse::<CatalogBackendType>().unwrap(),
-            CatalogBackendType::Parquet,
-        );
         assert_eq!(
             "Parquet".parse::<CatalogBackendType>().unwrap(),
             CatalogBackendType::Parquet,
@@ -508,8 +592,7 @@ read_only = true
     #[rstest]
     fn streaming_config_builder_valid() {
         let config = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -521,10 +604,9 @@ read_only = true
     #[rstest]
     fn streaming_config_builder_preserves_backend_params() {
         let mut params = Params::new();
-        params.insert("promote_on_close".to_string(), json!(true));
+        params.insert("maintenance_interval_ms".to_string(), json!(60_000));
         let config = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -536,16 +618,15 @@ read_only = true
             config
                 .params
                 .as_ref()
-                .and_then(|p| p.get_bool("promote_on_close")),
-            Some(true)
+                .and_then(|p| p.get_u64("maintenance_interval_ms")),
+            Some(60_000)
         );
     }
 
     #[rstest]
     fn streaming_config_zero_flush_interval_rejected() {
         let result = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(0)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -557,25 +638,151 @@ read_only = true
     }
 
     #[rstest]
-    fn streaming_config_empty_catalog_path_rejected() {
+    fn streaming_config_empty_writer_path_rejected() {
         let result = StreamingConfig::builder()
-            .catalog_path(String::new())
-            .fs_protocol("file".to_string())
+            .writer_path(String::new())
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .build();
+
+        assert!(matches!(result, Err(ConfigError::EmptyField { field }) if field == "writer_path"));
+    }
+
+    #[rstest]
+    #[case::s3("s3://bucket/stream")]
+    #[case::memory("memory://stream")]
+    fn streaming_config_remote_writer_path_rejected(#[case] writer_path: &str) {
+        let result = StreamingConfig::builder()
+            .writer_path(writer_path.to_string())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
             .build();
 
         assert!(
-            matches!(result, Err(ConfigError::EmptyField { field }) if field == "catalog_path")
+            matches!(result, Err(ConfigError::InvalidValue { field, .. }) if field == "writer_path")
+        );
+    }
+
+    #[rstest]
+    #[case::feather(None, WriterBackendType::Feather)]
+    #[case::parquet(Some(CatalogBackendType::Parquet), WriterBackendType::Parquet)]
+    #[case::external(
+        Some(CatalogBackendType::External("CustomSink".to_string())),
+        WriterBackendType::External("CustomSink".to_string())
+    )]
+    fn streaming_config_writer_backend_follows_catalog(
+        #[case] catalog_backend: Option<CatalogBackendType>,
+        #[case] expected: WriterBackendType,
+    ) {
+        let catalog = catalog_backend.map(|backend| {
+            DataCatalogConfig::new("/data/catalog".to_string(), None, Some(backend))
+        });
+        let config = StreamingConfig::new(
+            "/data/stream".to_string(),
+            catalog,
+            1_000,
+            false,
+            RotationConfig::NoRotation,
+        );
+
+        assert_eq!(config.writer_backend(), expected);
+    }
+
+    #[rstest]
+    fn data_catalog_config_connect_config_applies_protocol_and_params() {
+        let mut params = Params::new();
+        params.insert("metadata_url".to_string(), json!("postgres://meta"));
+        let config =
+            DataCatalogConfig::new("bucket/catalog".to_string(), Some("s3".to_string()), None)
+                .with_params(Some(params.clone()));
+        let local = DataCatalogConfig::new("/data/catalog".to_string(), None, None);
+
+        let connect = config.connect_config();
+        let local_connect = local.connect_config();
+
+        assert_eq!(connect.uri, "s3://bucket/catalog");
+        assert_eq!(connect.params, Some(params));
+        assert_eq!(connect.storage_options, None);
+        assert_eq!(local_connect.uri, "/data/catalog");
+        assert_eq!(local_connect.params, None);
+    }
+
+    #[rstest]
+    fn streaming_config_promotion_defaults() {
+        let config = StreamingConfig::builder()
+            .writer_path("/data/stream".to_string())
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .build()
+            .unwrap();
+
+        assert_eq!(config.promotion_interval_ms, None);
+        assert!(config.promote_on_close);
+        assert!(!config.delete_feather_after_promotion);
+        assert!(!config.use_ts_event_for_ts_init);
+    }
+
+    #[rstest]
+    fn streaming_config_promotion_settings_require_catalog() {
+        let result = StreamingConfig::builder()
+            .writer_path("/data/stream".to_string())
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .promotion_interval_ms(1_000)
+            .delete_feather_after_promotion(true)
+            .use_ts_event_for_ts_init(true)
+            .build();
+
+        match result.unwrap_err() {
+            ConfigError::Multiple { errors } => {
+                let fields = errors
+                    .iter()
+                    .map(|e| match e {
+                        ConfigError::InvalidValue { field, .. } => field.as_str(),
+                        error => panic!("Expected invalid value, received {error:?}"),
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    fields,
+                    vec![
+                        "promotion_interval_ms",
+                        "delete_feather_after_promotion",
+                        "use_ts_event_for_ts_init",
+                    ]
+                );
+            }
+            error => panic!("Expected multiple config errors, received {error:?}"),
+        }
+    }
+
+    #[rstest]
+    fn streaming_config_zero_promotion_interval_rejected() {
+        let result = StreamingConfig::builder()
+            .writer_path("/data/stream".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/data/catalog".to_string(),
+                None,
+                None,
+            ))
+            .flush_interval_ms(1_000)
+            .replace_existing(false)
+            .rotation_config(RotationConfig::NoRotation)
+            .promotion_interval_ms(0)
+            .build();
+
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "promotion_interval_ms")
         );
     }
 
     #[rstest]
     fn streaming_config_empty_filter_lists_rejected() {
         let result = StreamingConfig::builder()
-            .catalog_path("/data/catalog".to_string())
-            .fs_protocol("file".to_string())
+            .writer_path("/data/stream".to_string())
             .flush_interval_ms(1_000)
             .replace_existing(false)
             .rotation_config(RotationConfig::NoRotation)
@@ -605,10 +812,18 @@ read_only = true
     fn streaming_config_toml_round_trip() {
         let config: StreamingConfig = toml::from_str(
             r#"
-catalog_path = "/data/catalog"
-fs_protocol = "file"
+writer_path = "/data/stream"
 flush_interval_ms = 1000
 replace_existing = false
+
+promotion_interval_ms = 5000
+promote_on_close = false
+delete_feather_after_promotion = true
+use_ts_event_for_ts_init = true
+
+[catalog]
+path = "/data/catalog"
+catalog_backend = "Parquet"
 
 [rotation_config.size]
 max_size = 1048576
@@ -616,8 +831,16 @@ max_size = 1048576
         )
         .unwrap();
 
-        assert_eq!(config.catalog_path, "/data/catalog");
-        assert_eq!(config.fs_protocol, "file");
+        assert_eq!(config.writer_path, "/data/stream");
+        let catalog = config.catalog.as_ref().unwrap();
+        assert_eq!(catalog.path(), "/data/catalog");
+        assert_eq!(catalog.catalog_backend(), &CatalogBackendType::Parquet);
+        assert_eq!(config.writer_backend(), WriterBackendType::Parquet);
+        assert_eq!(config.promotion_interval_ms, Some(5_000));
+        assert!(!config.promote_on_close);
+        assert!(config.delete_feather_after_promotion);
+        assert!(config.use_ts_event_for_ts_init);
+        assert!(config.validate().is_ok());
         assert_eq!(config.flush_interval_ms, 1000);
         assert!(!config.replace_existing);
         assert_eq!(config.params, None);
@@ -633,8 +856,7 @@ max_size = 1048576
     fn streaming_config_with_no_rotation_toml() {
         let config: StreamingConfig = toml::from_str(
             r#"
-catalog_path = "/data/catalog"
-fs_protocol = "file"
+writer_path = "/data/stream"
 flush_interval_ms = 500
 replace_existing = true
 rotation_config = "no_rotation"
@@ -644,5 +866,7 @@ rotation_config = "no_rotation"
 
         assert!(matches!(config.rotation_config, RotationConfig::NoRotation));
         assert!(config.replace_existing);
+        assert!(config.catalog.is_none());
+        assert_eq!(config.writer_backend(), WriterBackendType::Feather);
     }
 }

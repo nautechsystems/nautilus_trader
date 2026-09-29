@@ -127,7 +127,7 @@ impl DataBackendSession {
         self.session_ctx.register_object_store(url, object_store);
     }
 
-    /// Registers an OpenDAL-backed storage backend with the session context.
+    /// Registers a storage backend's object store with the session context.
     ///
     /// External catalog implementations can call this before adding native table providers or
     /// object-store-relative file paths to the session.
@@ -273,7 +273,10 @@ pub(crate) fn cast_record_batch_to_schema(
     Ok(RecordBatch::try_new(schema, columns)?)
 }
 
-fn cast_column_to_data_type(column: &ArrayRef, data_type: &DataType) -> Result<ArrayRef> {
+pub(crate) fn cast_column_to_data_type(
+    column: &ArrayRef,
+    data_type: &DataType,
+) -> Result<ArrayRef> {
     if column.data_type() == data_type {
         return Ok(column.clone());
     }
@@ -492,10 +495,8 @@ pub(crate) fn filter_record_batch_by_identifier(
     let Some(column) = batch.column_by_name(KEY_IDENTIFIER) else {
         return Ok(matches(fallback_identifier).then(|| batch.clone()));
     };
-
     let identifiers = StringColumnRef::try_from_array(column.as_ref())
         .ok_or_else(|| anyhow::anyhow!("Identifier column must be an Arrow string type"))?;
-
     let indices = (0..batch.num_rows())
         .filter_map(|row| {
             let identifier = (!identifiers.is_null(row))

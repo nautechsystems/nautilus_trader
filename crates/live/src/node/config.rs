@@ -1306,7 +1306,7 @@ mean_dispatch_ns_clear = 700
         let config = LiveNodeConfig {
             streaming: Some(StreamingConfig::new(
                 "catalog".to_string(),
-                "file".to_string(),
+                None,
                 1_000,
                 false,
                 RotationConfig::NoRotation,

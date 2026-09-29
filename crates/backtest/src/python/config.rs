@@ -43,7 +43,7 @@ use nautilus_model::{
     types::Currency,
 };
 use nautilus_persistence::{
-    config::{DataCatalogConfig, StreamingConfig},
+    common::config::{DataCatalogConfig, StreamingConfig},
     python::config::PyCatalogBackend,
 };
 use nautilus_portfolio::config::PortfolioConfig;

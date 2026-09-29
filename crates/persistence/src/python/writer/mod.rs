@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Native Parquet I/O compatibility exports.
+//! Python bindings for streaming writers.
 
-pub use crate::backend::parquet::io::*;
+pub mod feather;
+pub mod rotation;
+pub mod streaming;
+
+pub(crate) mod conversion;

@@ -31,7 +31,7 @@ pub const PARQUET_CATALOG_FACTORY_NAME: &str = "Parquet";
 pub struct CatalogConnectConfig {
     /// Resolved URI for the catalog backend (e.g. `file:///tmp/cat`, `s3://bucket/cat`).
     pub uri: String,
-    /// Optional storage-backend options (credentials, region, ...) passed to `object_store`.
+    /// Optional storage-backend options (credentials, region, ...) passed to the object store.
     pub storage_options: Option<AHashMap<String, String>>,
     /// Backend-specific catalog parameters.
     pub params: Option<Params>,

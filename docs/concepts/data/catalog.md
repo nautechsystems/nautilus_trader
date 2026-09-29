@@ -26,7 +26,6 @@ from pathlib import Path
 
 from nautilus_trader.persistence import ParquetDataCatalog
 
-
 CATALOG_PATH = Path.cwd() / "catalog"
 catalog = ParquetDataCatalog(str(CATALOG_PATH))
 ```
@@ -91,6 +90,8 @@ The built-in market-data writers are:
 - `write_mark_price_updates`
 - `write_index_price_updates`
 - `write_option_greeks`
+- `write_instrument_statuses`
+- `write_instrument_closes`
 
 Each writer accepts optional `start` and `end` overrides as UNIX nanoseconds. The data in one call
 must have one identity, such as one instrument ID or bar type, and must be ordered by `ts_init`.
@@ -207,6 +208,16 @@ bar_data = BacktestDataConfig(
 
 This bar config selects `AAPL.NASDAQ-5-MINUTE-LAST-EXTERNAL`.
 
+Instrument definitions load every class the catalog holds:
+
+```python
+instrument_data = BacktestDataConfig(
+    data_type=NautilusDataType.Instrument,
+    catalog_path="/path/to/catalog",
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+)
+```
+
 ### Cloud storage and filtering
 
 ```python
@@ -301,6 +312,11 @@ catalog.query(
 )
 ```
 
+`NautilusDataType.Instrument` reads every instrument class. To read one class, pass a
+`NautilusInstrumentType` value, or the optional `instrument_type` keyword to `instruments(...)`,
+`query_instrument_arrow_bytes(...)`, and `query_instrument_arrow_stream(...)`. Instrument results
+are one table with an `instrument_type` column, where columns that do not apply to a row are null.
+
 Typed methods such as `query_quote_ticks`, `query_trade_ticks`, and `query_bars` return the concrete
 model type. `query_custom_data` resolves custom decoders through the runtime registry. `query`, the
 typed market-data query methods, and `query_custom_data` use UNIX nanosecond time bounds and accept
@@ -318,11 +334,25 @@ ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
 
 ## Catalog operations
 
-Catalog operations rename, consolidate, or delete data files. Each operation takes a type selector:
-a `NautilusDataType`, a `NautilusRecordType`, or a `NautilusInstrumentType`.
+Catalog operations rename, consolidate, or delete data files.
+
+### Selecting a type
+
+File operations take a type selector rather than a directory name:
+
+- `NautilusDataType` names a data family, such as `NautilusDataType.QuoteTick`. A registered custom
+  type is `NautilusDataType.Custom("MarketTickPython")`.
+- `NautilusRecordType` names an execution record family, such as `NautilusRecordType.OrderFilled`.
+- `NautilusInstrumentType` names an instrument class, such as `NautilusInstrumentType.CurrencyPair`.
+
 `NautilusDataType.Instrument` covers every instrument class; a `NautilusInstrumentType` targets
 one. `delete_data_range(...)` takes a `NautilusDataType` alone, because only data families support
 ranged deletes.
+
+```python
+from nautilus_trader.model import NautilusDataType
+from nautilus_trader.model import NautilusInstrumentType
+```
 
 ### Reset file names
 
@@ -335,6 +365,7 @@ the operation recursively reads the type directory and moves the renamed files i
 catalog.reset_all_file_names()
 catalog.reset_data_file_names(NautilusDataType.QuoteTick, "EUR/USD.SIM")
 catalog.reset_data_file_names(NautilusDataType.TradeTick, "BTC/USD.BINANCE")
+catalog.reset_data_file_names(NautilusInstrumentType.CurrencyPair)
 ```
 
 ### Recover from overlapping file names
@@ -426,14 +457,12 @@ Delete data within a time range, optionally limited to one data type and instrum
 `delete_data_range(...)`, omitting both bounds removes all matching data. Supply an instrument ID
 for data partitioned by instrument.
 
-`delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
-registered custom types. Pass `NautilusDataType.OrderBookDepth` for order book depth and
-`NautilusDataType.Custom("MarketTickPython")` for a custom data type.
+`delete_data_range(...)` supports every data family except instruments, including registered custom
+types through `NautilusDataType.Custom("MarketTickPython")`.
 
-`delete_catalog_range(...)` continues after unsupported directories, logs a warning, and leaves
-their data unchanged. Use `delete_data_range(...)` when you need to confirm that the requested
-type is supported. `NautilusDataType.Instrument` is rejected because instrument definitions do not
-support ranged deletion.
+`delete_catalog_range(...)` continues after directories it cannot resolve to a data type, such as
+instrument and execution record directories. It logs a warning and leaves their data unchanged. Use
+`delete_data_range(...)` when you need to confirm that the requested type is supported.
 
 ```python
 catalog.delete_catalog_range(
@@ -444,12 +473,12 @@ catalog.delete_catalog_range(
 catalog.delete_catalog_range(end=1704067200000000000)
 
 catalog.delete_data_range(
-    data_type=NautilusDataType.QuoteTick,
+    NautilusDataType.QuoteTick,
     identifier="BTC/USD.BINANCE",
 )
 
 catalog.delete_data_range(
-    data_type=NautilusDataType.TradeTick,
+    NautilusDataType.TradeTick,
     identifier="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
@@ -464,14 +493,16 @@ outside the range.
 ## Feather streaming and conversion
 
 The runtime can stage records in Feather and promote them into the Parquet catalog with
-`StreamingConfig(writer_backend="Parquet", ...)`. Staged records become available to catalog queries
+`StreamingConfig(catalog=DataCatalogConfig(..., catalog_backend=CatalogBackend.Parquet))`.
+Staged records become available to catalog queries
 after promotion succeeds. A staging flush and a catalog commit are separate steps.
 
 Parquet defaults to promotion on close, no interval-based promotion, and retention of committed
-Feather sources. A positive `parquet_commit_interval_ms` uses live wall-clock scheduling or checks
+Feather sources. A positive `promotion_interval_ms` uses live wall-clock scheduling or checks
 against the supplied backtest clock during writes and flushes. See
 [stream data into a Parquet catalog](../../how_to/stream_parquet_catalog.md) for defaults, configuration,
 query visibility, and recovery.
 
 `StreamingFeatherWriter` remains available for direct staging. Its completed sessions can be converted
-manually with `ParquetDataCatalog.convert_stream_to_data()`.
+manually with `ParquetDataCatalog.convert_stream_to_data()`, which takes the run's `Environment`, or
+read without a catalog with `read_feather_run`.

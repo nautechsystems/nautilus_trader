@@ -33,8 +33,10 @@ pub(crate) use super::types::{
 };
 use crate::{
     catalog::session::DataBatchQueryResult,
-    common::coverage::{CoverageIntervals, missing_intervals},
-    errors::PersistenceError,
+    common::{
+        coverage::{CoverageIntervals, missing_intervals},
+        errors::PersistenceError,
+    },
 };
 
 /// Boxed runtime catalog backend.

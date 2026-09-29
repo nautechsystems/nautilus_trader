@@ -36,19 +36,25 @@ extension-module = [
   "pyo3/extension-module",
 ]
 python = [
+  "cloud",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
+  "nautilus-serialization/arrow-display",
   "nautilus-serialization/python",
   "pyo3",
   "pyo3-stub-gen",
-  "cloud",
 ]
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-testkit/high-precision",
   "nautilus-serialization/high-precision",
 ]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-testkit",
+] # High-precision and feature-unification plumbing.
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -57,7 +63,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
-nautilus-core = { workspace = true }
+nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-model = { workspace = true }
 nautilus-serialization = { workspace = true, features = [
   "arrow",
@@ -76,8 +82,8 @@ indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
-parking_lot = { workspace = true }
 parquet = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -95,31 +101,16 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 ] }
 
 criterion = { workspace = true }
-pretty_assertions = { workspace = true }
-proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
 
 [[bench]]
-name = "persistence"
-path = "benches/persistence.rs"
+name = "staged_writer"
+path = "benches/staged_writer.rs"
 harness = false
 
-[[bin]]
-name = "to-json"
-path = "bin/to_json.rs"
-required-features = ["python"]
-doc = false
-test = false
-
-[[bin]]
-name = "to-parquet"
-path = "bin/to_parquet.rs"
-required-features = ["python"]
-doc = false
-test = false
 
 [[example]]
 name = "generate-arrow-fixtures"

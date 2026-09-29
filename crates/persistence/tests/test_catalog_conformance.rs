@@ -13,6 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python catalog compatibility export.
+//! Catalog factory registry conformance.
 
-pub use super::backend::parquet::catalog::PyParquetDataCatalog;
+use std::sync::Arc;
+
+use nautilus_persistence::{
+    backend::extend_catalog_factories, catalog::factory::CatalogFactoryRegistry,
+};
+use rstest::rstest;
+
+/// Regression: built-in registration must not prevent arbitrary external
+/// catalog factories from being added by consumers.
+#[rstest]
+fn persistence_default_registry_accepts_external_catalog_factory() {
+    let mut extra = CatalogFactoryRegistry::new();
+    extra.insert(
+        "ExternalTest".to_string(),
+        Arc::new(|_config| anyhow::bail!("not invoked")),
+    );
+
+    let factories = extend_catalog_factories(extra).unwrap();
+    assert!(factories.contains_key("ExternalTest"));
+}

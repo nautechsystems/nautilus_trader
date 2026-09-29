@@ -26,8 +26,11 @@ use nautilus_model::{
     types::Money,
 };
 use nautilus_persistence::{
-    catalog::traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
-    config::DataCatalogConfig,
+    backend::default_catalog_factories,
+    catalog::{
+        factory::CatalogConnectConfig,
+        traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
+    },
 };
 
 use crate::{
@@ -575,18 +578,18 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
 }
 
 fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
-    DataCatalogConfig::new(
-        config.catalog_path().to_string(),
-        config.catalog_fs_protocol().map(str::to_string),
-        Some(config.catalog_backend()),
-    )
-    .with_storage_options(
+    let connect = CatalogConnectConfig::from_path_and_protocol(
+        config.catalog_path(),
+        config.catalog_fs_protocol(),
         config
             .catalog_fs_rust_storage_options()
             .cloned()
             .or_else(|| config.catalog_fs_storage_options().cloned()),
-    )
-    .create_catalog()
+    );
+    let name = config.catalog_backend().to_string();
+    default_catalog_factories()
+        .get(&name)
+        .ok_or_else(|| anyhow::anyhow!("No catalog factory registered for '{name}'"))?(&connect)
 }
 
 fn load_data(

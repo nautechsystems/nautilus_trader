@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use clap::Parser;
-use nautilus_persistence::backend::migration::parse_storage_option;
+use nautilus_persistence::backend::parquet::migration::parse_storage_option;
 
 /// Command-line interface for NautilusTrader.
 #[derive(Debug, Parser)]

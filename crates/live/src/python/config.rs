@@ -30,7 +30,7 @@ use nautilus_model::{
     enums::BarIntervalType,
     identifiers::{ClientId, TraderId, Venue},
 };
-use nautilus_persistence::config::{DataCatalogConfig, StreamingConfig};
+use nautilus_persistence::common::config::{DataCatalogConfig, StreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_trading::ImportableControllerConfig;
 use pyo3::{

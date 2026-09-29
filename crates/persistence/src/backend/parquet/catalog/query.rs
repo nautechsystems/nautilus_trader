@@ -49,35 +49,6 @@ use crate::{
 };
 
 impl ParquetDataCatalog {
-    /// Queries one data family through the existing row iterator API.
-    pub fn query<T>(
-        &mut self,
-        identifiers: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        where_clause: Option<&str>,
-        files: Option<Vec<String>>,
-        optimize_file_loading: bool,
-    ) -> anyhow::Result<crate::backend::session::QueryResult>
-    where
-        T: DecodeTypedFromRecordBatch
-            + HasCatalogDataType
-            + HasTsInit
-            + Into<Data>
-            + Send
-            + 'static,
-    {
-        self.query_typed_pages::<T>(
-            identifiers,
-            start,
-            end,
-            where_clause,
-            files,
-            optimize_file_loading,
-        )
-        .map(crate::backend::session::QueryResult::from_typed_pages)
-    }
-
     /// Queries instruments from the catalog.
     ///
     /// Instruments are stored under v1-compatible concrete instrument type folders:

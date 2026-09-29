@@ -48,7 +48,7 @@ const COMMAND_QUEUE_CAPACITY: usize = 10;
 ///
 /// Each open session holds its backend query state until it is drained or closed, so the count is
 /// bounded to turn a caller that never closes sessions into an error instead of an unbounded leak.
-const MAX_OPEN_SESSIONS: usize = 64;
+pub(crate) const MAX_OPEN_SESSIONS: usize = 64;
 
 #[derive(Debug)]
 pub struct CatalogWriteJob {
@@ -134,6 +134,11 @@ pub enum CatalogCommand {
     Shutdown,
 }
 
+/// Serializes catalog work on a bounded queue owned by one worker thread.
+///
+/// Asynchronous queries deliver their result through callbacks, but submitting work can block when
+/// the queue is full. Close and shutdown wait behind in-flight backend operations; dropping the
+/// worker joins its thread. Caller-side timeouts do not cancel backend queries.
 #[derive(Debug)]
 pub struct CatalogWorker {
     sender: SyncSender<CatalogCommand>,
@@ -1170,5 +1175,49 @@ mod tests {
             send_error.to_string(),
             "Catalog worker thread has stopped, so the command cannot be sent",
         );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn session_close_and_shutdown_wait_for_inflight_backend(#[case] shutdown: bool) {
+        let query_thread = Arc::new(Mutex::new(None));
+        let worker = CatalogWorker::start(Box::new(StubCatalog {
+            fail: false,
+            query_thread: Arc::clone(&query_thread),
+        }));
+        let session = worker.open_session(stub_query(), Some(1)).unwrap();
+        let backend_gate = query_thread.lock().unwrap();
+        let (query_tx, query_rx) = mpsc::channel();
+        worker
+            .query_batch_async(
+                stub_query(),
+                Box::new(move |result| {
+                    query_tx.send(result.map(|batch| batch.len())).unwrap();
+                }),
+            )
+            .unwrap();
+        let (closed_tx, closed_rx) = mpsc::channel();
+
+        let control = thread::spawn(move || {
+            let closed = if shutdown {
+                None
+            } else {
+                Some(worker.close_session(session).unwrap())
+            };
+            drop(worker);
+            closed_tx.send(closed).unwrap();
+        });
+        let blocked = closed_rx.recv_timeout(Duration::from_millis(25));
+        drop(backend_gate);
+        let rows = query_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        let closed = closed_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        control.join().unwrap();
+        assert_eq!(blocked, Err(mpsc::RecvTimeoutError::Timeout));
+        assert_eq!(rows, 1);
+        assert_eq!(closed, (!shutdown).then_some(true));
     }
 }

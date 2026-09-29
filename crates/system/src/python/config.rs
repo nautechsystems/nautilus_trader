@@ -13,4 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub use nautilus_persistence::config::StreamingConfig;
+pub use nautilus_persistence::common::config::StreamingConfig;

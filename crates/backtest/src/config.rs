@@ -43,9 +43,9 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::config::CatalogBackendType;
+use nautilus_persistence::common::config::CatalogBackendType;
 #[cfg(feature = "streaming")]
-use nautilus_persistence::config::DataCatalogConfig;
+use nautilus_persistence::common::config::DataCatalogConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::NautilusKernelConfig;

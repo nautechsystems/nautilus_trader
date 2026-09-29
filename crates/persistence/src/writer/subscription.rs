@@ -30,15 +30,14 @@ use nautilus_common::{
     clock::Clock,
     msgbus::{
         MStr, ShareableMessageHandler, TypedHandler, subscribe_account_state, subscribe_any,
-        subscribe_bars, subscribe_book_deltas, subscribe_book_depth as subscribe_book_depths,
-        subscribe_funding_rates, subscribe_index_prices, subscribe_instruments,
-        subscribe_mark_prices, subscribe_option_greeks, subscribe_order_events,
-        subscribe_position_events, subscribe_quotes, subscribe_trades, unsubscribe_account_state,
-        unsubscribe_any, unsubscribe_bars, unsubscribe_book_deltas,
-        unsubscribe_book_depth as unsubscribe_book_depths, unsubscribe_funding_rates,
-        unsubscribe_index_prices, unsubscribe_instruments, unsubscribe_mark_prices,
-        unsubscribe_option_greeks, unsubscribe_order_events, unsubscribe_position_events,
-        unsubscribe_quotes, unsubscribe_trades,
+        subscribe_bars, subscribe_book_deltas, subscribe_book_depth, subscribe_funding_rates,
+        subscribe_index_prices, subscribe_instruments, subscribe_mark_prices,
+        subscribe_option_greeks, subscribe_order_events, subscribe_position_events,
+        subscribe_quotes, subscribe_trades, unsubscribe_account_state, unsubscribe_any,
+        unsubscribe_bars, unsubscribe_book_deltas, unsubscribe_book_depth,
+        unsubscribe_funding_rates, unsubscribe_index_prices, unsubscribe_instruments,
+        unsubscribe_mark_prices, unsubscribe_option_greeks, unsubscribe_order_events,
+        unsubscribe_position_events, unsubscribe_quotes, unsubscribe_trades,
     },
 };
 use nautilus_model::{
@@ -135,7 +134,7 @@ impl StreamingSinkSubscription {
         subscribe_trades(pattern, trades_handler.clone(), None);
         subscribe_bars(pattern, bars_handler.clone(), None);
         subscribe_book_deltas(pattern, deltas_handler.clone(), None);
-        subscribe_book_depths(pattern, depths_handler.clone(), None);
+        subscribe_book_depth(pattern, depths_handler.clone(), None);
         subscribe_mark_prices(pattern, mark_prices_handler.clone(), None);
         subscribe_index_prices(pattern, index_prices_handler.clone(), None);
         subscribe_funding_rates(pattern, funding_rates_handler.clone(), None);
@@ -195,7 +194,7 @@ impl StreamingSinkSubscription {
         unsubscribe_trades(pattern, &self.trades_handler);
         unsubscribe_bars(pattern, &self.bars_handler);
         unsubscribe_book_deltas(pattern, &self.deltas_handler);
-        unsubscribe_book_depths(pattern, &self.depths_handler);
+        unsubscribe_book_depth(pattern, &self.depths_handler);
         unsubscribe_mark_prices(pattern, &self.mark_prices_handler);
         unsubscribe_index_prices(pattern, &self.index_prices_handler);
         unsubscribe_funding_rates(pattern, &self.funding_rates_handler);

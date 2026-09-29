@@ -139,7 +139,7 @@ struct StagedArrowMetadataRow {
 }
 
 /// An open file and the catalog type it stages; each instrument class stages its own file.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct FileWriterPath {
     path: PathBuf,
     data_type: CatalogDataType,
@@ -357,7 +357,6 @@ impl FeatherFile {
         })?;
 
         let writer = StreamWriter::try_new(CountingWriter::new(BufWriter::new(file)), schema)?;
-
         let max_size = match rotation_config {
             RotationConfig::Size { max_size } => Some(*max_size),
             _ => None,
@@ -521,10 +520,9 @@ impl RotationConfig {
 /// restore per-row metadata the file schema cannot hold.
 ///
 /// The `write()` method is the single entry point for clients: they supply a data value (of generic type T)
-/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by
-/// `CatalogFamily`, and appends it to that key's open file. Flushing pushes buffered bytes to disk
-/// without starting a new file; a file is sealed and replaced only on rotation, [`Self::seal`], or
-/// [`Self::close`].
+/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by `CatalogFamily`,
+/// and appends it to that key's open file. Flushing pushes buffered bytes to disk without starting
+/// a new file; a file is sealed and replaced only on rotation, [`Self::seal`], or [`Self::close`].
 pub struct FeatherWriter {
     /// Local directory for writing files.
     directory: PathBuf,
@@ -1455,7 +1453,8 @@ impl FeatherWriter {
 
     /// Writes an instrument to the appropriate writer.
     ///
-    /// Each instrument class stages its own file, and every row carries its instrument ID.
+    /// Instruments are written to feather files and organized by instrument ID.
+    /// This method supports writing instruments that implement `EncodeToRecordBatch` and `CatalogFamily`.
     pub fn write_instrument(
         &mut self,
         instrument: InstrumentAny,
@@ -1686,13 +1685,38 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns the replay identity of a flushed Feather file, so a rerun does not write it twice.
+pub(crate) fn feather_replay_identity(
+    source_uri: &str,
+    source_path: &str,
+    content_hash: &str,
+    identifiers: Option<&[String]>,
+) -> String {
+    let mut identifiers = identifiers.map(<[String]>::to_vec);
+    if let Some(identifiers) = identifiers.as_mut() {
+        identifiers.sort();
+        identifiers.dedup();
+    }
+
+    let identity = serde_json::json!({
+        "source_uri": source_uri,
+        "source_path": source_path,
+        "content_hash": content_hash,
+        "identifiers": identifiers,
+    });
+    format!(
+        "nautilus-feather:{}",
+        blake3::hash(identity.to_string().as_bytes()).to_hex(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex, atomic::Ordering};
 
     use nautilus_common::{clock::VirtualClock, live::LiveClock};
     use nautilus_model::{
-        data::{Data, HasTsInit, NautilusRecordType, QuoteTick, TradeTick},
+        data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{ERROR_PRICE, Price, Quantity},
@@ -1836,7 +1860,6 @@ mod tests {
         use nautilus_common::msgbus::{MStr, publish_quote};
 
         let temp_dir = TempDir::new().unwrap();
-
         let writer = Rc::new(RefCell::new(FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -1873,7 +1896,6 @@ mod tests {
     #[case(true)]
     fn test_message_write_error_reaches_flush_or_close(#[case] close: bool) {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -1983,7 +2005,6 @@ mod tests {
         #[case] expected: &str,
     ) {
         let temp_dir = TempDir::new().unwrap();
-
         let manager = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2163,7 +2184,6 @@ mod tests {
             let path_str = path.path;
             for batch in read_feather_batches(&path_str) {
                 let metadata = batch.schema().metadata().clone();
-
                 if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_quotes.extend(decoded);
@@ -2333,7 +2353,6 @@ mod tests {
     fn flushes_append_to_one_file_per_type_until_close() {
         let temp_dir = TempDir::new().unwrap();
         let shared_time = Arc::new(AtomicU64::new(0));
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::clone(&shared_time)),
@@ -2341,7 +2360,6 @@ mod tests {
             None,
             Some(1_000),
         );
-
         let quotes = (1..=10)
             .map(|minute| {
                 QuoteTick::new(
@@ -2366,7 +2384,6 @@ mod tests {
         let sealed_before_close = feather_files(temp_dir.path(), FEATHER_EXTENSION);
         writer.close().unwrap();
         let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
-
         let recovered = read_feather_batches(&sealed[0])
             .into_iter()
             .flat_map(|batch| {
@@ -2396,7 +2413,6 @@ mod tests {
         #[case] expected_batch_rows: Vec<usize>,
     ) {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2422,7 +2438,6 @@ mod tests {
                 ))
                 .unwrap();
         }
-
         writer.close().unwrap();
         let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
         let batch_rows = StreamReader::try_new(File::open(&sealed[0]).unwrap(), None)
@@ -2437,7 +2452,6 @@ mod tests {
     #[rstest]
     fn drop_seals_open_files() {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2466,7 +2480,6 @@ mod tests {
     #[rstest]
     fn reserved_paths_skip_files_left_in_the_directory() {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(5))),
@@ -2936,7 +2949,6 @@ mod tests {
     fn size_rotation_seals_each_full_file_and_opens_the_next_lazily() {
         let temp_dir = TempDir::new().unwrap();
         let shared_clock = Arc::new(AtomicU64::new(0));
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::clone(&shared_clock)),
@@ -2969,7 +2981,6 @@ mod tests {
                     .sum::<usize>()
             })
             .collect::<Vec<_>>();
-
         assert!(writer.writers.is_empty());
         assert_eq!(rows, vec![1, 1]);
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
@@ -3000,7 +3011,6 @@ mod tests {
         .unwrap();
 
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -3031,7 +3041,7 @@ mod tests {
             arrow::custom::CustomDataDecoder, ensure_custom_data_registered,
         };
 
-        use crate::test_data::RustTestCustomData;
+        use crate::common::test_data::RustTestCustomData;
 
         ensure_custom_data_registered::<RustTestCustomData>();
 
@@ -3095,7 +3105,7 @@ mod tests {
         use nautilus_model::data::{CustomData, DataType};
         use nautilus_serialization::ensure_custom_data_registered;
 
-        use crate::test_data::RustTestCustomData;
+        use crate::common::test_data::RustTestCustomData;
 
         ensure_custom_data_registered::<RustTestCustomData>();
         let temp_dir = TempDir::new().unwrap();
@@ -3140,5 +3150,27 @@ mod tests {
             .map(RecordBatch::num_rows)
             .sum::<usize>();
         assert_eq!(rows, 2);
+    }
+
+    #[rstest]
+    fn feather_replay_identity_is_stable_and_ignores_identifier_order() {
+        let identity = |identifiers: Option<&[String]>| {
+            feather_replay_identity(
+                "file:///catalog/backtest/run-1",
+                "quotes/AUDUSD.SIM/part-0.feather",
+                "content-hash",
+                identifiers,
+            )
+        };
+
+        let unordered = ["B".to_string(), "A".to_string(), "A".to_string()];
+        let ordered = ["A".to_string(), "B".to_string()];
+
+        let expected =
+            "nautilus-feather:10a9435c28f7536f26653c3fc808571be89bfe769e06c7307cb4743e273a23fd";
+
+        assert_eq!(identity(Some(&unordered)), expected);
+        assert_eq!(identity(Some(&ordered)), expected);
+        assert_ne!(identity(None), expected);
     }
 }

@@ -500,13 +500,21 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
 
 /// Parses a stored catalog type path back into its catalog type.
 ///
-/// Accepts the data type path prefixes, the record type directories, and the instrument class
-/// directories.
+/// Accepts the shared-table `record/<type>`, `instrument/<class>`, and `custom/<type>` paths and
+/// the flat Parquet data, record, and instrument class directories.
 ///
 /// # Errors
 ///
 /// Returns an error if `path` names no catalog type.
 pub fn catalog_data_type_from_path(path: &str) -> anyhow::Result<CatalogDataType> {
+    if let Some(record_type) = path.strip_prefix("record/") {
+        return Ok(CatalogDataType::Record(record_type.parse()?));
+    }
+
+    if let Some(instrument_type) = path.strip_prefix("instrument/") {
+        return Ok(CatalogDataType::Instrument(instrument_type.parse()?));
+    }
+
     if let Ok(data_type) = data_type_from_data_path_prefix(path) {
         return Ok(CatalogDataType::Data(data_type));
     }
@@ -520,14 +528,45 @@ pub fn catalog_data_type_from_path(path: &str) -> anyhow::Result<CatalogDataType
         .map_err(|_| anyhow::anyhow!("Unknown catalog type path '{path}'"))
 }
 
+/// Returns the shared-table catalog prefix for a record type.
+///
+/// Shared-table backends group the non-data families as `record/<type>`,
+/// `instrument/<class>`, and `custom/<type>`; Parquet keeps the flat
+/// [`record_path_prefix`] directory.
+#[must_use]
+pub fn record_table_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str> {
+    Cow::Owned(format!("record/{}", record_path_prefix(record_type)))
+}
+
+/// Returns the shared-table catalog prefix for an instrument class.
+#[must_use]
+pub fn instrument_table_path_prefix(instrument_type: &NautilusInstrumentType) -> Cow<'static, str> {
+    Cow::Owned(format!(
+        "instrument/{}",
+        instrument_path_prefix(instrument_type)
+    ))
+}
+
+/// Returns the shared-table catalog prefix for a catalog type.
+#[must_use]
+pub fn catalog_data_type_path_prefix(catalog_type: &CatalogDataType) -> Cow<'static, str> {
+    match catalog_type {
+        CatalogDataType::Data(data_type) => data_path_prefix(data_type),
+        CatalogDataType::Record(record_type) => record_table_path_prefix(record_type),
+        CatalogDataType::Instrument(instrument_type) => {
+            instrument_table_path_prefix(instrument_type)
+        }
+    }
+}
+
 /// Returns the SQL-safe table-name stem identifying a catalog type.
 ///
 /// The aggregate instrument family spans several class directories, so its stem is the shared
 /// `instruments` name rather than any one of them. The stem names registered query tables and
 /// never addresses storage; use [`parquet_catalog_data_type_path_prefixes`] for directories.
 #[must_use]
-pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<'static, str> {
-    match data_type {
+pub fn parquet_catalog_data_type_table_stem(catalog_type: &CatalogDataType) -> Cow<'static, str> {
+    match catalog_type {
         CatalogDataType::Data(data_type) => parquet_data_path_prefix(data_type),
         CatalogDataType::Record(record_type) => record_path_prefix(record_type),
         CatalogDataType::Instrument(instrument_type) => {
@@ -543,9 +582,9 @@ pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<
 /// other family covers exactly one directory.
 #[must_use]
 pub fn parquet_catalog_data_type_path_prefixes(
-    data_type: &CatalogDataType,
+    catalog_type: &CatalogDataType,
 ) -> Vec<Cow<'static, str>> {
-    match data_type {
+    match catalog_type {
         CatalogDataType::Data(NautilusDataType::Instrument) => INSTRUMENT_PATH_PREFIXES
             .iter()
             .map(|prefix| Cow::Borrowed(*prefix))
@@ -753,7 +792,7 @@ mod tests {
     }
 
     #[rstest]
-    fn catalog_data_type_converts_from_every_selector_family() {
+    fn catalog_type_converts_from_every_selector_family() {
         assert_eq!(
             CatalogDataType::from(NautilusDataType::QuoteTick),
             CatalogDataType::Data(NautilusDataType::QuoteTick)

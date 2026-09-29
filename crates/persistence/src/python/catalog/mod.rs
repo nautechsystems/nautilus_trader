@@ -13,6 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python feather compatibility export.
+//! Python bindings shared by the catalog backends.
 
-pub use super::backend::feather::PyStreamingFeatherWriter;
+pub mod conversion;

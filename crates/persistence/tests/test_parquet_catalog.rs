@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, fmt::Display, fs, io::Write, str::FromStr, sync::Arc};
 
-use nautilus_common::live::get_runtime;
+use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
@@ -38,7 +38,9 @@ use nautilus_model::{
 };
 use nautilus_persistence::{
     backend::parquet::{
-        catalog::ParquetDataCatalog, delete::DeleteOperationKind, paths::urisafe_instrument_id,
+        catalog::ParquetDataCatalog,
+        delete::DeleteOperationKind,
+        paths::{timestamps_to_filename, urisafe_instrument_id},
     },
     catalog::{
         traits::{
@@ -46,15 +48,15 @@ use nautilus_persistence::{
         },
         types::{CatalogAsOf, CatalogDataType},
     },
-    test_data::{
-        MacroYieldCurveData, RustTestCustomData, RustTestHashMapCustomData,
-        RustTestParamsCustomData, RustTestPriceMapCustomData,
+    common::test_data::{
+        MacroYieldCurveData, RustTestBytesCustomData, RustTestCustomData,
+        RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
 };
 use nautilus_serialization::{
     arrow::{
         DecodeTypedFromRecordBatch, EncodeToRecordBatch, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
-        display::instrument::encode_instruments, timestamp_array, timestamp_data_type,
+        timestamp_array, timestamp_data_type,
     },
     ensure_custom_data_registered,
 };
@@ -67,6 +69,34 @@ use serde_json::json;
 use tempfile::TempDir;
 
 const DEPTH10_LEN: usize = 10;
+
+/// Snapshots every file under a catalog directory as sorted (relative path, bytes) pairs.
+fn snapshot_catalog_files(temp_dir: &TempDir) -> Vec<(String, Vec<u8>)> {
+    fn visit(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect();
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, root, out);
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((relative, fs::read(&path).unwrap()));
+            }
+        }
+    }
+
+    let mut snapshot = Vec::new();
+    visit(temp_dir.path(), temp_dir.path(), &mut snapshot);
+    snapshot
+}
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
@@ -141,6 +171,7 @@ fn ensure_test_custom_data_registered() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         ensure_custom_data_registered::<MacroYieldCurveData>();
+        ensure_custom_data_registered::<RustTestBytesCustomData>();
         ensure_custom_data_registered::<RustTestCustomData>();
         ensure_custom_data_registered::<RustTestHashMapCustomData>();
         ensure_custom_data_registered::<RustTestParamsCustomData>();
@@ -1072,6 +1103,377 @@ fn test_rust_extend_file_name() {
         .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(intervals, vec![(1, 3), (4, 4)]);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_forward_overlap() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Adjacent to the first file but overlapping the second: must fail before renaming
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(15),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(1, 1)"), "missing original interval: {err}");
+    assert!(err.contains("(1, 15)"), "missing proposed interval: {err}");
+    assert!(err.contains("bars"), "missing directory: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+
+    // A failed extension must not poison later writes: reopen and append disjoint data
+    let reopened = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let bars3 = vec![create_bar(20)];
+    reopened.write_to_parquet(&bars3, None, None, None).unwrap();
+    assert_eq!(
+        reopened
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10), (20, 20)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_backward_overlap() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(5)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Adjacent to the second file but overlapping the first: must fail before renaming
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(5),
+        UnixNanos::from(9),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(10, 10)"), "missing original interval: {err}");
+    assert!(err.contains("(5, 10)"), "missing proposed interval: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(5, 5), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_shared_endpoint() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Closed intervals sharing an endpoint overlap: (1, 10) touches (10, 10)
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(10),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(1, 1)"), "missing original interval: {err}");
+    assert!(err.contains("(1, 10)"), "missing proposed interval: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_valid_backward_extension() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    catalog
+        .extend_file_name(
+            &NautilusDataType::Bar.into(),
+            Some(bar_type.as_str()),
+            UnixNanos::from(8),
+            UnixNanos::from(9),
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(8, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_reversed_bounds() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(10),
+        UnixNanos::from(5),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("reversed"), "unexpected error: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_overlapping_directory() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+
+    // Simulate pre-existing filename damage: the first file claims (1, 15)
+    let before_damage = snapshot_catalog_files(&temp_dir);
+    let damaged_name = timestamps_to_filename(UnixNanos::from(1), UnixNanos::from(15));
+    let old_path = temp_dir.path().join(&before_damage[0].0);
+    let damaged_path = old_path.parent().unwrap().join(damaged_name);
+    fs::rename(&old_path, &damaged_path).unwrap();
+
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // No adjacent file, but the directory already overlaps: must fail without changes
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("not disjoint"), "unexpected error: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+
+    // An adjacent range reports the pre-existing overlap, not a would-create one
+    let result = catalog.extend_file_name(
+        &NautilusDataType::Bar.into(),
+        Some(bar_type.as_str()),
+        UnixNanos::from(11),
+        UnixNanos::from(15),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("not disjoint"), "unexpected error: {err}");
+    assert!(
+        !err.contains("would create"),
+        "misleading message for pre-existing overlap: {err}"
+    );
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_timestamp_boundaries_are_noop() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(100)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Neither bound can be adjacent past the u64 edges: no match, no arithmetic panic
+    catalog
+        .extend_file_name(
+            &NautilusDataType::Bar.into(),
+            Some(bar_type.as_str()),
+            UnixNanos::from(0),
+            UnixNanos::from(50),
+        )
+        .unwrap();
+    catalog
+        .extend_file_name(
+            &NautilusDataType::Bar.into(),
+            Some(bar_type.as_str()),
+            UnixNanos::from(150),
+            UnixNanos::from(u64::MAX),
+        )
+        .unwrap();
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(100, 100)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_no_adjacent_file_is_noop() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    catalog
+        .extend_file_name(
+            &NautilusDataType::Bar.into(),
+            Some(bar_type.as_str()),
+            UnixNanos::from(10),
+            UnixNanos::from(20),
+        )
+        .unwrap();
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1)],
+    );
+}
+
+#[rstest]
+fn test_rust_record_empty_coverage_validates_before_extending() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+
+    CatalogWriter::record_empty_coverage(
+        &mut catalog,
+        NautilusDataType::Bar,
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(5),
+    )
+    .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 5), (10, 10)],
+    );
+
+    let before = snapshot_catalog_files(&temp_dir);
+    let result = CatalogWriter::record_empty_coverage(
+        &mut catalog,
+        NautilusDataType::Bar,
+        Some(bar_type.as_str()),
+        UnixNanos::from(6),
+        UnixNanos::from(15),
+    );
+    assert!(result.is_err());
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 5), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_overlap_recovery_via_reset_file_names() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+    assert_eq!(before.len(), 2);
+
+    // Simulate filename-only damage: the first file claims (1, 15) while holding ts_init 1
+    let damaged_name = timestamps_to_filename(UnixNanos::from(1), UnixNanos::from(15));
+    let old_path = temp_dir.path().join(&before[0].0);
+    let damaged_path = old_path.parent().unwrap().join(damaged_name);
+    fs::rename(&old_path, &damaged_path).unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 15), (10, 10)],
+    );
+
+    // Overlapping names block later writes
+    let blocked = catalog.write_to_parquet(&[create_bar(20)], None, None, None);
+    assert!(blocked.is_err());
+
+    // Content ranges are disjoint, so resetting names repairs the directory
+    catalog
+        .reset_data_file_names(&NautilusDataType::Bar.into(), Some(&bar_type))
+        .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+
+    catalog
+        .write_to_parquet(&[create_bar(20)], None, None, None)
+        .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals(&NautilusDataType::Bar.into(), Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10), (20, 20)],
+    );
 }
 
 #[rstest]
@@ -2108,7 +2510,15 @@ fn test_prepare_consolidation_queries_empty_intervals() {
     let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            None,
+            None,
+            true,
+        )
         .unwrap();
 
     // Should have no queries for empty intervals
@@ -2150,7 +2560,15 @@ fn test_prepare_consolidation_queries_filtered_intervals() {
     let end = Some(UnixNanos::from(6000));
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, start, end, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            start,
+            end,
+            true,
+        )
         .unwrap();
 
     // Should have no queries since no intervals overlap with the time range
@@ -2741,30 +3159,30 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test path with instrument ID
-    let path_with_id = format!("{}/data/quotes/BTCUSD", base_dir.to_string_lossy());
+    let path_with_id = format!("{}/data/quote_tick/BTCUSD", base_dir.to_string_lossy());
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_with_id)
         .unwrap();
-    assert_eq!(data_cls, Some("quotes".to_string()));
+    assert_eq!(data_cls, Some("quote_tick".to_string()));
     assert_eq!(identifier, Some("BTCUSD".to_string()));
 
     // Test path without instrument ID
-    let path_without_id = format!("{}/data/trades", base_dir.to_string_lossy());
+    let path_without_id = format!("{}/data/trade_tick", base_dir.to_string_lossy());
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_without_id)
         .unwrap();
-    assert_eq!(data_cls, Some("trades".to_string()));
+    assert_eq!(data_cls, Some("trade_tick".to_string()));
     assert_eq!(identifier, None);
 
     // Test custom data path with identifier
     let path_custom_with_id = format!(
-        "{}/data/custom/RustTestCustomData/RUST.TEST",
+        "{}/data/custom_rust_test_custom_data/RUST.TEST",
         base_dir.to_string_lossy()
     );
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_custom_with_id)
         .unwrap();
-    assert_eq!(data_cls, Some("custom/RustTestCustomData".to_string()));
+    assert_eq!(data_cls, Some("custom_rust_test_custom_data".to_string()));
     assert_eq!(identifier, Some("RUST.TEST".to_string()));
 
     // Test custom data path without identifier
@@ -2782,6 +3200,45 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
         .unwrap();
     assert_eq!(data_cls, None);
     assert_eq!(identifier, None);
+}
+
+/// Ensures custom data path built by `make_path_custom_data` (via custom module) matches
+/// the format expected by `extract_data_cls_and_identifier_from_path`.
+#[rstest]
+fn test_make_path_custom_data_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base_dir = tmp.path().join("catalog");
+    std::fs::create_dir_all(&base_dir).unwrap();
+
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+
+    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
+    assert!(path_no_id.contains("data/custom/MyCustomType"));
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_no_id)
+        .unwrap();
+    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
+    assert_eq!(identifier, None);
+
+    let path_with_id = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
+        .unwrap();
+    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
+    let (data_cls2, identifier2) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_id)
+        .unwrap();
+    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
+
+    let path_with_slashes = catalog
+        .make_path_custom_data("RustTestCustomData", Some("foo//bar"))
+        .unwrap();
+    assert!(path_with_slashes.contains("data/custom/RustTestCustomData/foobar"));
+    let (data_cls3, identifier3) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_slashes)
+        .unwrap();
+    assert_eq!(data_cls3.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier3.as_deref(), Some("foobar"));
 }
 
 #[rstest]
@@ -2823,43 +3280,71 @@ fn test_delete_catalog_range_on_remote_base_path_with_data_segment() {
     assert!(remaining.is_empty(), "files remained: {remaining:?}");
 }
 
-/// Ensures custom data path built by `make_path_custom_data` (via custom module) matches
-/// the format expected by `extract_data_cls_and_identifier_from_path`.
 #[rstest]
-fn test_make_path_custom_data_roundtrip() {
-    let tmp = tempfile::tempdir().unwrap();
-    let base_dir = tmp.path().join("catalog");
-    std::fs::create_dir_all(&base_dir).unwrap();
+fn test_delete_data_range_on_custom_type_path() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let instrument_id = InstrumentId::from("RUST.DELETE");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+    for (value, ts) in [(1.0, 10_u64), (2.0, 20_u64), (3.0, 30_u64)] {
+        let item = RustTestCustomData {
+            instrument_id,
+            value,
+            flag: true,
+            ts_event: UnixNanos::from(ts),
+            ts_init: UnixNanos::from(ts),
+        };
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+        catalog
+            .write_custom_data_batch(
+                vec![CustomData::new(Arc::new(item), data_type.clone())],
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+    }
 
-    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
-    assert!(path_no_id.contains("data/custom/MyCustomType"));
-    let (data_cls, identifier) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_no_id)
+    catalog
+        .delete_data_range(
+            &NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            },
+            Some("RUST.DELETE"),
+            Some(UnixNanos::from(15)),
+            Some(UnixNanos::from(25)),
+        )
         .unwrap();
-    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
-    assert_eq!(identifier, None);
 
-    let path_with_id = catalog
-        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
+    let rows = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.DELETE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
         .unwrap();
-    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
-    let (data_cls2, identifier2) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_with_id)
-        .unwrap();
-    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
-    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
 
-    let path_with_slashes = catalog
-        .make_path_custom_data("RustTestCustomData", Some("foo//bar"))
-        .unwrap();
-    assert!(path_with_slashes.contains("data/custom/RustTestCustomData/foobar"));
-    let (data_cls3, identifier3) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_with_slashes)
-        .unwrap();
-    assert_eq!(data_cls3.as_deref(), Some("custom/RustTestCustomData"));
-    assert_eq!(identifier3.as_deref(), Some("foobar"));
+    let values: Vec<f64> = rows
+        .iter()
+        .map(|row| {
+            let Data::Custom(custom) = row else {
+                panic!("Expected custom data");
+            };
+
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .unwrap()
+                .value
+        })
+        .collect();
+
+    assert_eq!(values, vec![1.0, 3.0]);
 }
 
 #[rstest]
@@ -2941,7 +3426,15 @@ fn test_prepare_consolidation_queries_basic_moved() {
     let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            None,
+            None,
+            true,
+        )
         .unwrap();
 
     // Should have at least one query for the period
@@ -2972,7 +3465,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
 
     let queries = catalog
         .prepare_consolidation_queries(
-            "quotes",
+            "quote_tick",
             Some("EURUSD"),
             &intervals,
             period_nanos,
@@ -3730,7 +4223,7 @@ fn test_prepare_delete_operations_basic() {
 
     let operations = catalog
         .prepare_delete_operations(
-            "quotes",
+            "quote_tick",
             Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(2000)),
@@ -3761,7 +4254,7 @@ fn test_prepare_delete_operations_no_intersection() {
 
     let operations = catalog
         .prepare_delete_operations(
-            "quotes",
+            "quote_tick",
             Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(5000)),
@@ -3883,16 +4376,16 @@ fn test_make_local_path() {
     use nautilus_persistence::backend::parquet::catalog::make_local_path;
 
     // Test basic path construction
-    let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+    let path = make_local_path("/base", &["data", "quote_tick", "EURUSD"]);
     let expected = PathBuf::from("/base")
         .join("data")
-        .join("quotes")
+        .join("quote_tick")
         .join("EURUSD");
     assert_eq!(path, expected);
 
     // Test empty base path
-    let path = make_local_path("", &["data", "quotes"]);
-    let expected = PathBuf::from("data").join("quotes");
+    let path = make_local_path("", &["data", "quote_tick"]);
+    let expected = PathBuf::from("data").join("quote_tick");
     assert_eq!(path, expected);
 
     // Test single component
@@ -3917,24 +4410,24 @@ fn test_make_object_store_path() {
     use nautilus_persistence::backend::parquet::catalog::make_object_store_path;
 
     // Test basic path construction
-    let path = make_object_store_path("base", ["data", "quotes", "EURUSD"]);
-    assert_eq!(path, "base/data/quotes/EURUSD");
+    let path = make_object_store_path("base", ["data", "quote_tick", "EURUSD"]);
+    assert_eq!(path, "base/data/quote_tick/EURUSD");
 
     // Test empty base path
-    let path = make_object_store_path("", ["data", "quotes"]);
-    assert_eq!(path, "data/quotes");
+    let path = make_object_store_path("", ["data", "quote_tick"]);
+    assert_eq!(path, "data/quote_tick");
 
     // Test with trailing slashes in base
-    let path = make_object_store_path("base/", ["data", "quotes"]);
-    assert_eq!(path, "base/data/quotes");
+    let path = make_object_store_path("base/", ["data", "quote_tick"]);
+    assert_eq!(path, "base/data/quote_tick");
 
     // Test with leading slashes in components
     let path = make_object_store_path("base", ["/data", "/quotes"]);
     assert_eq!(path, "base/data/quotes");
 
     // Test with backslashes (Windows-style)
-    let path = make_object_store_path("base\\", ["data\\", "quotes"]);
-    assert_eq!(path, "base/data/quotes");
+    let path = make_object_store_path("base\\", ["data\\", "quote_tick"]);
+    assert_eq!(path, "base/data/quote_tick");
 }
 
 #[rstest]
@@ -3944,16 +4437,16 @@ fn test_make_object_store_path_accepts_owned_components() {
     // Test with owned strings
     let components = vec![
         "data".to_string(),
-        "quotes".to_string(),
+        "quote_tick".to_string(),
         "EURUSD".to_string(),
     ];
     let path = make_object_store_path("base", components);
-    assert_eq!(path, "base/data/quotes/EURUSD");
+    assert_eq!(path, "base/data/quote_tick/EURUSD");
 
     // Test empty base path
-    let components = vec!["data".to_string(), "quotes".to_string()];
+    let components = vec!["data".to_string(), "quote_tick".to_string()];
     let path = make_object_store_path("", components);
-    assert_eq!(path, "data/quotes");
+    assert_eq!(path, "data/quote_tick");
 }
 
 #[rstest]
@@ -3963,9 +4456,9 @@ fn test_local_to_object_store_path() {
     use nautilus_persistence::backend::parquet::catalog::local_to_object_store_path;
 
     // Test Unix-style path
-    let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+    let local_path = PathBuf::from("data").join("quote_tick").join("EURUSD");
     let object_path = local_to_object_store_path(&local_path);
-    assert_eq!(object_path, "data/quotes/EURUSD");
+    assert_eq!(object_path, "data/quote_tick/EURUSD");
 
     // Test with backslashes (simulating Windows)
     let path_str = "data\\quotes\\EURUSD";
@@ -3980,20 +4473,20 @@ fn test_extract_path_components() {
     use nautilus_persistence::backend::parquet::catalog::extract_path_components;
 
     // Test Unix-style path
-    let components = extract_path_components("data/quotes/EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data/quote_tick/EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test Windows-style path
-    let components = extract_path_components("data\\quotes\\EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data\\quote_tick\\EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test mixed separators
-    let components = extract_path_components("data/quotes\\EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data/quote_tick\\EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test with leading/trailing separators
-    let components = extract_path_components("/data/quotes/");
-    assert_eq!(components, vec!["data", "quotes"]);
+    let components = extract_path_components("/data/quote_tick/");
+    assert_eq!(components, vec!["data", "quote_tick"]);
 
     // Test empty path
     let components = extract_path_components("");
@@ -4005,12 +4498,12 @@ fn test_extract_identifier_from_path() {
     use nautilus_persistence::backend::parquet::catalog::extract_identifier_from_path;
 
     // Test typical parquet file path
-    let identifier = extract_identifier_from_path("data/quotes/EURUSD/file.parquet");
+    let identifier = extract_identifier_from_path("data/quote_tick/EURUSD/file.parquet");
     assert_eq!(identifier, Some("EURUSD"));
 
     // Test bar file path
     let identifier =
-        extract_identifier_from_path("data/bars/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
+        extract_identifier_from_path("data/bar/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
     assert_eq!(identifier, Some("BTCUSD-1-MINUTE-LAST-EXTERNAL"));
 
     // Test path with fewer components
@@ -4065,7 +4558,7 @@ fn test_extract_sql_safe_filename() {
 
     // Test actual timestamp range filename format
     let filename = extract_sql_safe_filename(
-        "data/quotes/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+        "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
     );
     assert_eq!(
         filename,
@@ -4105,6 +4598,71 @@ fn test_extract_sql_safe_filename() {
         filename,
         "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z"
     );
+}
+
+#[rstest]
+fn test_rust_custom_data_binary_roundtrip() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.TEST");
+
+    let data_type = DataType::new(
+        "RustTestBytesCustomData",
+        None,
+        Some(instrument_id.to_string()),
+    );
+
+    let original_data = [
+        RustTestBytesCustomData {
+            value: Vec::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestBytesCustomData {
+            value: vec![0x00, 0x7F, 0xFF],
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let identifiers = [instrument_id.to_string()];
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestBytesCustomData",
+            Some(&identifiers),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(&loaded) {
+        let Data::Custom(custom) = actual else {
+            panic!("Expected custom data, was {actual:?}");
+        };
+
+        let actual = custom
+            .data
+            .as_any()
+            .downcast_ref::<RustTestBytesCustomData>()
+            .expect("Expected RustTestBytesCustomData");
+        assert_eq!(actual, expected);
+    }
 }
 
 #[rstest]
@@ -5037,16 +5595,17 @@ fn test_list_data_types() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
     // Initially should be empty or have no data types
-    let data_types = catalog.list_data_types().unwrap();
-    assert!(data_types.is_empty() || !data_types.contains(&"bars".to_string()));
+    let empty = catalog.list_data_types().unwrap();
 
-    // Write some data
     let bars = vec![create_bar(1000)];
     catalog.write_to_parquet(&bars, None, None, None).unwrap();
-
-    // Now should have bars
     let data_types = catalog.list_data_types().unwrap();
-    assert!(data_types.contains(&"bars".to_string()));
+
+    assert_eq!(empty, Vec::<CatalogDataType>::new());
+    assert_eq!(
+        data_types,
+        vec![CatalogDataType::from(NautilusDataType::Bar)]
+    );
 }
 
 #[rstest]
@@ -5101,7 +5660,7 @@ fn test_convert_stream_to_data_no_files() {
     let result = catalog.convert_stream_to_data(
         "test_instance",
         &NautilusDataType::QuoteTick.into(),
-        Some("backtest"),
+        Environment::Backtest,
         None,
         false,
     );
@@ -5117,7 +5676,7 @@ fn test_convert_stream_to_data_rejects_instrument_class() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusInstrumentType::Equity.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5140,7 +5699,7 @@ fn test_convert_stream_to_data_rejects_unsupported_family() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusDataType::Defi.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5194,7 +5753,7 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
         .convert_stream_to_data(
             "test_instance_flat",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5278,7 +5837,7 @@ fn test_convert_stream_to_data_keeps_flat_stream_file_with_identifiers() {
         .convert_stream_to_data(
             "test_instance_flat_filter",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             Some(&identifiers),
             false,
         )
@@ -5339,7 +5898,7 @@ fn test_convert_stream_to_data_ignores_flat_stream_file_with_non_timestamp_suffi
         .convert_stream_to_data(
             "test_instance_flat_suffix",
             &NautilusRecordType::AccountState.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5429,7 +5988,7 @@ fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
         .convert_stream_to_data(
             "test_instance",
             &NautilusDataType::QuoteTick.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5534,7 +6093,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
         vec![
             Arc::new(UInt64Array::from(vec![100])),
             Arc::new(UInt64Array::from(vec![100])),
-            Arc::new(StringArray::from(vec!["bars"])),
+            Arc::new(StringArray::from(vec!["bar"])),
         ],
     )
     .unwrap();
@@ -5549,7 +6108,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
         .convert_stream_to_data(
             "test_instance_bars",
             &NautilusDataType::Bar.into(),
-            Some("backtest"),
+            Environment::Backtest,
             None,
             false,
         )
@@ -5739,21 +6298,44 @@ fn test_data_catalog_instruments_applies_where_clause() {
 }
 
 #[rstest]
-#[case::class_order(1_000, 2_000)]
-#[case::reverse_class_order(2_000, 1_000)]
-fn test_instrument_family_coverage_spans_every_class(
-    #[case] currency_pair_ts: u64,
-    #[case] equity_ts: u64,
-) {
+fn test_instrument_query_narrows_to_one_class() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let currency_pair = InstrumentAny::CurrencyPair(audusd_sim());
+    let equity = InstrumentAny::Equity(equity_aapl());
+    catalog
+        .write_instruments(vec![currency_pair, equity.clone()])
+        .unwrap();
+
+    let narrowed = CatalogReader::instruments(
+        &mut catalog,
+        &CatalogInstrumentQuery::new().with_instrument_type(Some(NautilusInstrumentType::Equity)),
+    )
+    .unwrap();
+    let every_class =
+        CatalogReader::instruments(&mut catalog, &CatalogInstrumentQuery::default()).unwrap();
+
+    assert_eq!(
+        narrowed
+            .iter()
+            .map(|instrument| Instrument::id(instrument).to_string())
+            .collect::<Vec<_>>(),
+        vec![Instrument::id(&equity).to_string()],
+    );
+    assert_eq!(every_class.len(), 2);
+}
+
+#[rstest]
+fn test_instrument_family_coverage_spans_every_class() {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
-    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
-    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
     let mut equity = equity_aapl();
-    equity.ts_event = UnixNanos::from(equity_ts);
-    equity.ts_init = UnixNanos::from(equity_ts);
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
 
     catalog
         .write_instruments(vec![
@@ -5771,13 +6353,13 @@ fn test_instrument_family_coverage_spans_every_class(
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), None)
             .unwrap(),
-        vec![(currency_pair_ts, currency_pair_ts)]
+        vec![(1_000, 1_000)]
     );
     assert_eq!(
         catalog
             .get_intervals(&NautilusInstrumentType::Equity.into(), None)
             .unwrap(),
-        vec![(equity_ts, equity_ts)]
+        vec![(2_000, 2_000)]
     );
 
     assert_eq!(
@@ -5921,14 +6503,14 @@ fn test_list_instruments_aggregate_reports_shared_identifier_once() {
     "AccountState"
 )]
 fn test_consolidate_data_by_period_rejects_non_data_selectors(
-    #[case] data_type: CatalogDataType,
+    #[case] catalog_type: CatalogDataType,
     #[case] display: &str,
 ) {
     let temp_dir = TempDir::new().unwrap();
     let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let error = catalog
-        .consolidate_data_by_period(&data_type, None, None, None, None, None)
+        .consolidate_data_by_period(&catalog_type, None, None, None, None, None)
         .unwrap_err();
 
     assert_eq!(
@@ -5941,19 +6523,14 @@ fn test_consolidate_data_by_period_rejects_non_data_selectors(
 }
 
 #[rstest]
-#[case::both_adjacent(2_000, 3_000)]
-#[case::later_class_adjacent(1_000, 1_000)]
-fn test_extend_file_name_extends_every_class_holding_the_identifier(
-    #[case] currency_pair_ts: u64,
-    #[case] currency_pair_end: u64,
-) {
+fn test_extend_file_name_extends_every_class_holding_the_identifier() {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
-    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
-    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_event = UnixNanos::from(2_000);
+    currency_pair.ts_init = UnixNanos::from(2_000);
     let mut equity = equity_aapl();
     equity.id = shared_id;
     equity.ts_event = UnixNanos::from(2_000);
@@ -5979,7 +6556,7 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier(
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), Some(&id_str))
             .unwrap(),
-        vec![(currency_pair_ts, currency_pair_end)]
+        vec![(2_000, 3_000)]
     );
     assert_eq!(
         catalog
@@ -6001,76 +6578,6 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier(
         "Cannot extend file name for Instrument: no instrument class holds MISSING.SIM; \
          name the class with a NautilusInstrumentType"
     );
-}
-
-#[rstest]
-#[case::all(None, &[0, 1])]
-#[case::currency_pair(Some(NautilusInstrumentType::CurrencyPair), &[0])]
-#[case::equity(Some(NautilusInstrumentType::Equity), &[1])]
-fn test_instrument_family_class_filter_applies_to_catalog_readers(
-    #[case] instrument_type: Option<NautilusInstrumentType>,
-    #[case] expected_indices: &[usize],
-) {
-    let (_temp_dir, mut catalog) = create_temp_catalog();
-    let mut currency_pair = audusd_sim();
-    currency_pair.ts_event = UnixNanos::from(1_000);
-    currency_pair.ts_init = UnixNanos::from(1_000);
-    let mut equity = equity_aapl();
-    equity.ts_event = UnixNanos::from(2_000);
-    equity.ts_init = UnixNanos::from(2_000);
-    let instruments = vec![
-        InstrumentAny::CurrencyPair(currency_pair),
-        InstrumentAny::Equity(equity),
-    ];
-    catalog.write_instruments(instruments.clone()).unwrap();
-    let expected = expected_indices
-        .iter()
-        .map(|&index| instruments[index].clone())
-        .collect::<Vec<_>>();
-    let mut expected_ids = expected
-        .iter()
-        .map(|instrument| instrument.id().to_string())
-        .collect::<Vec<_>>();
-    expected_ids.sort();
-    let mut expected_metadata = Vec::new();
-
-    for &index in expected_indices {
-        let class = [
-            NautilusInstrumentType::CurrencyPair,
-            NautilusInstrumentType::Equity,
-        ][index];
-        expected_metadata.extend(
-            catalog
-                .query_metadata(&class.into(), None, None, None, None)
-                .unwrap(),
-        );
-    }
-
-    let query =
-        CatalogQuery::new(NautilusDataType::Instrument).with_instrument_type(instrument_type);
-
-    let loaded = CatalogReader::instruments(
-        &mut catalog,
-        &CatalogInstrumentQuery::new().with_instrument_type(instrument_type),
-    )
-    .unwrap();
-    let batch = CatalogReader::query_batch(&mut catalog, &query).unwrap();
-    let identifiers = CatalogReader::query_identifiers(&mut catalog, &query).unwrap();
-    let display = CatalogReader::query_display_record_batches(&mut catalog, &query).unwrap();
-    let metadata = CatalogReader::query_metadata(&mut catalog, &query).unwrap();
-
-    assert_eq!(loaded, expected);
-    assert_eq!(
-        batch.to_data_vec_for_compat(),
-        expected
-            .iter()
-            .cloned()
-            .map(|instrument| Data::Instrument(Box::new(instrument)))
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(identifiers, expected_ids);
-    assert_eq!(display, vec![encode_instruments(&expected).unwrap()]);
-    assert_eq!(metadata, expected_metadata);
 }
 
 #[rstest]

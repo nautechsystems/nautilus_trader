@@ -369,7 +369,7 @@ mod tests {
         custom_data_path_components, decode_batch_to_data, decode_custom_batches_to_data,
         group_custom_data_by_type, prepare_custom_data_batch, validate_custom_catalog_schema,
     };
-    use crate::test_data::RustTestCustomData;
+    use crate::common::test_data::RustTestCustomData;
 
     #[rstest]
     fn test_validate_custom_catalog_schema_accepts_catalog_timestamps() {

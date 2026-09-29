@@ -21,7 +21,7 @@
 //! enum in `anyhow::Error` and consumers downcast:
 //!
 //! ```ignore
-//! use nautilus_persistence::errors::PersistenceError;
+//! use nautilus_persistence::common::errors::PersistenceError;
 //!
 //! if matches!(
 //!     err.downcast_ref::<PersistenceError>(),

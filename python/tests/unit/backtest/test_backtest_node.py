@@ -59,7 +59,9 @@ from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import StreamingConfig
+from nautilus_trader.persistence import read_feather_run
 from nautilus_trader.trading import EmaCrossConfig
 from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
@@ -478,12 +480,10 @@ def test_node_streams_output_to_new_or_replaced_directory(
             run_analysis=False,
             instance_id=instance_id,
             streaming=StreamingConfig(
-                catalog_path=str(output_path),
-                fs_protocol="file",
+                writer_path=str(output_path),
                 flush_interval_ms=1,
                 replace_existing=replace_existing,
-                rotation_mode="SIZE",
-                max_file_size=1,
+                rotation_config=RotationConfig.size(1),
             ),
         ),
     )
@@ -515,7 +515,7 @@ def test_engine_reset_reopens_streaming_writer(tmp_path: Path) -> None:
             bypass_logging=True,
             run_analysis=False,
             instance_id=instance_id,
-            streaming=StreamingConfig(catalog_path=str(output_path), flush_interval_ms=1),
+            streaming=StreamingConfig(writer_path=str(output_path), flush_interval_ms=1),
         ),
     )
     engine.add_venue(
@@ -536,7 +536,11 @@ def test_engine_reset_reopens_streaming_writer(tmp_path: Path) -> None:
         engine.run()
         engine.reset()
         engine.run()
-        streamed = ParquetDataCatalog(str(output_path)).read_backtest(str(instance_id))
+        streamed = read_feather_run(
+            str(output_path),
+            str(instance_id),
+            data_types=[NautilusDataType.QuoteTick],
+        )
 
         assert streamed == [quote for quote in quotes for _ in range(2)]
     finally:

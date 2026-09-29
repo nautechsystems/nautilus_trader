@@ -25,31 +25,47 @@ use std::{
 
 use ahash::AHashMap;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
+use nautilus_common::enums::Environment;
 use nautilus_core::time::nanos_since_unix_epoch;
 use object_store::{
     CopyOptions, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartUpload,
     ObjectMeta, ObjectStore, ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload,
     PutResult, Result as ObjectStoreResult, path::Path as ObjectPath,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use url::Url;
 
 pub use crate::common::paths::normalize_path_to_uri;
 use crate::{
     backend::parquet::io::create_object_store_from_path,
-    common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri},
+    common::paths::{
+        environment_directory, environment_from_directory, file_uri_to_native_path,
+        make_object_store_path, path_to_file_uri,
+    },
+    writer::run::RunStatus,
 };
 
 /// File name used to represent run sessions, including runs that wrote no data files.
 pub const RUN_MANIFEST_FILENAME: &str = "_nautilus_run_manifest.json";
 
 /// Storage-native run manifest shared by catalog and stream writer session discovery.
+///
+/// The environment is stored as its run folder name, so manifests keep the `kind` field.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RunManifest {
     pub schema_version: u32,
-    pub kind: String,
+    #[serde(
+        rename = "kind",
+        serialize_with = "serialize_environment",
+        deserialize_with = "deserialize_environment"
+    )]
+    pub environment: Environment,
     pub instance_id: String,
-    pub status: String,
+    #[serde(
+        serialize_with = "serialize_run_status",
+        deserialize_with = "deserialize_run_status"
+    )]
+    pub status: RunStatus,
     pub empty: bool,
     pub created_ts: u64,
 }
@@ -57,16 +73,59 @@ pub struct RunManifest {
 impl RunManifest {
     /// Creates a run manifest for `status`.
     #[must_use]
-    pub fn new(kind: &str, instance_id: &str, status: &str, empty: bool) -> Self {
+    pub fn new(
+        environment: Environment,
+        instance_id: &str,
+        status: RunStatus,
+        empty: bool,
+    ) -> Self {
         Self {
             schema_version: 1,
-            kind: kind.to_string(),
+            environment,
             instance_id: instance_id.to_string(),
-            status: status.to_string(),
+            status,
             empty,
             created_ts: nanos_since_unix_epoch(),
         }
     }
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes the field by reference"
+)]
+fn serialize_environment<S: Serializer>(
+    environment: &Environment,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(environment_directory(*environment))
+}
+
+fn deserialize_environment<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Environment, D::Error> {
+    let directory = String::deserialize(deserializer)?;
+    environment_from_directory(&directory)
+        .ok_or_else(|| D::Error::custom(format!("unknown run environment '{directory}'")))
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes the field by reference"
+)]
+fn serialize_run_status<S: Serializer>(
+    status: &RunStatus,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(status.as_str())
+}
+
+fn deserialize_run_status<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<RunStatus, D::Error> {
+    Ok(RunStatus::from_storage_str(&String::deserialize(
+        deserializer,
+    )?))
 }
 
 /// Native object-store storage handles shared by catalog, session, and stream writers.
@@ -158,13 +217,13 @@ impl StorageBackend {
     /// Returns an error if manifest serialization or storage writing fails.
     pub async fn write_run_manifest(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
-        status: &str,
+        status: RunStatus,
         empty: bool,
     ) -> anyhow::Result<()> {
-        let manifest = RunManifest::new(kind, instance_id, status, empty);
-        let path = self.run_manifest_path(kind, instance_id);
+        let manifest = RunManifest::new(environment, instance_id, status, empty);
+        let path = self.run_manifest_path(environment, instance_id);
         let bytes = serde_json::to_vec(&manifest)?;
         self.object_store.put(&path, bytes.into()).await?;
         Ok(())
@@ -177,12 +236,12 @@ impl StorageBackend {
     /// Returns an error if manifest serialization or storage writing fails.
     pub async fn write_current_run_manifest(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
-        status: &str,
+        status: RunStatus,
         empty: bool,
     ) -> anyhow::Result<()> {
-        let manifest = RunManifest::new(kind, instance_id, status, empty);
+        let manifest = RunManifest::new(environment, instance_id, status, empty);
         let path = ObjectPath::from(make_object_store_path(
             &self.base_path,
             [RUN_MANIFEST_FILENAME],
@@ -199,43 +258,37 @@ impl StorageBackend {
     /// Returns an error if storage reading or manifest deserialization fails.
     pub async fn read_run_manifest(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
     ) -> anyhow::Result<Option<RunManifest>> {
-        self.read_run_manifest_at(&self.run_manifest_path(kind, instance_id))
+        self.read_run_manifest_at(&self.run_manifest_path(environment, instance_id))
             .await
     }
 
-    /// Lists run IDs from directories and manifests for one session kind.
+    /// Lists run IDs from directories and manifests for one environment.
     ///
     /// # Errors
     ///
     /// Returns an error if storage listing or manifest reading fails.
-    pub async fn list_run_ids(&self, kind: &str) -> anyhow::Result<Vec<String>> {
-        self.list_run_ids_for_kinds(&[kind]).await
-    }
+    pub async fn list_run_ids(&self, environment: Environment) -> anyhow::Result<Vec<String>> {
+        let directory = environment_directory(environment);
+        let mut run_ids = self
+            .list_directory_stems(directory)
+            .await?
+            .into_iter()
+            .collect::<BTreeSet<_>>();
 
-    /// Lists run IDs from directories and manifests for multiple session kind aliases.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if storage listing or manifest reading fails.
-    pub async fn list_run_ids_for_kinds(&self, kinds: &[&str]) -> anyhow::Result<Vec<String>> {
-        let mut run_ids = BTreeSet::new();
-
-        for kind in kinds {
-            run_ids.extend(self.list_directory_stems(kind).await?);
-
-            for manifest in self.list_run_manifests(kind).await? {
-                run_ids.insert(manifest.instance_id);
-            }
+        for manifest in self.list_run_manifests(directory).await? {
+            run_ids.insert(manifest.instance_id);
         }
 
         Ok(run_ids.into_iter().collect())
     }
 
-    async fn list_run_manifests(&self, kind: &str) -> anyhow::Result<Vec<RunManifest>> {
-        let files = self.list_files(kind, Some(RUN_MANIFEST_FILENAME)).await?;
+    async fn list_run_manifests(&self, directory: &str) -> anyhow::Result<Vec<RunManifest>> {
+        let files = self
+            .list_files(directory, Some(RUN_MANIFEST_FILENAME))
+            .await?;
         let mut manifests = Vec::new();
 
         for file in files {
@@ -258,15 +311,19 @@ impl StorageBackend {
         }
     }
 
-    fn run_manifest_path(&self, kind: &str, instance_id: &str) -> ObjectPath {
+    fn run_manifest_path(&self, environment: Environment, instance_id: &str) -> ObjectPath {
         ObjectPath::from(make_object_store_path(
             &self.base_path,
-            [kind, instance_id, RUN_MANIFEST_FILENAME],
+            [
+                environment_directory(environment),
+                instance_id,
+                RUN_MANIFEST_FILENAME,
+            ],
         ))
     }
 }
 
-/// Returns the root URL DataFusion should use when registering an `OpenDAL` object store.
+/// Returns the root URL DataFusion should use when registering a storage backend's object store.
 ///
 /// # Errors
 ///
@@ -332,7 +389,7 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
-/// Creates an OpenDAL-backed storage backend from a Nautilus storage URI.
+/// Creates an object-store storage backend from a Nautilus storage URI.
 ///
 /// # Errors
 ///
@@ -556,25 +613,47 @@ mod tests {
     }
 
     #[rstest]
+    fn run_manifest_stores_environment_folder_and_status_names() {
+        let manifest =
+            RunManifest::new(Environment::Sandbox, "run-001", RunStatus::InProgress, true);
+
+        let json = serde_json::to_value(&manifest).unwrap();
+
+        assert_eq!(json["kind"], "sandbox");
+        assert_eq!(json["status"], "in_progress");
+        assert_eq!(
+            serde_json::from_value::<RunManifest>(json).unwrap(),
+            manifest
+        );
+    }
+
+    #[rstest]
     fn storage_backend_lists_manifest_only_empty_runs() {
         let storage = create_storage_backend_from_path("memory://", None).unwrap();
         futures::executor::block_on(async {
             storage
-                .write_run_manifest("backtest", "empty-run-001", "completed", true)
+                .write_run_manifest(
+                    Environment::Backtest,
+                    "empty-run-001",
+                    RunStatus::Completed,
+                    true,
+                )
                 .await
                 .unwrap();
         });
 
-        let runs = futures::executor::block_on(storage.list_run_ids("backtest")).unwrap();
-        let manifest =
-            futures::executor::block_on(storage.read_run_manifest("backtest", "empty-run-001"))
-                .unwrap()
-                .unwrap();
+        let runs =
+            futures::executor::block_on(storage.list_run_ids(Environment::Backtest)).unwrap();
+        let manifest = futures::executor::block_on(
+            storage.read_run_manifest(Environment::Backtest, "empty-run-001"),
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(runs, vec!["empty-run-001".to_string()]);
-        assert_eq!(manifest.kind, "backtest");
+        assert_eq!(manifest.environment, Environment::Backtest);
         assert_eq!(manifest.instance_id, "empty-run-001");
-        assert_eq!(manifest.status, "completed");
+        assert_eq!(manifest.status, RunStatus::Completed);
         assert!(manifest.empty);
         assert_eq!(manifest.schema_version, 1);
     }
@@ -583,9 +662,10 @@ mod tests {
     fn read_run_manifest_returns_none_for_missing_run() {
         let storage = create_storage_backend_from_path("memory://", None).unwrap();
 
-        let manifest =
-            futures::executor::block_on(storage.read_run_manifest("backtest", "missing-run"))
-                .unwrap();
+        let manifest = futures::executor::block_on(
+            storage.read_run_manifest(Environment::Backtest, "missing-run"),
+        )
+        .unwrap();
 
         assert_eq!(manifest, None);
     }
@@ -603,12 +683,17 @@ mod tests {
                 .await
                 .unwrap();
             storage
-                .write_run_manifest("live", "empty-run-001", "completed", true)
+                .write_run_manifest(
+                    Environment::Live,
+                    "empty-run-001",
+                    RunStatus::Completed,
+                    true,
+                )
                 .await
                 .unwrap();
         });
 
-        let runs = futures::executor::block_on(storage.list_run_ids("live")).unwrap();
+        let runs = futures::executor::block_on(storage.list_run_ids(Environment::Live)).unwrap();
 
         assert_eq!(
             runs,
@@ -677,23 +762,24 @@ mod tests {
         let root = storage_backend(inner, String::new(), "memory://".to_string());
 
         futures::executor::block_on(run.write_current_run_manifest(
-            "backtest",
+            Environment::Backtest,
             "run-001",
-            "completed",
+            RunStatus::Completed,
             false,
         ))
         .unwrap();
-        let manifest = futures::executor::block_on(root.read_run_manifest("backtest", "run-001"))
-            .unwrap()
-            .unwrap();
+        let manifest =
+            futures::executor::block_on(root.read_run_manifest(Environment::Backtest, "run-001"))
+                .unwrap()
+                .unwrap();
 
         assert_eq!(
             manifest,
             RunManifest {
                 schema_version: 1,
-                kind: "backtest".to_string(),
+                environment: Environment::Backtest,
                 instance_id: "run-001".to_string(),
-                status: "completed".to_string(),
+                status: RunStatus::Completed,
                 empty: false,
                 created_ts: manifest.created_ts,
             },
@@ -709,7 +795,8 @@ mod tests {
         ))
         .unwrap();
 
-        let error = futures::executor::block_on(storage.list_run_ids("backtest")).unwrap_err();
+        let error =
+            futures::executor::block_on(storage.list_run_ids(Environment::Backtest)).unwrap_err();
 
         assert_eq!(
             error.to_string(),

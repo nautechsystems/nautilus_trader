@@ -309,7 +309,8 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
                 has_new = True
             if stripped in ("#[pymethods]", "#[pyo3::pymethods]"):
                 in_pymethods = True
-            if not ATTR_END_RE.search(stripped):
+            # A parameter attribute closes its brackets before the parameter on the same line
+            if not ATTR_END_RE.search(stripped) and stripped.count("[") > stripped.count("]"):
                 in_ml_attr = True
             continue
 

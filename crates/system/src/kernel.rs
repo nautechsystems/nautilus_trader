@@ -45,8 +45,6 @@ use std::{
 
 #[cfg(feature = "streaming")]
 use anyhow::Context;
-#[cfg(feature = "streaming")]
-use jiff::tz::TimeZone;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
@@ -72,11 +70,14 @@ use nautilus_execution::{
 use nautilus_model::identifiers::{ClientId, TraderId};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::{
-    backend::default_writer_factories,
-    config::StreamingConfig,
+    backend::{default_catalog_factories, default_writer_factories},
+    common::{
+        config::{DataCatalogConfig, StreamingConfig},
+        paths::environment_directory,
+    },
     writer::{
         factory::{WriterConnectConfig, create_writer, replace_existing_writer_data},
-        feather::{RotationConfig as WriterRotationConfig, WriterClock},
+        feather::WriterClock,
         filter::WriterRecordFilter,
         subscription::StreamingSinkSubscription,
     },
@@ -203,42 +204,60 @@ impl NautilusKernel {
         config: &StreamingConfig,
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<(String, StreamingSinkSubscription)> {
-        let environment = environment.to_string().to_ascii_lowercase();
-
-        let base_uri = match config.fs_protocol.as_str() {
-            "file" => config.catalog_path.trim_end_matches('/').to_string(),
-            _ if config.catalog_path.contains("://") => {
-                config.catalog_path.trim_end_matches('/').to_string()
-            }
-            protocol => format!("{protocol}://{}", config.catalog_path.trim_end_matches('/')),
-        };
-
-        let uri = format!("{base_uri}/{environment}/{instance_id}");
-        let mut connect = WriterConnectConfig::new(&uri, None);
-        connect.rotation_config = writer_rotation_config(&config.rotation_config);
-        connect.flush_interval_ms = Some(config.flush_interval_ms);
-        connect.params.clone_from(&config.params);
-        connect.record_filter = Self::writer_record_filter(config);
-
-        if config.replace_existing {
-            replace_existing_writer_data(&connect)?;
-        }
+        let factories = default_writer_factories();
+        config
+            .validate()
+            .map_err(|e| anyhow::anyhow!("streaming at {}: {e}", config.writer_path))?;
+        let writer_backend = config.writer_backend();
+        anyhow::ensure!(
+            factories.contains_key(&writer_backend.to_string()),
+            "streaming at {}: writer backend {writer_backend} is unavailable",
+            config.writer_path,
+        );
+        let connect = Self::streaming_connection(environment, instance_id, config);
 
         let (writer_clock, bridge) = WriterClock::from_shared_clock(clock);
-        let sink = create_writer(
-            &config.writer_backend,
-            &connect,
-            writer_clock,
-            &default_writer_factories(),
-        )?;
+        let sink = (|| {
+            if config.replace_existing {
+                replace_existing_writer_data(&connect)?;
+            }
+            create_writer(&writer_backend, &connect, writer_clock, &factories)
+        })()
+        .map_err(|e| e.context(format!("streaming at {}", connect.uri)))?;
+
         let subscription = StreamingSinkSubscription::subscribe_named(
             Rc::new(RefCell::new(sink)),
-            bridge.map(|atomic| (Rc::clone(clock), atomic)),
-            uri.clone(),
+            bridge.map(|shared| (clock.clone(), shared)),
+            format!("streaming at {}", connect.uri),
         );
+        log::info!("Writing data and events to {}", connect.uri);
+        Ok((connect.uri, subscription))
+    }
 
-        log::info!("Writing data and events to {uri}");
-        Ok((uri, subscription))
+    #[cfg(feature = "streaming")]
+    fn streaming_connection(
+        environment: Environment,
+        instance_id: UUID4,
+        config: &StreamingConfig,
+    ) -> WriterConnectConfig {
+        let environment_path = environment_directory(environment);
+        let writer_path = config.writer_path.trim_end_matches('/');
+        let uri = format!("{writer_path}/{environment_path}/{instance_id}");
+        let catalog = config
+            .catalog
+            .as_ref()
+            .map(DataCatalogConfig::connect_config);
+        let mut connect = WriterConnectConfig::new(uri, catalog);
+        connect.rotation_config = config.rotation_config.to_writer_rotation_config();
+        connect.flush_interval_ms =
+            (config.flush_interval_ms > 0).then_some(config.flush_interval_ms);
+        connect.record_filter = Self::writer_record_filter(config);
+        connect.promotion_interval_ms = config.promotion_interval_ms;
+        connect.promote_on_close = config.promote_on_close;
+        connect.delete_feather_after_promotion = config.delete_feather_after_promotion;
+        connect.use_ts_event_for_ts_init = config.use_ts_event_for_ts_init;
+        connect.params.clone_from(&config.params);
+        connect
     }
 
     #[cfg(feature = "streaming")]
@@ -413,6 +432,7 @@ impl NautilusKernel {
         let mut data_engine = data_engine;
         #[cfg(feature = "streaming")]
         {
+            let catalog_factories = default_catalog_factories();
             let mut unnamed_index = 0;
             let mut catalog_names = HashSet::new();
 
@@ -429,7 +449,13 @@ impl NautilusKernel {
                     catalog_names.insert(name.clone()),
                     "Duplicate data catalog name '{name}'",
                 );
-                let catalog = catalog_config.create_catalog().with_context(|| {
+                let catalog_backend = catalog_config.catalog_backend().to_string();
+                let Some(factory) = catalog_factories.get(&catalog_backend) else {
+                    anyhow::bail!(
+                        "Catalog backend factory missing from registry: {catalog_backend}"
+                    );
+                };
+                let catalog = factory(&catalog_config.connect_config()).with_context(|| {
                     format!(
                         "Failed to create data catalog from '{}'",
                         catalog_config.path()
@@ -1225,27 +1251,6 @@ impl NautilusKernel {
     }
 }
 
-#[cfg(feature = "streaming")]
-fn writer_rotation_config(config: &crate::config::RotationConfig) -> WriterRotationConfig {
-    match config {
-        crate::config::RotationConfig::Size { max_size } => WriterRotationConfig::Size {
-            max_size: *max_size,
-        },
-        crate::config::RotationConfig::Interval { interval_ns } => WriterRotationConfig::Interval {
-            interval_ns: interval_ns.as_u64(),
-        },
-        crate::config::RotationConfig::ScheduledDates {
-            interval_ns,
-            schedule_ns,
-        } => WriterRotationConfig::ScheduledDates {
-            interval_ns: interval_ns.as_u64(),
-            rotation_time: *schedule_ns,
-            rotation_timezone: TimeZone::UTC,
-        },
-        crate::config::RotationConfig::NoRotation => WriterRotationConfig::NoRotation,
-    }
-}
-
 #[cfg(all(test, feature = "python"))]
 mod tests {
     use nautilus_common::messages::system::ShutdownSystem;
@@ -1339,15 +1344,17 @@ mod streaming_tests {
         messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
         msgbus::{self, MStr, ShareableMessageHandler},
     };
-    use nautilus_core::DurationNanos;
     use nautilus_model::{
         data::{CustomData, DataType, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
     use nautilus_persistence::{
-        backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
-        test_data::RustTestCustomData, writer::feather::RotationConfig as WriterRotationConfig,
+        backend::parquet::catalog::ParquetDataCatalog,
+        common::{
+            config::{CatalogBackendType, DataCatalogConfig},
+            test_data::RustTestCustomData,
+        },
     };
     use nautilus_serialization::ensure_custom_data_registered;
     use rstest::rstest;
@@ -1356,69 +1363,118 @@ mod streaming_tests {
     use super::*;
     use crate::config::{KernelConfig, RotationConfig, StreamingConfig};
 
-    #[rstest]
-    #[case(
-        RotationConfig::Size { max_size: 17 },
-        WriterRotationConfig::Size { max_size: 17 }
-    )]
-    #[case(
-        RotationConfig::Interval {
-            interval_ns: DurationNanos::new(23),
-        },
-        WriterRotationConfig::Interval {
-            interval_ns: 23,
-        }
-    )]
-    #[case(
-        RotationConfig::ScheduledDates {
-            interval_ns: DurationNanos::new(31),
-            schedule_ns: UnixNanos::from(37),
-        },
-        WriterRotationConfig::ScheduledDates {
-            interval_ns: 31,
-            rotation_time: UnixNanos::from(37),
-            rotation_timezone: TimeZone::UTC,
-        }
-    )]
-    #[case(RotationConfig::NoRotation, WriterRotationConfig::NoRotation)]
-    fn test_writer_rotation_config(
-        #[case] config: RotationConfig,
-        #[case] expected: WriterRotationConfig,
-    ) {
-        let actual = writer_rotation_config(&config);
+    fn temp_catalog_path(test_name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("nautilus-{test_name}-{}", UUID4::new()));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
 
-        match (actual, expected) {
-            (
-                WriterRotationConfig::Size { max_size: actual },
-                WriterRotationConfig::Size { max_size: expected },
-            )
-            | (
-                WriterRotationConfig::Interval {
-                    interval_ns: actual,
-                },
-                WriterRotationConfig::Interval {
-                    interval_ns: expected,
-                },
-            ) => assert_eq!(actual, expected),
-            (
-                WriterRotationConfig::ScheduledDates {
-                    interval_ns: actual_interval,
-                    rotation_time: actual_time,
-                    rotation_timezone: actual_timezone,
-                },
-                WriterRotationConfig::ScheduledDates {
-                    interval_ns: expected_interval,
-                    rotation_time: expected_time,
-                    rotation_timezone: expected_timezone,
-                },
-            ) => {
-                assert_eq!(actual_interval, expected_interval);
-                assert_eq!(actual_time, expected_time);
-                assert_eq!(actual_timezone, expected_timezone);
+    fn setup_quote() -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.00001"),
+            Price::from("1.00003"),
+            Quantity::from("100_000"),
+            Quantity::from("200_000"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_000_000_000),
+        )
+    }
+
+    fn streaming_config(writer_path: &std::path::Path) -> StreamingConfig {
+        let mut config = StreamingConfig::new(
+            writer_path.to_string_lossy().to_string(),
+            None,
+            1_000,
+            true,
+            RotationConfig::NoRotation,
+        );
+        config.data_types = Some(vec![NautilusDataType::QuoteTick]);
+        config
+    }
+
+    fn contains_feather_file(path: &std::path::Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return false;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if contains_feather_file(&path) {
+                    return true;
+                }
+            } else if path.extension().is_some_and(|ext| ext == "feather") {
+                return true;
             }
-            (WriterRotationConfig::NoRotation, WriterRotationConfig::NoRotation) => {}
-            (actual, expected) => panic!("rotation mismatch: {actual:?} != {expected:?}"),
         }
+        false
+    }
+
+    #[rstest]
+    fn invalid_filter_fails_before_replacement() {
+        let root = temp_catalog_path("invalid-stream-filter");
+        let instance_id = UUID4::new();
+        let run_path = root.join("backtest").join(instance_id.to_string());
+        std::fs::create_dir_all(&run_path).unwrap();
+        let existing = run_path.join("existing.feather");
+        std::fs::write(&existing, b"preserve").unwrap();
+        let mut invalid = streaming_config(&root);
+        invalid.data_types = Some(Vec::new());
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let error = NautilusKernel::setup_streaming_writer(
+            Environment::Backtest,
+            instance_id,
+            &invalid,
+            &clock,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("data_types"));
+        assert_eq!(std::fs::read(&existing).unwrap(), b"preserve");
+        assert_eq!(std::fs::read_dir(&run_path).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[rstest]
+    fn failed_writer_setup_leaves_no_subscriptions_or_timers() {
+        let root = temp_catalog_path("failed-stream-setup");
+        let instance_id = UUID4::new();
+        let mut config = streaming_config(&root.join("second"));
+        config.replace_existing = false;
+        config.catalog = Some(DataCatalogConfig::new(
+            root.join("catalog").to_string_lossy().to_string(),
+            None,
+            Some(CatalogBackendType::Parquet),
+        ));
+        // A file where the Parquet writer must create its run directory fails its setup
+        let blocked_run = root
+            .join("second")
+            .join("backtest")
+            .join(instance_id.to_string());
+        std::fs::create_dir_all(blocked_run.parent().unwrap()).unwrap();
+        std::fs::write(&blocked_run, b"blocking file").unwrap();
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let bus = msgbus::get_message_bus();
+        let subscriptions = bus.borrow().subscriptions().len();
+        let error = NautilusKernel::setup_streaming_writer(
+            Environment::Backtest,
+            instance_id,
+            &config,
+            &clock,
+        )
+        .unwrap_err();
+        msgbus::publish_quote("data.quotes.AUD/USD.SIM".into(), &setup_quote());
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "streaming at {}/backtest/{instance_id}",
+                root.join("second").to_string_lossy()
+            )
+        );
+        assert_eq!(bus.borrow().subscriptions().len(), subscriptions);
+        assert!(clock.borrow().timer_names().is_empty());
+        assert!(!contains_feather_file(&root));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[rstest]
@@ -1505,7 +1561,7 @@ mod streaming_tests {
         let instance_id = UUID4::new();
         let mut streaming = StreamingConfig::new(
             directory.path().to_string_lossy().into_owned(),
-            "file".to_string(),
+            None,
             1_000,
             false,
             RotationConfig::NoRotation,

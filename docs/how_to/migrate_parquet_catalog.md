@@ -40,6 +40,10 @@ The printed report distinguishes migrated files and rows, transcoded rows, path-
 files, and unmigrated files; empty coverage files count as migrated files with zero rows. Inspect the report before
 cutting over.
 
+Custom data stored under a nested identifier directory, such as `data/custom/<type>/AUD/USD.SIM/` for an
+identifier containing `/`, is reported as unmigrated. The current layout keeps each identifier in a single
+directory segment.
+
 ## Arrow representation
 
 The current format uses standard Arrow types. Each representation below applies to the record families named

@@ -50,10 +50,13 @@ fn parquet_migration_command_validates_then_converts_catalog() {
         "{}",
         String::from_utf8_lossy(&migrated.stderr)
     );
+    let stdout = String::from_utf8_lossy(&migrated.stdout);
+    assert!(stdout.contains("6 migrated files, 7 migrated rows"));
+    // Nested custom-data identifier directories are a removed layout and are not migrated
     assert!(
-        String::from_utf8_lossy(&migrated.stdout).contains("7 migrated files, 8 migrated rows")
+        stdout.contains("Unmigrated directory data/custom/RustTestCustomData/AUD/USD.SIM: 1 files")
     );
-    assert!(target.join("data/custom/RustTestCustomData").is_dir());
+    assert!(!target.join("data/custom/RustTestCustomData").exists());
     let repeated = run(false);
     assert!(!repeated.status.success());
 }

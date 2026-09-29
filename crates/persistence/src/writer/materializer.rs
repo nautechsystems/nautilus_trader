@@ -81,7 +81,7 @@ pub(crate) async fn read_feather_record_batches_with_hash(
     Ok((result.batches, result.content_hash))
 }
 
-/// Reads a Feather IPC stream with the version metadata returned by the same object read.
+/// Reads a Feather IPC stream with the content hash of the same object read.
 ///
 /// # Errors
 ///

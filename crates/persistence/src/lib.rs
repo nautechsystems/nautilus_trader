@@ -28,18 +28,13 @@
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! This crate provides the following feature flags:
 //!
-//! - `cloud`: Enables cloud storage backends (S3, Azure, GCP, HTTP) via `object_store`.
-//! - `defi`: Enables DeFi (Decentralized Finance) support.
-//! - `extension-module`: Builds as a Python extension module.
-//! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
-//!   to use 128-bit value types.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `cloud`.
+//! - `cloud`: Enables the `cloud` feature.
+//! - `defi`: Enables decentralized finance support.
+//! - `extension-module`: Builds the Python extension module.
+//! - `high-precision`: Enables 128-bit fixed-point value types.
+//! - `python`: Enables Python bindings through `PyO3`.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -58,10 +53,6 @@
 pub mod backend;
 pub mod catalog;
 pub mod common;
-pub mod config;
-pub mod errors;
-pub mod parquet;
-pub mod test_data;
 pub mod writer;
 
 #[cfg(feature = "python")]

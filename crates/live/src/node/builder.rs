@@ -343,10 +343,7 @@ impl LiveNodeBuilder {
         self
     }
 
-    /// Set the streaming configuration.
-    ///
-    /// The Rust live runtime does not support this setting yet.
-    /// `build()` returns an error when it is set.
+    /// Sets the streaming configuration.
     #[cfg(feature = "streaming")]
     #[must_use]
     pub fn with_streaming_config(mut self, config: StreamingConfig) -> Self {

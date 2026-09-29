@@ -548,7 +548,7 @@ impl CatalogReader for ParquetDataCatalog {
             }
             #[cfg(feature = "defi")]
             NautilusDataType::Defi => Err(anyhow::Error::from(
-                crate::errors::PersistenceError::unsupported("Parquet catalog DeFi data"),
+                crate::common::errors::PersistenceError::unsupported("Parquet catalog DeFi data"),
             )),
             data_type => query_builtin_batch(
                 self,
@@ -561,7 +561,7 @@ impl CatalogReader for ParquetDataCatalog {
             )
             .unwrap_or_else(|| {
                 Err(anyhow::Error::from(
-                    crate::errors::PersistenceError::unsupported(format!(
+                    crate::common::errors::PersistenceError::unsupported(format!(
                         "Parquet catalog {data_type} data"
                     )),
                 ))

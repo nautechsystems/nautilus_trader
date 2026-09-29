@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an Apache Parquet backend powered by [DataFusion](https://arrow.apache.org/datafusion).
+//! Provides persistence backend implementations powered by [DataFusion](https://arrow.apache.org/datafusion).
 
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use indexmap::{IndexMap, map::Entry};
-use tokio::runtime::Handle;
 
 use crate::{
     catalog::factory as catalog_factory,
@@ -26,13 +25,7 @@ use crate::{
     writer::{factory as writer_factory, feather as feather_writer, traits as writer_traits},
 };
 
-pub mod binary_heap;
-pub mod compare;
-pub mod feather;
-pub mod kmerge_batch;
-pub mod migration;
 pub mod parquet;
-pub mod session;
 
 /// Returns the persistence-owned catalog-factory registry.
 ///
@@ -96,12 +89,7 @@ fn extend_factories<T>(
             }
         }
     }
-
     Ok(registry)
-}
-
-fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
-    parquet::register_catalog_factory(registry);
 }
 
 fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactoryRegistry) {
@@ -128,18 +116,28 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
     );
 }
 
-/// Runs an async operation from a synchronous persistence API.
-///
-/// `block_in_place` permits re-entering the shared multi-thread Nautilus runtime and executes the
-/// closure directly when called outside a Tokio runtime.
-///
-/// # Panics
-///
-/// Panics when called from a Tokio `current_thread` runtime. The shared Nautilus runtime is
-/// required to be multi-threaded.
-pub(crate) fn block_on<F>(runtime: &Handle, future: F) -> F::Output
-where
-    F: Future,
-{
-    tokio::task::block_in_place(|| runtime.block_on(future))
+fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
+    parquet::register_catalog_factory(registry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rstest::rstest]
+    fn catalog_factory_entries_reject_duplicate_user_names() {
+        let factory: catalog_factory::CatalogFactory = Arc::new(|_| anyhow::bail!("not invoked"));
+
+        let error = extend_catalog_factories(vec![
+            ("duplicate".to_string(), Arc::clone(&factory)),
+            ("duplicate".to_string(), factory),
+        ])
+        .err()
+        .expect("duplicate registration should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "Catalog factory already registered: duplicate",
+        );
+    }
 }

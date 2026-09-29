@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Shared catalog metadata conversion.
+
 use std::collections::HashMap;
 
 use arrow::record_batch::RecordBatch;
@@ -66,8 +68,8 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{ArrayRef, UInt64Array},
-        datatypes::{DataType, Field, Schema},
+        array::{ArrayRef, TimestampNanosecondArray, UInt64Array},
+        datatypes::{DataType, Field, Schema, TimeUnit},
     };
     use rstest::rstest;
 
@@ -97,5 +99,43 @@ mod tests {
             error.to_string(),
             "Record batches contain no non-null ts_init values"
         );
+    }
+
+    fn batch(values: Vec<Option<u64>>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts_init",
+                DataType::UInt64,
+                true,
+            )])),
+            vec![Arc::new(UInt64Array::from(values)) as ArrayRef],
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    fn timestamp_range_rejects_nulls() {
+        let error =
+            record_batch_ts_init_range(&[batch(vec![Some(20), None, Some(10)])]).unwrap_err();
+
+        assert_eq!(error.to_string(), "ts_init column contains null values");
+    }
+
+    #[rstest]
+    fn timestamp_range_reads_utc_nanoseconds() {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts_init",
+                DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                false,
+            )])),
+            vec![
+                Arc::new(TimestampNanosecondArray::from(vec![20, 10]).with_timezone("UTC"))
+                    as ArrayRef,
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(record_batch_ts_init_range(&[batch]).unwrap(), (10, 20),);
     }
 }
