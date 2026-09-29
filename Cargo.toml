@@ -136,7 +136,8 @@ aws-lc-rs = { version = "1.18.1", default-features = false, features = [
 ] }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
-bon = "3.9.3"
+# Pinned: 3.10.1 pulls prettyplease 0.3 while prost-build still requires 0.2.
+bon = "=3.9.3"
 bytes = { version = "1.12.1", features = ["serde"] }
 capnp = "0.27.2"
 clap = { version = "4.6.7", features = ["derive", "env"] }
@@ -232,7 +233,7 @@ rand = { version = "0.10.3", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "4.3.0", default-features = false }
-redis = { version = "1.7.0", default-features = false, features = [
+redis = { version = "1.7.1", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -256,7 +257,7 @@ rustls = { version = "0.23.45", default-features = false, features = [
   "std",
   "tls12",
 ] }
-rustls-platform-verifier = "0.7.0"
+rustls-platform-verifier = "0.7.1"
 serde = { version = "1.0.229", default-features = false, features = [
   "derive",
   "std",
@@ -267,7 +268,7 @@ serde_json = { version = "1.0.151", default-features = false, features = [
   "std",
 ] }
 serde_urlencoded = "0.7.1"
-smallvec = { version = "1.16.1", features = ["serde"] }
+smallvec = { version = "1.16.2", features = ["serde"] }
 socket2 = { version = "0.6.5", features = ["all"] }
 sockudo-ws = { version = "2.1.0", default-features = false, features = [
   "simd",
@@ -287,7 +288,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.22.0", default-features = false, features = ["std"] }
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 tokio = { version = "1.53.1", default-features = false, features = [
   "parking_lot",
   "rt-multi-thread",
@@ -328,7 +329,7 @@ zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "2.4.1", default-features = false }
+alloy = { version = "2.5.0", default-features = false }
 bollard = { version = "0.21.1", default-features = false, features = [
   "http",
   "pipe",

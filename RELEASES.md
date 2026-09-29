@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added custom data support to `StreamingFeatherWriter` (#4759), thanks for reporting @mystic-io
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
+- Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
@@ -112,6 +113,9 @@ Released on TBD (UTC).
 - Changed instrument status and option Greeks Arrow conversions to reject batches mixing instruments
 - Changed Polymarket taker fees to read `info.fee_schedule` instead of instrument `taker_fee`
 - Changed sandbox execution clients to require an explicit `fee_model`, including a zero-fee model
+- Changed backtests to fail when a cash, betting, or wallet fill is rejected (#5077), thanks @abhijeetvichare76
+- Changed MACD, Keltner, KVO, and RVI defaults to exponential averages, matching 1.x (#5098), thanks @nicoloangileri
+- Changed VIDYA's CMO default to simple and Pressure's ATR to use the previous close (#5108), thanks @nicoloangileri
 
 ### Security
 
@@ -198,6 +202,11 @@ Released on TBD (UTC).
 - Fixed own order book audit removals logging as errors, halting `shutdown_on_error` nodes
 - Fixed `OrderBook.get_avg_px_qty_for_exposure` quantities 100x too large for 18-decimal DeFi sizes
 - Fixed recoverable adapter conditions logging as errors, halting `shutdown_on_error` nodes
+- Fixed quanto margin and balance locks to use the settlement currency (#5073), thanks @abhijeetvichare76
+- Fixed time bars stalling after an interval with no updates (#5082), thanks @faysou
+- Fixed risk engine reset leaving a halted or reducing engine active without an event (#5085), thanks @folknor
+- Fixed canceled FOK orders leaving book liquidity marked consumed (#5106), thanks @ngarid
+- Fixed cash-account SELL checks for instruments without a base currency (#5112), thanks @yashwardhan-gautam
 - Fixed adapters logging routine events as warnings and duplicate failures twice
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
@@ -240,6 +249,7 @@ Released on TBD (UTC).
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
 - Fixed Kraken spot cancel-all cancelling orders outside the requested instrument (#5044), thanks @zhaow-de
 - Fixed Kraken spot report pagination continuing past 500 pages without reporting incomplete (#5062), thanks @zhaow-de
+- Fixed Kraken spot startup reconciliation omitting orders closed while the node was down (#5110), thanks @zhaow-de
 - Fixed Lighter cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
@@ -257,6 +267,7 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation of resolved, unredeemed balances (#4963), thanks for reporting @seungpyoson
 - Fixed Polymarket reconciliation closing auto-redeemed positions at the entry price before settlement
 - Fixed Polymarket fills matched during a user WebSocket outage never applying after reconnect
+- Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit
@@ -290,6 +301,9 @@ Released on TBD (UTC).
 - Refactored `RiskEngine` validation, funding checks, and batch modification rate limiting
 - Refined persistence backend module layout and removed a duplicated Parquet I/O test module
 - Refined `SharedCell` and `WeakCell` clones to use `Rc::clone` and `Weak::clone` (#5066), thanks @mirooon
+- Refined model ref-count clones to use `Arc::clone` (#5076), thanks @mirooon
+- Refined risk engine ref-count clones to use `Rc::clone` (#5089), thanks @mirooon
+- Refined Windows persistence doc comments so Clippy `doc_markdown` passes (#5078), thanks @abhijeetvichare76
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
@@ -298,6 +312,7 @@ Released on TBD (UTC).
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
 - Optimized HTTP client construction by reusing loaded platform TLS roots across clients
+- Optimized position replay duplicate-fill checks to use the trade ID set (#5096), thanks @mirooon
 - Optimized Deribit WebSocket and HTTP decimal decoding
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
 - Optimized Tardis Machine decimal decoding
@@ -306,8 +321,9 @@ Released on TBD (UTC).
 - Upgraded `markdownlint-cli2` tool and pre-commit hook to v0.23.3
 - Upgraded `osv-scanner` tool to v2.6.0
 - Upgraded `prek` tool to v0.5.3
-- Upgraded `uv` tool and pre-commit hook to v0.12.17
-- Upgraded `typos` pre-commit hook to v1.50.2
+- Upgraded `uv` tool and pre-commit hook to v0.12.19
+- Upgraded `typos` pre-commit hook to v1.50.3
+- Upgraded `alloy` crate to v2.5.0
 - Upgraded `clap` crate to v4.6.7
 - Upgraded `codspeed-criterion-compat` crate to v5.0.2
 - Upgraded `databento` crate to v0.62.0
@@ -315,17 +331,20 @@ Released on TBD (UTC).
 - Upgraded `hyper-rustls` crate to v0.27.10
 - Upgraded `jiff` crate to v0.2.37
 - Upgraded `rand` crate to v0.10.3
+- Upgraded `redis` crate to v1.7.1
 - Upgraded `redb` crate to v4.3.0
 - Upgraded `ruint` crate to v1.20.1
-- Upgraded `smallvec` crate to v1.16.1
+- Upgraded `rustls-platform-verifier` crate to v0.7.1
+- Upgraded `smallvec` crate to v1.16.2
 - Upgraded `sockudo-ws` crate to v2.1.0
 - Upgraded `syn` crate to v3.0.6
+- Upgraded `thiserror` crate to v2.0.21
 - Upgraded `pandas` package to v3.0.6
 - Upgraded `plotly` package to v7.1.0
 - Upgraded `polars` package (test) to v1.44.2
 - Upgraded `pytest-memray` package (test) to v1.11.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.8
-- Upgraded `ty` package (dev) to v0.0.82
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.9
+- Upgraded `ty` package (dev) to v0.0.83
 - Upgraded `uvicorn` package (test) to v0.53.0
 
 ### Documentation Updates
@@ -342,14 +361,16 @@ Released on TBD (UTC).
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
 - Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes
+- Fixed `ParquetDataCatalog` docs to state the 10,000 batch size and ZSTD level 1 defaults (#5111), thanks @Martingale42
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Binance order book synchronization, recovery limits, and snapshot pacing
 - Documented Hyperliquid inferred-fill commissions as unset
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
-- Documented OKX rejection reason format with venue error codes
+- Documented that Kraken spot report requests warn at the page cap without marking incomplete (#5091), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
+- Documented OKX rejection reason format with venue error codes
 - Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Updated Databento and Tardis integration guides with new URL overrides
 - Updated OKX Rust exec tester example to use cross margin
