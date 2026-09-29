@@ -18,7 +18,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
 };
 use rust_decimal::Decimal;
 use serde::{
@@ -65,24 +65,31 @@ impl AccountBalance {
     ///
     /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(total: Money, locked: Money, free: Money) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            total.currency == locked.currency,
-            &format!(
-                "`total` currency ({}) != `locked` currency ({})",
-                total.currency, locked.currency
-            ),
-        )?;
-        check_predicate_true(
-            total.currency == free.currency,
-            &format!(
-                "`total` currency ({}) != `free` currency ({})",
-                total.currency, free.currency
-            ),
-        )?;
-        check_predicate_true(
-            locked.checked_add(free) == Some(total),
-            &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
-        )?;
+        // Inline checks keep message formatting off this per-update hot path
+        if total.currency != locked.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `locked` currency ({})",
+                    total.currency, locked.currency
+                ),
+            });
+        }
+
+        if total.currency != free.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `free` currency ({})",
+                    total.currency, free.currency
+                ),
+            });
+        }
+
+        if locked.checked_add(free) != Some(total) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
+            });
+        }
+
         Ok(Self {
             currency: total.currency,
             total,
@@ -448,13 +455,15 @@ impl MarginBalance {
         maintenance: Money,
         instrument_id: Option<InstrumentId>,
     ) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            initial.currency == maintenance.currency,
-            &format!(
-                "`initial` currency ({}) != `maintenance` currency ({})",
-                initial.currency, maintenance.currency
-            ),
-        )?;
+        if initial.currency != maintenance.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`initial` currency ({}) != `maintenance` currency ({})",
+                    initial.currency, maintenance.currency
+                ),
+            });
+        }
+
         Ok(Self {
             initial,
             maintenance,

@@ -3579,13 +3579,7 @@ impl OrderMatchingEngine {
         }
 
         // Add order to cache for fill_market_order to fetch
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
 
         self.fill_market_order(order.client_order_id());
     }
@@ -3633,18 +3627,7 @@ impl OrderMatchingEngine {
         if self.core.is_limit_matched(order.order_side(), limit_px) {
             // Filling as liquidity taker
             order.set_liquidity_side(LiquiditySide::Taker);
-
-            let order_exists = self.cache.borrow().order_exists(&order.client_order_id());
-
-            if !order_exists
-                && let Err(e) = self
-                    .cache
-                    .borrow_mut()
-                    .add_order(order.clone(), None, None, false)
-            {
-                log::debug!("Failed to add order to cache: {e}");
-            }
-
+            self.cache_order_if_missing(order);
             self.fill_limit_order_with_snapshot(order.clone());
 
             // If fill didn't execute (e.g. all liquidity consumed), revert to
@@ -3664,24 +3647,16 @@ impl OrderMatchingEngine {
                 self.snapshot_queue_position(order, price);
             }
 
-            let add_result = self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false);
+            self.cache_order_if_missing(order);
 
-            if let Err(e) = add_result {
-                log::debug!("Failed to add order to cache: {e}");
-
-                // Persist Maker side on the cached copy when exec engine
-                // already cached the order (only if not already Maker/Taker)
-                if let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
-                    && !matches!(
-                        order.liquidity_side(),
-                        Some(LiquiditySide::Maker | LiquiditySide::Taker)
-                    )
-                {
-                    order.set_liquidity_side(LiquiditySide::Maker);
-                }
+            // The exec engine's cached copy does not see the local Maker side
+            if let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
+                && !matches!(
+                    order.liquidity_side(),
+                    Some(LiquiditySide::Maker | LiquiditySide::Taker)
+                )
+            {
+                order.set_liquidity_side(LiquiditySide::Maker);
             }
         }
     }
@@ -3704,13 +3679,7 @@ impl OrderMatchingEngine {
         }
 
         // Immediately fill marketable order
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
         let client_order_id = order.client_order_id();
         self.fill_market_order(client_order_id);
 
@@ -3760,13 +3729,7 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            if let Err(e) = self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-            {
-                log::debug!("Order already in cache: {e}");
-            }
+            self.cache_order_if_missing(order);
             self.fill_market_order(order.client_order_id());
             return;
         }
@@ -3776,14 +3739,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
-
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
     }
 
     fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
@@ -3823,14 +3779,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
-
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
     }
 
     fn process_market_if_touched_order(&mut self, order: &mut OrderAny) {
@@ -3858,13 +3807,7 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            if let Err(e) = self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-            {
-                log::debug!("Order already in cache: {e}");
-            }
+            self.cache_order_if_missing(order);
             self.fill_market_order(order.client_order_id());
             return;
         }
@@ -3875,13 +3818,7 @@ impl OrderMatchingEngine {
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
 
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
     }
 
     fn process_limit_if_touched_order(&mut self, order: &mut OrderAny) {
@@ -3918,25 +3855,13 @@ impl OrderMatchingEngine {
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
 
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
     }
 
     fn accept_triggered_limit_style_order(&mut self, order: &mut OrderAny) {
         self.accept_order(order);
 
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
 
         self.trigger_limit_style_stop_order(order.client_order_id(), order.clone());
 
@@ -4022,13 +3947,7 @@ impl OrderMatchingEngine {
 
         self.accept_order(order);
 
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
+        self.cache_order_if_missing(order);
     }
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -5839,6 +5758,21 @@ impl OrderMatchingEngine {
             .transpose()
     }
 
+    // Exec engine orders are already cached; checking first skips a clone and a discarded error
+    fn cache_order_if_missing(&self, order: &OrderAny) {
+        if self.cache.borrow().order_exists(&order.client_order_id()) {
+            return;
+        }
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Failed to add order to cache: {e}");
+        }
+    }
+
     fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {
         self.cache
             .borrow()
@@ -6711,10 +6645,8 @@ impl OrderMatchingEngine {
 
     fn publish_order_initialized(&self, order: &OrderAny) {
         let event = OrderEventAny::Initialized(order.init_event().clone());
-        msgbus::publish_order_event(
-            format!("events.order.{}", order.strategy_id()).into(),
-            &event,
-        );
+        let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
+        msgbus::publish_order_event(topic, &event);
     }
 
     fn create_order_accepted(

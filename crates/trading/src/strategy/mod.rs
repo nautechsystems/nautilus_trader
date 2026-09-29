@@ -2411,9 +2411,9 @@ where
 }
 
 fn publish_order_initialized(order: &OrderAny) {
-    let topic = format!("events.order.{}", order.strategy_id());
+    let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
     let event = OrderEventAny::Initialized(order.init_event().clone());
-    msgbus::publish_order_event(topic.into(), &event);
+    msgbus::publish_order_event(topic, &event);
 }
 
 fn send_emulator_command(command: TradingCommand) {

@@ -22,10 +22,7 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::{
     DurationNanos, UnixNanos,
-    correctness::{
-        CorrectnessError, CorrectnessResult, FAILED, check_equal, check_predicate_false,
-        check_predicate_true,
-    },
+    correctness::{CorrectnessError, CorrectnessResult, FAILED, check_equal},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -518,17 +515,20 @@ pub(crate) fn balance_from_locks(
         .values()
         .filter(|locked| locked.currency == currency)
     {
-        check_predicate_false(
-            locked.is_negative(),
-            &format!("locked balance was negative: {locked}"),
-        )?;
-        check_predicate_true(
-            locked.currency.precision == currency.precision,
-            &format!(
-                "locked balance precision {} differed from balance precision {} for {currency}",
-                locked.currency.precision, currency.precision
-            ),
-        )?;
+        if locked.is_negative() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("locked balance was negative: {locked}"),
+            });
+        }
+
+        if locked.currency.precision != currency.precision {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "locked balance precision {} differed from balance precision {} for {currency}",
+                    locked.currency.precision, currency.precision
+                ),
+            });
+        }
 
         let reservation = if current_balance.total.is_negative() {
             *locked

@@ -1819,6 +1819,59 @@ fn test_process_limit_order_without_immediate_match_cancels(
 }
 
 #[rstest]
+#[case::cached_by_exec_engine(true)]
+#[case::uncached(false)]
+fn test_process_limit_order_passive_caches_maker_liquidity_side(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] pre_cached: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    if pre_cached {
+        cache
+            .borrow_mut()
+            .add_order(limit_order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let cache = cache.borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_eq!(cached.liquidity_side(), Some(LiquiditySide::Maker));
+    assert!(engine_l2.order_exists(client_order_id));
+}
+
+#[rstest]
 fn test_accept_order_released_dispatches_and_registers(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,

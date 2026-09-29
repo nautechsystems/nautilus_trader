@@ -723,10 +723,8 @@ impl OrderEmulator {
 
             self.send_risk_event(event.clone());
 
-            msgbus::publish_order_event(
-                format!("events.order.{}", order.strategy_id()).into(),
-                &event,
-            );
+            let topic = get_event_order_topic(order.strategy_id());
+            msgbus::publish_order_event(topic, &event);
         }
 
         // Since we are cloning the matching core, we need to insert it back into the original hashmap
@@ -1367,10 +1365,8 @@ impl OrderEmulator {
             if let Err(e) = add_result {
                 log::error!("Failed to add order: {e}");
             } else {
-                msgbus::publish_order_event(
-                    format!("events.order.{}", order.strategy_id()).into(),
-                    transformed.last_event(),
-                );
+                let topic = get_event_order_topic(order.strategy_id());
+                msgbus::publish_order_event(topic, transformed.last_event());
             }
 
             let event = OrderReleased::new(
@@ -1399,10 +1395,8 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            msgbus::publish_order_event(
-                format!("events.order.{}", transformed.strategy_id()).into(),
-                &event,
-            );
+            let topic = get_event_order_topic(transformed.strategy_id());
+            msgbus::publish_order_event(topic, &event);
 
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.send_algo_command(command, exec_algorithm_id);
@@ -1501,10 +1495,8 @@ impl OrderEmulator {
             if let Err(e) = add_result {
                 log::error!("Failed to add order: {e}");
             } else {
-                msgbus::publish_order_event(
-                    format!("events.order.{}", order.strategy_id()).into(),
-                    transformed.last_event(),
-                );
+                let topic = get_event_order_topic(order.strategy_id());
+                msgbus::publish_order_event(topic, transformed.last_event());
             }
 
             let ts_now = self.clock.borrow().timestamp_ns();
@@ -1530,10 +1522,8 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            msgbus::publish_order_event(
-                format!("events.order.{}", order.strategy_id()).into(),
-                &event,
-            );
+            let topic = get_event_order_topic(order.strategy_id());
+            msgbus::publish_order_event(topic, &event);
 
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.send_algo_command(command, exec_algorithm_id);

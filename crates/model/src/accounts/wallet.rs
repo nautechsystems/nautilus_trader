@@ -257,13 +257,15 @@ impl WalletAccount {
         balances
             .iter()
             .map(|balance| {
-                check_predicate_true(
-                    currencies.insert(balance.currency),
-                    &format!(
-                        "Wallet account balances had duplicate currency {}",
-                        balance.currency
-                    ),
-                )?;
+                if !currencies.insert(balance.currency) {
+                    return Err(CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "Wallet account balances had duplicate currency {}",
+                            balance.currency
+                        ),
+                    });
+                }
+
                 check_predicate_false(
                     balance.total.is_negative(),
                     "Wallet account balance total was negative",
@@ -279,17 +281,20 @@ impl WalletAccount {
     }
 
     fn validate_observed_balance(balance: AccountBalance) -> CorrectnessResult<()> {
-        check_predicate_true(
-            balance.currency == balance.total.currency
-                && balance.currency.precision == balance.total.currency.precision,
-            &format!(
-                "Wallet account balance currency {} precision {} differed from total currency {} precision {}",
-                balance.currency,
-                balance.currency.precision,
-                balance.total.currency,
-                balance.total.currency.precision,
-            ),
-        )?;
+        if !(balance.currency == balance.total.currency
+            && balance.currency.precision == balance.total.currency.precision)
+        {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Wallet account balance currency {} precision {} differed from total currency {} precision {}",
+                    balance.currency,
+                    balance.currency.precision,
+                    balance.total.currency,
+                    balance.total.currency.precision,
+                ),
+            });
+        }
+
         Self::validate_money(balance.total)
     }
 
@@ -341,10 +346,12 @@ impl WalletAccount {
         reason = "the raw width differs when high-precision is disabled"
     )]
     fn normalize_reservation(locked: Money, currency: Currency) -> CorrectnessResult<Money> {
-        check_predicate_false(
-            locked.is_negative(),
-            &format!("locked balance was negative: {locked}"),
-        )?;
+        if locked.is_negative() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("locked balance was negative: {locked}"),
+            });
+        }
+
         Self::validate_money(locked)?;
 
         Money::from_rescaled_raw(
@@ -438,28 +445,35 @@ impl WalletAccount {
             .iter()
             .filter(|((_, key), locked)| *key == currency || locked.currency == currency)
         {
-            check_predicate_true(
-                *key_currency == locked.currency
-                    && key_currency.precision == locked.currency.precision,
-                &format!(
-                    "wallet reservation key currency {} precision {} differed from value currency {} precision {}",
-                    key_currency,
-                    key_currency.precision,
-                    locked.currency,
-                    locked.currency.precision,
-                ),
-            )?;
-            check_predicate_true(
-                locked.currency.precision == currency.precision,
-                &format!(
-                    "locked balance precision {} differed from balance precision {} for {currency}",
-                    locked.currency.precision, currency.precision
-                ),
-            )?;
-            check_predicate_false(
-                locked.is_negative(),
-                &format!("locked balance was negative: {locked}"),
-            )?;
+            if !(*key_currency == locked.currency
+                && key_currency.precision == locked.currency.precision)
+            {
+                return Err(CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "wallet reservation key currency {} precision {} differed from value currency {} precision {}",
+                        key_currency,
+                        key_currency.precision,
+                        locked.currency,
+                        locked.currency.precision,
+                    ),
+                });
+            }
+
+            if locked.currency.precision != currency.precision {
+                return Err(CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "locked balance precision {} differed from balance precision {} for {currency}",
+                        locked.currency.precision, currency.precision
+                    ),
+                });
+            }
+
+            if locked.is_negative() {
+                return Err(CorrectnessError::PredicateViolation {
+                    message: format!("locked balance was negative: {locked}"),
+                });
+            }
+
             Self::validate_money(*locked)?;
             total_locked = total_locked.checked_add(*locked).ok_or_else(|| {
                 CorrectnessError::PredicateViolation {

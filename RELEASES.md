@@ -317,6 +317,7 @@ Released on TBD (UTC).
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
 - Optimized HTTP client construction by reusing loaded platform TLS roots across clients
 - Optimized position replay duplicate-fill checks to use the trade ID set (#5096), thanks @mirooon
+- Optimized per-order overhead in account balance updates, order matching, and event publishing
 - Optimized Deribit WebSocket and HTTP decimal decoding
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
 - Optimized Tardis Machine decimal decoding
