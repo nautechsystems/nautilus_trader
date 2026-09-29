@@ -2570,7 +2570,7 @@ impl OrderMatchingEngine {
 
     /// Processes instrument expiration at the given timestamp.
     pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
-        self.check_instrument_expiration(timestamp_ns, false);
+        self.check_instrument_expiration(timestamp_ns, false, &[]);
     }
 
     /// Returns whether instrument expiration has already been processed.
@@ -2583,7 +2583,7 @@ impl OrderMatchingEngine {
         matches!(self.instrument, InstrumentAny::BinaryOption(_))
     }
 
-    fn cancel_open_orders_for_expiration(&mut self) {
+    fn cancel_open_orders_for_expiration(&mut self, excluded: &[ClientOrderId]) {
         // Build a single de-duplicated cancellation set across the matching
         // core and cache. Resting orders may still only be represented in the
         // core while inflight orders can remain cache-only during the
@@ -2603,6 +2603,7 @@ impl OrderMatchingEngine {
                 }
             }
 
+            order_ids.retain(|client_order_id| !excluded.contains(client_order_id));
             order_ids
         };
 
@@ -2613,26 +2614,31 @@ impl OrderMatchingEngine {
             };
 
             if let Some(order) = order {
-                self.cancel_order(&order, None);
+                self.cancel_order_excluding(&order, None, excluded);
             }
         }
     }
 
-    fn enter_pending_resolution(&mut self) {
+    fn enter_pending_resolution(&mut self, excluded: &[ClientOrderId]) {
         if self.pending_resolution {
             return;
         }
 
         self.pending_resolution = true;
         self.market_status = MarketStatus::Closed;
-        self.cancel_open_orders_for_expiration();
+        self.cancel_open_orders_for_expiration(excluded);
         log::info!(
             "{} expired and is now pending resolution; open orders canceled and new orders blocked",
             self.instrument.id()
         );
     }
 
-    fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos, defer_settlement: bool) {
+    fn check_instrument_expiration(
+        &mut self,
+        timestamp_ns: UnixNanos,
+        defer_settlement: bool,
+        excluded: &[ClientOrderId],
+    ) {
         if self.expiration_processed || self.option_settlement_failed {
             return;
         }
@@ -2650,7 +2656,7 @@ impl OrderMatchingEngine {
             && timestamp_triggered
             && self.requires_pending_resolution()
         {
-            self.enter_pending_resolution();
+            self.enter_pending_resolution(excluded);
             return;
         }
 
@@ -2663,7 +2669,7 @@ impl OrderMatchingEngine {
             // handler leaves the cached status behind the cancellation dispatch.
             if !self.option_expiration_orders_canceled {
                 self.option_expiration_orders_canceled = true;
-                self.enter_pending_resolution();
+                self.enter_pending_resolution(excluded);
             }
 
             // The expiry timer settles after all same-timestamp market data,
@@ -2699,7 +2705,7 @@ impl OrderMatchingEngine {
         self.pending_resolution = false;
         let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
-        self.cancel_open_orders_for_expiration();
+        self.cancel_open_orders_for_expiration(excluded);
 
         let instrument_id = self.instrument.id();
         let positions: Vec<(
@@ -2933,7 +2939,8 @@ impl OrderMatchingEngine {
     /// Processes a new order submission.
     ///
     /// Validates the order against instrument precision, expiration, and contingency
-    /// rules before accepting or rejecting it.
+    /// rules before accepting or rejecting it. The order must already be in the cache;
+    /// an order that is not is logged as an error and ignored.
     ///
     /// # Panics
     ///
@@ -2944,10 +2951,23 @@ impl OrderMatchingEngine {
             return;
         }
 
+        if !self.cache.borrow().order_exists(&order.client_order_id()) {
+            log::error!(
+                "Cannot process order {}: not found in cache",
+                order.client_order_id()
+            );
+            return;
+        }
+
         // Ensure expiration semantics are enforced even when no fresh market-data
         // tick arrives for this instrument after expiry (e.g. after rotation).
+        // The order being processed is left for validation to reject rather than canceled
         let ts_now = self.clock.borrow().timestamp_ns();
-        self.check_instrument_expiration(ts_now, self.config.defer_option_settlement);
+        self.check_instrument_expiration(
+            ts_now,
+            self.config.defer_option_settlement,
+            &[order.client_order_id()],
+        );
 
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
@@ -3006,6 +3026,13 @@ impl OrderMatchingEngine {
                         .into(),
                     );
                 }
+            }
+
+            // An explicit close can settle the contract before its configured expiration
+            if self.expiration_processed {
+                break 'validate Some(
+                    format!("Contract {} has expired", self.instrument.id()).into(),
+                );
             }
 
             // Contingent orders checks
@@ -3578,9 +3605,6 @@ impl OrderMatchingEngine {
             self.generate_order_accepted(order, venue_order_id);
         }
 
-        // Add order to cache for fill_market_order to fetch
-        self.cache_order_if_missing(order);
-
         self.fill_market_order(order.client_order_id());
     }
 
@@ -3627,7 +3651,6 @@ impl OrderMatchingEngine {
         if self.core.is_limit_matched(order.order_side(), limit_px) {
             // Filling as liquidity taker
             order.set_liquidity_side(LiquiditySide::Taker);
-            self.cache_order_if_missing(order);
             self.fill_limit_order_with_snapshot(order.clone());
 
             // If fill didn't execute (e.g. all liquidity consumed), revert to
@@ -3640,16 +3663,11 @@ impl OrderMatchingEngine {
         } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
             self.cancel_order(order, None);
         } else {
-            // Add passive order to cache for later modify/cancel operations
-            order.set_liquidity_side(LiquiditySide::Maker);
-
             if let Some(price) = order.price() {
                 self.snapshot_queue_position(order, price);
             }
 
-            self.cache_order_if_missing(order);
-
-            // The exec engine's cached copy does not see the local Maker side
+            // `order` is the caller's copy, so record Maker on the cached order
             if let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
                 && !matches!(
                     order.liquidity_side(),
@@ -3679,7 +3697,6 @@ impl OrderMatchingEngine {
         }
 
         // Immediately fill marketable order
-        self.cache_order_if_missing(order);
         let client_order_id = order.client_order_id();
         self.fill_market_order(client_order_id);
 
@@ -3729,17 +3746,12 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            self.cache_order_if_missing(order);
             self.fill_market_order(order.client_order_id());
             return;
         }
 
         // order is not matched but is valid and we accept it
         self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
-        order.set_liquidity_side(LiquiditySide::Maker);
-        self.cache_order_if_missing(order);
     }
 
     fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
@@ -3776,10 +3788,6 @@ impl OrderMatchingEngine {
         }
 
         self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
-        order.set_liquidity_side(LiquiditySide::Maker);
-        self.cache_order_if_missing(order);
     }
 
     fn process_market_if_touched_order(&mut self, order: &mut OrderAny) {
@@ -3807,18 +3815,12 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            self.cache_order_if_missing(order);
             self.fill_market_order(order.client_order_id());
             return;
         }
 
         // Order is valid and accepted
         self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
-        order.set_liquidity_side(LiquiditySide::Maker);
-
-        self.cache_order_if_missing(order);
     }
 
     fn process_limit_if_touched_order(&mut self, order: &mut OrderAny) {
@@ -3851,18 +3853,10 @@ impl OrderMatchingEngine {
 
         // Order is valid and accepted
         self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
-        order.set_liquidity_side(LiquiditySide::Maker);
-
-        self.cache_order_if_missing(order);
     }
 
     fn accept_triggered_limit_style_order(&mut self, order: &mut OrderAny) {
         self.accept_order(order);
-
-        self.cache_order_if_missing(order);
-
         self.trigger_limit_style_stop_order(order.client_order_id(), order.clone());
 
         if let Some(cached_order) = self
@@ -3946,8 +3940,6 @@ impl OrderMatchingEngine {
         order.set_liquidity_side(LiquiditySide::Maker);
 
         self.accept_order(order);
-
-        self.cache_order_if_missing(order);
     }
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -4131,7 +4123,7 @@ impl OrderMatchingEngine {
 
         // Process instrument expiration last so orders at the expiration tick
         // get a chance to fill before positions are closed.
-        self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement);
+        self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement, &[]);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
         self.purge_applied_fills();
@@ -5758,21 +5750,6 @@ impl OrderMatchingEngine {
             .transpose()
     }
 
-    // Exec engine orders are already cached; checking first skips a clone and a discarded error
-    fn cache_order_if_missing(&self, order: &OrderAny) {
-        if self.cache.borrow().order_exists(&order.client_order_id()) {
-            return;
-        }
-
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Failed to add order to cache: {e}");
-        }
-    }
-
     fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {
         self.cache
             .borrow()
@@ -7120,6 +7097,23 @@ mod tests {
             fill::{FillModel, FillModelHandle},
         },
     };
+
+    // Caches the order before processing, as the execution engine does
+    fn process_cached_order(
+        engine: &mut OrderMatchingEngine,
+        order: &mut OrderAny,
+        account_id: AccountId,
+    ) {
+        if !engine.cache.borrow().order_exists(&order.client_order_id()) {
+            engine
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        engine.process_order(order, account_id);
+    }
 
     fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
         let sizes = BarTickSizes::from_volume(volume, size_increment);
@@ -9442,7 +9436,7 @@ mod tests {
             .build();
         let id = order.client_order_id();
         engine.set_event_handler(Rc::new(|_| {}));
-        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("ACCOUNT-001"));
         let pending = Rc::new(RefCell::new(Vec::new()));
         let events = pending.clone();
         engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
@@ -9545,7 +9539,7 @@ mod tests {
             .submit(true)
             .build();
 
-        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("ACCOUNT-001"));
 
         let events = events.borrow();
         assert_eq!(events.len(), 1);
@@ -10184,7 +10178,7 @@ mod tests {
             .submit(true)
             .build();
 
-        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("ACCOUNT-001"));
 
         assert!(
             !events
@@ -10279,7 +10273,7 @@ mod tests {
             .quantity(Quantity::from("1.000"))
             .submit(true)
             .build();
-        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("ACCOUNT-001"));
 
         assert_eq!(calls.get(), 1);
     }
@@ -11295,7 +11289,7 @@ mod tests {
             .client_order_id(client_order_id)
             .submit(true)
             .build();
-        engine.process_order(&mut order, AccountId::from("SIM-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
             Some(&(Price::from("100.00").raw(), Quantity::from("10.000").raw())),
@@ -11368,7 +11362,7 @@ mod tests {
             .client_order_id(client_order_id)
             .submit(true)
             .build();
-        engine.process_order(&mut order, AccountId::from("SIM-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
 
         let snapshot = OrderBookDelta::new(
             instrument_id,
@@ -11427,7 +11421,7 @@ mod tests {
             .client_order_id(client_order_id)
             .submit(true)
             .build();
-        engine.process_order(&mut order, AccountId::from("SIM-001"));
+        process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
 
         asks[0] = BookOrder::new(
             OrderSide::Sell,
@@ -11627,7 +11621,7 @@ mod tests {
             .client_order_id(client_order_id)
             .submit(true)
             .build();
-        engine.process_order(&mut order, AccountId::from("SIM-001"));
+        process_cached_order(engine, &mut order, AccountId::from("SIM-001"));
 
         order
     }
@@ -11817,7 +11811,7 @@ mod tests {
                         ))
                         .submit(true)
                         .build();
-                    self.engine.process_order(&mut order, self.account_id);
+                    process_cached_order(&mut self.engine, &mut order, self.account_id);
 
                     assert!(
                         self.engine

@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
@@ -238,27 +243,55 @@ fn engine_config() -> OrderMatchingEngineConfig {
     }
 }
 
+// Caches each submitted order before the engine sees it, as the execution engine does
+struct CachingEngine {
+    engine: OrderMatchingEngine,
+    cache: Rc<RefCell<Cache>>,
+}
+
+impl CachingEngine {
+    fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
+        cache_order(&self.cache, order);
+        self.engine.process_order(order, account_id);
+    }
+}
+
+impl Deref for CachingEngine {
+    type Target = OrderMatchingEngine;
+
+    fn deref(&self) -> &Self::Target {
+        &self.engine
+    }
+}
+
+impl DerefMut for CachingEngine {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.engine
+    }
+}
+
+fn cache_order(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    if !cache.borrow().order_exists(&order.client_order_id()) {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+}
+
 fn get_order_matching_engine(
     instrument: InstrumentAny,
     clock: Option<Rc<RefCell<VirtualClock>>>,
     cache: Option<Rc<RefCell<Cache>>>,
     account_type: Option<AccountType>,
     config: Option<OrderMatchingEngineConfig>,
-) -> OrderMatchingEngine {
-    let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
-    let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-    let config = config.unwrap_or_default();
-
-    OrderMatchingEngine::new(
+) -> CachingEngine {
+    build_caching_engine(
         instrument,
-        1,
-        FillModelHandle::default(),
-        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
         BookType::L1_MBP,
-        OmsType::Netting,
-        account_type.unwrap_or(AccountType::Cash),
         clock,
         cache,
+        account_type,
         config,
     )
 }
@@ -269,23 +302,43 @@ fn get_order_matching_engine_l2(
     cache: Option<Rc<RefCell<Cache>>>,
     account_type: Option<AccountType>,
     config: Option<OrderMatchingEngineConfig>,
-) -> OrderMatchingEngine {
+) -> CachingEngine {
+    build_caching_engine(
+        instrument,
+        BookType::L2_MBP,
+        clock,
+        cache,
+        account_type,
+        config,
+    )
+}
+
+fn build_caching_engine(
+    instrument: InstrumentAny,
+    book_type: BookType,
+    clock: Option<Rc<RefCell<VirtualClock>>>,
+    cache: Option<Rc<RefCell<Cache>>>,
+    account_type: Option<AccountType>,
+    config: Option<OrderMatchingEngineConfig>,
+) -> CachingEngine {
     let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
     let config = config.unwrap_or_default();
 
-    OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument,
         1,
         FillModelHandle::default(),
         FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
-        BookType::L2_MBP,
+        book_type,
         OmsType::Netting,
         account_type.unwrap_or(AccountType::Cash),
         clock,
-        cache,
+        cache.clone(),
         config,
-    )
+    );
+
+    CachingEngine { engine, cache }
 }
 
 fn crypto_perpetual_with_price_precision(
@@ -1387,7 +1440,9 @@ fn test_market_fill_caps_pending_cached_quantity_before_commission(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    let mut engine_l2 = OrderMatchingEngine::new(
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let engine_l2 = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -1396,9 +1451,14 @@ fn test_market_fill_caps_pending_cached_quantity_before_commission(
         OmsType::Netting,
         AccountType::Cash,
         Rc::new(RefCell::new(VirtualClock::new())),
-        Rc::new(RefCell::new(Cache::default())),
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine_l2 = CachingEngine {
+        engine: engine_l2,
+        cache,
+    };
 
     let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -1819,12 +1879,9 @@ fn test_process_limit_order_without_immediate_match_cancels(
 }
 
 #[rstest]
-#[case::cached_by_exec_engine(true)]
-#[case::uncached(false)]
 fn test_process_limit_order_passive_caches_maker_liquidity_side(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
-    #[case] pre_cached: bool,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 = get_order_matching_engine_l2(
@@ -1853,13 +1910,6 @@ fn test_process_limit_order_passive_caches_maker_liquidity_side(
         .client_order_id(client_order_id)
         .build();
 
-    if pre_cached {
-        cache
-            .borrow_mut()
-            .add_order(limit_order.clone(), None, None, false)
-            .unwrap();
-    }
-
     engine_l2
         .process_order_book_delta(&orderbook_delta_sell)
         .unwrap();
@@ -1869,6 +1919,49 @@ fn test_process_limit_order_passive_caches_maker_liquidity_side(
     let cached = cache.order(&client_order_id).unwrap();
     assert_eq!(cached.liquidity_side(), Some(LiquiditySide::Maker));
     assert!(engine_l2.order_exists(client_order_id));
+}
+
+#[rstest]
+fn test_process_order_ignores_order_missing_from_cache(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+    engine_l2.engine.process_order(&mut limit_order, account_id);
+
+    assert!(get_order_event_handler_messages(&order_event_handler).is_empty());
+    assert!(!engine_l2.order_exists(client_order_id));
+    assert!(!cache.borrow().order_exists(&client_order_id));
 }
 
 #[rstest]
@@ -2311,15 +2404,23 @@ fn test_last_price_stop_style_order_waits_for_trade(
 #[rstest]
 fn test_process_stop_limit_order_triggered_not_filled(
     instrument_eth_usdt: InstrumentAny,
-    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
     let config = OrderMatchingEngineConfig {
         reject_stop_orders: false,
         ..Default::default()
     };
-    let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        None,
+        Some(config),
+    );
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -2661,15 +2762,23 @@ fn test_immediate_post_only_limit_style_trigger_rejected_as_taker(
 #[rstest]
 fn test_passive_stop_limit_rekeys_to_limit_after_trigger(
     instrument_eth_usdt: InstrumentAny,
-    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
     let config = OrderMatchingEngineConfig {
         reject_stop_orders: false,
         ..Default::default()
     };
-    let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        None,
+        Some(config),
+    );
 
     let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -5208,7 +5317,7 @@ fn test_hedging_reduce_only_order_without_cached_position_id_uses_open_position(
         .add_instrument(instrument_eth_usdt.clone())
         .unwrap();
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -5220,6 +5329,11 @@ fn test_hedging_reduce_only_order_without_cached_position_id_uses_open_position(
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     let position_id = PositionId::from("P-HEDGE-OPEN");
     let opening_order = OrderTestBuilder::new(OrderType::Market)
@@ -5316,7 +5430,7 @@ fn test_hedging_reduce_only_fallback_scopes_open_position_to_order_strategy(
         .add_instrument(instrument_eth_usdt.clone())
         .unwrap();
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -5328,6 +5442,11 @@ fn test_hedging_reduce_only_fallback_scopes_open_position_to_order_strategy(
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     let strategy_a = StrategyId::from("S-HEDGE-A");
     let strategy_b = StrategyId::from("S-HEDGE-B");
@@ -5427,7 +5546,7 @@ fn test_hedging_non_reduce_only_market_order_keeps_empty_position_id(
         .add_instrument(instrument_eth_usdt.clone())
         .unwrap();
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -5436,9 +5555,10 @@ fn test_hedging_non_reduce_only_market_order_keeps_empty_position_id(
         OmsType::Hedging,
         AccountType::Margin,
         Rc::new(RefCell::new(VirtualClock::new())),
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+    let mut engine = CachingEngine { engine, cache };
 
     let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -5486,7 +5606,7 @@ fn test_hedging_reduce_only_fallback_covers_short_position(
         .add_instrument(instrument_eth_usdt.clone())
         .unwrap();
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -5498,6 +5618,11 @@ fn test_hedging_reduce_only_fallback_covers_short_position(
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     let position_id = PositionId::from("P-HEDGE-SHORT");
     let opening_order = OrderTestBuilder::new(OrderType::Market)
@@ -8928,7 +9053,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
@@ -8937,9 +9062,10 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         config,
     );
+    let mut engine = CachingEngine { engine, cache };
 
     // Set initial market state
     let quote = QuoteTick::new(
@@ -9020,7 +9146,7 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
@@ -9029,9 +9155,10 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         config,
     );
+    let mut engine = CachingEngine { engine, cache };
 
     // Set initial market state with wider spread
     let quote = QuoteTick::new(
@@ -9195,7 +9322,7 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
@@ -9204,9 +9331,10 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         config,
     );
+    let mut engine = CachingEngine { engine, cache };
 
     // Set up book with liquidity AWAY from the limit/trade price (1010.00).
     // This ensures fills_at_trade_price=False so trade execution path is exercised.
@@ -10584,7 +10712,7 @@ fn test_process_order_rejection_no_refcell_reentrant_panic(
 fn get_l1_queue_position_engine(
     instrument: InstrumentAny,
 ) -> (
-    OrderMatchingEngine,
+    CachingEngine,
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
@@ -10611,6 +10739,11 @@ fn get_l1_queue_position_engine(
         Rc::clone(&cache),
         config,
     );
+
+    let engine = CachingEngine {
+        engine,
+        cache: Rc::clone(&cache),
+    };
 
     (engine, cache, handler)
 }
@@ -11670,7 +11803,7 @@ fn test_l1_queue_position_pending_resolved_by_any_side_trade(
 fn get_l3_queue_position_engine(
     instrument: InstrumentAny,
 ) -> (
-    OrderMatchingEngine,
+    CachingEngine,
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
@@ -11697,6 +11830,11 @@ fn get_l3_queue_position_engine(
         Rc::clone(&cache),
         config,
     );
+
+    let engine = CachingEngine {
+        engine,
+        cache: Rc::clone(&cache),
+    };
 
     (engine, cache, handler)
 }
@@ -11744,7 +11882,7 @@ fn process_buyer_trade(
 }
 
 fn rest_sell_limit_at_100(
-    engine: &mut OrderMatchingEngine,
+    engine: &mut CachingEngine,
     instrument_id: InstrumentId,
     account_id: AccountId,
     quantity: &str,
@@ -12080,7 +12218,7 @@ fn test_l3_queue_position_aggregate_delete_then_granular_update_stays_front(
 fn get_l2_queue_position_engine(
     instrument: InstrumentAny,
 ) -> (
-    OrderMatchingEngine,
+    CachingEngine,
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
@@ -12107,6 +12245,11 @@ fn get_l2_queue_position_engine(
         Rc::clone(&cache),
         config,
     );
+
+    let engine = CachingEngine {
+        engine,
+        cache: Rc::clone(&cache),
+    };
 
     (engine, cache, handler)
 }
@@ -12915,7 +13058,7 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
@@ -12924,9 +13067,10 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         config,
     );
+    let mut engine = CachingEngine { engine, cache };
 
     // No quote: only trade ticks, seller trades at 100 -> 105 -> 90
     for (i, price_str) in ["100.00", "105.00", "90.00"].iter().enumerate() {
@@ -14203,7 +14347,7 @@ fn test_option_cash_settlement_at_intrinsic_value(
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         option.clone(),
         1,
         FillModelHandle::default(),
@@ -14218,6 +14362,11 @@ fn test_option_cash_settlement_at_intrinsic_value(
             ..Default::default()
         },
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     let expired_order_id = ClientOrderId::from("OPT-EXPIRED-1");
 
@@ -14642,7 +14791,8 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(expiration_ns.as_u64() - 1));
-    let mut engine = OrderMatchingEngine::new(
+
+    let engine = OrderMatchingEngine::new(
         option,
         1,
         FillModelHandle::default(),
@@ -14654,6 +14804,12 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+
     let events = Rc::new(RefCell::new(Vec::new()));
     let event_handler = Rc::clone(&events);
     engine.set_event_handler(Rc::new(move |event| {
@@ -14722,7 +14878,8 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
 
     let option_b_clock = Rc::new(RefCell::new(VirtualClock::new()));
     option_b_clock.borrow_mut().set_time(expiration_ns);
-    let mut option_b_engine = OrderMatchingEngine::new(
+
+    let option_b_engine = OrderMatchingEngine::new(
         option_b,
         2,
         FillModelHandle::default(),
@@ -14734,6 +14891,12 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut option_b_engine = CachingEngine {
+        engine: option_b_engine,
+        cache: cache.clone(),
+    };
+
     option_b_engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
     assert!(
@@ -14859,7 +15022,7 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
         .borrow_mut()
         .set_time(UnixNanos::from(activation.as_u64() + 1));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument.clone(),
         1,
         FillModelHandle::default(),
@@ -14874,6 +15037,11 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
             ..Default::default()
         },
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     // Seed an ask so the opening market BUY fills.
     let opening_ask = OrderBookDeltaTestBuilder::new(instrument.id())
@@ -15805,7 +15973,7 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
         .borrow_mut()
         .set_time(UnixNanos::from(expiration_ns.as_u64() - 1));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         option,
         1,
         FillModelHandle::default(),
@@ -15817,6 +15985,11 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
 
     let resting_client_order_id = ClientOrderId::from("O-RESTING-OPTION-2");
     let mut resting_order = OrderTestBuilder::new(OrderType::Limit)
@@ -16199,6 +16372,237 @@ fn test_instrument_close_price_used_on_contract_expiration(account_id: AccountId
         .expect("Expected expiration fill at the instrument close price");
     assert_eq!(fill.last_px, close_price);
     let _ = position;
+}
+
+fn es_futures_engine(
+    cache: &Rc<RefCell<Cache>>,
+    expiration_ns: UnixNanos,
+    now: UnixNanos,
+) -> (CachingEngine, InstrumentAny) {
+    let activation = UnixNanos::from(
+        u64::try_from(utc_timestamp(2021, 9, 10, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let instrument =
+        InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(now);
+
+    let engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+
+    (engine, instrument)
+}
+
+fn es_book_delta(instrument_id: InstrumentId, side: OrderSide, price: &str) -> OrderBookDelta {
+    let order_id = if side == OrderSide::Buy { 1 } else { 2 };
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            side,
+            Price::from(price),
+            Quantity::from(10),
+            order_id,
+        ))
+        .build()
+}
+
+fn es_contract_expired(instrument_id: InstrumentId) -> InstrumentClose {
+    InstrumentClose::new(
+        instrument_id,
+        Price::from("4550.00"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    )
+}
+
+fn event_summaries(events: &[OrderEventAny]) -> Vec<(OrderEventType, ClientOrderId)> {
+    events
+        .iter()
+        .map(|event| (event.event_type(), event.client_order_id()))
+        .collect()
+}
+
+#[rstest]
+fn test_process_order_rejects_order_after_early_contract_expired_close(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let expiration_ns = UnixNanos::from(
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let now = UnixNanos::from(
+        u64::try_from(utc_timestamp(2021, 9, 11, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let (mut engine, instrument) = es_futures_engine(&cache, expiration_ns, now);
+    let instrument_id = instrument.id();
+    engine
+        .process_order_book_delta(&es_book_delta(instrument_id, OrderSide::Sell, "4501.00"))
+        .unwrap();
+    engine.process_instrument_close(es_contract_expired(instrument_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let client_order_id = ClientOrderId::from("AFTER-CLOSE-1");
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(
+        event_summaries(&events),
+        vec![(OrderEventType::Rejected, client_order_id)]
+    );
+
+    let OrderEventAny::Rejected(rejected) = &events[0] else {
+        panic!("Expected rejection, received {events:?}");
+    };
+
+    assert_eq!(
+        rejected.reason,
+        Ustr::from(&format!("Contract {instrument_id} has expired"))
+    );
+}
+
+#[rstest]
+fn test_oto_child_released_by_contract_expired_close_is_rejected(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let expiration_ns = UnixNanos::from(
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let now = UnixNanos::from(
+        u64::try_from(utc_timestamp(2021, 9, 11, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let (mut engine, instrument) = es_futures_engine(&cache, expiration_ns, now);
+    let instrument_id = instrument.id();
+    engine
+        .process_order_book_delta(&es_book_delta(instrument_id, OrderSide::Sell, "4501.00"))
+        .unwrap();
+    engine
+        .process_order_book_delta(&es_book_delta(instrument_id, OrderSide::Buy, "4499.00"))
+        .unwrap();
+
+    let parent_id = ClientOrderId::from("OTO-PARENT-1");
+    let child_id = ClientOrderId::from("OTO-CHILD-1");
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("4500.00"))
+        .quantity(Quantity::from(1))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .client_order_id(parent_id)
+        .submit(true)
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(1))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![parent_id])
+        .parent_order_id(parent_id)
+        .client_order_id(child_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(child, None, None, false)
+        .unwrap();
+    engine.process_order(&mut parent, account_id);
+
+    // Make the resting parent marketable while paused so the contract close matches it
+    engine.process_status(MarketStatusAction::Pause);
+    engine
+        .process_order_book_delta(&es_book_delta(instrument_id, OrderSide::Sell, "4500.00"))
+        .unwrap();
+    engine.process_status(MarketStatusAction::Trading);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    engine.process_instrument_close(es_contract_expired(instrument_id));
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let child_events: Vec<OrderEventType> = events
+        .iter()
+        .filter(|event| event.client_order_id() == child_id)
+        .map(OrderEventAny::event_type)
+        .collect();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Filled(fill) if fill.client_order_id == parent_id
+        )),
+        "Expected the parent to fill during close processing, received {events:?}"
+    );
+    assert_eq!(child_events, vec![OrderEventType::Rejected]);
+}
+
+#[rstest]
+fn test_oco_leg_submitted_after_expiration_is_rejected_once(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let expiration_ns = UnixNanos::from(
+        u64::try_from(utc_timestamp(2021, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let now = UnixNanos::from(expiration_ns.as_u64() + 1);
+    let (mut engine, instrument) = es_futures_engine(&cache, expiration_ns, now);
+    let instrument_id = instrument.id();
+
+    let leg_a_id = ClientOrderId::from("OCO-LEG-A");
+    let leg_b_id = ClientOrderId::from("OCO-LEG-B");
+    let mut leg_a = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("4400.00"))
+        .quantity(Quantity::from(1))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![leg_b_id])
+        .client_order_id(leg_a_id)
+        .submit(true)
+        .build();
+    let leg_b = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("4600.00"))
+        .quantity(Quantity::from(1))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![leg_a_id])
+        .client_order_id(leg_b_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(leg_b, None, None, false)
+        .unwrap();
+
+    engine.process_order(&mut leg_a, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(
+        event_summaries(&events),
+        vec![
+            (OrderEventType::Canceled, leg_b_id),
+            (OrderEventType::Rejected, leg_a_id),
+        ]
+    );
 }
 
 #[rstest]
@@ -16816,7 +17220,7 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
     );
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         option.clone(),
         1,
         FillModelHandle::default(),
@@ -16825,9 +17229,10 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+    let mut engine = CachingEngine { engine, cache };
 
     let ask = OrderBookDeltaTestBuilder::new(option.id())
         .book_action(BookAction::Add)
@@ -16895,7 +17300,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
     );
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         option.clone(),
         1,
         FillModelHandle::default(),
@@ -16904,9 +17309,10 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+    let mut engine = CachingEngine { engine, cache };
 
     let ask = OrderBookDeltaTestBuilder::new(option.id())
         .book_action(BookAction::Add)
@@ -17627,7 +18033,9 @@ fn test_fixed_fee_model_charges_once_across_multiple_book_levels(
 ) {
     let fee_model =
         FeeModelAny::Fixed(FixedFeeModel::new(Money::new(1.0, Currency::USD()), None).unwrap());
-    let mut engine = OrderMatchingEngine::new(
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -17636,9 +18044,10 @@ fn test_fixed_fee_model_charges_once_across_multiple_book_levels(
         OmsType::Netting,
         AccountType::Cash,
         Rc::new(RefCell::new(VirtualClock::new())),
-        Rc::new(RefCell::new(Cache::default())),
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
+    let mut engine = CachingEngine { engine, cache };
 
     for (price, order_id) in [("1500.00", 1u64), ("1501.00", 2u64)] {
         let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
@@ -17826,7 +18235,8 @@ fn test_deferred_marketable_modify_partial_fills(
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let _handler = order_event_handler_with_cache(cache.clone());
-    let mut engine = OrderMatchingEngine::new(
+
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -17841,6 +18251,12 @@ fn test_deferred_marketable_modify_partial_fills(
             ..Default::default()
         },
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+
     let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
         .book_order(BookOrder::new(
@@ -17946,7 +18362,8 @@ fn test_deferred_stop_limit_modify_preserves_prices_when_triggered(
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let handler = order_event_handler_with_cache(cache.clone());
-    let mut engine = OrderMatchingEngine::new(
+
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         FillModelHandle::default(),
@@ -17958,6 +18375,12 @@ fn test_deferred_stop_limit_modify_preserves_prices_when_triggered(
         cache.clone(),
         Default::default(),
     );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+
     let quote = |ask: &str, ts| {
         QuoteTick::new(
             instrument_eth_usdt.id(),
