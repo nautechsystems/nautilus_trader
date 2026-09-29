@@ -157,6 +157,12 @@ Valuation asks `Cache` for a price in this order, stopping at the first match:
 
 Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
+A price at or below zero counts as a current price only for instruments whose class allows negative
+prices (option, futures spread and option spread instruments, and spot commodities), except inverse
+futures spreads, whose notional divides by price. A quote side at or below zero also needs a
+non-zero size, since an empty side can arrive as a zero price with zero size. Otherwise the
+Portfolio skips the price and moves to the next source.
+
 If none of the four yield a current price, the Portfolio carries the last valid price
 for that instrument and position side. The next snapshot lists the instrument in
 `stale_instruments`. If the position has never had a valid price, it goes into the

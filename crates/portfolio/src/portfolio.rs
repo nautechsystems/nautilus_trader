@@ -3041,15 +3041,31 @@ impl Portfolio {
                 return None;
             }
         };
-        let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO;
+        // A price at or below zero is valid where the instrument allows it and its notional does
+        // not divide by price, which inverse notional does unless premium based
+        let allows_non_positive = cache.instrument(instrument_id).is_some_and(|instrument| {
+            instrument.allows_negative_price()
+                && (!instrument.is_inverse() || instrument.instrument_class().is_premium_based())
+        });
+        let is_valid = |price: &Price| allows_non_positive || price.as_decimal() > Decimal::ZERO;
         let mark_price = if self.config.use_mark_prices {
             cache.mark_price(instrument_id).map(|mark| mark.value)
         } else {
             None
         };
+        // An empty quote side can arrive as a zero price with zero size, so a price at or below
+        // zero counts only with size behind it
+        let quote_price = cache.quote(instrument_id).and_then(|quote| {
+            let (price, size) = match price_type {
+                PriceType::Bid => (quote.bid_price, quote.bid_size),
+                _ => (quote.ask_price, quote.ask_size),
+            };
+            (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                .then_some(price)
+        });
         let current = mark_price
             .filter(is_valid)
-            .or_else(|| cache.price(instrument_id, price_type).filter(is_valid))
+            .or(quote_price)
             .or_else(|| cache.price(instrument_id, PriceType::Last).filter(is_valid))
             .or_else(|| {
                 self.inner

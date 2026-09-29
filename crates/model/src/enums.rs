@@ -765,7 +765,10 @@ impl InstrumentClass {
         )
     }
 
-    pub(crate) const fn is_premium_based(&self) -> bool {
+    /// Returns whether this instrument class values positions by premium, linearly in price,
+    /// even when the instrument is inverse.
+    #[must_use]
+    pub const fn is_premium_based(&self) -> bool {
         matches!(
             self,
             Self::Option | Self::OptionSpread | Self::BinaryOption | Self::Warrant
