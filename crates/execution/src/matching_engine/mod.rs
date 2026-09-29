@@ -3303,6 +3303,58 @@ impl OrderMatchingEngine {
         true
     }
 
+    /// Restores an already-working order into the matching core without emitting
+    /// acceptance events or running submission-time validation.
+    ///
+    /// Intended for repopulating the engine from a durable cache after a restart,
+    /// where the order is already alive on the venue and its status (for example
+    /// `Accepted`, `PartiallyFilled`, or `Triggered`) must be preserved. Ensures
+    /// the cached order carries `LiquiditySide::Maker` when it would otherwise be
+    /// unset so the fee model has a liquidity side to key on, and seeds
+    /// `cached_filled_qty` with the existing filled quantity so subsequent fills
+    /// stop at the remaining leaves.
+    pub fn restore_open_order(&mut self, order: &OrderAny, account_id: AccountId) {
+        if self.core.order_exists(order.client_order_id()) {
+            return;
+        }
+
+        if order.is_closed() {
+            return;
+        }
+
+        self.account_ids.insert(order.trader_id(), account_id);
+
+        if let Err(e) = self.ids_generator.get_venue_order_id(order) {
+            log::error!(
+                "Failed to resolve venue order ID restoring {}: {e}",
+                order.client_order_id(),
+            );
+            return;
+        }
+
+        // Persist Maker on the cached copy so the fill path (which reads via
+        // order_snapshot) sees the liquidity side. Skip when persisted fills
+        // already recorded Maker or Taker.
+        if let Some(mut cached) = self.cache.borrow_mut().order_mut(&order.client_order_id())
+            && !matches!(
+                cached.liquidity_side(),
+                Some(LiquiditySide::Maker | LiquiditySide::Taker)
+            )
+        {
+            cached.set_liquidity_side(LiquiditySide::Maker);
+        }
+
+        let filled_qty = order.filled_qty();
+        if !filled_qty.is_zero() {
+            self.cached_filled_qty
+                .insert(order.client_order_id(), filled_qty);
+        }
+
+        let match_info = Self::matching_core_entry(order);
+        self.track_post_match_order(order);
+        self.core.add_order(match_info);
+    }
+
     /// Processes an order modify command to update quantity, price, or trigger price.
     pub fn process_modify(&mut self, command: &ModifyOrder, account_id: AccountId) {
         if !self.core.order_exists(command.client_order_id) {

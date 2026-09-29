@@ -56,7 +56,7 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
-        AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType,
+        AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
         MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{
@@ -65,7 +65,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-        TradeId, TraderId, Venue,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
@@ -2059,6 +2059,473 @@ fn test_client_start_idempotent(mut execution_client: SandboxExecutionClient) {
     let result = execution_client.start();
 
     assert!(result.is_ok());
+}
+
+#[rstest]
+fn test_client_start_restores_cache_open_orders_into_matching_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context(trader_id, account_id, instrument.id().venue);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = resting_limit(&instrument, "O-RESTART-001", "100.00", UnixNanos::from(1));
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("SANDBOX-0-1"));
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(context.client.client_id()), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
+    }
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::Accepted,
+        "seed order must be Accepted before start"
+    );
+
+    context.client.start().unwrap();
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    let restore_events = drain_order_events(&mut rx);
+    assert!(
+        !restore_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_))),
+        "restoring a cache-open order must not re-emit OrderAccepted; was {:?}",
+        restore_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &order,
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cancel_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
+        "cache-open order must cancel cleanly after restart; was {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::CancelRejected(_))),
+        "restored order must not receive OrderCancelRejected; was {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Canceled);
+}
+
+#[rstest]
+fn test_client_start_restores_partially_filled_order_without_reaccept(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context(trader_id, account_id, instrument.id().venue);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = resting_limit(
+        &instrument,
+        "O-RESTART-PF-001",
+        "100.00",
+        UnixNanos::from(1),
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("SANDBOX-0-PF-1"));
+    let partial_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-PF-1")),
+        None,
+        Some(Price::from("100.00")),
+        Some(Quantity::from("0.400")),
+        None,
+        None,
+        Some(UnixNanos::from(2)),
+        Some(account_id),
+    );
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(context.client.client_id()), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
+        cache.update_order(&partial_fill).unwrap();
+    }
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::PartiallyFilled,
+        "seed order must be PartiallyFilled before start"
+    );
+
+    context.client.start().unwrap();
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    let restore_events = drain_order_events(&mut rx);
+    assert!(
+        !restore_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_))),
+        "restoring a partially-filled order must not re-emit OrderAccepted; was {:?}",
+        restore_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::PartiallyFilled,
+        "restored order must remain PartiallyFilled after start",
+    );
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &order,
+            UnixNanos::from(3),
+        ))
+        .unwrap();
+
+    let cancel_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
+        "partially-filled order must cancel cleanly after restart; was {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::CancelRejected(_))),
+        "restored partially-filled order must not receive OrderCancelRejected; was {:?}",
+        cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Canceled);
+}
+
+#[rstest]
+fn test_client_start_restore_accepted_order_fills_under_maker_taker_fee_model(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with_trade_execution(trader_id, account_id, instrument.id().venue);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = resting_limit(
+        &instrument,
+        "O-RESTART-ACC-001",
+        "100.00",
+        UnixNanos::from(1),
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("SANDBOX-0-ACC-1"));
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(context.client.client_id()), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
+    }
+    // Seed guard: an order reconstructed from submitted + accepted events alone
+    // carries `NoLiquiditySide`, which is exactly the case the fill path must handle.
+    assert!(
+        matches!(
+            context
+                .cache
+                .borrow()
+                .order(&order.client_order_id())
+                .and_then(|cached| cached.liquidity_side()),
+            None | Some(LiquiditySide::NoLiquiditySide),
+        ),
+        "seed order must carry NoLiquiditySide before start to exercise the fee model path",
+    );
+
+    context.client.start().unwrap();
+    let _ = drain_order_events(&mut rx);
+
+    let quote = create_quote_tick(instrument.id(), 100.00, 101.00);
+    context.client.process_quote_tick(&quote).unwrap();
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("100.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-ACC-CROSS-1"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    context.client.process_trade_tick(&trade).unwrap();
+
+    let fill_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        fill_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id())),
+        "restored Accepted order must fill through the maker/taker fee model; was {:?}",
+        fill_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !fill_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(_))),
+        "restored Accepted order must not be rejected with `Liquidity side not set`; was {:?}",
+        fill_events.iter().map(order_event_kind).collect::<Vec<_>>()
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_client_start_restore_fills_only_remaining_quantity(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with_trade_execution(trader_id, account_id, instrument.id().venue);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = resting_limit(
+        &instrument,
+        "O-RESTART-FILL-001",
+        "100.00",
+        UnixNanos::from(1),
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("SANDBOX-0-FILL-1"));
+    let partial_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-FILL-1")),
+        None,
+        Some(Price::from("100.00")),
+        Some(Quantity::from("0.400")),
+        None,
+        None,
+        Some(UnixNanos::from(2)),
+        Some(account_id),
+    );
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(context.client.client_id()), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
+        cache.update_order(&partial_fill).unwrap();
+    }
+
+    context.client.start().unwrap();
+    let _ = drain_order_events(&mut rx);
+
+    let quote = create_quote_tick(instrument.id(), 100.00, 101.00);
+    context.client.process_quote_tick(&quote).unwrap();
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("100.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-CROSS-1"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    context.client.process_trade_tick(&trade).unwrap();
+
+    let fill_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    let restore_fills: Vec<&OrderFilled> = fill_events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id() => {
+                Some(fill)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        restore_fills.len(),
+        1,
+        "restored order must receive exactly one fill for the remaining leaves; was {:?}",
+        fill_events.iter().map(order_event_kind).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        restore_fills[0].last_qty,
+        Quantity::from("0.600"),
+        "fill must cap at the remaining leaves quantity, not the original order quantity",
+    );
+    assert!(
+        !fill_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(_))),
+        "restored order must not receive OrderRejected (e.g. `Liquidity side not set`); was {:?}",
+        fill_events.iter().map(order_event_kind).collect::<Vec<_>>()
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_client_start_restore_isolates_orders_by_account(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context(trader_id, account_id, instrument.id().venue);
+    let other_account = AccountId::from("OTHER-000");
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let own_order = resting_limit(&instrument, "O-OWN-001", "100.00", UnixNanos::from(1));
+    let own_submitted = TestOrderEventStubs::submitted(&own_order, account_id);
+    let own_accepted =
+        TestOrderEventStubs::accepted(&own_order, account_id, VenueOrderId::from("SANDBOX-OWN-1"));
+    let foreign_order = resting_limit(&instrument, "O-FOREIGN-001", "99.00", UnixNanos::from(1));
+    let foreign_submitted = TestOrderEventStubs::submitted(&foreign_order, other_account);
+    let foreign_accepted = TestOrderEventStubs::accepted(
+        &foreign_order,
+        other_account,
+        VenueOrderId::from("SANDBOX-FOREIGN-1"),
+    );
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache
+            .add_order(
+                own_order.clone(),
+                None,
+                Some(context.client.client_id()),
+                false,
+            )
+            .unwrap();
+        cache.update_order(&own_submitted).unwrap();
+        cache.update_order(&own_accepted).unwrap();
+        cache
+            .add_order(foreign_order.clone(), None, None, false)
+            .unwrap();
+        cache.update_order(&foreign_submitted).unwrap();
+        cache.update_order(&foreign_accepted).unwrap();
+    }
+
+    context.client.start().unwrap();
+    let _ = drain_order_events(&mut rx);
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &foreign_order,
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    let foreign_cancel_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        foreign_cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::CancelRejected(_))),
+        "foreign account's order must not be restored into this client's engine; was {:?}",
+        foreign_cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &own_order,
+            UnixNanos::from(3),
+        ))
+        .unwrap();
+    let own_cancel_events = apply_order_events_from_channel(&context.cache, &mut rx);
+    assert!(
+        own_cancel_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
+        "own account's order must cancel cleanly after restart; was {:?}",
+        own_cancel_events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[rstest]
