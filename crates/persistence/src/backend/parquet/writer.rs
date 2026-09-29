@@ -590,6 +590,7 @@ fn feather_replay_identity(
 mod tests {
     use std::sync::atomic::AtomicU64;
 
+    use arrow::datatypes::SchemaRef;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{Data, DataBatch, NautilusDataType, NautilusRecordType, QuoteTick},
@@ -602,8 +603,10 @@ mod tests {
 
     use super::*;
     use crate::{
+        backend::parquet::io::read_parquet_from_object_store,
         catalog::traits::{CatalogQuery, CatalogReader},
         test_data::RustTestHashMapCustomData,
+        writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
     };
 
     #[rstest]
@@ -657,6 +660,109 @@ mod tests {
 
         assert_eq!(rows.as_ref(), &[quote, second]);
         assert_eq!(staged, usize::from(!delete_source));
+    }
+
+    #[rstest]
+    fn parquet_writer_recovers_partial_files_at_startup() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-recover");
+        let quote = sample_quote();
+
+        // A writer that exited before sealing leaves its flushed stream as a partial file
+        let mut crashed = FeatherWriter::new(
+            staging.clone(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        crashed.write(quote).unwrap();
+        crashed.close().unwrap();
+        let sealed = staging.join("quotes").join("quotes_0.feather");
+        std::fs::rename(&sealed, sealed.with_extension(FEATHER_PARTIAL_EXTENSION)).unwrap();
+
+        let config = WriterConnectConfig::new(staging.to_string_lossy(), None);
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        sink.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let rows = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap();
+
+        let DataBatch::Quote(rows) = rows else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parquet_promotion_writes_the_direct_write_schema() {
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory
+                .path()
+                .join("backtest/run-schema")
+                .to_string_lossy(),
+            None,
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let quote = sample_quote();
+        sink.write_data(Data::Quote(quote)).unwrap();
+        sink.close().unwrap();
+
+        let promoted = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let direct_directory = TempDir::new().unwrap();
+        let direct = ParquetDataCatalog::from_uri(
+            direct_directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        direct.write_to_parquet(&[quote], None, None, None).unwrap();
+
+        assert_eq!(
+            quote_file_schema(&promoted).fields(),
+            quote_file_schema(&direct).fields(),
+        );
+    }
+
+    fn quote_file_schema(catalog: &ParquetDataCatalog) -> SchemaRef {
+        let files = catalog
+            .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+            .unwrap();
+        assert_eq!(files.len(), 1);
+
+        let path = ObjectPath::from(files[0].as_str());
+
+        let (_, schema) = block_on_nautilus_with(|| {
+            read_parquet_from_object_store(catalog.object_store.clone(), &path)
+        })
+        .unwrap();
+
+        schema
     }
 
     #[rstest]

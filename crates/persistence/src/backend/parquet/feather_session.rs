@@ -23,7 +23,7 @@
     reason = "session registration keeps backend-specific ordering logic together"
 )]
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ahash::AHashMap;
 use datafusion::arrow::{
@@ -47,6 +47,7 @@ use nautilus_model::data::{
 };
 use nautilus_serialization::arrow::{
     DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, KEY_TYPE_NAME, U64ColumnRef,
+    record_batch_without_identifier_column,
 };
 use object_store::path::Path as ObjectPath;
 
@@ -68,6 +69,7 @@ use crate::{
         },
     },
     writer::{
+        feather::recover_partial_feather_files,
         materializer::{
             StreamConversionOptions, apply_stream_conversion_transform,
             coalesce_stream_conversion_batches, read_feather_record_batches,
@@ -235,9 +237,11 @@ impl ParquetDataCatalog {
 
     /// Reads the sealed Feather files of a run instance (backtest or live).
     ///
-    /// Families that do not decode to `Data`, such as order events, are skipped, and open
-    /// `.feather.partial` files are not read.
+    /// Abandoned `.feather.partial` files are recovered first, and files a writer still holds
+    /// open are not read. Families that do not decode to `Data`, such as order events, are
+    /// skipped.
     fn read_run(&self, kind: &str, instance_id: &str) -> anyhow::Result<Vec<Data>> {
+        self.recover_partial_run_files(kind, instance_id);
         let feather_files = self.list_feather_files(kind, instance_id, None, None)?;
         let mut all_data: Vec<Data> = Vec::new();
 
@@ -331,6 +335,16 @@ impl ParquetDataCatalog {
         };
 
         Ok(Some(data))
+    }
+
+    // Writers stage only to local directories, so other catalogs hold no partial files
+    fn recover_partial_run_files(&self, kind: &str, instance_id: &str) {
+        if self.original_uri.starts_with("file://") {
+            let directory = PathBuf::from(self.native_base_path_string())
+                .join(kind)
+                .join(instance_id);
+            recover_partial_feather_files(&directory);
+        }
     }
 
     /// Lists the feather files of a run, for one data type or every type when `data_type` is
@@ -526,6 +540,7 @@ impl ParquetDataCatalog {
     /// This method converts directly between Arrow IPC stream batches and Parquet batches without
     /// materializing Nautilus data objects. An instance with no staged files for the family
     /// converts nothing and returns success. It requires:
+    /// - Recovering abandoned `.feather.partial` files of a local run
     /// - Listing feather files in the specified subdirectory
     /// - Reading feather files (Arrow IPC stream reading)
     /// - Applying table-only stream conversion transforms
@@ -565,6 +580,7 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         let subdirectory = subdirectory.unwrap_or("backtest");
         Self::ensure_stream_data_type(data_type)?;
+        self.recover_partial_run_files(subdirectory, instance_id);
         let feather_files =
             self.list_feather_files(subdirectory, instance_id, Some(data_type), identifiers)?;
 
@@ -715,6 +731,10 @@ impl ParquetDataCatalog {
             Self::identifier_from_batch_or_path(&batch, feather_path, kind, instance_id);
 
         let identifier = identifier.as_deref();
+
+        // Like direct catalog writes, promoted files carry the identifier in their directory and
+        // metadata
+        let batch = record_batch_without_identifier_column(batch)?;
 
         let directory = match data_type {
             CatalogDataType::Data(NautilusDataType::Instrument) => {
@@ -1511,7 +1531,10 @@ mod stream_folder_tests {
 
 #[cfg(test)]
 mod read_run_tests {
-    use std::sync::{Arc, atomic::AtomicU64};
+    use std::{
+        fs::{self, OpenOptions},
+        sync::{Arc, atomic::AtomicU64},
+    };
 
     use nautilus_core::UnixNanos;
     use nautilus_model::data::{
@@ -1524,7 +1547,7 @@ mod read_run_tests {
     use crate::{
         backend::parquet::catalog::ParquetDataCatalog,
         catalog::types::CatalogDataType,
-        writer::feather::{FeatherWriter, RotationConfig, WriterClock},
+        writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig, WriterClock},
     };
 
     fn quote_btc(ts: u64) -> QuoteTick {
@@ -1574,6 +1597,29 @@ mod read_run_tests {
         ParquetDataCatalog::new(temp_dir.path(), None, None, None, None)
             .read_backtest("run-001")
             .unwrap()
+    }
+
+    // Leaves one flushed batch per quote in a partial file whose last batch is cut short, as a
+    // writer that crashed mid-append would
+    fn write_crashed_run(temp_dir: &TempDir, quotes: &[QuoteTick]) {
+        let mut writer = run_writer(temp_dir);
+
+        for quote in quotes {
+            writer.write_data(Data::Quote(*quote)).unwrap();
+            writer.flush().unwrap();
+        }
+
+        writer.close().unwrap();
+
+        let sealed = temp_dir
+            .path()
+            .join("backtest/run-001/quotes/quotes_0.feather");
+        let partial = sealed.with_extension(FEATHER_PARTIAL_EXTENSION);
+        fs::rename(&sealed, &partial).unwrap();
+
+        // Drops the end-of-stream marker and the last byte of the final batch
+        let file = OpenOptions::new().write(true).open(&partial).unwrap();
+        file.set_len(file.metadata().unwrap().len() - 9).unwrap();
     }
 
     #[rstest]
@@ -1647,7 +1693,7 @@ mod read_run_tests {
     }
 
     #[rstest]
-    fn read_backtest_skips_partial_files() {
+    fn read_backtest_skips_open_partial_files() {
         let temp_dir = TempDir::new().unwrap();
         let mut writer = run_writer(&temp_dir);
         writer.write_data(Data::Quote(quote_aud(1_000))).unwrap();
@@ -1660,6 +1706,41 @@ mod read_run_tests {
         assert_eq!(
             read_backtest(&temp_dir),
             vec![Data::Quote(quote_aud(1_000))]
+        );
+    }
+
+    #[rstest]
+    fn read_backtest_recovers_crashed_partial_files() {
+        let temp_dir = TempDir::new().unwrap();
+        write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
+
+        assert_eq!(
+            read_backtest(&temp_dir),
+            vec![Data::Quote(quote_aud(1_000))]
+        );
+    }
+
+    #[rstest]
+    fn convert_stream_to_data_recovers_crashed_partial_files() {
+        let temp_dir = TempDir::new().unwrap();
+        write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        catalog
+            .convert_stream_to_data(
+                "run-001",
+                &CatalogDataType::from(NautilusDataType::QuoteTick),
+                Some("backtest"),
+                None,
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(
+            catalog
+                .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+                .unwrap(),
+            vec![quote_aud(1_000)],
         );
     }
 

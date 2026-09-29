@@ -110,9 +110,12 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
         writer_factory::FEATHER_WRITER_FACTORY_NAME.to_string(),
         Arc::new(
             |config: &writer_factory::WriterConnectConfig, clock: feather_writer::WriterClock| {
+                let directory = paths::local_writer_directory(&config.uri)?;
+                feather_writer::recover_partial_feather_files(&directory);
+
                 Ok(Box::new(
                     feather_writer::FeatherWriter::new(
-                        paths::local_writer_directory(&config.uri)?,
+                        directory,
                         clock,
                         config.rotation_config.clone(),
                         None,

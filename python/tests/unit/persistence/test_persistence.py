@@ -934,6 +934,38 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
     assert list(path.glob("quotes/*.feather")) == []
 
 
+def test_streaming_feather_writer_recovers_partial_files_on_start(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer seals partial files a crashed writer left.
+    """
+    path = tmp_path / "streaming_recover"
+    path.mkdir()
+    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+    writer = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=["quotes"],
+    )
+    writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
+    writer.close()
+
+    # A writer that exited before sealing leaves its flushed stream as a partial file
+    [sealed] = path.glob("quotes/*.feather")
+    sealed.rename(sealed.with_name(f"{sealed.name}.partial"))
+
+    restarted = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=["quotes"],
+    )
+    files = [file.relative_to(path).as_posix() for file in path.rglob("*.feather*")]
+    restarted.close()
+
+    assert files == [sealed.relative_to(path).as_posix()]
+
+
 def test_streaming_feather_writer_rejects_unknown_include_type(tmp_path: Path) -> None:
     """
     Test streaming feather writer rejects an unknown include type.

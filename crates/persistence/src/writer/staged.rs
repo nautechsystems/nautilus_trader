@@ -23,7 +23,7 @@ use nautilus_model::data::{CustomData, Data};
 use super::{
     feather::{
         FEATHER_EXTENSION, FEATHER_PARTIAL_EXTENSION, FeatherWriteCommand, FeatherWriter,
-        RotationConfig, WriterClock, feather_error,
+        RotationConfig, WriterClock, feather_error, recover_partial_feather_files,
     },
     filter::WriterRecordFilter,
     promotion::{
@@ -350,8 +350,11 @@ where
         flush_interval_ms: Option<u64>,
         record_filter: Option<WriterRecordFilter>,
     ) -> anyhow::Result<Self> {
+        let directory = local_writer_directory(&storage.original_uri)?;
+        recover_partial_feather_files(&directory);
+
         let writer = FeatherWriter::new(
-            local_writer_directory(&storage.original_uri)?,
+            directory,
             clock.clone(),
             rotation_config,
             included_types,

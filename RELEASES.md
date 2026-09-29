@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Added aggregate instrument fan-out across class directories to `list_parquet_files`
 - Added custom data support to `StreamingFeatherWriter` (#4759), thanks for reporting @mystic-io
+- Added recovery of unsealed Feather stream files left by a crashed writer (#5115), thanks @faysou
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin

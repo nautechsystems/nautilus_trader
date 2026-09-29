@@ -133,6 +133,8 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
 }
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicU64;
+
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{Data, InstrumentClose, InstrumentStatus, NautilusDataType, QuoteTick},
@@ -151,6 +153,7 @@ mod tests {
     use crate::{
         backend::{default_writer_factories, parquet::catalog::ParquetDataCatalog},
         catalog::types::CatalogDataType,
+        writer::feather::FEATHER_PARTIAL_EXTENSION,
     };
 
     fn quote(ts_init: u64) -> QuoteTick {
@@ -324,6 +327,40 @@ mod tests {
         writer.close().unwrap();
 
         assert_eq!(count_feather_files(&session), 1);
+    }
+
+    #[rstest]
+    fn create_writer_feather_recovers_partial_files_at_startup() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = WriterConnectConfig::new(temp_dir.path().to_str().unwrap(), None);
+        let registry = default_writer_factories();
+        let start = || {
+            create_writer(
+                &WriterBackendType::Feather,
+                &config,
+                WriterClock::Test(Arc::new(AtomicU64::new(0))),
+                &registry,
+            )
+            .unwrap()
+        };
+
+        let mut crashed = start();
+        crashed.write_data(Data::Quote(quote(100))).unwrap();
+        crashed.close().unwrap();
+
+        // A writer that exited before sealing leaves its flushed stream as a partial file
+        let sealed = temp_dir.path().join("quotes").join("quotes_0.feather");
+        let partial = sealed.with_extension(FEATHER_PARTIAL_EXTENSION);
+        fs::rename(&sealed, &partial).unwrap();
+
+        let mut restarted = start();
+        let sealed_at_start = sealed.exists();
+        let partial_at_start = partial.exists();
+        restarted.close().unwrap();
+
+        assert!(sealed_at_start);
+        assert!(!partial_at_start);
+        assert_eq!(count_feather_files(temp_dir.path()), 1);
     }
 
     #[rstest]

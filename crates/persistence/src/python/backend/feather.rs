@@ -59,7 +59,7 @@ use crate::{
     },
     writer::{
         factory::{WriterConnectConfig, replace_existing_writer_data},
-        feather::{FeatherWriter, RotationConfig, WriterClock},
+        feather::{FeatherWriter, RotationConfig, WriterClock, recover_partial_feather_files},
         subscription::StreamingSinkSubscription,
     },
 };
@@ -152,6 +152,8 @@ impl PyStreamingFeatherWriter {
                 |e| PyIOError::new_err(format!("Failed to replace existing files: {e}")),
             )?;
         }
+
+        recover_partial_feather_files(&directory);
 
         let storage = create_storage_backend_from_path(&path, None)
             .map_err(|e| PyIOError::new_err(format!("Failed to create storage backend: {e}")))?;

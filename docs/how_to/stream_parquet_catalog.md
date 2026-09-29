@@ -58,7 +58,8 @@ flowchart LR
 
 Each data or record type stages one open file under the run folder, and instruments stage one file
 per instrument class. Rows of every identifier share their type's file and carry an `identifier`
-column, which promotion uses to write each identifier's catalog directory.
+column, which promotion uses to write each identifier's catalog directory. Promotion then drops the
+column, so promoted files have the same schema as files written directly to the catalog.
 
 A flush appends the records buffered since the previous flush to the open file as one Arrow record
 batch, without starting a new file. Promotion first seals the open files, so each promotion takes the
@@ -82,6 +83,18 @@ Use explicit close and handle its error. Dropping a writer only provides best-ef
 not evidence of successful promotion. If a promotion fails, preserve its staged files and investigate
 the error before retrying. With `promote_on_close=False`, closing can intentionally leave a completed
 run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`.
+
+A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
+crashed process leaves its open files unlocked. Recovery seals each unlocked partial file: it keeps
+the complete record batches, drops any bytes after them with a warning, and renames the file to
+`.feather`. It removes a partial file that has no complete record batch and leaves an empty one in
+place. A read error other than a write cut short leaves the file for a later recovery pass.
+
+Recovery runs when a streaming writer starts on the run folder, and when
+`ParquetDataCatalog.read_backtest()`, `read_live_run()`, or `convert_stream_to_data()` reads the
+run. A writer that gives up on a file after a failed append, flush, or seal tries to recover it at
+once, so promotion includes the record batches that reached the file. When that recovery fails,
+the writer logs the error and leaves the partial file for a later recovery pass.
 
 Parquet promotion can write multiple destination files. It does not provide the snapshot transaction
 or historical query pin of a transactional catalog backend. Coordinate readers if an application
