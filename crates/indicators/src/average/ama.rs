@@ -42,7 +42,7 @@ use crate::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct AdaptiveMovingAverage {
-    /// The period for the internal `EfficiencyRatio` indicator (>= 2).
+    /// The period for the internal `EfficiencyRatio` indicator (>= 1).
     pub period_efficiency_ratio: usize,
     /// The period for the fast smoothing constant (> 0).
     pub period_fast: usize,
@@ -117,7 +117,7 @@ impl AdaptiveMovingAverage {
     /// # Panics
     ///
     /// This function panics if:
-    /// - `period_efficiency_ratio` is less than 2 or its rolling-window storage
+    /// - `period_efficiency_ratio` is zero or its rolling-window storage
     ///   cannot be reserved.
     /// - `period_fast` == 0.
     /// - `period_slow` == 0.
@@ -204,34 +204,31 @@ impl MovingAverage for AdaptiveMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
-        self.count += 1;
-
-        if !self.has_inputs {
-            self.prior_value = Some(value);
-            self.efficiency_ratio.update_raw(value);
-            self.value = value;
-            self.has_inputs = true;
+        if !value.is_finite() {
             return;
         }
 
+        self.count += 1;
+        self.has_inputs = true;
         self.efficiency_ratio.update_raw(value);
-        self.prior_value = Some(self.value);
+        let Some(prior) = self.prior_value else {
+            self.prior_value = Some(value);
+            return;
+        };
 
-        // Calculate the smoothing constant
-        let smoothing_constant = self
+        if self.count <= self.period_efficiency_ratio {
+            return;
+        }
+
+        let smoothing = self
             .efficiency_ratio
             .value
             .mul_add(self.alpha_diff(), self.alpha_slow)
             .powi(2);
-
-        // Calculate the AMA
-        // TODO: Remove unwraps
-        self.value = smoothing_constant
-            .mul_add(value - self.prior_value.unwrap(), self.prior_value.unwrap());
-
-        if self.efficiency_ratio.initialized() {
-            self.initialized = true;
-        }
+        let current = smoothing.mul_add(value - prior, prior);
+        self.prior_value = Some(current);
+        self.value = current;
+        self.initialized = true;
     }
 }
 
@@ -244,7 +241,6 @@ mod tests {
         average::ama::AdaptiveMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
-        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -259,22 +255,26 @@ mod tests {
     #[rstest]
     fn test_value_with_one_input(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
-        assert_eq!(indicator_ama_10.value, 1.0);
+        assert_eq!(indicator_ama_10.value, 0.0);
+        assert!(!indicator_ama_10.initialized());
     }
 
     #[rstest]
     fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
-        indicator_ama_10.update_raw(1.0);
-        indicator_ama_10.update_raw(2.0);
-        assert_approx_equal(indicator_ama_10.value, 1.44444444444);
+        for value in [1.0, 2.0] {
+            indicator_ama_10.update_raw(value);
+        }
+        assert_eq!(indicator_ama_10.value, 0.0);
+        assert!(!indicator_ama_10.initialized());
     }
 
     #[rstest]
     fn test_value_with_three_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
-        indicator_ama_10.update_raw(1.0);
-        indicator_ama_10.update_raw(2.0);
-        indicator_ama_10.update_raw(3.0);
-        assert_approx_equal(indicator_ama_10.value, 2.13580246914);
+        for value in [1.0, 2.0, 3.0] {
+            indicator_ama_10.update_raw(value);
+        }
+        assert_eq!(indicator_ama_10.value, 0.0);
+        assert!(!indicator_ama_10.initialized());
     }
 
     #[rstest]
@@ -284,13 +284,11 @@ mod tests {
         #[case] reset: fn(&mut AdaptiveMovingAverage),
         mut indicator_ama_10: AdaptiveMovingAverage,
     ) {
-        for value in 1..=10 {
+        for value in 1..=11 {
             indicator_ama_10.update_raw(f64::from(value));
         }
         assert!(indicator_ama_10.initialized);
-
         reset(&mut indicator_ama_10);
-
         assert!(!indicator_ama_10.initialized);
         assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
@@ -302,14 +300,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_initialized_after_correct_number_of_input(indicator_ama_10: AdaptiveMovingAverage) {
-        let mut ama = indicator_ama_10;
-        for _ in 0..9 {
-            ama.update_raw(1.0);
+    fn test_initialized_after_correct_number_of_input(mut indicator_ama_10: AdaptiveMovingAverage) {
+        for value in 1..=10 {
+            indicator_ama_10.update_raw(f64::from(value));
+            assert!(!indicator_ama_10.initialized());
         }
-        assert!(!ama.initialized);
-        ama.update_raw(1.0);
-        assert!(ama.initialized);
+        indicator_ama_10.update_raw(11.0);
+        assert!(indicator_ama_10.initialized());
     }
 
     #[rstest]
@@ -327,7 +324,7 @@ mod tests {
         indicator_ama_10.handle_quote(&stub_quote).unwrap();
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
-        assert_eq!(indicator_ama_10.value, 1501.0);
+        assert_eq!(indicator_ama_10.value, 0.0);
         assert_eq!(indicator_ama_10.count(), 1);
     }
 
@@ -339,7 +336,7 @@ mod tests {
         indicator_ama_10.handle_trade(&stub_trade);
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
-        assert_eq!(indicator_ama_10.value, 1500.0);
+        assert_eq!(indicator_ama_10.value, 0.0);
         assert_eq!(indicator_ama_10.count(), 1);
     }
 
@@ -351,7 +348,7 @@ mod tests {
         indicator_ama_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
-        assert_eq!(indicator_ama_10.value, 1522.0);
+        assert_eq!(indicator_ama_10.value, 0.0);
         assert_eq!(indicator_ama_10.count(), 1);
     }
 
@@ -365,9 +362,8 @@ mod tests {
 
     #[rstest]
     #[case(0)]
-    #[case(1)]
-    #[should_panic(expected = "`period` must be at least 2")]
-    fn new_panics_when_er_period_is_below_two(#[case] period: usize) {
+    #[should_panic(expected = "`period` must be positive")]
+    fn new_panics_when_er_period_is_zero(#[case] period: usize) {
         let _ = AdaptiveMovingAverage::new(period, 2, 30, None);
     }
 

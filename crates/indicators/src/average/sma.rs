@@ -13,18 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::{Indicator, MovingAverage};
+use crate::{
+    indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, SMA_RESEED_WINDOWS, ScaledSum},
+};
 
-const MAX_PERIOD: usize = 1_024;
-
+/// Simple moving average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -39,9 +41,10 @@ pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
     pub value: f64,
-    sum: f64,
+    sum: ScaledSum,
+    updates_since_reseed: usize,
     pub count: usize,
-    buf: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    buf: VecDeque<f64>,
     pub initialized: bool,
 }
 
@@ -79,7 +82,8 @@ impl Indicator for SimpleMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
-        self.sum = 0.0;
+        self.sum.reset();
+        self.updates_since_reseed = 0;
         self.count = 0;
         self.buf.clear();
         self.initialized = false;
@@ -105,46 +109,69 @@ impl SimpleMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is zero or exceeds the supported indicator period limit.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        assert!(period > 0, "SimpleMovingAverage: period must be > 0");
-        assert!(
-            period <= MAX_PERIOD,
-            "SimpleMovingAverage: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
-        );
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
 
-        Self {
+    /// Creates a simple moving average with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds the supported indicator period limit.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        check_predicate_true(period > 0, "SimpleMovingAverage: period must be > 0")?;
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("SimpleMovingAverage: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"),
+        )?;
+
+        Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
-            sum: 0.0,
+            sum: ScaledSum::new(),
+            updates_since_reseed: 0,
             count: 0,
-            buf: ArrayDeque::new(),
+            buf: VecDeque::with_capacity(period),
             initialized: false,
-        }
+        })
     }
 
     fn process_raw(&mut self, price: f64) {
+        if !price.is_finite() {
+            return;
+        }
+
         if self.count == self.period {
             if let Some(oldest) = self.buf.pop_front() {
-                self.sum -= oldest;
+                self.sum.add(-oldest);
             }
         } else {
             self.count += 1;
         }
 
-        let _ = self.buf.push_back(price);
-        self.sum += price;
+        self.buf.push_back(price);
+        self.sum.add(price);
+        self.updates_since_reseed += 1;
+        if self.sum.needs_rebuild() || self.updates_since_reseed >= SMA_RESEED_WINDOWS * self.period
+        {
+            self.sum.rebuild(self.buf.iter().copied(), self.count);
+            self.updates_since_reseed = 0;
+        }
 
-        self.value = self.sum / self.count as f64;
         self.initialized = self.count >= self.period;
+        if self.initialized {
+            self.value = self.sum.mean(self.period);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use arraydeque::{ArrayDeque, Wrapping};
+    use std::collections::VecDeque;
+
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::PriceType,
@@ -158,6 +185,14 @@ mod tests {
         indicator::{Indicator, MovingAverage},
         stubs::*,
     };
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_PERIOD + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_period(#[case] period: usize) {
+        assert!(SimpleMovingAverage::new_checked(period, None).is_err());
+    }
 
     #[rstest]
     fn sma_initialized_state(indicator_sma_10: SimpleMovingAverage) {
@@ -199,7 +234,8 @@ mod tests {
         let mut sma = indicator_sma_10;
         sma.handle_quote(&stub_quote).unwrap();
         assert_eq!(sma.count, 1);
-        assert_eq!(sma.value, 1501.0);
+        assert_eq!(sma.value, 0.0);
+        assert!(!sma.initialized());
     }
 
     #[rstest]
@@ -211,7 +247,8 @@ mod tests {
         sma.handle_quote(&q1).unwrap();
         sma.handle_quote(&q2).unwrap();
         assert_eq!(sma.count, 2);
-        assert_eq!(sma.value, 1502.0);
+        assert_eq!(sma.value, 0.0);
+        assert!(!sma.initialized());
     }
 
     #[rstest]
@@ -219,7 +256,8 @@ mod tests {
         let mut sma = indicator_sma_10;
         sma.handle_trade(&stub_trade);
         assert_eq!(sma.count, 1);
-        assert_eq!(sma.value, 1500.0);
+        assert_eq!(sma.value, 0.0);
+        assert!(!sma.initialized());
     }
 
     #[rstest]
@@ -285,7 +323,7 @@ mod tests {
         let mut sma = SimpleMovingAverage::new(3, None);
 
         let prices = [1.0, 2.0, 3.0, 4.0, 5.0];
-        let expect_avg = [1.0, 1.5, 2.0, 3.0, 4.0];
+        let expect_avg = [0.0, 0.0, 2.0, 3.0, 4.0];
 
         for (i, &p) in prices.iter().enumerate() {
             sma.update_raw(p);
@@ -305,13 +343,13 @@ mod tests {
             inputs in prop::collection::vec(0i64..=1_000_000i64, 1..=96),
         ) {
             let mut sma = SimpleMovingAverage::new(period, None);
-            let mut equal_weight_wma = WeightedMovingAverage::new(period, vec![1.0; period], None);
+            let mut equal_weight_wma = WeightedMovingAverage::with_weights(period, vec![1.0; period], None);
 
             for (index, input) in inputs.iter().enumerate() {
                 let value = *input as f64;
                 let window_start = index.saturating_add(1).saturating_sub(period);
                 let window = &inputs[window_start..=index];
-                let expected = window.iter().sum::<i64>() as f64 / window.len() as f64;
+                let expected = if window.len() == period { window.iter().sum::<i64>() as f64 / period as f64 } else { 0.0 };
 
                 sma.update_raw(value);
                 equal_weight_wma.update_raw(value);
@@ -355,7 +393,7 @@ mod tests {
     fn sma_rolling_mean_exact_values() {
         let mut sma = SimpleMovingAverage::new(3, None);
         let inputs = [1.0, 2.0, 3.0, 4.0, 5.0];
-        let expected = [1.0, 1.5, 2.0, 3.0, 4.0];
+        let expected = [0.0, 0.0, 2.0, 3.0, 4.0];
 
         for (&price, &exp_mean) in inputs.iter().zip(expected.iter()) {
             sma.update_raw(price);
@@ -368,10 +406,22 @@ mod tests {
     }
 
     #[rstest]
+    fn sma_reseeds_after_a_large_value_leaves_the_window() {
+        let mut sma = SimpleMovingAverage::new(2, None);
+        sma.update_raw(1.0e16);
+        for _ in 0..31 {
+            sma.update_raw(1.0);
+        }
+        assert_eq!(sma.value, 1.0);
+        assert_eq!(sma.count, 2);
+        assert!(sma.initialized);
+    }
+
+    #[rstest]
     fn sma_matches_reference_implementation() {
         const PERIOD: usize = 5;
         let mut sma = SimpleMovingAverage::new(PERIOD, None);
-        let mut window: ArrayDeque<f64, PERIOD, Wrapping> = ArrayDeque::new();
+        let mut window = VecDeque::new();
 
         for step in 0..20 {
             let price = f64::from(step) * 10.0;
@@ -380,9 +430,13 @@ mod tests {
             if window.len() == PERIOD {
                 window.pop_front();
             }
-            let _ = window.push_back(price);
+            window.push_back(price);
 
-            let ref_mean: f64 = window.iter().sum::<f64>() / window.len() as f64;
+            let ref_mean = if window.len() == PERIOD {
+                window.iter().sum::<f64>() / PERIOD as f64
+            } else {
+                0.0
+            };
             assert!(
                 (sma.value() - ref_mean).abs() < 1e-12,
                 "step={step}, expected={ref_mean}, was={}",
@@ -395,15 +449,17 @@ mod tests {
     #[case(f64::NAN)]
     #[case(f64::INFINITY)]
     #[case(f64::NEG_INFINITY)]
-    fn sma_handles_bad_floats(#[case] bad: f64) {
+    fn sma_ignores_bad_floats(#[case] bad: f64) {
         let mut sma = SimpleMovingAverage::new(3, None);
         sma.update_raw(1.0);
         sma.update_raw(bad);
         sma.update_raw(3.0);
-        assert!(
-            sma.value().is_nan() || !sma.value().is_finite(),
-            "bad float not propagated"
-        );
+        assert_eq!(sma.count(), 2);
+        assert_eq!(sma.value(), 0.0);
+        assert!(!sma.initialized());
+        sma.update_raw(5.0);
+        assert_eq!(sma.value(), 3.0);
+        assert!(sma.initialized());
     }
 
     #[rstest]
@@ -439,7 +495,7 @@ mod tests {
 
     #[rstest]
     fn sma_buffer_never_exceeds_capacity() {
-        const PERIOD: usize = MAX_PERIOD;
+        const PERIOD: usize = 2_048;
         let mut sma = super::SimpleMovingAverage::new(PERIOD, None);
 
         for i in 0..(PERIOD * 2) {
@@ -452,7 +508,7 @@ mod tests {
             );
         }
         assert!(
-            sma.buf.is_full(),
+            sma.buf.len() == PERIOD,
             "buffer not reported as full after saturation"
         );
         assert_eq!(
@@ -491,11 +547,41 @@ mod tests {
 
             let deque_sum: f64 = sma.buf.iter().copied().sum();
             assert!(
-                (sma.sum - deque_sum).abs() < 1e-12,
+                (sma.sum.value() - deque_sum).abs() < 1e-12,
                 "step {i}: internal sum={} differs from buf sum={}",
-                sma.sum,
+                sma.sum.value(),
                 deque_sum
             );
+        }
+    }
+
+    #[rstest]
+    fn test_periodic_reseed_preserves_chronological_additions() {
+        let mut sma = SimpleMovingAverage::new(3, None);
+
+        for _ in 0..45 {
+            sma.update_raw(0.0);
+        }
+        sma.update_raw(1e308);
+        sma.update_raw(-1e308);
+        sma.update_raw(1e-100);
+
+        assert_eq!(sma.value(), 1e-100 / 3.0);
+    }
+
+    #[rstest]
+    fn test_recovers_small_samples_after_overflow_and_eviction() {
+        let mut sma = SimpleMovingAverage::new(3, None);
+        let values = [1e308, 1e308, 1e308, 1.0, 2.0, 3.0, 4.0];
+        let expected = [0.0, 0.0, 1e308, 2.0 / 3.0 * 1e308, 1e308 / 3.0, 2.0, 3.0];
+
+        for _ in 0..2 {
+            for (value, expected) in values.into_iter().zip(expected) {
+                sma.update_raw(value);
+                assert_eq!(sma.value(), expected);
+            }
+            sma.reset();
+            assert_eq!(sma.value(), 0.0);
         }
     }
 }

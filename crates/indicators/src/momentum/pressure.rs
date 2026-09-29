@@ -184,7 +184,8 @@ mod tests {
             0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9, 10.1, 10.2, 10.3, 11.1, 11.4,
         ];
         let close_values = [
-            1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 8.1, 9.1, 10.1, 11.1, 12.1, 13.1, 14.1, 15.1,
+            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.95, 11.95, 12.95, 13.95,
+            14.95,
         ];
         let volume_values = [
             100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0, 1100.0, 1200.0,
@@ -229,8 +230,8 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_approx_equal(pressure_10.value, -0.0181818181818);
-        assert_approx_equal(pressure_10.value_cumulative, -0.0181818181818);
+        assert_eq!(pressure_10.value, 0.0);
+        assert_eq!(pressure_10.value_cumulative, 0.0);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }
@@ -276,7 +277,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_defaults_match_cython() {
+    fn test_new_defaults_use_seeded_averages() {
         let mut pressure = Pressure::new(10, None, None);
         let high_values = [
             100.75, 102.5, 102.0, 103.0, 104.0, 102.25, 101.25, 103.0, 105.75, 104.5, 106.0, 105.5,
@@ -306,7 +307,7 @@ mod tests {
 
         assert!(pressure.atr.use_previous);
         assert!(pressure.initialized());
-        assert_approx_equal(pressure.value, -0.110801189707);
-        assert_approx_equal(pressure.value_cumulative, -4.12922120583);
+        assert_approx_equal(pressure.value, -0.111000235499);
+        assert_approx_equal(pressure.value_cumulative, -1.90133577924);
     }
 }

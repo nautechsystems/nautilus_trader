@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -24,30 +25,50 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KeltnerChannel {
-    /// Creates a new `KeltnerChannel` instance.
+    /// Keltner channel.
     #[new]
-    #[pyo3(signature = (period, k_multiplier, ma_type=None, ma_type_atr=None, use_previous=None, atr_floor=None))]
-    #[must_use]
+    #[pyo3(signature = (period, k_multiplier, atr_period=None, ma_type=None, ma_type_atr=None, use_previous=None, atr_floor=None))]
     pub fn py_new(
         period: usize,
         k_multiplier: f64,
+        atr_period: Option<usize>,
         ma_type: Option<MovingAverageType>,
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             period,
             k_multiplier,
+            atr_period,
             ma_type,
             ma_type_atr,
             use_previous,
             atr_floor,
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
         format!("KeltnerChannel({})", self.period)
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type_atr")]
+    const fn py_ma_type_atr(&self) -> MovingAverageType {
+        self.ma_type_atr
+    }
+
+    #[getter]
+    #[pyo3(name = "atr_period")]
+    const fn py_atr_period(&self) -> usize {
+        self.atr_period
     }
 
     #[getter]

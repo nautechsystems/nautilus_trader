@@ -17,10 +17,14 @@ use std::fmt::Display;
 
 use nautilus_model::data::Bar;
 
-use crate::indicator::Indicator;
+use crate::{
+    indicator::Indicator,
+    support::{ScaledSum, is_valid_hlc, typical_price},
+};
 
+/// Volume-weighted average price.
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.indicators")
@@ -33,9 +37,8 @@ pub struct VolumeWeightedAveragePrice {
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    price_volume: f64,
-    volume_total: f64,
-    day: i64,
+    price_volume: ScaledSum,
+    volume_total: ScaledSum,
 }
 
 impl Indicator for VolumeWeightedAveragePrice {
@@ -52,18 +55,19 @@ impl Indicator for VolumeWeightedAveragePrice {
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        let typical_price = (bar.close.as_f64() + bar.high.as_f64() + bar.low.as_f64()) / 3.0;
-
-        self.update_raw(typical_price, (&bar.volume).into(), bar.ts_init.as_f64());
+        let (high, low, close) = (bar.high.as_f64(), bar.low.as_f64(), bar.close.as_f64());
+        if !is_valid_hlc(high, low, close) {
+            return;
+        }
+        self.update_raw(typical_price(high, low, close), bar.volume.as_f64());
     }
 
     fn reset(&mut self) {
         self.value = 0.0;
         self.has_inputs = false;
         self.initialized = false;
-        self.day = -1;
-        self.price_volume = 0.0;
-        self.volume_total = 0.0;
+        self.price_volume.reset();
+        self.volume_total.reset();
     }
 }
 
@@ -75,34 +79,33 @@ impl VolumeWeightedAveragePrice {
             value: 0.0,
             initialized: false,
             has_inputs: false,
-            price_volume: 0.0,
-            volume_total: 0.0,
-            day: -1,
+            price_volume: ScaledSum::new(),
+            volume_total: ScaledSum::new(),
         }
     }
 
-    pub fn update_raw(&mut self, price: f64, volume: f64, timestamp: f64) {
-        const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
-        let epoch_day = (timestamp / NANOSECONDS_PER_DAY).floor() as i64;
-
-        if epoch_day != self.day {
-            self.reset();
-            self.day = epoch_day;
-            self.value = price;
+    /// Adds a price and nonnegative volume to the current manually reset window.
+    /// Non-finite inputs and unrepresentable price-volume products leave state unchanged.
+    pub fn update_raw(&mut self, price: f64, volume: f64) {
+        let product = price * volume;
+        if !price.is_finite() || !volume.is_finite() || volume < 0.0 || !product.is_finite() {
+            return;
         }
-
-        if !self.initialized {
-            self.has_inputs = true;
-            self.initialized = true;
-        }
+        self.has_inputs = true;
 
         if volume == 0.0 {
             return;
         }
+        self.price_volume.add(product);
+        self.volume_total.add(volume);
+        self.value = self.price_volume.ratio(&self.volume_total);
+        self.initialized = true;
+    }
+}
 
-        self.price_volume += price * volume;
-        self.volume_total += volume;
-        self.value = self.price_volume / self.volume_total;
+impl Default for VolumeWeightedAveragePrice {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -117,279 +120,86 @@ mod tests {
     use nautilus_model::data::Bar;
     use rstest::rstest;
 
-    use crate::{
-        average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*,
-        testing::assert_approx_equal,
-    };
-
-    const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
-    const DAY0: f64 = 10.0 * 1_000_000_000.0;
-    const DAY1: f64 = NANOSECONDS_PER_DAY;
+    use super::*;
+    use crate::stubs::*;
 
     #[rstest]
-    fn test_vwap_initialized(indicator_vwap: VolumeWeightedAveragePrice) {
-        let display_st = format!("{indicator_vwap}");
-        assert_eq!(display_st, "VolumeWeightedAveragePrice");
-        assert!(!indicator_vwap.initialized());
-        assert!(!indicator_vwap.has_inputs());
-    }
-
-    #[rstest]
-    fn test_value_with_one_input(mut indicator_vwap: VolumeWeightedAveragePrice) {
-        indicator_vwap.update_raw(10.0, 10.0, DAY0);
-        assert_eq!(indicator_vwap.value, 10.0);
-    }
-
-    #[rstest]
-    fn test_value_with_three_inputs_on_the_same_day(
-        mut indicator_vwap: VolumeWeightedAveragePrice,
-    ) {
-        indicator_vwap.update_raw(10.0, 10.0, DAY0);
-        indicator_vwap.update_raw(20.0, 20.0, DAY0 + 1.0);
-        indicator_vwap.update_raw(30.0, 30.0, DAY0 + 2.0);
-        assert!((indicator_vwap.value - 23.333_333_333_333_332).abs() < 1e-12);
-    }
-
-    #[rstest]
-    fn test_value_with_three_inputs_on_different_days(
-        mut indicator_vwap: VolumeWeightedAveragePrice,
-    ) {
-        indicator_vwap.update_raw(10.0, 10.0, DAY0);
-        indicator_vwap.update_raw(20.0, 20.0, DAY1);
-        indicator_vwap.update_raw(30.0, 30.0, DAY0);
-        assert_eq!(indicator_vwap.value, 30.0);
-    }
-
-    #[rstest]
-    fn test_value_with_ten_inputs(mut indicator_vwap: VolumeWeightedAveragePrice) {
-        for i in 0..10 {
-            let price = 0.00010f64.mul_add(f64::from(i), 1.00000);
-            let volume = 1.0 + f64::from(i % 3);
-            indicator_vwap.update_raw(price, volume, DAY0);
-        }
-        indicator_vwap.update_raw(1.00000, 2.00000, DAY0);
-        assert!((indicator_vwap.value - 1.000_414_285_714_286).abs() < 1e-12);
-    }
-
-    #[rstest]
-    fn test_handle_bar(
-        mut indicator_vwap: VolumeWeightedAveragePrice,
-        bar_ethusdt_binance_minute_bid: Bar,
-    ) {
-        indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_approx_equal(indicator_vwap.value, 1522.33333333);
-        assert!(indicator_vwap.initialized);
-    }
-
-    #[rstest]
-    fn test_reset(mut indicator_vwap: VolumeWeightedAveragePrice) {
-        indicator_vwap.update_raw(10.0, 10.0, DAY0);
-        indicator_vwap.reset();
-        assert_eq!(indicator_vwap.value, 0.0);
-        assert!(!indicator_vwap.has_inputs);
-        assert!(!indicator_vwap.initialized);
-    }
-
-    #[rstest]
-    fn test_reset_on_exact_day_boundary() {
+    fn test_manual_window_and_reset() {
         let mut vwap = VolumeWeightedAveragePrice::new();
-
-        vwap.update_raw(100.0, 5.0, DAY0);
-        let old = vwap.value;
-
-        vwap.update_raw(200.0, 5.0, DAY1);
-        assert_eq!(vwap.value, 200.0);
-        assert_ne!(vwap.value, old);
-    }
-
-    #[rstest]
-    fn test_no_reset_within_same_day() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(100.0, 5.0, DAY0);
-
-        vwap.update_raw(200.0, 5.0, DAY0 + 1.0);
-        assert!(vwap.value > 100.0 && vwap.value < 200.0);
-    }
-
-    #[rstest]
-    fn test_zero_volume_does_not_change_value() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(100.0, 10.0, DAY0);
-        let before = vwap.value;
-
-        vwap.update_raw(9999.0, 0.0, DAY0);
-        assert_eq!(vwap.value, before);
-    }
-
-    #[rstest]
-    fn test_epoch_day_floor_rounding() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-
-        vwap.update_raw(50.0, 5.0, DAY1 - 1.0); // 1 nanosecound before midnight
-        let before = vwap.value;
-
-        vwap.update_raw(150.0, 5.0, DAY1);
-        assert_eq!(vwap.value, 150.0);
-        assert_ne!(vwap.value, before);
-    }
-
-    #[rstest]
-    fn test_reset_when_timestamp_goes_backwards() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(10.0, 10.0, DAY0);
-        vwap.update_raw(20.0, 10.0, DAY1);
-        vwap.update_raw(30.0, 10.0, DAY0);
-        assert_eq!(vwap.value, 30.0);
-    }
-
-    #[rstest]
-    #[case(10.0e9, 11.0e9)]
-    #[case(43_200.123e9, 86_399.999e9)]
-    fn test_no_reset_for_same_epoch_day(#[case] t1: f64, #[case] t2: f64) {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-
-        vwap.update_raw(100.0, 10.0, t1);
-        let before = vwap.value;
-
-        vwap.update_raw(200.0, 10.0, t2);
-
-        assert!(vwap.value > before && vwap.value < 200.0);
-    }
-
-    #[rstest]
-    #[case(86_399.999e9, 86_400.0e9)]
-    #[case(86_400.0e9, 172_800.0e9)]
-    fn test_reset_when_epoch_day_changes(#[case] t1: f64, #[case] t2: f64) {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-
-        vwap.update_raw(100.0, 10.0, t1);
-
-        vwap.update_raw(200.0, 10.0, t2);
-
-        assert_eq!(vwap.value, 200.0);
-    }
-
-    #[rstest]
-    fn test_first_input_zero_volume_does_not_divide_by_zero() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-
-        vwap.update_raw(100.0, 0.0, DAY0);
-        assert_eq!(vwap.value, 100.0);
-        assert!(vwap.initialized());
-
-        vwap.update_raw(200.0, 10.0, DAY0 + 1.0);
-        assert_eq!(vwap.value, 200.0);
-    }
-
-    #[rstest]
-    fn test_zero_volume_day_rollover_resets_and_seeds() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(100.0, 10.0, DAY0);
-
-        vwap.update_raw(9999.0, 0.0, DAY1);
-        assert_eq!(vwap.value, 9999.0);
-    }
-
-    #[rstest]
-    fn test_handle_bar_matches_update_raw(
-        mut indicator_vwap: VolumeWeightedAveragePrice,
-        bar_ethusdt_binance_minute_bid: Bar,
-    ) {
-        indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-
-        let tp = (bar_ethusdt_binance_minute_bid.close.as_f64()
-            + bar_ethusdt_binance_minute_bid.high.as_f64()
-            + bar_ethusdt_binance_minute_bid.low.as_f64())
-            / 3.0;
-
-        let mut vwap_raw = VolumeWeightedAveragePrice::new();
-        vwap_raw.update_raw(
-            tp,
-            (&bar_ethusdt_binance_minute_bid.volume).into(),
-            bar_ethusdt_binance_minute_bid.ts_init.as_f64(),
+        assert_eq!(vwap.to_string(), "VolumeWeightedAveragePrice");
+        assert_eq!(
+            (vwap.value, vwap.initialized(), vwap.has_inputs()),
+            (0.0, false, false)
+        );
+        vwap.update_raw(99.0, 0.0);
+        assert_eq!(
+            (vwap.value, vwap.initialized(), vwap.has_inputs()),
+            (0.0, false, true)
         );
 
-        assert!((indicator_vwap.value - vwap_raw.value).abs() < 1e-12);
-    }
-
-    #[rstest]
-    #[case(1.0e-9, 1.0e-9)]
-    #[case(1.0e9, 1.0e6)]
-    #[case(42.4242, std::f64::consts::PI)]
-    fn test_extreme_prices_and_volumes_do_not_overflow(#[case] price: f64, #[case] volume: f64) {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(price, volume, DAY0);
-        assert_eq!(vwap.value, price);
-    }
-
-    #[rstest]
-    fn negative_timestamp() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(42.0, 1.0, -1.0);
+        for (price, volume) in [(10.0, 1.0), (20.0, 3.0), (30.0, 6.0)] {
+            vwap.update_raw(price, volume);
+        }
+        assert_eq!(
+            (vwap.value, vwap.initialized(), vwap.has_inputs()),
+            (25.0, true, true)
+        );
+        vwap.update_raw(999.0, 0.0);
+        assert_eq!(vwap.value, 25.0);
+        vwap.reset();
+        assert_eq!(
+            (vwap.value, vwap.initialized(), vwap.has_inputs()),
+            (0.0, false, false)
+        );
+        vwap.update_raw(42.0, 7.0);
         assert_eq!(vwap.value, 42.0);
-        vwap.update_raw(43.0, 1.0, -1.0);
-        assert!(vwap.value > 42.0 && vwap.value < 43.0);
     }
 
     #[rstest]
-    fn huge_future_timestamp_saturates() {
-        let ts = 1.0e20;
+    #[case(f64::NAN, 1.0)]
+    #[case(f64::INFINITY, 1.0)]
+    #[case(2.0, f64::NAN)]
+    #[case(2.0, f64::INFINITY)]
+    #[case(2.0, -1.0)]
+    #[case(f64::MAX, 2.0)]
+    fn test_invalid_input_is_atomic(#[case] price: f64, #[case] volume: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(1.0, 1.0, ts);
-        vwap.update_raw(2.0, 1.0, ts + 1.0);
-        assert!(vwap.value > 1.0 && vwap.value < 2.0);
+        vwap.update_raw(price, volume);
+        assert_eq!(
+            (vwap.value, vwap.initialized(), vwap.has_inputs()),
+            (0.0, false, false)
+        );
+        vwap.update_raw(10.0, 2.0);
+        vwap.update_raw(price, volume);
+        vwap.update_raw(20.0, 2.0);
+        assert_eq!(vwap.value, 15.0);
     }
 
     #[rstest]
-    fn negative_volume_changes_sign() {
+    fn test_large_finite_sums() {
         let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(100.0, 10.0, 0.0);
-        vwap.update_raw(200.0, -10.0, 0.0);
-        assert_eq!(vwap.volume_total, 0.0);
+        vwap.update_raw(1e308, 1.0);
+        vwap.update_raw(1e308, 1.0);
+        assert_eq!(vwap.value, 1e308);
+        vwap.reset();
+        vwap.update_raw(1.0, 1e308);
+        vwap.update_raw(1.0, 1e308);
+        assert_eq!(vwap.value, 1.0);
     }
 
     #[rstest]
-    fn nan_volume_propagates() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(100.0, 1.0, 0.0);
-        vwap.update_raw(200.0, f64::NAN, 0.0);
-        assert!(vwap.value.is_nan());
-    }
-
-    #[rstest]
-    fn zero_and_negative_price() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(0.0, 5.0, 0.0);
-        assert_eq!(vwap.value, 0.0);
-        vwap.update_raw(-10.0, 5.0, 0.0);
-        assert!(vwap.value < 0.0);
-    }
-    /// Regression test for <https://github.com/nautechsystems/nautilus_trader/issues/4428>
-    ///
-    /// Before the fix, `update_raw` compared a nanosecond `ts_init` value against
-    /// `SECONDS_PER_DAY = 86_400.0`, causing a spurious day-rollover every ~86 µs.
-    #[rstest]
-    fn test_no_spurious_reset_with_real_nanosecond_timestamps() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-
-        // 2024-01-15 10:00:00 UTC → 1_705_312_800_000_000_000 ns
-        // 2024-01-15 10:05:00 UTC → 1_705_313_100_000_000_000 ns
-        let ts1 = 1_705_312_800_000_000_000_f64;
-        let ts2 = 1_705_313_100_000_000_000_f64;
-
-        vwap.update_raw(100.0, 10.0, ts1);
-        assert_eq!(vwap.value, 100.0);
-
-        vwap.update_raw(200.0, 10.0, ts2);
-
-        // Before the fix this would reset to 200.0 instead of accumulating
-        assert!((vwap.value - 150.0).abs() < 1e-9);
-    }
-
-    #[rstest]
-    fn nan_price_propagates() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(f64::NAN, 1.0, 0.0);
-        assert!(vwap.value.is_nan());
+    fn test_bar_uses_typical_price(bar_ethusdt_binance_minute_bid: Bar) {
+        let bar = bar_ethusdt_binance_minute_bid;
+        let mut event = VolumeWeightedAveragePrice::new();
+        let mut raw = VolumeWeightedAveragePrice::new();
+        event.handle_bar(&bar);
+        raw.update_raw(
+            typical_price(bar.high.as_f64(), bar.low.as_f64(), bar.close.as_f64()),
+            bar.volume.as_f64(),
+        );
+        assert_eq!(
+            (event.value, event.initialized(), event.has_inputs()),
+            (raw.value, true, true)
+        );
     }
 }

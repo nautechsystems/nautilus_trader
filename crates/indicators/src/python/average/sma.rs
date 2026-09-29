@@ -29,11 +29,11 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl SimpleMovingAverage {
-    /// Creates a new `SimpleMovingAverage` instance.
+    /// Simple moving average.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self::new(period, price_type)
+    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+        Self::new_checked(period, price_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

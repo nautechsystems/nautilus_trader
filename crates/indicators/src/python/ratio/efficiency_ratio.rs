@@ -30,7 +30,7 @@ use crate::{
 impl EfficiencyRatio {
     /// Calculates Kaufman's Efficiency Ratio (ER) across a rolling window.
     ///
-    /// The period must be at least `2`.
+    /// The period must be positive.
     ///
     /// For period `n`, the ratio is:
     ///

@@ -15,13 +15,29 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, is_valid_hlc},
 };
 
+/// Stephen J. Klinger's Volume Oscillator: a fast/slow moving-average
+/// difference over the per-bar "volume force".
+///
+/// ```text
+/// dm_t   = high_t + low_t + close_t                 (the daily measurement)
+/// trend  = sign(dm_t - dm_{t-1}), carried over when equal
+/// cm_t   = cm_{t-1} + dm_t        while the trend holds
+/// cm_t   = dm_{t-1} + dm_t        when the trend flips
+/// vf_t   = volume_t * |2 * (dm_t / cm_t - 1)| * trend * 100
+/// KVO_t  = MA(vf, fast) - MA(vf, slow)
+/// ```
+///
+/// Klinger's textbook configuration is `fast = 34, slow = 55` with exponential
+/// averages, which is the default `ma_type`.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -35,27 +51,25 @@ use crate::{
 pub struct KlingerVolumeOscillator {
     pub fast_period: usize,
     pub slow_period: usize,
-    pub signal_period: usize,
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub initialized: bool,
+    has_inputs: bool,
     fast_ma: Box<dyn MovingAverage + Send + 'static>,
     slow_ma: Box<dyn MovingAverage + Send + 'static>,
-    signal_ma: Box<dyn MovingAverage + Send + 'static>,
-    has_inputs: bool,
-    hlc3: f64,
-    previous_hlc3: f64,
+    previous_dm: Option<f64>,
+    trend: i8,
+    cm: f64,
 }
 
 impl Display for KlingerVolumeOscillator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}({},{},{},{})",
+            "{}({},{},{})",
             self.name(),
             self.fast_period,
             self.slow_period,
-            self.signal_period,
             self.ma_type,
         )
     }
@@ -84,11 +98,11 @@ impl Indicator for KlingerVolumeOscillator {
     }
 
     fn reset(&mut self) {
-        self.hlc3 = 0.0;
-        self.previous_hlc3 = 0.0;
         self.fast_ma.reset();
         self.slow_ma.reset();
-        self.signal_ma.reset();
+        self.previous_dm = None;
+        self.trend = 0;
+        self.cm = 0.0;
         self.value = 0.0;
         self.has_inputs = false;
         self.initialized = false;
@@ -97,176 +111,184 @@ impl Indicator for KlingerVolumeOscillator {
 
 impl KlingerVolumeOscillator {
     /// Creates a new [`KlingerVolumeOscillator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fast_period` is zero or not less than `slow_period`.
     #[must_use]
-    pub fn new(
+    pub fn new(fast_period: usize, slow_period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self::new_checked(fast_period, slow_period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
         fast_period: usize,
         slow_period: usize,
-        signal_period: usize,
         ma_type: Option<MovingAverageType>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            fast_period <= MAX_PERIOD,
+            "fast_period must not exceed {MAX_PERIOD}"
+        );
+        anyhow::ensure!(
+            slow_period <= MAX_PERIOD,
+            "slow_period must not exceed {MAX_PERIOD}"
+        );
+
+        anyhow::ensure!(
+            fast_period > 0 && fast_period < slow_period,
+            "KlingerVolumeOscillator: fast_period must be > 0 and < slow_period (received fast {fast_period}, slow {slow_period})"
+        );
         let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
 
-        Self {
+        Ok(Self {
             fast_period,
             slow_period,
-            signal_period,
             ma_type,
             value: 0.0,
             fast_ma: MovingAverageFactory::create(ma_type, fast_period),
             slow_ma: MovingAverageFactory::create(ma_type, slow_period),
-            signal_ma: MovingAverageFactory::create(ma_type, signal_period),
+            previous_dm: None,
+            trend: 0,
+            cm: 0.0,
             has_inputs: false,
-            hlc3: 0.0,
-            previous_hlc3: 0.0,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {
-        self.hlc3 = (high + low + close) / 3.0;
-        if self.hlc3 > self.previous_hlc3 {
-            self.fast_ma.update_raw(volume);
-            self.slow_ma.update_raw(volume);
-        } else if self.hlc3 < self.previous_hlc3 {
-            self.fast_ma.update_raw(-volume);
-            self.slow_ma.update_raw(-volume);
+        if !is_valid_hlc(high, low, close) || !volume.is_finite() || volume < 0.0 {
+            return;
+        }
+
+        self.has_inputs = true;
+        let dm = high + low + close;
+
+        let Some(previous_dm) = self.previous_dm else {
+            // The first bar only establishes the previous daily measurement
+            self.previous_dm = Some(dm);
+            return;
+        };
+
+        let new_trend: i8 = if dm > previous_dm {
+            1
+        } else if dm < previous_dm {
+            -1
         } else {
-            self.fast_ma.update_raw(0.0);
-            self.slow_ma.update_raw(0.0);
+            self.trend
+        };
+
+        // The cumulative measurement resets to (previous_dm + dm) whenever the
+        // trend flips, and seeds the same way on the first sign read
+        if new_trend == self.trend && self.trend != 0 {
+            self.cm += dm;
+        } else {
+            self.cm = previous_dm + dm;
+        }
+        self.trend = new_trend;
+
+        let volume_force = if self.cm == 0.0 {
+            // Pathological all-zero OHLC stretch: no force to register
+            0.0
+        } else {
+            volume * (2.0 * (dm / self.cm - 1.0)).abs() * f64::from(new_trend) * 100.0
+        };
+
+        self.previous_dm = Some(dm);
+
+        self.fast_ma.update_raw(volume_force);
+        self.slow_ma.update_raw(volume_force);
+        if !self.initialized && self.fast_ma.initialized() && self.slow_ma.initialized() {
+            self.initialized = true;
         }
 
-        if self.slow_ma.initialized() {
-            self.signal_ma
-                .update_raw(self.fast_ma.value() - self.slow_ma.value());
-            self.value = self.signal_ma.value();
-        }
-
-        // initialization logic
-        if !self.initialized {
-            self.has_inputs = true;
-
-            if self.signal_ma.initialized() {
-                self.initialized = true;
-            }
-        }
-
-        self.previous_hlc3 = self.hlc3;
-    }
-
-    pub fn check_initialized(&mut self) {
-        if !self.initialized {
-            self.has_inputs = true;
-
-            if self.signal_ma.initialized() {
-                self.initialized = true;
-            }
+        if self.initialized {
+            self.value = self.fast_ma.value() - self.slow_ma.value();
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::{stubs::kvo_345, testing::assert_approx_equal};
 
-    #[rstest]
-    fn test_name_returns_expected_string(kvo_345: KlingerVolumeOscillator) {
-        assert_eq!(kvo_345.name(), "KlingerVolumeOscillator");
+    #[fixture]
+    fn kvo_34() -> KlingerVolumeOscillator {
+        KlingerVolumeOscillator::new(3, 4, Some(MovingAverageType::Simple))
     }
 
     #[rstest]
-    fn test_str_repr_returns_expected_string(kvo_345: KlingerVolumeOscillator) {
-        assert_eq!(
-            format!("{kvo_345}"),
-            "KlingerVolumeOscillator(3,4,5,SIMPLE)"
-        );
+    fn test_name_returns_expected_string(kvo_34: KlingerVolumeOscillator) {
+        assert_eq!(kvo_34.name(), "KlingerVolumeOscillator");
     }
 
     #[rstest]
-    fn test_period_returns_expected_value(kvo_345: KlingerVolumeOscillator) {
-        assert_eq!(kvo_345.fast_period, 3);
-        assert_eq!(kvo_345.slow_period, 4);
-        assert_eq!(kvo_345.signal_period, 5);
+    fn test_str_repr_returns_expected_string(kvo_34: KlingerVolumeOscillator) {
+        assert_eq!(format!("{kvo_34}"), "KlingerVolumeOscillator(3,4,SIMPLE)");
     }
 
     #[rstest]
-    fn test_initialized_without_inputs_returns_false(kvo_345: KlingerVolumeOscillator) {
-        assert!(!kvo_345.initialized());
+    fn test_period_returns_expected_value(kvo_34: KlingerVolumeOscillator) {
+        assert_eq!(kvo_34.fast_period, 3);
+        assert_eq!(kvo_34.slow_period, 4);
     }
 
     #[rstest]
-    fn test_value_with_all_higher_inputs_returns_expected_value(
-        mut kvo_345: KlingerVolumeOscillator,
-    ) {
-        let high_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let low_values = [0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9];
-        let close_values = [1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 8.1, 9.1, 10.1];
-        let volume_values = [
-            100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0,
-        ];
+    #[should_panic(expected = "fast_period must be > 0 and < slow_period")]
+    fn test_fast_not_less_than_slow_panics() {
+        let _ = KlingerVolumeOscillator::new(4, 4, None);
+    }
 
-        for i in 0..10 {
-            kvo_345.update_raw(
-                high_values[i],
-                low_values[i],
-                close_values[i],
-                volume_values[i],
-            );
+    #[rstest]
+    fn test_initialized_without_inputs_returns_false(kvo_34: KlingerVolumeOscillator) {
+        assert!(!kvo_34.initialized());
+    }
+
+    #[rstest]
+    fn test_volume_force_matches_reference(mut kvo_34: KlingerVolumeOscillator) {
+        // Bars strictly rising: trend is +1 from bar 2 onward.
+        // dm_i = h + l + c = 3 * i for i in 1..=5, volume 10.
+        // Bar 2: cm = dm1 + dm2 = 9, vf = 10 * |2 * (6/9 - 1)| * 100 = 666.66..
+        // Bar 3: cm = 9 + 9 = 18, vf = 10 * |2 * (9/18 - 1)| * 100 = 1000
+        // Bar 4: cm = 18 + 12 = 30, vf = 10 * |2 * (12/30 - 1)| * 100 = 1200
+        // Bar 5: cm = 30 + 15 = 45, vf = 10 * |2 * (15/45 - 1)| * 100 = 1333.33..
+        // SMA(3) - SMA(4) of [666.66.., 1000, 1200, 1333.33..]:
+        //   fast = (1000 + 1200 + 1333.33..) / 3 = 1177.77..
+        //   slow = (666.66.. + 1000 + 1200 + 1333.33..) / 4 = 1050
+        for i in 1..=5_u32 {
+            let base = f64::from(i);
+            kvo_34.update_raw(base, base, base, 10.0);
         }
+        assert!(kvo_34.initialized());
+        let expected = (1000.0 + 1200.0 + 4000.0 / 3.0) / 3.0
+            - (600.0 / 0.9 + 1000.0 + 1200.0 + 4000.0 / 3.0) / 4.0;
+        assert!((kvo_34.value - expected).abs() < 1e-9);
+    }
 
-        assert!(kvo_345.initialized());
-        assert_eq!(kvo_345.value, 50.0);
+    #[rstest]
+    fn test_flat_dm_carries_trend_forward(mut kvo_34: KlingerVolumeOscillator) {
+        kvo_34.update_raw(1.0, 1.0, 1.0, 10.0);
+        kvo_34.update_raw(2.0, 2.0, 2.0, 10.0);
+        let trend_after_up = kvo_34.trend;
+        kvo_34.update_raw(2.0, 2.0, 2.0, 10.0);
+        assert_eq!(kvo_34.trend, trend_after_up);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(
-        mut kvo_345: KlingerVolumeOscillator,
+        mut kvo_34: KlingerVolumeOscillator,
     ) {
-        kvo_345.update_raw(1.00020, 1.00030, 1.00040, 1.00050);
-        kvo_345.update_raw(1.00030, 1.00040, 1.00050, 1.00060);
-        kvo_345.update_raw(1.00050, 1.00060, 1.00070, 1.00080);
+        kvo_34.update_raw(1.00020, 1.00030, 1.00040, 1.00050);
+        kvo_34.update_raw(1.00030, 1.00040, 1.00050, 1.00060);
+        kvo_34.update_raw(1.00050, 1.00060, 1.00070, 1.00080);
 
-        kvo_345.reset();
+        kvo_34.reset();
 
-        assert!(!kvo_345.initialized());
-        assert_eq!(kvo_345.value, 0.0);
-        assert_eq!(kvo_345.hlc3, 0.0);
-        assert_eq!(kvo_345.previous_hlc3, 0.0);
-    }
-
-    #[rstest]
-    fn test_new_defaults_to_exponential_moving_averages() {
-        let mut kvo = KlingerVolumeOscillator::new(3, 4, 5, None);
-        let high_values = [
-            100.75, 102.5, 102.0, 103.0, 104.0, 102.25, 101.25, 103.0, 105.75, 104.5, 106.0, 105.5,
-            107.25, 106.5, 108.25, 107.0, 109.0, 108.75, 110.0, 109.5,
-        ];
-        let low_values = [
-            99.5, 100.75, 100.25, 101.5, 102.5, 100.25, 100.0, 101.25, 104.0, 103.0, 104.5, 103.5,
-            106.0, 104.75, 106.5, 105.5, 107.5, 106.75, 108.75, 107.75,
-        ];
-        let close_values = [
-            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
-            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
-        ];
-        let volume_values = [
-            1000.0, 1100.0, 1200.0, 1300.0, 1400.0, 1000.0, 1100.0, 1200.0, 1300.0, 1400.0, 1000.0,
-            1100.0, 1200.0, 1300.0, 1400.0, 1000.0, 1100.0, 1200.0, 1300.0, 1400.0,
-        ];
-
-        for i in 0..20 {
-            kvo.update_raw(
-                high_values[i],
-                low_values[i],
-                close_values[i],
-                volume_values[i],
-            );
-        }
-
-        assert_eq!(kvo.ma_type, MovingAverageType::Exponential);
-        assert!(kvo.initialized());
-        assert_approx_equal(kvo.value, -29.6519677877);
+        assert!(!kvo_34.initialized());
+        assert_eq!(kvo_34.value, 0.0);
+        assert_eq!(kvo_34.trend, 0);
+        assert_eq!(kvo_34.cm, 0.0);
+        assert!(kvo_34.previous_dm.is_none());
     }
 }

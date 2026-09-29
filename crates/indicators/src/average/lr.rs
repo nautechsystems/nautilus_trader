@@ -15,13 +15,15 @@
 
 use std::fmt::{Debug, Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
-use crate::indicator::Indicator;
+use crate::{
+    indicator::Indicator,
+    support::{MAX_PERIOD, RollingOls},
+};
 
-const MAX_PERIOD: usize = 16_384;
-
+/// Linear regression over a rolling price window.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -42,10 +44,7 @@ pub struct LinearRegression {
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    x_sum: f64,
-    x_mul_sum: f64,
-    divisor: f64,
+    ols: RollingOls,
 }
 
 impl Display for LinearRegression {
@@ -78,7 +77,7 @@ impl Indicator for LinearRegression {
         self.cfo = 0.0;
         self.r2 = 0.0;
         self.value = 0.0;
-        self.inputs.clear();
+        self.ols.reset();
         self.has_inputs = false;
         self.initialized = false;
     }
@@ -90,25 +89,21 @@ impl LinearRegression {
     /// # Panics
     ///
     /// This function panics if:
-    /// `period` is zero.
-    /// `period` exceeds `MAX_PERIOD` (16,384).
+    /// `period` is less than two.
+    /// `period` exceeds `MAX_PERIOD` (16,777,216).
     #[must_use]
     pub fn new(period: usize) -> Self {
-        assert!(
-            period > 0,
-            "LinearRegression: period must be > 0 (received {period})"
-        );
-        assert!(
+        Self::new_checked(period).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(period: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(period > 0, "LinearRegression: period must be > 0");
+        anyhow::ensure!(period >= 2, "LinearRegression: period must be >= 2");
+        anyhow::ensure!(
             period <= MAX_PERIOD,
-            "LinearRegression: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+            "LinearRegression: period exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
-
-        let n = period as f64;
-        let x_sum = 0.5 * n * (n + 1.0);
-        let x_mul_sum = x_sum * 2.0f64.mul_add(n, 1.0) / 3.0;
-        let divisor = n.mul_add(x_mul_sum, -(x_sum * x_sum));
-
-        Self {
+        Ok(Self {
             period,
             slope: 0.0,
             intercept: 0.0,
@@ -118,82 +113,39 @@ impl LinearRegression {
             value: 0.0,
             initialized: false,
             has_inputs: false,
-            inputs: ArrayDeque::new(),
-            x_sum,
-            x_mul_sum,
-            divisor,
-        }
+            ols: RollingOls::new(period),
+        })
     }
 
     /// Updates the linear regression with a new data point.
-    ///
-    /// # Panics
-    ///
-    /// Panics if called with an empty window - this is protected against by the logic
-    /// that returns early until enough samples have been collected.
     pub fn update_raw(&mut self, close: f64) {
-        if self.inputs.len() == self.period {
-            let _ = self.inputs.pop_front();
-        }
-        let _ = self.inputs.push_back(close);
-
-        self.has_inputs = true;
-
-        if self.inputs.len() < self.period {
+        if !close.is_finite() {
             return;
         }
-        self.initialized = true;
+        self.has_inputs = true;
+
+        if !self.ols.push(close) {
+            return;
+        }
 
         let n = self.period as f64;
-        let x_sum = self.x_sum;
-        let x_mul_sum = self.x_mul_sum;
-        let divisor = self.divisor;
-
-        let (mut y_sum, mut xy_sum) = (0.0, 0.0);
-
-        for (i, &y) in self.inputs.iter().enumerate() {
-            let x = (i + 1) as f64;
-            y_sum += y;
-            xy_sum += x * y;
-        }
-
-        self.slope = n.mul_add(xy_sum, -(x_sum * y_sum)) / divisor;
-        self.intercept = y_sum.mul_add(x_mul_sum, -(x_sum * xy_sum)) / divisor;
-
-        let (mut sse, mut y_last, mut e_last) = (0.0, 0.0, 0.0);
-
-        for (i, &y) in self.inputs.iter().enumerate() {
-            let x = (i + 1) as f64;
-            let y_hat = self.slope.mul_add(x, self.intercept);
-            let resid = y_hat - y;
-            sse += resid * resid;
-            y_last = y;
-            e_last = resid;
-        }
-
-        self.value = y_last + e_last;
+        self.slope = self.ols.slope();
+        self.intercept = self.ols.intercept(self.slope);
+        self.value = self.intercept + self.slope * (n - 1.0);
         self.degree = self.slope.atan().to_degrees();
-        self.cfo = if y_last == 0.0 {
+        self.cfo = if close == 0.0 {
             f64::NAN
         } else {
-            100.0 * e_last / y_last
+            100.0 * (self.value - close) / close
         };
-
-        let mean = y_sum / n;
-        let sst: f64 = self
-            .inputs
-            .iter()
-            .map(|&y| {
-                let d = y - mean;
-                d * d
-            })
-            .sum();
-
-        self.r2 = if sst.abs() < f64::EPSILON {
+        let mean = self.ols.sum_y() / n;
+        let sst = (self.ols.sum_y_sq() - n * mean * mean).max(0.0);
+        self.r2 = if sst < f64::EPSILON {
             f64::NAN
         } else {
-            1.0 - sse / sst
+            (self.slope * self.slope * self.ols.denom() / n / sst).clamp(0.0, 1.0)
         };
+        self.initialized = true;
     }
 }
 
@@ -216,6 +168,34 @@ mod tests {
         assert_eq!(indicator_lr_10.period, 10);
         assert!(!indicator_lr_10.initialized);
         assert!(!indicator_lr_10.has_inputs);
+    }
+
+    #[rstest]
+    #[case(vec![4.0, 5.0, 9.0, 10.0], 3.7, 10.3)]
+    #[case(vec![4.0, 5.0, 9.0, 10.0, 12.0], 5.7, 12.3)]
+    fn zero_based_fit_matches_expected_outputs(
+        #[case] prices: Vec<f64>,
+        #[case] expected_intercept: f64,
+        #[case] expected_endpoint: f64,
+    ) {
+        let mut regression = LinearRegression::new(4);
+
+        for price in prices {
+            regression.update_raw(price);
+        }
+
+        for (actual, expected) in [
+            (regression.intercept, expected_intercept),
+            (regression.value, expected_endpoint),
+            (regression.slope, 2.2),
+            (regression.r2, 121.0 / 130.0),
+            (regression.degree, 2.2_f64.atan().to_degrees()),
+        ] {
+            assert!(
+                (actual - expected).abs() <= 1.0e-12,
+                "actual {actual}, expected {expected}"
+            );
+        }
     }
 
     #[rstest]
@@ -261,7 +241,7 @@ mod tests {
         indicator_lr_10.update_raw(1.0);
         indicator_lr_10.reset();
         assert_eq!(indicator_lr_10.value, 0.0);
-        assert_eq!(indicator_lr_10.inputs.len(), 0);
+        assert_eq!(indicator_lr_10.period, 10);
         assert_eq!(indicator_lr_10.slope, 0.0);
         assert_eq!(indicator_lr_10.intercept, 0.0);
         assert_eq!(indicator_lr_10.degree, 0.0);
@@ -272,12 +252,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_inputs_len_never_exceeds_period() {
-        let mut lr = LinearRegression::new(3);
-        for i in 0..10 {
+    fn test_fit_uses_latest_period() {
+        let mut lr = LinearRegression::new(5);
+        for i in 1..=100 {
             lr.update_raw(f64::from(i));
+            if i >= 5 {
+                assert_eq!(lr.value, f64::from(i));
+                assert_eq!(lr.slope, 1.0);
+                assert_eq!(lr.intercept, f64::from(i - 4));
+            }
         }
-        assert_eq!(lr.inputs.len(), lr.period);
     }
 
     #[rstest]
@@ -286,8 +270,8 @@ mod tests {
         for v in 1..=5 {
             lr.update_raw(f64::from(v));
         }
-        assert!(!lr.inputs.contains(&1.0));
-        assert_eq!(lr.inputs.front(), Some(&2.0));
+        assert_eq!(lr.intercept, 2.0);
+        assert_eq!(lr.value, 5.0);
     }
 
     #[rstest]
@@ -297,8 +281,9 @@ mod tests {
             lr.update_raw(f64::from(v));
         }
         lr.update_raw(99.0);
-        let expected = vec![1.0, 2.0, 3.0, 4.0, 99.0];
-        assert_eq!(lr.inputs.iter().copied().collect::<Vec<_>>(), expected);
+        assert_eq!(lr.slope, 19.8);
+        assert_eq!(lr.intercept, -17.8);
+        assert_eq!(lr.value, 61.400000000000006);
     }
 
     #[rstest]
@@ -308,10 +293,8 @@ mod tests {
         lr.update_raw(20.0);
         lr.update_raw(30.0);
         lr.update_raw(40.0);
-        assert_eq!(
-            lr.inputs.iter().copied().collect::<Vec<_>>(),
-            vec![30.0, 40.0]
-        );
+        assert_eq!(lr.intercept, 30.0);
+        assert_eq!(lr.value, 40.0);
     }
 
     #[rstest]
@@ -415,69 +398,43 @@ mod tests {
             lr.initialized,
             "indicator should initialize after exactly `period` samples"
         );
-        assert_eq!(
-            lr.inputs.len(),
-            period,
-            "internal window length must equal the configured period"
-        );
+        assert_eq!(lr.period, period);
     }
 
     #[rstest]
-    fn cached_constants_correct() {
-        let period = 10;
-        let lr = LinearRegression::new(period);
-
-        let n = period as f64;
-        let expected_x_sum = 0.5 * n * (n + 1.0);
-        let expected_x_mul_sum = expected_x_sum * 2.0f64.mul_add(n, 1.0) / 3.0;
-        let expected_divisor = n.mul_add(expected_x_mul_sum, -(expected_x_sum * expected_x_sum));
-
-        assert!((lr.x_sum - expected_x_sum).abs() < 1e-12, "x_sum mismatch");
-        assert!(
-            (lr.x_mul_sum - expected_x_mul_sum).abs() < 1e-12,
-            "x_mul_sum mismatch"
-        );
-        assert!(
-            (lr.divisor - expected_divisor).abs() < 1e-12,
-            "divisor mismatch"
-        );
+    fn checked_period_bounds() {
+        assert!(LinearRegression::new_checked(0).is_err());
+        assert!(LinearRegression::new_checked(1).is_err());
+        assert!(LinearRegression::new_checked(MAX_PERIOD + 1).is_err());
+        assert!(LinearRegression::new_checked(2).is_ok());
     }
 
     #[rstest]
-    fn cached_constants_immutable_through_updates() {
+    fn period_and_fit_after_updates() {
         let mut lr = LinearRegression::new(5);
-
-        let (x_sum, x_mul_sum, divisor) = (lr.x_sum, lr.x_mul_sum, lr.divisor);
-
-        for v in 0..20 {
-            lr.update_raw(f64::from(v));
+        for i in 0..20 {
+            lr.update_raw(f64::from(i));
         }
-
-        assert_eq!(lr.x_sum, x_sum, "x_sum must remain unchanged after updates");
-        assert_eq!(
-            lr.x_mul_sum, x_mul_sum,
-            "x_mul_sum must remain unchanged after updates"
-        );
-        assert_eq!(
-            lr.divisor, divisor,
-            "divisor must remain unchanged after updates"
-        );
+        assert_eq!(lr.period, 5);
+        assert_eq!(lr.slope, 1.0);
+        assert_eq!(lr.intercept, 15.0);
+        assert_eq!(lr.value, 19.0);
     }
 
     #[rstest]
-    fn cached_constants_immutable_after_reset() {
+    fn period_and_fit_after_reset() {
         let mut lr = LinearRegression::new(8);
-
-        let (x_sum, x_mul_sum, divisor) = (lr.x_sum, lr.x_mul_sum, lr.divisor);
-
-        for v in 0..8 {
-            lr.update_raw(f64::from(v));
+        for i in 0..20 {
+            lr.update_raw(f64::from(i));
         }
         lr.reset();
-
-        assert_eq!(lr.x_sum, x_sum, "x_sum must survive reset()");
-        assert_eq!(lr.x_mul_sum, x_mul_sum, "x_mul_sum must survive reset()");
-        assert_eq!(lr.divisor, divisor, "divisor must survive reset()");
+        for i in 0..8 {
+            lr.update_raw(f64::from(i) * 2.0);
+        }
+        assert_eq!(lr.period, 8);
+        assert_eq!(lr.slope, 2.0);
+        assert_eq!(lr.intercept, 0.0);
+        assert_eq!(lr.value, 14.0);
     }
 
     const EPS: f64 = 1e-12;
@@ -528,16 +485,12 @@ mod tests {
     }
 
     #[rstest(period, case(6), case(13))]
-    fn reset_clears_state_but_keeps_constants(period: usize) {
+    fn reset_clears_state_but_keeps_period(period: usize) {
         let mut lr = LinearRegression::new(period);
 
         for i in 1..=period {
             lr.update_raw(i as f64);
         }
-
-        let x_sum_before = lr.x_sum;
-        let x_mul_sum_before = lr.x_mul_sum;
-        let divisor_before = lr.divisor;
 
         lr.reset();
 
@@ -551,9 +504,7 @@ mod tests {
         assert!(lr.r2.abs() < EPS);
         assert!(lr.value.abs() < EPS);
 
-        assert_eq!(lr.x_sum, x_sum_before);
-        assert_eq!(lr.x_mul_sum, x_mul_sum_before);
-        assert_eq!(lr.divisor, divisor_before);
+        assert_eq!(lr.period, period);
     }
 
     #[rstest(period, case(5), case(31))]
@@ -568,7 +519,7 @@ mod tests {
 
         assert!(lr.initialized());
         assert!((lr.slope - A).abs() < EPS);
-        assert!((lr.intercept - B).abs() < EPS);
+        assert!((lr.intercept - (A + B)).abs() < EPS);
         assert!((lr.r2 - 1.0).abs() < EPS);
         assert!((lr.degree.to_radians().tan() - A).abs() < EPS);
     }
@@ -584,8 +535,9 @@ mod tests {
 
         lr.update_raw(-100.0);
         assert!(lr.slope < slope_first_window);
-        assert_eq!(lr.inputs.len(), P);
-        assert_eq!(lr.inputs.front(), Some(&2.0));
+        assert_eq!(lr.intercept, 23.0);
+        assert_eq!(lr.slope, -30.5);
+        assert_eq!(lr.value, -68.5);
     }
 
     #[rstest]
@@ -607,6 +559,44 @@ mod tests {
 
         assert!(!lr.initialized());
         assert!(!lr.has_inputs());
-        assert_eq!(lr.inputs.len(), 0);
+        assert_eq!(lr.value, 0.0);
+    }
+    #[rstest]
+    #[case(0.0)]
+    #[case(1e12)]
+    fn shifted_fit_matches_centered_oracle_after_eviction_and_reset(#[case] offset: f64) {
+        let mut lr = LinearRegression::new(3);
+        for _ in 0..2 {
+            lr.reset();
+            let values: Vec<f64> = (0..400).map(|i| offset + f64::from((i * 7) % 13)).collect();
+            for (i, &value) in values.iter().enumerate() {
+                lr.update_raw(value);
+                assert_eq!(lr.initialized, i >= 2);
+                if i < 2 {
+                    continue;
+                }
+                let window = &values[i - 2..=i];
+                let deviations = [window[0] - offset, window[1] - offset, window[2] - offset];
+                let mean = deviations.iter().sum::<f64>() / 3.0;
+                let slope = (deviations[2] - deviations[0]) / 2.0;
+                let intercept = offset + (mean - slope);
+                let endpoint = intercept + 2.0 * slope;
+                let sst = deviations
+                    .iter()
+                    .map(|value| (value - mean).powi(2))
+                    .sum::<f64>();
+                let r2 = 2.0 * slope * slope / sst;
+                assert!((lr.slope - slope).abs() < 1e-12);
+                assert!((lr.intercept - intercept).abs() < 1e-12);
+                assert!((lr.value - endpoint).abs() < 1e-12);
+                assert!((lr.degree - slope.atan().to_degrees()).abs() < 1e-12);
+                if value == 0.0 {
+                    assert!(lr.cfo.is_nan());
+                } else {
+                    assert!((lr.cfo - 100.0 * (endpoint - value) / value).abs() < 1e-12);
+                }
+                assert!((lr.r2 - r2).abs() < 1e-12);
+            }
+        }
     }
 }

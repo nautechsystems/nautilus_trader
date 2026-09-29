@@ -147,7 +147,7 @@ pub fn indicator_vwap() -> VolumeWeightedAveragePrice {
 #[fixture]
 pub fn indicator_wma_10() -> WeightedMovingAverage {
     let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-    WeightedMovingAverage::new(10, weights, Some(PriceType::Mid))
+    WeightedMovingAverage::with_weights(10, weights, Some(PriceType::Mid))
 }
 
 #[fixture]
@@ -197,13 +197,13 @@ pub fn vhf_10() -> VerticalHorizontalFilter {
 }
 
 #[fixture]
-pub fn kvo_345() -> KlingerVolumeOscillator {
-    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple))
+pub fn kvo_34() -> KlingerVolumeOscillator {
+    KlingerVolumeOscillator::new(3, 4, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn dm_10() -> DirectionalMovement {
-    DirectionalMovement::new(10, Some(MovingAverageType::Simple))
+    DirectionalMovement::new(10)
 }
 
 #[fixture]
@@ -244,16 +244,17 @@ pub fn cci_10() -> CommodityChannelIndex {
 #[fixture]
 pub fn macd_10() -> MovingAverageConvergenceDivergence {
     MovingAverageConvergenceDivergence::new(
-        10,
         8,
+        10,
+        Some(9),
         Some(MovingAverageType::Simple),
         Some(PriceType::Bid),
     )
 }
 
 #[fixture]
-pub fn obv_10() -> OnBalanceVolume {
-    OnBalanceVolume::new(10)
+pub fn obv() -> OnBalanceVolume {
+    OnBalanceVolume::new()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -261,13 +262,7 @@ pub fn obv_10() -> OnBalanceVolume {
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn vr_10() -> VolatilityRatio {
-    VolatilityRatio::new(
-        10,
-        10,
-        Some(MovingAverageType::Simple),
-        Some(false),
-        Some(10.0),
-    )
+    VolatilityRatio::new(10)
 }
 
 #[fixture]
@@ -285,6 +280,7 @@ pub fn kc_10() -> KeltnerChannel {
     KeltnerChannel::new(
         10,
         2.0,
+        None,
         Some(MovingAverageType::Simple),
         Some(MovingAverageType::Simple),
         Some(true),

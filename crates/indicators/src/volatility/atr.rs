@@ -15,11 +15,13 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+use nautilus_core::correctness::FAILED;
+use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 /// An indicator which calculates an Average True Range (ATR) across a rolling window.
@@ -73,12 +75,6 @@ impl Indicator for AverageTrueRange {
         self.initialized
     }
 
-    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn handle_trade(&mut self, _trade: &TradeTick) {}
-
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.high).into(), (&bar.low).into(), (&bar.close).into());
     }
@@ -95,6 +91,10 @@ impl Indicator for AverageTrueRange {
 
 impl AverageTrueRange {
     /// Creates a new [`AverageTrueRange`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is outside `1..=MAX_PERIOD`, or `value_floor` is negative or non-finite.
     #[must_use]
     pub fn new(
         period: usize,
@@ -102,35 +102,68 @@ impl AverageTrueRange {
         use_previous: Option<bool>,
         value_floor: Option<f64>,
     ) -> Self {
-        Self {
+        Self::new_checked(period, ma_type, use_previous, value_floor).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        value_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
+        );
+        let value_floor = value_floor.unwrap_or(0.0);
+        anyhow::ensure!(
+            value_floor.is_finite() && value_floor >= 0.0,
+            "value_floor must be finite and non-negative"
+        );
+        Ok(Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type: ma_type.unwrap_or(MovingAverageType::Wilder),
             use_previous: use_previous.unwrap_or(true),
-            value_floor: value_floor.unwrap_or(0.0),
+            value_floor,
             value: 0.0,
             count: 0,
             previous_close: 0.0,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Wilder), period),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        if self.use_previous {
-            if !self.has_inputs {
-                self.previous_close = close;
-            }
-            self.ma.update_raw(
-                f64::max(self.previous_close, high) - f64::min(low, self.previous_close),
-            );
-            self.previous_close = close;
+        if !high.is_finite()
+            || !low.is_finite()
+            || !close.is_finite()
+            || high < low
+            || close < low
+            || close > high
+        {
+            return;
+        }
+        let range = if self.use_previous && self.has_inputs {
+            f64::max(self.previous_close, high) - f64::min(low, self.previous_close)
         } else {
-            self.ma.update_raw(high - low);
+            high - low
+        };
+
+        if !range.is_finite() {
+            return;
+        }
+        self.ma.update_raw(range);
+
+        if self.use_previous {
+            self.previous_close = close;
         }
 
-        self.apply_floor();
         self.increment_count();
+
+        if self.initialized {
+            self.apply_floor();
+        }
     }
 
     fn apply_floor(&mut self) {
@@ -142,13 +175,13 @@ impl AverageTrueRange {
         }
     }
 
-    const fn increment_count(&mut self) {
+    fn increment_count(&mut self) {
         self.count += 1;
 
         if !self.initialized {
             self.has_inputs = true;
 
-            if self.count >= self.period {
+            if self.ma.initialized() {
                 self.initialized = true;
             }
         }
@@ -181,7 +214,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(None, "SimpleMovingAverage")]
+    #[case(None, "WilderMovingAverage")]
     #[case(Some(MovingAverageType::Simple), "SimpleMovingAverage")]
     #[case(Some(MovingAverageType::Exponential), "ExponentialMovingAverage")]
     #[case(
@@ -238,7 +271,8 @@ mod tests {
     fn test_value_with_one_input() {
         let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         atr.update_raw(1.00020, 1.0, 1.00010);
-        assert_approx_equal(atr.value, 0.0002);
+        assert_eq!(atr.value, 0.0);
+        assert!(!atr.initialized);
     }
 
     #[rstest]
@@ -247,7 +281,8 @@ mod tests {
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
-        assert_approx_equal(atr.value, 0.0002);
+        assert_eq!(atr.value, 0.0);
+        assert!(!atr.initialized);
     }
 
     #[rstest]
@@ -290,6 +325,50 @@ mod tests {
             floored_atr.update_raw(1.0, 1.0, 1.0);
         }
         assert_eq!(floored_atr.value, 5e-05);
+    }
+
+    #[rstest]
+    #[case(MovingAverageType::Simple, 3)]
+    #[case(MovingAverageType::Exponential, 3)]
+    #[case(MovingAverageType::DoubleExponential, 5)]
+    #[case(MovingAverageType::Wilder, 3)]
+    #[case(MovingAverageType::Hull, 4)]
+    fn test_selected_smoother_controls_readiness_and_floor(
+        #[case] ma_type: MovingAverageType,
+        #[case] first_ready: usize,
+    ) {
+        let mut indicator = AverageTrueRange::new(3, Some(ma_type), None, Some(3.0));
+        for count in 1..=10 {
+            indicator.update_raw(12.0, 10.0, 11.0);
+            assert_eq!(indicator.count, count);
+            assert_eq!(indicator.initialized, count >= first_ready);
+            assert_eq!(
+                indicator.value,
+                if count >= first_ready { 3.0 } else { 0.0 }
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_rejected_candle_does_not_change_the_next_true_range() {
+        let mut indicator = AverageTrueRange::new(2, None, None, None);
+        indicator.update_raw(12.0, 10.0, 11.0);
+
+        for (high, low, close) in [
+            (10.0, 12.0, 11.0),
+            (12.0, 10.0, 13.0),
+            (12.0, 10.0, f64::NAN),
+            (1e308, -1e308, 0.0),
+        ] {
+            indicator.update_raw(high, low, close);
+            assert_eq!(indicator.count, 1);
+            assert_eq!(indicator.value, 0.0);
+            assert!(!indicator.initialized);
+        }
+        indicator.update_raw(22.0, 20.0, 21.0);
+        assert_eq!(indicator.count, 2);
+        assert_eq!(indicator.value, 6.5);
+        assert!(indicator.initialized);
     }
 
     #[rstest]

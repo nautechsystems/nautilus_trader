@@ -91,6 +91,7 @@ pub mod book;
 pub mod indicator;
 pub mod momentum;
 pub mod ratio;
+mod support;
 pub mod testing;
 pub mod volatility;
 

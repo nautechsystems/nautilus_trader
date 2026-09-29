@@ -107,8 +107,9 @@ impl KeltnerPosition {
             kc: KeltnerChannel::new(
                 period,
                 k_multiplier,
+                None,
                 ma_type,
-                ma_type_atr,
+                ma_type_atr.or(Some(MovingAverageType::Simple)),
                 use_previous,
                 atr_floor,
             ),
@@ -178,8 +179,8 @@ mod tests {
         ];
 
         let close_values = [
-            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.05, 10.15, 10.25, 11.05,
-            11.45,
+            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.55, 11.1, 12.0, 13.0,
+            14.0,
         ];
 
         for i in 0..15 {
@@ -187,7 +188,7 @@ mod tests {
         }
 
         assert!(kp_10.initialized());
-        assert_approx_equal(kp_10.value, 0.471631205674);
+        assert_approx_equal(kp_10.value, 1.17533718690);
     }
 
     #[rstest]
@@ -229,6 +230,6 @@ mod tests {
         assert_eq!(kp.ma_type, MovingAverageType::Exponential);
         assert_eq!(kp.ma_type_atr, MovingAverageType::Simple);
         assert!(kp.initialized());
-        assert_approx_equal(kp.value, 0.358717256402);
+        assert_approx_equal(kp.value, 0.364862661420);
     }
 }

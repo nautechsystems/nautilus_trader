@@ -41,7 +41,9 @@ def test_adaptive_moving_average_inspection_properties() -> None:
         period_slow=30,
         price_type=PriceType.MID,
     )
-    indicator.update_raw(12.5)
+
+    for _ in range(11):
+        indicator.update_raw(12.5)
 
     assert indicator.period_efficiency_ratio == 10
     assert indicator.period_fast == 2
@@ -62,7 +64,9 @@ def test_weighted_moving_average_inspection_properties() -> None:
         weights=[0.2, 0.3, 0.5],
         price_type=PriceType.BID,
     )
-    indicator.update_raw(12.5)
+
+    for _ in range(3):
+        indicator.update_raw(12.5)
 
     assert indicator.price_type == PriceType.BID
     assert indicator.value == 12.5

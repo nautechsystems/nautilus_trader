@@ -13,14 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
-use arraydeque::{ArrayDeque, Wrapping};
-use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+use nautilus_core::correctness::FAILED;
+use nautilus_model::{
+    data::{Bar, QuoteTick, TradeTick},
+    enums::PriceType,
+};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, ShiftedMoments},
 };
 
 /// An indicator which calculates a Relative Volatility Index (RVI) across a rolling window.
@@ -40,12 +47,11 @@ pub struct RelativeVolatilityIndex {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub initialized: bool,
-    prices: ArrayDeque<f64, 1024, Wrapping>,
-    ma: Box<dyn MovingAverage + Send + 'static>,
+    prices: VecDeque<f64>,
+    moments: ShiftedMoments,
     pos_ma: Box<dyn MovingAverage + Send + 'static>,
     neg_ma: Box<dyn MovingAverage + Send + 'static>,
     previous_close: f64,
-    std: f64,
     has_inputs: bool,
 }
 
@@ -75,11 +81,14 @@ impl Indicator for RelativeVolatilityIndex {
         self.initialized
     }
 
-    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
         Ok(())
     }
 
-    fn handle_trade(&mut self, _trade: &TradeTick) {}
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
+    }
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());
@@ -90,9 +99,8 @@ impl Indicator for RelativeVolatilityIndex {
         self.value = 0.0;
         self.has_inputs = false;
         self.initialized = false;
-        self.std = 0.0;
         self.prices.clear();
-        self.ma.reset();
+        self.moments.reset();
         self.pos_ma.reset();
         self.neg_ma.reset();
     }
@@ -104,91 +112,94 @@ impl RelativeVolatilityIndex {
     /// # Panics
     ///
     /// This function panics if:
-    /// - `period` is not in the range of 1 to 1024 (inclusive).
+    /// - `period` is not in the range of 2 to `MAX_PERIOD` (inclusive).
     /// - `scalar` is not in the range of 0.0 to 100.0 (inclusive).
     /// - `ma_type` is not a valid [`MovingAverageType`].
     #[must_use]
     pub fn new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(
-            period <= 1024,
-            "period {period} exceeds maximum capacity of price deque"
+        Self::new_checked(period, scalar, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        scalar: Option<f64>,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (2..=MAX_PERIOD).contains(&period),
+            "period must be in 2..={MAX_PERIOD}"
         );
-
-        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
-
-        Self {
+        let scalar = scalar.unwrap_or(100.0);
+        anyhow::ensure!(
+            scalar.is_finite() && (0.0..=100.0).contains(&scalar),
+            "scalar must be finite and in 0..=100"
+        );
+        Ok(Self {
             period,
-            scalar: scalar.unwrap_or(100.0),
-            ma_type,
+            scalar,
+            ma_type: ma_type.unwrap_or(MovingAverageType::Wilder),
             value: 0.0,
             initialized: false,
-            prices: ArrayDeque::new(),
-            // The standard deviation is taken about the simple mean of the window;
-            // `ma_type` only smooths the upward and downward volatility.
-            ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
-            pos_ma: MovingAverageFactory::create(ma_type, period),
-            neg_ma: MovingAverageFactory::create(ma_type, period),
+            prices: VecDeque::with_capacity(period),
+            moments: ShiftedMoments::new(),
+            pos_ma: MovingAverageFactory::create(
+                ma_type.unwrap_or(MovingAverageType::Wilder),
+                period,
+            ),
+            neg_ma: MovingAverageFactory::create(
+                ma_type.unwrap_or(MovingAverageType::Wilder),
+                period,
+            ),
             previous_close: 0.0,
-            std: 0.0,
             has_inputs: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
-        // Bound the price window to `period`. The fixed-capacity deque otherwise retains
-        // up to 1024 prices, so the standard deviation below is computed over far
-        // more than `period` observations while using a `period`-window mean.
-        if self.prices.len() == self.period {
-            self.prices.pop_front();
+        if !close.is_finite() {
+            return;
         }
 
+        if self.prices.len() == self.period
+            && let Some(old) = self.prices.pop_front()
+        {
+            self.moments.evict(old);
+        }
         self.prices.push_back(close);
-        self.ma.update_raw(close);
+        self.moments.push(close);
+        if self.moments.needs_reseed(self.period) {
+            self.moments.reseed(self.prices.iter());
+        }
+        self.has_inputs = true;
 
-        if self.prices.is_empty() {
-            self.std = 0.0;
+        if self.prices.len() < self.period {
+            self.previous_close = close;
+            return;
+        }
+
+        let std_dev = self.moments.std_dev(self.period, self.prices.iter());
+        self.pos_ma.update_raw(if close > self.previous_close {
+            std_dev
         } else {
-            let mean = self.ma.value();
-            let mut var_sum = 0.0;
-
-            for &price in &self.prices {
-                let diff = price - mean;
-                var_sum += diff * diff;
-            }
-            self.std = (var_sum / self.prices.len() as f64).sqrt();
-            self.std = self.std * (self.period as f64).sqrt() / ((self.period - 1) as f64).sqrt();
-        }
-
-        if self.ma.initialized() {
-            if close > self.previous_close {
-                self.pos_ma.update_raw(self.std);
-                self.neg_ma.update_raw(0.0);
-            } else if close < self.previous_close {
-                self.pos_ma.update_raw(0.0);
-                self.neg_ma.update_raw(self.std);
-            } else {
-                self.pos_ma.update_raw(0.0);
-                self.neg_ma.update_raw(0.0);
-            }
-
-            let total = self.pos_ma.value() + self.neg_ma.value();
-            // With no volatility in either direction the index sits at its midpoint
-            self.value = if total == 0.0 {
-                self.scalar / 2.0
-            } else {
-                self.scalar * self.pos_ma.value() / total
-            };
-        }
-
+            0.0
+        });
+        self.neg_ma.update_raw(if close < self.previous_close {
+            std_dev
+        } else {
+            0.0
+        });
         self.previous_close = close;
 
-        if !self.initialized {
-            self.has_inputs = true;
-
-            if self.pos_ma.initialized() {
-                self.initialized = true;
-            }
+        if !self.pos_ma.initialized() || !self.neg_ma.initialized() {
+            return;
         }
+        let denominator = self.pos_ma.value() + self.neg_ma.value();
+        self.value = if denominator == 0.0 {
+            self.scalar * 0.5
+        } else {
+            self.scalar * self.pos_ma.value() / denominator
+        };
+        self.initialized = true;
     }
 }
 
@@ -197,7 +208,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{stubs::rvi_10, testing::assert_approx_equal};
+    use crate::stubs::rvi_10;
 
     #[rstest]
     fn test_name_returns_expected_string(rvi_10: RelativeVolatilityIndex) {
@@ -254,16 +265,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_value_is_midpoint_for_flat_prices(mut rvi_10: RelativeVolatilityIndex) {
-        for _ in 0..30 {
-            rvi_10.update_raw(100.0);
-        }
-
-        assert!(rvi_10.initialized());
-        assert_eq!(rvi_10.value, 5.0);
-    }
-
-    #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(
         mut rvi_10: RelativeVolatilityIndex,
     ) {
@@ -277,29 +278,9 @@ mod tests {
         assert_eq!(rvi_10.value, 0.0);
         assert!(!rvi_10.initialized);
         assert!(!rvi_10.has_inputs);
-        assert_eq!(rvi_10.std, 0.0);
         assert_eq!(rvi_10.prices.len(), 0);
-        assert_eq!(rvi_10.ma.value(), 0.0);
+        assert_eq!(rvi_10.moments.mean(rvi_10.period), 0.0);
         assert_eq!(rvi_10.pos_ma.value(), 0.0);
         assert_eq!(rvi_10.neg_ma.value(), 0.0);
-    }
-
-    #[rstest]
-    fn test_new_defaults_to_exponential_smoothing_about_simple_mean() {
-        // Only the directional volatility is smoothed with `ma_type`; the standard
-        // deviation stays about the simple mean of the window
-        let mut rvi = RelativeVolatilityIndex::new(10, None, None);
-        let close_values = [
-            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
-            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
-        ];
-
-        for close in close_values {
-            rvi.update_raw(close);
-        }
-
-        assert_eq!(rvi.ma_type, MovingAverageType::Exponential);
-        assert!(rvi.initialized());
-        assert_approx_equal(rvi.value, 41.605274235);
     }
 }

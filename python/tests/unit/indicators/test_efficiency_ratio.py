@@ -55,21 +55,21 @@ def test_er(er: EfficiencyRatio) -> None:
     assert er.name == "EfficiencyRatio"
 
 
-@pytest.mark.parametrize("period", [0, 1])
+@pytest.mark.parametrize("period", [0])
 def test_invalid_period_raises_value_error(period: int) -> None:
     """
     Test invalid period raises value error.
     """
-    with pytest.raises(ValueError, match="`period` must be at least 2"):
+    with pytest.raises(ValueError, match="`period` must be positive"):
         EfficiencyRatio(period)
 
 
-@pytest.mark.parametrize("period", [0, 1])
+@pytest.mark.parametrize("period", [0])
 def test_adaptive_moving_average_rejects_invalid_er_period(period: int) -> None:
     """
     Test adaptive moving average rejects invalid er period.
     """
-    with pytest.raises(ValueError, match="`period` must be at least 2"):
+    with pytest.raises(ValueError, match="`period` must be positive"):
         AdaptiveMovingAverage(period, 2, 30)
 
 

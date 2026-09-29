@@ -15,13 +15,18 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::{Indicator, MovingAverage};
+use crate::{
+    indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, ScaledSum, blend},
+};
 
+/// Exponential moving average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -40,6 +45,7 @@ pub struct ExponentialMovingAverage {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
+    seed_sum: ScaledSum,
 }
 
 impl Display for ExponentialMovingAverage {
@@ -79,6 +85,7 @@ impl Indicator for ExponentialMovingAverage {
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
+        self.seed_sum.reset();
     }
 }
 
@@ -87,14 +94,27 @@ impl ExponentialMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not a positive integer (> 0).
+    /// Panics if `period` is zero or exceeds 16,777,216.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        assert!(
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    /// Creates an exponential moving average with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds 16,777,216.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        check_predicate_true(
             period > 0,
-            "ExponentialMovingAverage::new → `period` must be positive (> 0); got {period}"
-        );
-        Self {
+            &format!("ExponentialMovingAverage: period must be > 0 (received {period})"),
+        )?;
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("period cannot exceed {MAX_PERIOD}"),
+        )?;
+        Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             alpha: 2.0 / (period as f64 + 1.0),
@@ -102,7 +122,8 @@ impl ExponentialMovingAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-        }
+            seed_sum: ScaledSum::new(),
+        })
     }
 }
 
@@ -116,24 +137,30 @@ impl MovingAverage for ExponentialMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs {
-            self.has_inputs = true;
-            self.value = value;
-            self.count = 1;
-
-            if self.period == 1 {
-                self.initialized = true;
-            }
+        if !value.is_finite() {
             return;
         }
 
-        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
+        self.has_inputs = true;
         self.count += 1;
-
-        // Initialization logic
-        if !self.initialized && self.count >= self.period {
-            self.initialized = true;
+        if self.count < self.period {
+            self.seed_sum.add(value);
+            return;
         }
+
+        if self.count == self.period {
+            self.seed_sum.add(value);
+            self.value = self.seed_sum.mean(self.period);
+            self.initialized = true;
+            return;
+        }
+
+        let next = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
+        self.value = if next.is_finite() {
+            next
+        } else {
+            blend(self.value, value, self.alpha)
+        };
     }
 }
 
@@ -145,12 +172,21 @@ mod tests {
     };
     use rstest::rstest;
 
+    use super::MAX_PERIOD;
     use crate::{
         average::ema::ExponentialMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
         testing::assert_approx_equal,
     };
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_PERIOD + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_period(#[case] period: usize) {
+        assert!(ExponentialMovingAverage::new_checked(period, None).is_err());
+    }
 
     #[rstest]
     fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {
@@ -168,27 +204,21 @@ mod tests {
         let mut ema = indicator_ema_10;
         ema.update_raw(1.0);
         assert_eq!(ema.count, 1);
-        assert_eq!(ema.value, 1.0);
+        assert_eq!(ema.value, 0.0);
+        assert!(!ema.initialized());
     }
 
     #[rstest]
     fn test_ema_update_raw(indicator_ema_10: ExponentialMovingAverage) {
         let mut ema = indicator_ema_10;
-        ema.update_raw(1.0);
-        ema.update_raw(2.0);
-        ema.update_raw(3.0);
-        ema.update_raw(4.0);
-        ema.update_raw(5.0);
-        ema.update_raw(6.0);
-        ema.update_raw(7.0);
-        ema.update_raw(8.0);
-        ema.update_raw(9.0);
-        ema.update_raw(10.0);
+        for value in 1..=10 {
+            ema.update_raw(f64::from(value));
+        }
 
         assert!(ema.has_inputs());
         assert!(ema.initialized());
         assert_eq!(ema.count, 10);
-        assert_approx_equal(ema.value, 6.23936848012);
+        assert_eq!(ema.value, 5.5);
     }
 
     #[rstest]
@@ -209,27 +239,34 @@ mod tests {
     ) {
         let mut ema = indicator_ema_10;
         ema.handle_quote(&stub_quote).unwrap();
+
         assert!(ema.has_inputs());
-        assert_eq!(ema.value, 1501.0);
+        assert_eq!(ema.count, 1);
+        assert_eq!(ema.value, 0.0);
+        assert!(!ema.initialized());
     }
 
     #[rstest]
     fn test_handle_quote_tick_multi(mut indicator_ema_10: ExponentialMovingAverage) {
         let tick1 = stub_quote("1500.0", "1502.0");
         let tick2 = stub_quote("1502.0", "1504.0");
-
         indicator_ema_10.handle_quote(&tick1).unwrap();
         indicator_ema_10.handle_quote(&tick2).unwrap();
+
         assert_eq!(indicator_ema_10.count, 2);
-        assert_approx_equal(indicator_ema_10.value, 1501.36363636);
+        assert_eq!(indicator_ema_10.value, 0.0);
+        assert!(!indicator_ema_10.initialized());
     }
 
     #[rstest]
     fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage, stub_trade: TradeTick) {
         let mut ema = indicator_ema_10;
         ema.handle_trade(&stub_trade);
+
         assert!(ema.has_inputs());
-        assert_eq!(ema.value, 1500.0);
+        assert_eq!(ema.count, 1);
+        assert_eq!(ema.value, 0.0);
+        assert!(!ema.initialized());
     }
 
     #[rstest]
@@ -238,9 +275,11 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_ema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+
         assert!(indicator_ema_10.has_inputs);
+        assert_eq!(indicator_ema_10.count, 1);
+        assert_eq!(indicator_ema_10.value, 0.0);
         assert!(!indicator_ema_10.initialized);
-        assert_eq!(indicator_ema_10.value, 1522.0);
     }
 
     #[rstest]
@@ -273,22 +312,20 @@ mod tests {
     #[rstest]
     fn test_nan_poisoning_and_reset_recovery() {
         let mut ema = ExponentialMovingAverage::new(4, None);
-        for x in 0..3 {
-            ema.update_raw(f64::from(x));
-            assert!(ema.value().is_finite());
+        for value in [1.0, 2.0, 3.0, 4.0] {
+            ema.update_raw(value);
         }
+        let before = (ema.value(), ema.count());
 
         ema.update_raw(f64::NAN);
-        assert!(ema.value().is_nan());
+        ema.update_raw(f64::INFINITY);
 
-        ema.update_raw(123.456);
-        assert!(ema.value().is_nan());
-
+        assert_eq!((ema.value(), ema.count()), before);
+        ema.update_raw(5.0);
+        assert!(ema.value().is_finite());
         ema.reset();
         assert!(!ema.has_inputs());
-        ema.update_raw(7.0);
-        assert_eq!(ema.value(), 7.0);
-        assert!(ema.value().is_finite());
+        assert_eq!(ema.value(), 0.0);
     }
 
     #[rstest]

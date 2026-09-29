@@ -13,18 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, is_valid_hlc, typical_price},
 };
 
-const MAX_PERIOD: usize = 1024;
-
+/// Commodity channel index.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -44,7 +47,7 @@ pub struct CommodityChannelIndex {
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     mad: f64,
-    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    prices: VecDeque<f64>,
 }
 
 impl Display for CommodityChannelIndex {
@@ -89,39 +92,59 @@ impl CommodityChannelIndex {
     /// - If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(period > 0, "CommodityChannelIndex: period must be > 0");
-        assert!(
-            period <= MAX_PERIOD,
-            "CommodityChannelIndex: period exceeds MAX_PERIOD"
-        );
+        Self::new_checked(period, scalar, ma_type).expect(FAILED)
+    }
 
-        Self {
+    pub(crate) fn new_checked(
+        period: usize,
+        scalar: f64,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
+        );
+        anyhow::ensure!(
+            scalar.is_finite() && scalar > 0.0,
+            "scalar must be finite and positive"
+        );
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Simple);
+        Ok(Self {
             period,
             scalar,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type,
             value: 0.0,
-            prices: ArrayDeque::new(),
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            prices: VecDeque::with_capacity(period),
+            ma: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
             mad: 0.0,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        let typical_price = (high + low + close) / 3.0;
+        if !is_valid_hlc(high, low, close) {
+            return;
+        }
+        let typical_price = typical_price(high, low, close);
 
         if self.prices.len() == self.period {
             let _ = self.prices.pop_front();
         }
-        let _ = self.prices.push_back(typical_price);
+        self.prices.push_back(typical_price);
 
         self.ma.update_raw(typical_price);
 
         self.mad = fast_mad_with_mean(self.prices.iter().copied(), self.ma.value());
 
-        if self.ma.initialized() && self.mad != 0.0 {
-            self.value = (typical_price - self.ma.value()) / (self.scalar * self.mad);
+        if self.ma.initialized() {
+            // A zero mean absolute deviation (flat window) emits 0 by the
+            // standard convention instead of holding a stale value
+            if self.mad == 0.0 {
+                self.value = 0.0;
+            } else {
+                self.value = (typical_price - self.ma.value()) / (self.scalar * self.mad);
+            }
         }
 
         if !self.initialized {

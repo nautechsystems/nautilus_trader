@@ -33,8 +33,8 @@ impl DoubleExponentialMovingAverage {
     /// lag than the normal Exponential Moving Average (EMA)
     #[new]
     #[pyo3(signature = (period, price_type=None))]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self::new(period, price_type)
+    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+        Self::new_checked(period, price_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

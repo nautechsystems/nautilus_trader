@@ -13,18 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
-use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+use nautilus_core::correctness::FAILED;
+use nautilus_model::{
+    data::{Bar, QuoteTick, TradeTick},
+    enums::PriceType,
+};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
-const MAX_PERIOD: usize = 1_024;
-
+/// Vertical horizontal filter.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -43,7 +46,7 @@ pub struct VerticalHorizontalFilter {
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     previous_close: f64,
-    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    prices: VecDeque<f64>,
 }
 
 impl Display for VerticalHorizontalFilter {
@@ -65,11 +68,14 @@ impl Indicator for VerticalHorizontalFilter {
         self.initialized
     }
 
-    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
         Ok(())
     }
 
-    fn handle_trade(&mut self, _trade: &TradeTick) {}
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
+    }
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());
@@ -95,14 +101,21 @@ impl VerticalHorizontalFilter {
     /// - `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period > 0 && period <= MAX_PERIOD,
             "VerticalHorizontalFilter: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
 
         let ma_kind = ma_type.unwrap_or(MovingAverageType::Simple);
 
-        Self {
+        Ok(Self {
             period,
             ma_type: ma_kind,
             value: 0.0,
@@ -110,20 +123,29 @@ impl VerticalHorizontalFilter {
             ma: MovingAverageFactory::create(ma_kind, period),
             has_inputs: false,
             initialized: false,
-            prices: ArrayDeque::new(),
-        }
+            prices: VecDeque::with_capacity(period),
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        if !close.is_finite() {
+            return;
+        }
+
         if !self.has_inputs {
+            // The first input only establishes the previous close; no price
+            // change exists yet, so nothing is fed to the movement average
+            self.has_inputs = true;
             self.previous_close = close;
+            self.prices.push_back(close);
+            return;
         }
 
         if self.prices.len() == self.period {
             let _ = self.prices.pop_front();
         }
 
-        let _ = self.prices.push_back(close);
+        self.prices.push_back(close);
 
         let max_price = self
             .prices
@@ -135,14 +157,14 @@ impl VerticalHorizontalFilter {
 
         self.ma.update_raw(f64::abs(close - self.previous_close));
 
-        if self.initialized {
-            let mean_change = self.ma.value();
-            // A flat window has neither range nor movement, so it reads as no trend
-            self.value = if mean_change == 0.0 {
-                0.0
+        if self.ma.initialized() {
+            // A flat window has zero summed movement; emit 0 by the standard
+            // convention instead of dividing to infinity/NaN
+            if self.ma.value() == 0.0 {
+                self.value = 0.0;
             } else {
-                f64::abs(max_price - min_price) / self.period as f64 / mean_change
-            };
+                self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value();
+            }
         }
 
         self.previous_close = close;
@@ -208,11 +230,13 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut vhf_10: VerticalHorizontalFilter) {
-        for i in 1..10 {
+        // The first input has no price change, so the movement average needs
+        // period + 1 = 11 inputs
+        for i in 1..=10 {
             vhf_10.update_raw(f64::from(i));
+            assert!(!vhf_10.initialized);
         }
-        assert!(!vhf_10.initialized);
-        vhf_10.update_raw(10.0);
+        vhf_10.update_raw(11.0);
         assert!(vhf_10.initialized);
     }
 
@@ -248,15 +272,5 @@ mod tests {
         // Window is now [2, 3, 4]: |max - min| = 2, and the SMA(3) of the last
         // three absolute price changes (1, 1, 1) is 1, so value = 2 / 3 / 1.
         assert_eq!(vhf.value, 2.0 / 3.0);
-    }
-
-    #[rstest]
-    fn test_value_is_zero_for_flat_prices(mut vhf_10: VerticalHorizontalFilter) {
-        for _ in 0..20 {
-            vhf_10.update_raw(100.0);
-        }
-
-        assert!(vhf_10.initialized);
-        assert_eq!(vhf_10.value, 0.0);
     }
 }

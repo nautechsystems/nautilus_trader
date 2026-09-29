@@ -126,7 +126,6 @@ mod tests {
         indicator::Indicator,
         momentum::psl::PsychologicalLine,
         stubs::{bar_ethusdt_binance_minute_bid, psl_10},
-        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -149,7 +148,8 @@ mod tests {
         psl_10.update_raw(1.0);
         psl_10.update_raw(2.0);
         psl_10.update_raw(3.0);
-        assert_approx_equal(psl_10.value, 66.6666666667);
+        assert_eq!(psl_10.value, 0.0);
+        assert!(!psl_10.initialized());
     }
 
     #[rstest]

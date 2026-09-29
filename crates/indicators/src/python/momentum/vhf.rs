@@ -25,16 +25,21 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VerticalHorizontalFilter {
-    /// Creates a new `VerticalHorizontalFilter` instance.
+    /// Vertical horizontal filter.
     #[new]
     #[pyo3(signature = (period, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, ma_type)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new_checked(period, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
         format!("VerticalHorizontalFilter({})", self.period)
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
     }
 
     #[getter]

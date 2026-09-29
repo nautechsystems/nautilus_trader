@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -24,23 +25,34 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KlingerVolumeOscillator {
-    /// Creates a new `KlingerVolumeOscillator` instance.
+    /// Stephen J. Klinger's Volume Oscillator: a fast/slow moving-average
+    /// difference over the per-bar "volume force".
+    ///
+    /// ```text
+    /// dm_t   = high_t + low_t + close_t                 (the daily measurement)
+    /// trend  = sign(dm_t - dm_{t-1}), carried over when equal
+    /// cm_t   = cm_{t-1} + dm_t        while the trend holds
+    /// cm_t   = dm_{t-1} + dm_t        when the trend flips
+    /// vf_t   = volume_t * |2 * (dm_t / cm_t - 1)| * trend * 100
+    /// KVO_t  = MA(vf, fast) - MA(vf, slow)
+    /// ```
+    ///
+    /// Klinger's textbook configuration is `fast = 34, slow = 55` with exponential
+    /// averages, which is the default `ma_type`.
     #[new]
-    #[pyo3(signature = (fast_period, slow_period, signal_period, ma_type=None))]
-    #[must_use]
+    #[pyo3(signature = (fast_period, slow_period, ma_type=None))]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
-        signal_period: usize,
         ma_type: Option<MovingAverageType>,
-    ) -> Self {
-        Self::new(fast_period, slow_period, signal_period, ma_type)
+    ) -> PyResult<Self> {
+        Self::new_checked(fast_period, slow_period, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "KlingerVolumeOscillator({},{},{},{})",
-            self.fast_period, self.slow_period, self.signal_period, self.ma_type
+            "KlingerVolumeOscillator({},{},{})",
+            self.fast_period, self.slow_period, self.ma_type
         )
     }
 
@@ -60,12 +72,6 @@ impl KlingerVolumeOscillator {
     #[pyo3(name = "slow_period")]
     const fn py_slow_period(&self) -> usize {
         self.slow_period
-    }
-
-    #[getter]
-    #[pyo3(name = "signal_period")]
-    const fn py_signal_period(&self) -> usize {
-        self.signal_period
     }
 
     #[getter]

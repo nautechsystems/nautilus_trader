@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -21,22 +22,37 @@ use crate::{indicator::Indicator, momentum::ichimoku::IchimokuCloud, python::flo
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IchimokuCloud {
-    /// Creates a new `IchimokuCloud` instance.
+    /// Ichimoku Kinko Hyo: the five-line cloud chart.
     ///
-    /// The indicator becomes `initialized` after `senkou_period` bars,
-    /// at which point `tenkan_sen` and `kijun_sen` are valid. The displaced
-    /// outputs (`senkou_span_a`, `senkou_span_b`, `chikou_span`) require an
-    /// additional `displacement` bars before they become non-zero.
+    /// ```text
+    /// tenkan_sen    = midpoint(high, low over tenkan_period)
+    /// kijun_sen     = midpoint(high, low over kijun_period)
+    /// senkou_span_a = (tenkan_sen + kijun_sen) / 2      as computed `displacement - 1` bars ago
+    /// senkou_span_b = midpoint(high, low over senkou_period) as computed `displacement - 1` bars ago
+    /// chikou_span   = close from `displacement - 1` bars ago
+    /// ```
+    ///
+    /// The two Senkou spans form the Kumo (cloud). Charts draw them `displacement`
+    /// bars ahead and the Chikou span `displacement` bars behind; streaming in
+    /// chronological order, the values visible at bar `n` are the ones buffered
+    /// `displacement` updates ago, that is bar `n - displacement + 1`.
+    ///
+    /// Each line becomes available at its own bar: `tenkan_sen` after `tenkan_period`
+    /// bars, `kijun_sen` after `kijun_period`, `chikou_span` after `displacement`,
+    /// `senkou_span_a` after `kijun_period + displacement - 1`, and `senkou_span_b`
+    /// after `senkou_period + displacement - 1` (77 bars at the classic
+    /// `(9, 26, 52, 26)`). The matching `has_*` flag reports whether each field
+    /// holds a value, and `initialized` gates on all five.
     #[new]
     #[pyo3(signature = (tenkan_period=9, kijun_period=26, senkou_period=52, displacement=26))]
-    #[must_use]
-    pub fn py_new(
+    fn py_new(
         tenkan_period: usize,
         kijun_period: usize,
         senkou_period: usize,
         displacement: usize,
-    ) -> Self {
-        Self::new(tenkan_period, kijun_period, senkou_period, displacement)
+    ) -> PyResult<Self> {
+        Self::new_checked(tenkan_period, kijun_period, senkou_period, displacement)
+            .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -110,12 +126,48 @@ impl IchimokuCloud {
     }
 
     #[getter]
+    #[pyo3(name = "has_tenkan")]
+    const fn py_has_tenkan(&self) -> bool {
+        self.has_tenkan
+    }
+
+    #[getter]
+    #[pyo3(name = "has_kijun")]
+    const fn py_has_kijun(&self) -> bool {
+        self.has_kijun
+    }
+
+    #[getter]
+    #[pyo3(name = "has_senkou_a")]
+    const fn py_has_senkou_a(&self) -> bool {
+        self.has_senkou_a
+    }
+
+    #[getter]
+    #[pyo3(name = "has_senkou_b")]
+    const fn py_has_senkou_b(&self) -> bool {
+        self.has_senkou_b
+    }
+
+    #[getter]
+    #[pyo3(name = "has_chikou")]
+    const fn py_has_chikou(&self) -> bool {
+        self.has_chikou
+    }
+
+    #[getter]
+    #[pyo3(name = "count")]
+    const fn py_count(&self) -> usize {
+        self.count
+    }
+
+    #[getter]
     #[pyo3(name = "initialized")]
     const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
-    /// Updates the indicator with OHLC values.
+    /// Updates the indicator with the given high, low and close.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
         self.update_raw(high, low, close);

@@ -25,12 +25,11 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ChandeMomentumOscillator {
-    /// Creates a new `ChandeMomentumOscillator` instance.
+    /// Chande momentum oscillator.
     #[new]
     #[pyo3(signature = (period, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, ma_type)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new_checked(period, ma_type).map_err(to_pyvalue_err)
     }
 
     #[getter]

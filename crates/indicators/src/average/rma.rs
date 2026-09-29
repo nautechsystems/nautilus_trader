@@ -15,13 +15,18 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::{Indicator, MovingAverage};
+use crate::{
+    indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, ScaledSum, blend},
+};
 
+/// Wilder moving average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -40,6 +45,7 @@ pub struct WilderMovingAverage {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
+    seed_sum: ScaledSum,
 }
 
 impl Display for WilderMovingAverage {
@@ -78,6 +84,7 @@ impl Indicator for WilderMovingAverage {
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
+        self.seed_sum.reset();
     }
 }
 
@@ -86,17 +93,27 @@ impl WilderMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is zero or exceeds 16,777,216.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        // The Wilder Moving Average is The Wilder's Moving Average is simply
-        // an Exponential Moving Average (EMA) with a modified alpha.
-        // alpha = 1 / period
-        assert!(
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    /// Creates a Wilder moving average with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds 16,777,216.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        check_predicate_true(
             period > 0,
-            "WilderMovingAverage: period must be > 0 (received {period})"
-        );
-        Self {
+            &format!("WilderMovingAverage: period must be > 0 (received {period})"),
+        )?;
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("period cannot exceed {MAX_PERIOD}"),
+        )?;
+        Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             alpha: 1.0 / period as f64,
@@ -104,7 +121,8 @@ impl WilderMovingAverage {
             count: 0,
             initialized: false,
             has_inputs: false,
-        }
+            seed_sum: ScaledSum::new(),
+        })
     }
 }
 
@@ -112,24 +130,36 @@ impl MovingAverage for WilderMovingAverage {
     fn value(&self) -> f64 {
         self.value
     }
+
     fn count(&self) -> usize {
         self.count
     }
 
     fn update_raw(&mut self, price: f64) {
-        if !self.has_inputs {
-            self.has_inputs = true;
-            self.value = price;
-            self.count = 1;
-            self.initialized = self.count >= self.period;
+        if !price.is_finite() {
             return;
         }
 
-        self.value = self.alpha.mul_add(price, (1.0 - self.alpha) * self.value);
+        self.has_inputs = true;
         self.count += 1;
-        if !self.initialized && self.count >= self.period {
-            self.initialized = true;
+        if self.count < self.period {
+            self.seed_sum.add(price);
+            return;
         }
+
+        if self.count == self.period {
+            self.seed_sum.add(price);
+            self.value = self.seed_sum.mean(self.period);
+            self.initialized = true;
+            return;
+        }
+
+        let next = (self.value * (self.period as f64 - 1.0) + price) / self.period as f64;
+        self.value = if next.is_finite() {
+            next
+        } else {
+            blend(self.value, price, self.alpha)
+        };
     }
 }
 
@@ -141,12 +171,20 @@ mod tests {
     };
     use rstest::rstest;
 
+    use super::MAX_PERIOD;
     use crate::{
         average::rma::WilderMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
-        testing::assert_approx_equal,
     };
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_PERIOD + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_period(#[case] period: usize) {
+        assert!(WilderMovingAverage::new_checked(period, None).is_err());
+    }
 
     #[rstest]
     fn test_rma_initialized(indicator_rma_10: WilderMovingAverage) {
@@ -170,27 +208,21 @@ mod tests {
         let mut rma = indicator_rma_10;
         rma.update_raw(1.0);
         assert_eq!(rma.count, 1);
-        assert_eq!(rma.value, 1.0);
+        assert_eq!(rma.value, 0.0);
+        assert!(!rma.initialized());
     }
 
     #[rstest]
     fn test_rma_update_raw(indicator_rma_10: WilderMovingAverage) {
         let mut rma = indicator_rma_10;
-        rma.update_raw(1.0);
-        rma.update_raw(2.0);
-        rma.update_raw(3.0);
-        rma.update_raw(4.0);
-        rma.update_raw(5.0);
-        rma.update_raw(6.0);
-        rma.update_raw(7.0);
-        rma.update_raw(8.0);
-        rma.update_raw(9.0);
-        rma.update_raw(10.0);
+        for value in 1..=10 {
+            rma.update_raw(f64::from(value));
+        }
 
         assert!(rma.has_inputs());
         assert!(rma.initialized());
         assert_eq!(rma.count, 10);
-        assert_approx_equal(rma.value, 4.486_784_401);
+        assert_eq!(rma.value, 5.5);
     }
 
     #[rstest]
@@ -208,27 +240,34 @@ mod tests {
     fn test_handle_quote_tick_single(indicator_rma_10: WilderMovingAverage, stub_quote: QuoteTick) {
         let mut rma = indicator_rma_10;
         rma.handle_quote(&stub_quote).unwrap();
+
         assert!(rma.has_inputs());
-        assert_eq!(rma.value, 1501.0);
+        assert_eq!(rma.count, 1);
+        assert_eq!(rma.value, 0.0);
+        assert!(!rma.initialized());
     }
 
     #[rstest]
     fn test_handle_quote_tick_multi(mut indicator_rma_10: WilderMovingAverage) {
         let tick1 = stub_quote("1500.0", "1502.0");
         let tick2 = stub_quote("1502.0", "1504.0");
-
         indicator_rma_10.handle_quote(&tick1).unwrap();
         indicator_rma_10.handle_quote(&tick2).unwrap();
+
         assert_eq!(indicator_rma_10.count, 2);
-        assert_eq!(indicator_rma_10.value, 1_501.2);
+        assert_eq!(indicator_rma_10.value, 0.0);
+        assert!(!indicator_rma_10.initialized());
     }
 
     #[rstest]
     fn test_handle_trade_tick(indicator_rma_10: WilderMovingAverage, stub_trade: TradeTick) {
         let mut rma = indicator_rma_10;
         rma.handle_trade(&stub_trade);
+
         assert!(rma.has_inputs());
-        assert_eq!(rma.value, 1500.0);
+        assert_eq!(rma.count, 1);
+        assert_eq!(rma.value, 0.0);
+        assert!(!rma.initialized());
     }
 
     #[rstest]
@@ -237,9 +276,11 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_rma_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+
         assert!(indicator_rma_10.has_inputs);
+        assert_eq!(indicator_rma_10.count, 1);
+        assert_eq!(indicator_rma_10.value, 0.0);
         assert!(!indicator_rma_10.initialized);
-        assert_eq!(indicator_rma_10.value, 1522.0);
     }
 
     #[rstest]
@@ -254,25 +295,23 @@ mod tests {
     #[case(9_876.543_21)]
     fn first_tick_seeding_parity(#[case] seed_price: f64) {
         let mut rma = WilderMovingAverage::new(10, None);
-
         rma.update_raw(seed_price);
 
         assert_eq!(rma.count(), 1);
-        assert_eq!(rma.value(), seed_price);
+        assert_eq!(rma.value(), 0.0);
         assert!(!rma.initialized());
     }
 
     #[rstest]
     fn numeric_parity_with_reference_series() {
         let mut rma = WilderMovingAverage::new(10, None);
-
         for price in 1_u32..=10 {
             rma.update_raw(f64::from(price));
         }
 
         assert!(rma.initialized());
         assert_eq!(rma.count(), 10);
-        assert_approx_equal(rma.value(), 4.486_784_401);
+        assert_eq!(rma.value(), 5.5);
     }
 
     /// Period = 1 should act as a pure 1-tick MA (α = 1) and be initialized immediately.
@@ -307,20 +346,18 @@ mod tests {
 
     #[rstest]
     fn test_reset_reseeds_properly() {
-        let mut rma = WilderMovingAverage::new(10, None);
-
-        rma.update_raw(10.0);
-        assert!(rma.has_inputs());
-        assert_eq!(rma.count(), 1);
-
+        let mut rma = WilderMovingAverage::new(3, None);
+        for value in [1.0, 2.0, 3.0, 4.0] {
+            rma.update_raw(value);
+        }
         rma.reset();
-        assert_eq!(rma.count(), 0);
-        assert!(!rma.has_inputs());
-        assert!(!rma.initialized());
+        for value in [10.0, 20.0, 30.0] {
+            rma.update_raw(value);
+        }
 
-        rma.update_raw(20.0);
-        assert_eq!(rma.count(), 1);
-        assert!((rma.value() - 20.0).abs() < 1e-12);
+        assert_eq!(rma.count(), 3);
+        assert!(rma.initialized());
+        assert_eq!(rma.value(), 20.0);
     }
 
     #[rstest]
@@ -331,11 +368,14 @@ mod tests {
 
     #[rstest]
     fn test_update_with_nan_propagates() {
-        let mut rma = WilderMovingAverage::new(10, None);
-        rma.update_raw(f64::NAN);
+        let mut rma = WilderMovingAverage::new(3, None);
+        rma.update_raw(1.0);
+        let before = (rma.value(), rma.count());
 
-        assert!(rma.value().is_nan());
+        rma.update_raw(f64::NAN);
+        rma.update_raw(f64::NEG_INFINITY);
+
+        assert_eq!((rma.value(), rma.count()), before);
         assert!(rma.has_inputs());
-        assert_eq!(rma.count(), 1);
     }
 }
