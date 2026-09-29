@@ -321,14 +321,37 @@ impl Stochastics {
             let _ = self.h_sub_l.push_back(k_max_high - k_min_low);
         }
 
-        // Handle division by zero (flat market)
-        #[expect(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
-        if k_max_high == k_min_low {
+        // Flat-market handling. On a flat window (every high equal to every
+        // low) raw %K is undefined, and the legacy Cython implementation
+        // (v1.190 `stochastics.pyx`) early-returns leaving stale %K/%D. That
+        // early return is preserved for the default combination (slowing = 1
+        // with Ratio %D) for backward compatibility. For the MA-backed paths
+        // (slowing > 1 or %D via moving average), returning here would skip
+        // this bar's MA update, permanently desynchronizing the MA bar count
+        // from the bar stream (recursive averages never catch up) and stalling
+        // warmup during flat opens. TA-Lib's STOCH defines raw %K as 0.0 on a
+        // flat window and still feeds it to the smoothing MA
+        // (ta_STOCH.c, `TA_IS_ZERO_SCALED` branch), so 0.0 is fed through.
+        // The per-value sum guards below already cover the remaining
+        // divide-by-zero cases.
+        #[expect(
+            clippy::float_cmp,
+            reason = "guards divide-by-zero on a machine-flat window"
+        )]
+        let is_flat_window = k_max_high == k_min_low;
+        let legacy_flat_return = is_flat_window
+            && self.slowing_ma.is_none()
+            && self.d_method == StochasticsDMethod::Ratio;
+        if legacy_flat_return {
             return;
         }
 
         // Calculate raw %K
-        let raw_k = 100.0 * ((close - k_min_low) / (k_max_high - k_min_low));
+        let raw_k = if is_flat_window {
+            0.0
+        } else {
+            100.0 * ((close - k_min_low) / (k_max_high - k_min_low))
+        };
 
         // Apply slowing if configured (slowing > 1)
         let slowed_k = match &mut self.slowing_ma {
@@ -805,5 +828,79 @@ mod tests {
         // Should not panic, values should be 0 or previous
         assert!(stoch.value_k.is_finite());
         assert!(stoch.value_d.is_finite());
+    }
+
+    #[rstest]
+    fn test_flat_window_feeds_slowing_ma() {
+        let mut stoch = Stochastics::new_with_params(
+            2,
+            3,
+            2,
+            MovingAverageType::Simple,
+            StochasticsDMethod::MovingAverage,
+        );
+        stoch.update_raw(10.0, 9.0, 10.0); // raw_k = 100; slowing SMA(2) = [100]
+        stoch.update_raw(20.0, 19.0, 20.0); // raw_k ≈ 9.09; SMA(2) ≈ 54.5
+        stoch.update_raw(50.0, 50.0, 50.0); // window [20,50] not flat; raw_k = 100
+        assert!(stoch.initialized);
+
+        // Window [50,50] is flat from here: raw %K must feed 0.0 into the
+        // slowing MA each bar (TA-Lib semantics), decaying %K to zero.
+        stoch.update_raw(50.0, 50.0, 50.0); // SMA(2) = (100 + 0) / 2 = 50
+        assert_eq!(stoch.value_k, 50.0);
+        stoch.update_raw(50.0, 50.0, 50.0); // SMA(2) = (0 + 0) / 2 = 0
+        assert_eq!(
+            stoch.value_k, 0.0,
+            "flat-window bars must keep feeding the slowing MA (raw %K = 0)"
+        );
+    }
+
+    #[rstest]
+    fn test_flat_bars_during_warmup_do_not_stall_initialization() {
+        let mut stoch = Stochastics::new_with_params(
+            2,
+            3,
+            3,
+            MovingAverageType::Simple,
+            StochasticsDMethod::MovingAverage,
+        );
+        // All-flat input: from the second bar the period_k window is flat, so
+        // every bar hits the flat-market guard. The slowing MA needs 3 inputs
+        // and must receive one per bar; warmup completes on flat bars alone.
+        for _ in 0..3 {
+            stoch.update_raw(50.0, 50.0, 50.0);
+        }
+
+        assert!(
+            stoch.initialized,
+            "warmup must complete on flat bars; the slowing MA needs 3 inputs and got 3 bars"
+        );
+    }
+
+    #[rstest]
+    fn test_default_combo_flat_window_stays_legacy_identical() {
+        // Default combo (slowing=1, Ratio %D) must keep the legacy behavior:
+        // on a flat window the deques update but value_k/value_d hold stale
+        // values (legacy Cython early-return semantics).
+        let mut stoch = Stochastics::new(5, 3);
+        stoch.update_raw(10.0, 9.0, 10.0);
+        stoch.update_raw(11.0, 10.0, 11.0);
+        stoch.update_raw(12.0, 11.0, 12.0);
+        stoch.update_raw(13.0, 12.0, 13.0);
+        stoch.update_raw(14.0, 13.0, 14.0);
+        assert!(stoch.initialized);
+        let k_before = stoch.value_k;
+        let d_before = stoch.value_d;
+
+        stoch.update_raw(14.0, 14.0, 14.0);
+
+        assert_eq!(
+            stoch.value_k, k_before,
+            "legacy: %K holds stale value on flat bar"
+        );
+        assert_eq!(
+            stoch.value_d, d_before,
+            "legacy: %D holds stale value on flat bar"
+        );
     }
 }
