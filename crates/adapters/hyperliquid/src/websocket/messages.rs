@@ -547,6 +547,10 @@ pub struct WsBasicOrderData {
     /// Trailing stop parameters if applicable.
     #[serde(rename = "trailingStop")]
     pub trailing_stop: Option<WsTrailingStopData>,
+    /// Venue order type label (for example `"Stop Market"`), present on REST order rows
+    /// such as `frontendOpenOrders`, which omit `tpsl` and `isMarket`.
+    #[serde(rename = "orderType", default)]
+    pub order_type: Option<String>,
 }
 
 /// Trailing stop offset type.
