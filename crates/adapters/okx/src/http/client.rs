@@ -304,6 +304,8 @@ fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Dura
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use anyhow::Context;
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
@@ -401,6 +403,18 @@ mod tests {
         }"#;
 
         assert_eq!(resolve_okx_error_code(body, "1"), "50013");
+    }
+
+    #[rstest]
+    fn test_activate_feature_quota_fits_five_per_two_seconds() {
+        let keys = OKXRawHttpClient::rate_limit_keys("/api/v5/account/activate-feature");
+        let quota = OKXRawHttpClient::rate_limiter_quotas()
+            .into_iter()
+            .find_map(|(key, quota)| (key == keys[1].as_str()).then_some(quota))
+            .expect("activate-feature quota");
+
+        assert_eq!(quota.burst_size().get(), 2);
+        assert_eq!(quota.replenish_interval(), Duration::from_millis(500));
     }
 
     #[rstest]
@@ -632,7 +646,7 @@ impl OKXRawHttpClient {
             ),
             (
                 "okx:/api/v5/account/activate-feature".to_string(),
-                Quota::per_second(NonZeroU32::new(3).expect("non-zero")).expect("valid constant"),
+                Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
             ),
             (
                 "okx:/api/v5/account/balance".to_string(),

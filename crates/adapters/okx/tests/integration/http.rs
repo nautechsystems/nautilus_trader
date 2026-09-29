@@ -114,6 +114,7 @@ struct TestServerState {
     algo_pending_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     algo_history_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    place_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_spread_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -884,19 +885,28 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     }
 
                     *state.last_order_body.lock().await = Some(payload);
-                    Json(json!({
-                        "code": "0",
-                        "msg": "",
-                        "data": [
-                            {
-                                "ordId": "12345",
-                                "clOrdId": "O-bracket-entry",
-                                "sCode": "0",
-                                "sMsg": "Order placed",
-                            }
-                        ],
-                    }))
-                    .into_response()
+
+                    let response = state
+                        .place_order_response
+                        .lock()
+                        .await
+                        .clone()
+                        .unwrap_or_else(|| {
+                            json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [
+                                    {
+                                        "ordId": "12345",
+                                        "clOrdId": "O-bracket-entry",
+                                        "sCode": "0",
+                                        "sMsg": "Order placed",
+                                    }
+                                ],
+                            })
+                        });
+
+                    Json(response).into_response()
                 }
             }),
         )
@@ -8001,6 +8011,78 @@ async fn test_http_place_order_rejects_unlisted_trade_quote_ccy() {
     }
 
     assert!(state.last_order_body.lock().await.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_preserves_usdc_activation_error_code() {
+    let rejection = load_test_data("http_place_order_rejected.json");
+    let expected_message = rejection["data"][0]["sMsg"].as_str().unwrap().to_string();
+    let state = Arc::new(TestServerState::default());
+    *state.place_order_response.lock().await = Some(rejection);
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instrument, raw) = load_usdc_spot_instrument();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+    client.cache_trade_quote_ccy_lists([(raw.inst_id, raw.trade_quote_ccy_list)]);
+
+    let error = client
+        .place_order_with_domain_types(
+            instrument.id(),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Ousdcnotactive1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    let body = state.last_order_body.lock().await.clone().unwrap();
+    assert_eq!(body["instId"], "BTC-USDC");
+
+    match &error {
+        OKXHttpError::OkxError {
+            error_code,
+            message,
+        } => {
+            assert_eq!(error_code, "54109");
+            assert_eq!(message, &expected_message);
+        }
+        other => panic!("expected OkxError, was {other:?}"),
+    }
+
+    assert_eq!(
+        classify_okx_http_failure(&error),
+        CommandFailure::VenueRejected(format!("OKX error 54109: {expected_message}"))
+    );
 }
 
 #[rstest]

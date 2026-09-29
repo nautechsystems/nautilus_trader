@@ -1286,6 +1286,7 @@ available.
 | --------------------------------------- | --------------- | ----------------------------------------- |
 | `okx:global`                            | 250             | Adapter-level shared bucket.              |
 | `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down. |
+| `/api/v5/account/activate-feature`      | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.              |
 | `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/instruments`           | 10              | OKX 20 requests / 2 seconds.              |

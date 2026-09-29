@@ -1,0 +1,14 @@
+{
+  "code": "1",
+  "msg": "All operations failed",
+  "data": [
+    {
+      "ordId": "",
+      "clOrdId": "Ousdcnotactive1",
+      "tag": "",
+      "ts": "1790000000000",
+      "sCode": "54109",
+      "sMsg": "You haven't activated trading for this pair. Log in to the OKX App or website and click \"Trade\" on this pair's trading page to activate it, or activate it via the designated API endpoint, then try again."
+    }
+  ]
+}
