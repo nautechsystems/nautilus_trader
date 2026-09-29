@@ -46,7 +46,7 @@ use crate::{
         },
         parse::{
             format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
-            millis_to_nanos, parse_trigger_order_type,
+            millis_to_nanos, parse_trigger_order_type, parse_trigger_order_type_label,
         },
         types::HyperliquidAssetId,
     },
@@ -955,9 +955,20 @@ pub fn parse_order_status_report_from_basic(
     let venue_order_id = VenueOrderId::new(order.oid.to_string());
     let order_side = OrderSide::from(order.side);
 
-    let is_conditional = is_conditional_order_data(order.trigger_px, order.tpsl.as_ref());
+    // REST rows (`frontendOpenOrders`) carry trigger semantics in the `orderType` label
+    // instead of the WebSocket `tpsl` / `isMarket` fields
+    let (tpsl, is_market) = match (order.tpsl, order.order_type.as_deref()) {
+        (Some(tpsl), _) => (Some(tpsl), order.is_market),
+        (None, Some(label)) => match parse_trigger_order_type_label(label) {
+            Some((tpsl, is_market)) => (Some(tpsl), Some(is_market)),
+            None => (None, order.is_market),
+        },
+        (None, None) => (None, order.is_market),
+    };
+
+    let is_conditional = is_conditional_order_data(order.trigger_px, tpsl.as_ref());
     let order_type = if is_conditional {
-        match (order.is_market, order.tpsl.as_ref()) {
+        match (is_market, tpsl.as_ref()) {
             (Some(is_market), Some(tpsl)) => parse_trigger_order_type(is_market, tpsl),
             (None, Some(tpsl)) => parse_trigger_order_type(false, tpsl),
             _ => OrderType::Limit,
@@ -2554,5 +2565,99 @@ mod tests {
         assert!(meta.parent_question(7).is_some());
         assert!(meta.parent_question(6).is_some());
         assert!(meta.parent_question(99).is_none());
+    }
+
+    fn frontend_open_order_row(order_type: &str, is_trigger: bool, trigger_px: &str) -> Value {
+        // Shape of a `frontendOpenOrders` row: no `tpsl` / `isMarket`, the trigger kind is
+        // only carried by the `orderType` label
+        json!({
+            "coin": "BTC",
+            "side": "A",
+            "limitPx": "49000.0",
+            "sz": "0.01",
+            "oid": 42,
+            "timestamp": 1_754_000_000_000u64,
+            "triggerCondition": if is_trigger { "Price below 50000" } else { "N/A" },
+            "isTrigger": is_trigger,
+            "triggerPx": trigger_px,
+            "children": [],
+            "isPositionTpsl": false,
+            "reduceOnly": true,
+            "orderType": order_type,
+            "origSz": "0.01",
+            "tif": if is_trigger { Value::Null } else { json!("Gtc") },
+            "cloid": null
+        })
+    }
+
+    fn create_btc_perp_instrument() -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE);
+
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-PERP"))
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDC"))
+                .settlement_currency(Currency::from("USDC"))
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(5)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[rstest]
+    #[case("Stop Market", OrderType::StopMarket)]
+    #[case("Stop Limit", OrderType::StopLimit)]
+    #[case("Take Profit Market", OrderType::MarketIfTouched)]
+    #[case("Take Profit Limit", OrderType::LimitIfTouched)]
+    fn test_parse_order_status_report_from_frontend_open_order_trigger_label(
+        #[case] label: &str,
+        #[case] expected: OrderType,
+    ) {
+        let instrument = create_btc_perp_instrument();
+        let order: WsBasicOrderData =
+            serde_json::from_value(frontend_open_order_row(label, true, "50000.0")).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, expected);
+        assert_eq!(report.trigger_price, Some(Price::from("50000.0")));
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+        assert_eq!(report.price, Some(Price::from("49000.0")));
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_from_frontend_open_order_plain_limit() {
+        let instrument = create_btc_perp_instrument();
+        let order: WsBasicOrderData =
+            serde_json::from_value(frontend_open_order_row("Limit", false, "0.0")).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert!(report.trigger_price.is_none());
+        assert!(report.trigger_type.is_none());
     }
 }
