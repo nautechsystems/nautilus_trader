@@ -40,11 +40,14 @@
 //!
 //! Ordinary sends return after entering the writer channel. Failed ordinary writes and ordinary
 //! messages encountered during reconnect enter a FIFO buffer for replay on an active replacement
-//! connection. Registered authentication state can hold or discard that replay before it reaches
-//! the replacement sink. [`WebSocketConfig::writer_capacity`] bounds ordinary messages across
-//! the channel, in-flight writes, and replay. Full capacity rejects a send with
-//! [`SendError::BufferFull`] before enqueueing. Ownership-bound sends and control traffic use
-//! a separate bounded allowance so authentication can unblock replay.
+//! connection. While that replay is pending, ordinary sends also enter the buffer and queue behind
+//! it instead of reaching the replacement sink early. Registered authentication state can hold or
+//! discard that replay before it reaches the sink. Control frames are never buffered, so a pong
+//! sent while replay waits still writes to the replacement sink directly.
+//! [`WebSocketConfig::writer_capacity`] bounds ordinary messages across the channel, in-flight
+//! writes, and replay. Full capacity rejects a send with [`SendError::BufferFull`] before
+//! enqueueing. Ownership-bound sends and control traffic use a separate bounded allowance so
+//! authentication can unblock replay.
 //!
 //! Ownership-bound sends wait for the writer result, require the expected connection epoch, and
 //! never enter the reconnect buffer. The writer advances the epoch only when it installs a
