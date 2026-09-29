@@ -289,6 +289,7 @@ Released on TBD (UTC).
 - Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit
 - Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`
 - Fixed Tardis Machine prices, sizes, and funding rates losing digits through `f64` parsing
+- Fixed positions for non-ASCII instrument symbols being rejected by the cache and silently dropped
 
 ### Internal Improvements
 

@@ -3556,6 +3556,50 @@ fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_
 }
 
 #[rstest]
+fn test_add_position_with_non_ascii_symbol() {
+    // Regression: exchange symbols may contain non-ASCII characters, for example the
+    // Binance futures symbol 龙虾USDT-PERP. The position OMS cache key embeds the
+    // position ID (which embeds the instrument ID), so validating that key as ASCII
+    // rejected the position outright. The caller discarded the error, so the fill was
+    // applied to the order while the position was never created.
+    let config = CacheConfig::builder().build().unwrap();
+    let mut cache = Cache::new(Some(config), None);
+
+    let mut perp = crypto_perpetual_ethusdt();
+    perp.id = InstrumentId::from("龙虾USDT-PERP.BINANCE");
+    let instrument = InstrumentAny::CryptoPerpetual(perp);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let position_id = PositionId::new(format!("{}-{}", instrument.id(), StrategyId::from("S-001")));
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill_event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-OPEN-1")),
+        Some(position_id),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        None,
+    );
+    let fill = match fill_event {
+        OrderEventAny::Filled(f) => f,
+        _ => unreachable!(),
+    };
+
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    assert!(cache.position(&position_id).is_some());
+}
+
+#[rstest]
 fn test_add_order_with_account_id_populates_account_index() {
     // Verify add_order populates account_orders index when account_id already set
     let mut cache = Cache::default();

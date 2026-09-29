@@ -63,7 +63,7 @@ use nautilus_core::{
     DurationNanos, SharedCell, UnixNanos,
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
-        check_valid_string_ascii,
+        check_valid_string_ascii, check_valid_string_utf8,
     },
 };
 use nautilus_model::{
@@ -3110,7 +3110,11 @@ impl Cache {
         // Validate and serialize the OMS entry up front: both are construction failures, and
         // committing the position before they run would leave the cache mutated by one.
         let key = position_oms_key(position.id);
-        check_valid_string_ascii(&key, stringify!(key))?;
+        // The key embeds the position ID, which embeds the instrument ID, which embeds the
+        // venue's own symbol. Exchange symbols may contain non-ASCII characters (e.g. Binance
+        // futures symbols such as 龙虾USDT-PERP), so this must be the UTF-8 check rather than
+        // the ASCII-only one, which would reject such a position outright.
+        check_valid_string_utf8(&key, stringify!(key))?;
         let value = Bytes::from(serde_json::to_vec(&oms_type)?);
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
