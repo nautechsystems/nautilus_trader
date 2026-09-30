@@ -43,13 +43,16 @@ use nautilus_hyperliquid::{
             Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
             PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
+        parse::get_usdh_currency,
         query::{InfoRequest, InfoRequestParams},
     },
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderStatus, OrderType, PositionSide, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    reports::FillReport,
+    types::{Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -2305,6 +2308,123 @@ async fn test_request_fill_reports_empty_snapshot_is_authoritative() {
         .expect("empty fill snapshot must stay authoritative");
 
     assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_meta() {
+    // `outcomeMeta` lists only live outcome 123; outcome 20 has settled, so its
+    // rows resolve from the coin encoding without another venue request
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#200", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xcccc",
+            "oid": 2001u64, "crossed": true, "fee": "0.0", "tid": 3u64,
+            "feeToken": "+200",
+        },
+        {
+            "coin": "#201", "px": "0.37", "sz": "8.00", "side": "A",
+            "time": 1_778_400_000_001u64, "startPosition": "8.00",
+            "dir": "Sell", "closedPnl": "0", "hash": "0xdddd",
+            "oid": 2002u64, "crossed": false, "fee": "0.0", "tid": 4u64,
+            "feeToken": "+201",
+        },
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let requests_before = *state.request_count.lock().await;
+    let reports = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must form a complete snapshot");
+    let requests_for_fills = *state.request_count.lock().await - requests_before;
+
+    // A later instrument load still omits the settled outcome; its rows must
+    // keep resolving
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let reports_after_reload = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must stay resolvable after a reload");
+
+    let usdh_zero = Money::zero(get_usdh_currency());
+
+    let summary = |reports: &[FillReport]| {
+        reports
+            .iter()
+            .map(|report| {
+                (
+                    report.instrument_id,
+                    report.venue_order_id,
+                    report.order_side,
+                    report.last_px,
+                    report.last_qty,
+                    report.commission,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let expected = vec![
+        (
+            InstrumentId::from("20-YES-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2001"),
+            OrderSide::Buy,
+            Price::from("0.6200"),
+            Quantity::from("15.00"),
+            usdh_zero,
+        ),
+        (
+            InstrumentId::from("20-NO-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2002"),
+            OrderSide::Sell,
+            Price::from("0.3700"),
+            Quantity::from("8.00"),
+            usdh_zero,
+        ),
+    ];
+    assert_eq!(summary(&reports), expected);
+    assert_eq!(summary(&reports_after_reload), expected);
+    assert_eq!(requests_for_fills, 1, "only the userFills request is sent");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_malformed_outcome_coin() {
+    // Side digit 2 is not a valid HIP-4 side, so the coin cannot resolve
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#12", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xeeee",
+            "oid": 2003u64, "crossed": true, "fee": "0.0", "tid": 5u64,
+            "feeToken": "+12",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("a malformed outcome coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
 }
 
 #[rstest]

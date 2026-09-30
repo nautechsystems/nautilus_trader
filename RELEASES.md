@@ -285,6 +285,8 @@ Released on TBD (UTC).
 - Fixed Deribit orders and edits emitting no rejection when their values cannot serialize exactly
 - Fixed Derive rejecting valid sub-minimum taker orders (#5045), thanks for reporting @Aviksaikat
 - Fixed Derive instrument `info` dropping fields from the venue response
+- Fixed Hyperliquid fill reconciliation failing for accounts with fills on settled HIP-4 outcomes
+- Fixed Hyperliquid mass status failing on `outcomeSettledCanceled` historical orders
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de

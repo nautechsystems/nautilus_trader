@@ -304,8 +304,11 @@ InstrumentId.from_str("25-YES-OUTCOME.HYPERLIQUID")
 
 :::note
 The outcome universe cycles. Each settlement removes the resolved outcome
-from `outcomeMeta`, and the venue's next listing advances the index. Inspect
-the live universe with:
+from `outcomeMeta`, and the venue's next listing advances the index.
+Reconciliation still resolves fills and historical orders on a settled
+outcome: the adapter derives the side token's instrument from its
+`#{encoding}` coin, without the market name, description, or expiry that
+`outcomeMeta` carries. Inspect the live universe with:
 
 ```bash
 curl -s -X POST https://api.hyperliquid.xyz/info \

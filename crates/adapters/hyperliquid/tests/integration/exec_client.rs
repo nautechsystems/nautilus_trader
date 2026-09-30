@@ -8086,6 +8086,54 @@ async fn test_generate_mass_status_marks_unusable_historical_row_incomplete() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_resolves_settled_outcome_rows() {
+    // Outcome 20 has settled and is absent from `outcomeMeta`; its fill and
+    // historical order resolve from the coin encoding, and settlement cancels
+    // the resting order on the other side
+    let mut settled_cancel = historical_order("#201", 240_002);
+    settled_cancel["status"] = json!("outcomeSettledCanceled");
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([user_fill("#200", 240_001)]));
+    *state.historical_orders_response.lock().await =
+        Some(json!([historical_order("#200", 240_001), settled_cancel]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    let outcome_id = InstrumentId::from("20-YES-OUTCOME.HYPERLIQUID");
+    let venue_order_id = VenueOrderId::from("240001");
+    let fill_instrument_ids = mass
+        .fill_reports()
+        .get(&venue_order_id)
+        .expect("settled outcome fill report")
+        .iter()
+        .map(|report| report.instrument_id)
+        .collect::<Vec<_>>();
+    let order_report = mass
+        .order_reports()
+        .get(&venue_order_id)
+        .expect("settled outcome historical order report")
+        .clone();
+    assert_eq!(fill_instrument_ids, vec![outcome_id]);
+    assert_eq!(order_report.instrument_id, outcome_id);
+    assert_eq!(order_report.order_status, OrderStatus::Filled);
+    assert!(
+        mass.reports_complete(),
+        "settled outcome rows must resolve and keep the snapshot complete",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
     let state = TestServerState::default();
     *state.spot_clearinghouse_response.lock().await = Some(json!({
