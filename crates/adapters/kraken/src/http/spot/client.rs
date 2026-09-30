@@ -2091,10 +2091,7 @@ impl KrakenSpotHttpClient {
                     return None;
                 }
 
-                let normalized_code = currency_code
-                    .strip_prefix("X")
-                    .or_else(|| currency_code.strip_prefix("Z"))
-                    .unwrap_or(currency_code);
+                let normalized_code = normalize_currency_code(currency_code);
 
                 if skip_margin_wallet && normalized_code == target_code {
                     return None;
@@ -2668,7 +2665,7 @@ impl KrakenSpotHttpClient {
                     None => return Ok(reports),
                 };
 
-                let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
+                let coin = Ustr::from(base_currency.code.as_str());
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
                 let side = if wallet_balance > Decimal::ZERO {
@@ -2695,7 +2692,9 @@ impl KrakenSpotHttpClient {
                 reports.push(report);
             }
         } else {
-            let quote_filter = quote_currency;
+            // Accept a configured code in either spelling, so an existing `ZEUR` setting keeps
+            // matching now that instruments carry the standard code.
+            let quote_filter = Ustr::from(normalize_currency_code(quote_currency.as_str()));
 
             let instruments_guard = self.instruments_cache.load();
             for instrument in instruments_guard.values() {
@@ -2709,7 +2708,7 @@ impl KrakenSpotHttpClient {
                     None => continue,
                 };
 
-                let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
+                let coin = Ustr::from(base_currency.code.as_str());
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
                 if wallet_balance.is_zero() {

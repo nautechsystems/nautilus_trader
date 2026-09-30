@@ -154,6 +154,36 @@ retain Kraken's native `XBT` format.
 Kraken also uses `XDG` for Dogecoin in some Spot responses. The adapter
 normalizes it to `DOGE`, including in quote currency symbols.
 
+### Currency codes
+
+Kraken reports some assets under legacy codes, prefixing them with `X` or `Z`: `XXBT` for Bitcoin,
+`ZEUR` for the euro. The adapter maps those to the standard code used everywhere else on the
+platform, so instruments, balances, fees and currency configuration all agree: `XXBT` and `XBT`
+become `BTC`, `XXDG` and `XDG` become `DOGE`, `ZEUR` becomes `EUR`, `ZUSD` becomes `USD`.
+
+The mapping is an explicit table rather than a prefix rule, because the prefix is not a rule. `XTZ`,
+`XRP`, `XLM`, `XAUT`, `ZRX` and `ZEC` legitimately begin with those letters, and a code the table
+does not list passes through unchanged. Kraken's own CLI normalizes the same way.
+
+Fees are booked in the currency the venue reports, where it reports one. Futures fills carry a fee
+currency, which on an inverse contract is the base rather than the quote. Kraken's Spot
+`TradesHistory` reports a fee amount without a currency, so those fills are booked in the
+instrument's quote currency.
+
+:::warning
+This changes the currency codes the adapter emits. An account state, fill, or position stored under
+`XXBT`, `ZEUR` or `ZUSD` before this change will not match one recorded after it, so a persisted
+cache or database from an earlier version needs migrating or rebuilding.
+
+Configuration follows the same mapping and accepts either spelling, so
+`spot_positions_quote_currency="ZEUR"` and `"EUR"` both match a euro-quoted instrument.
+
+Money precision changes with the code. `ZEUR` and `ZUSD` were unknown to the platform and were
+registered as 8-decimal crypto currencies; `EUR` and `USD` are built-in fiat currencies with 2
+decimals. Balances and fees in those currencies are therefore rounded to cents, where they
+previously carried eight decimal places.
+:::
+
 ### Spot markets
 
 NautilusTrader uses normalized, slash-separated symbols for Kraken Spot
