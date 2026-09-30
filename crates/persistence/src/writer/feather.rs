@@ -1676,8 +1676,10 @@ mod tests {
     use std::sync::{Arc, Mutex, atomic::Ordering};
 
     use nautilus_common::{clock::VirtualClock, live::LiveClock};
+    #[cfg(target_os = "linux")]
+    use nautilus_model::data::HasTsInit;
     use nautilus_model::{
-        data::{Data, HasTsInit, NautilusRecordType, QuoteTick, TradeTick},
+        data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{ERROR_PRICE, Price, Quantity},
