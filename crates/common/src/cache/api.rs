@@ -1236,10 +1236,14 @@ impl<'a> CacheApi<'a> {
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
     ///
+    /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
+    /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
+    /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
+    /// limit or raw range rules out `p + 1`.
+    ///
     /// # Panics
     ///
-    /// Panics if the cache is already mutably borrowed, or if `price_type` is [`PriceType::Mid`]
-    /// and the quote price precision is already at the maximum fixed precision.
+    /// Panics if the cache is already mutably borrowed.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         self.cache().price(instrument_id, price_type)
