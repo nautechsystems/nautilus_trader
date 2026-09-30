@@ -47,8 +47,8 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, ModifyOrder, SubmitOrder,
-            SubmitOrderList,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -138,6 +138,10 @@ struct TestServerState {
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/derivatives/api/v3/openorders` returns this JSON.
+    futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
+    futures_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
     trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When true, the `TradesHistory` override is served on every request instead of once,
@@ -176,6 +180,8 @@ impl Default for TestServerState {
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             ws_message_tx,
         }
     }
@@ -276,7 +282,12 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             json_response(r#"{"result":"success","accounts":{}}"#.to_string())
         }
         "/derivatives/api/v3/openorders" => {
-            json_response(r#"{"result":"success","openOrders":[]}"#.to_string())
+            let response = state.futures_open_orders_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","openOrders":[]}"#.to_string()),
+            )
         }
         "/derivatives/api/v3/orders/status" => {
             let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
@@ -290,7 +301,12 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             )
         }
         "/derivatives/api/v3/openpositions" => {
-            json_response(r#"{"result":"success","openPositions":[]}"#.to_string())
+            let response = state.futures_open_positions_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","openPositions":[]}"#.to_string()),
+            )
         }
         "/derivatives/api/v3/fills" => {
             let response = state.fills_response.lock().await;
@@ -908,6 +924,118 @@ async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
     );
     let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
     assert_eq!(fills, 0);
+}
+
+fn futures_open_positions_json(symbol: &str) -> String {
+    format!(
+        r#"{{"result":"success","openPositions":[{{"side":"long","symbol":"{symbol}","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":1000,"unrealizedFunding":0.0}}]}}"#
+    )
+}
+
+fn futures_open_orders_json(order_id: &str, symbol: &str) -> String {
+    format!(
+        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"{symbol}","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
+    )
+}
+
+/// A scoped futures position read must match the resolved instrument.
+///
+/// This read is the one that used to return every futures position for a spot ID, since spot and
+/// futures instrument ids share the `KRAKEN` venue.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_position_reports_match_the_resolved_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+
+    let positions_cmd = |instrument_id: Option<InstrumentId>| {
+        GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            instrument_id,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+
+    // Control: scoped to the instrument that holds the position, it is returned.
+    let scoped = client
+        .generate_position_status_reports(&positions_cmd(Some(InstrumentId::from(
+            "PI_XBTUSD.KRAKEN",
+        ))))
+        .await
+        .unwrap();
+    assert_eq!(
+        scoped.len(),
+        1,
+        "the instrument's own position must be returned"
+    );
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("PI_XBTUSD.KRAKEN")
+    );
+
+    let absent = client
+        .generate_position_status_reports(&positions_cmd(Some(InstrumentId::from(
+            "BTC/USD.KRAKEN",
+        ))))
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "a spot id must match no futures position: {absent:?}"
+    );
+}
+
+/// The same rule for the futures open-order read with `open_only=false`.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_order_reports_match_the_resolved_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-SCOPED-001", "PI_XBTUSD"));
+
+    let orders_cmd = |instrument_id: Option<InstrumentId>| {
+        GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false, // open_only=false, so the history read runs alongside the open-order read
+            instrument_id,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+
+    // Control: scoped to the instrument that holds the order, it is returned.
+    let scoped = client
+        .generate_order_status_reports(&orders_cmd(Some(InstrumentId::from("PI_XBTUSD.KRAKEN"))))
+        .await
+        .unwrap();
+    assert_eq!(
+        scoped.len(),
+        1,
+        "the instrument's own order must be returned"
+    );
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("PI_XBTUSD.KRAKEN")
+    );
+
+    let absent = client
+        .generate_order_status_reports(&orders_cmd(Some(InstrumentId::from("BTC/USD.KRAKEN"))))
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "a spot id must match no futures order: {absent:?}"
+    );
 }
 
 fn futures_fills_for_symbol(symbol: &str) -> String {
