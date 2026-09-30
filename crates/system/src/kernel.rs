@@ -789,10 +789,15 @@ impl NautilusKernel {
 
         self.start_engines();
 
-        log::info!("Initializing trader");
-        if let Err(e) = self.trader.borrow_mut().initialize() {
-            log::error!("Error initializing trader: {e:?}");
-            return;
+        // `Trader::reset` ends in `Ready`, where `initialize` is an invalid transition
+        let trader_state = self.trader.borrow().state();
+        if trader_state == ComponentState::PreInitialized {
+            log::info!("Initializing trader");
+
+            if let Err(e) = self.trader.borrow_mut().initialize() {
+                log::error!("Error initializing trader: {e:?}");
+                return;
+            }
         }
 
         // Execution and data clients are started by their engines via `start_engines` above
@@ -1567,6 +1572,7 @@ mod lifecycle_tests {
     use nautilus_common::{
         actor::registry::get_actor_unchecked,
         cache::Cache,
+        clock::VirtualClock,
         messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         msgbus::stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     };
@@ -2160,5 +2166,32 @@ mod lifecycle_tests {
 
         drop(emulator);
         kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_start_after_reset_skips_trader_initialize() {
+        let mut kernel = NautilusKernelBuilder::default().build().unwrap();
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        kernel.reset();
+        let restart_ns = UnixNanos::from(1_700_000_000_000_000_000);
+        kernel
+            .clock
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .unwrap()
+            .set_time(restart_ns);
+
+        kernel.start();
+        let ts_started = kernel.ts_started();
+        kernel.start_trader().unwrap();
+        let trader_state = kernel.trader.borrow().state();
+        kernel.stop_trader();
+        kernel.dispose();
+
+        assert_eq!(ts_started, Some(restart_ns));
+        assert_eq!(trader_state, ComponentState::Running);
     }
 }
