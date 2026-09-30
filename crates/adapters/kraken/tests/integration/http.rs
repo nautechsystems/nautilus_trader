@@ -4220,6 +4220,271 @@ async fn legacy_pair_spot_client(addr: SocketAddr) -> KrakenSpotHttpClient {
     client
 }
 
+/// A scoped read must match the instrument the row resolves to, not its spelling.
+///
+/// Kraken keys this pair `XXBTZEUR`, which becomes the instrument `raw_symbol`, while `OpenOrders`
+/// spells it `XBTEUR`. Comparing the cached `raw_symbol` against the row dropped the pair's own
+/// orders, and a request for an instrument the client does not hold returned every instrument's.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_order_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    // Control: unscoped, the order is read. Without this the assertions below could all pass
+    // because the server returned nothing.
+    let control = client
+        .request_order_status_reports(account, None, None, None, true)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 1);
+    assert_eq!(
+        control[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    // Scoped to the pair itself: its own order must come back despite the two spellings.
+    let scoped = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1, "the pair's own order must be returned");
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    // Scoped to another instrument this client does hold: nothing matches.
+    let other = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/USDT.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        other.is_empty(),
+        "another instrument must not match: {other:?}"
+    );
+
+    // Scoped to an instrument this client does not hold at all. Spot and futures ids share the
+    // KRAKEN venue, so a futures id can reach the spot client.
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "an instrument this client does not hold must match nothing: {absent:?}"
+    );
+}
+
+/// The same rule for the closed-order read.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_closed_order_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(r#"{"error":[],"result":{"open":{}}}"#.to_string());
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_order_status_reports(account, None, None, None, false)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 2, "control must read both closed orders");
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let scoped = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
+}
+
+/// The same rule for the fill read.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_fill_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_fill_reports(account, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 2, "control must read both fills");
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let scoped = client
+        .request_fill_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let absent = client
+        .request_fill_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
+}
+
+/// Scoped reads must hold when instruments arrived through the cache APIs.
+///
+/// Such a client never sees the `AssetPairs` response, so its aliases can only come from the
+/// instruments themselves. It must resolve an altname-spelled record, and must still return
+/// nothing for an instrument it does not hold.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTUSDT"));
+
+    let source = legacy_pair_spot_client(addr).await;
+    let instruments = source.request_instruments(None).await.unwrap();
+
+    // A second client fed only through the cache API, so it never sees the AssetPairs response.
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+    client.cache_instruments(&instruments);
+
+    let account = AccountId::new("KRAKEN-001");
+
+    // Control: the row is spelled with the key, which resolves without any alias.
+    let control = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/USDT.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        control.len(),
+        1,
+        "a cache-supplied client must still read its own instrument"
+    );
+
+    // An altname-spelled row must resolve too. `XXBTZEUR` is keyed one way and spelled `XBTEUR`
+    // by OpenOrders, so the alias can only come from the instrument itself here.
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
+    let altname = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        altname.len(),
+        1,
+        "a cache-supplied client must resolve an altname-spelled row"
+    );
+    assert_eq!(
+        altname[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "not held must match nothing on a cache-supplied client: {absent:?}"
+    );
+}
+
 /// An open order spelled with Kraken's altname must resolve to its instrument.
 ///
 /// `AssetPairs` keys this pair `XXBTZEUR`, which becomes the instrument `raw_symbol`, while

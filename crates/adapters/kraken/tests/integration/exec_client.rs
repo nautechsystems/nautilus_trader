@@ -46,8 +46,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
-            GenerateOrderStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, ModifyOrder, SubmitOrder,
+            SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -914,6 +915,55 @@ fn futures_fills_for_symbol(symbol: &str) -> String {
     format!(
         r#"{{"result":"success","fills":[{{"fill_id":"f-window-1","symbol":"{symbol}","side":"buy","order_id":"V-WINDOW","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-window-001","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
     )
+}
+
+/// A scoped futures read must match the resolved instrument and hold for one not held.
+///
+/// Spot and futures instrument ids share the `KRAKEN` venue, so a spot id can reach the futures
+/// client. It must match nothing rather than falling through and returning every instrument's rows.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_fill_reports_match_the_resolved_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_for_symbol("PI_XBTUSD"));
+
+    let fills_cmd = |instrument_id: Option<InstrumentId>| {
+        GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            instrument_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+
+    // Control: unscoped, the fill is read. Without this the assertions below could pass because
+    // the venue returned nothing.
+    let control = client.generate_fill_reports(fills_cmd(None)).await.unwrap();
+    assert_eq!(control.len(), 1);
+
+    let scoped = client
+        .generate_fill_reports(fills_cmd(Some(InstrumentId::from("PI_XBTUSD.KRAKEN"))))
+        .await
+        .unwrap();
+    assert_eq!(
+        scoped.len(),
+        1,
+        "the instrument's own fill must be returned"
+    );
+
+    let absent = client
+        .generate_fill_reports(fills_cmd(Some(InstrumentId::from("BTC/USD.KRAKEN"))))
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "a spot id must match nothing on the futures client: {absent:?}"
+    );
 }
 
 /// A bounded futures mass status must declare the cutoff it applied.

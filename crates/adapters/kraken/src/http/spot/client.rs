@@ -64,7 +64,7 @@ use super::{models::*, query::*};
 use crate::{
     common::{
         consts::{
-            KRAKEN_OFLAG_POST_ONLY, KRAKEN_OFLAG_QUOTE_QUANTITY, KRAKEN_VENUE,
+            KRAKEN_ALTNAME_KEY, KRAKEN_OFLAG_POST_ONLY, KRAKEN_OFLAG_QUOTE_QUANTITY, KRAKEN_VENUE,
             NAUTILUS_KRAKEN_BROKER_ID,
         },
         credential::KrakenCredential,
@@ -1596,6 +1596,7 @@ impl KrakenSpotHttpClient {
 
     /// Caches an instrument for symbol lookup.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        self.record_instrument_aliases(std::slice::from_ref(&instrument));
         self.instruments_cache
             .insert(instrument.symbol().inner(), instrument);
         self.cache_initialized.store(true, Ordering::Release);
@@ -1603,12 +1604,35 @@ impl KrakenSpotHttpClient {
 
     /// Caches multiple instruments for symbol lookup.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.record_instrument_aliases(instruments);
         self.instruments_cache.rcu(|m| {
             for instrument in instruments {
                 m.insert(instrument.symbol().inner(), instrument.clone());
             }
         });
         self.cache_initialized.store(true, Ordering::Release);
+    }
+
+    /// Records the altname each instrument carries, so a client fed through the cache APIs can
+    /// resolve altname-spelled rows without the `AssetPairs` response.
+    fn record_instrument_aliases(&self, instruments: &[InstrumentAny]) {
+        let aliases: Vec<(Ustr, Ustr)> = instruments
+            .iter()
+            .filter_map(|instrument| {
+                let altname = instrument.info()?.get_str(KRAKEN_ALTNAME_KEY)?;
+                Some((Ustr::from(altname), instrument.raw_symbol().inner()))
+            })
+            .collect();
+
+        if aliases.is_empty() {
+            return;
+        }
+
+        self.pair_aliases.rcu(|m| {
+            for (altname, pair_name) in &aliases {
+                m.insert(*altname, *pair_name);
+            }
+        });
     }
 
     /// Gets an instrument from the cache by symbol.
@@ -2214,26 +2238,34 @@ impl KrakenSpotHttpClient {
         let mut all_reports = Vec::new();
         let mut complete = true;
 
+        // A scoped read for an instrument this client does not hold can match nothing, so return
+        // before the request rather than falling through and reporting every instrument's rows.
+        if let Some(ref target_id) = instrument_id
+            && self
+                .get_cached_instrument(&target_id.symbol.inner())
+                .is_none()
+        {
+            return Ok((all_reports, complete));
+        }
+
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
 
         for (order_id, order) in &open_orders {
-            if let Some(ref target_id) = instrument_id {
-                let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                if let Some(inst) = instrument
-                    && inst.raw_symbol().as_str() != order.descr.pair
-                {
-                    continue;
-                }
+            // Kraken spells a pair two ways, so resolve the row and compare instrument ids rather
+            // than the row's spelling against the cached `raw_symbol`.
+            let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
-            let instrument = self
-                .get_instrument_by_raw_symbol(order.descr.pair.as_str())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "OpenOrders: instrument not in cache for pair {}",
-                        order.descr.pair
-                    )
-                })?;
+            let instrument = resolved.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "OpenOrders: instrument not in cache for pair {}",
+                    order.descr.pair
+                )
+            })?;
 
             match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
                 Ok(report) => all_reports.push(report),
@@ -2276,19 +2308,16 @@ impl KrakenSpotHttpClient {
             pages += 1;
 
             for (order_id, order) in &closed_orders {
-                if let Some(ref target_id) = instrument_id {
-                    let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                    if let Some(inst) = instrument
-                        && inst.raw_symbol().as_str() != order.descr.pair
-                    {
-                        continue;
-                    }
+                let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
                 // A historical record can reference an instrument absent from the current
                 // listing, so warn and keep the rest rather than withholding the whole read.
-                let Some(instrument) = self.get_instrument_by_raw_symbol(order.descr.pair.as_str())
-                else {
+                let Some(instrument) = resolved else {
                     log::warn!(
                         "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
                         order.descr.pair
@@ -2341,6 +2370,15 @@ impl KrakenSpotHttpClient {
         let mut all_reports = Vec::new();
         let mut complete = true;
 
+        // As above: a scoped read for an instrument this client does not hold matches nothing.
+        if let Some(ref target_id) = instrument_id
+            && self
+                .get_cached_instrument(&target_id.symbol.inner())
+                .is_none()
+        {
+            return Ok((all_reports, complete));
+        }
+
         // Kraken API expects Unix timestamps in seconds
         let start_ts = start.map(|dt| dt.as_second());
         let end_ts = end.map(|dt| dt.as_second());
@@ -2369,18 +2407,15 @@ impl KrakenSpotHttpClient {
             pages += 1;
 
             for (trade_id, trade) in &trades {
-                if let Some(ref target_id) = instrument_id {
-                    let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                    if let Some(inst) = instrument
-                        && inst.raw_symbol().as_str() != trade.pair
-                    {
-                        continue;
-                    }
+                let resolved = self.get_instrument_by_raw_symbol(trade.pair.as_str());
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
                 // As above: historical fills outlive the listing, so preserve the usable rows.
-                let Some(instrument) = self.get_instrument_by_raw_symbol(trade.pair.as_str())
-                else {
+                let Some(instrument) = resolved else {
                     log::warn!(
                         "TradesHistory: instrument not in cache for pair {}, skipping trade {trade_id}",
                         trade.pair
