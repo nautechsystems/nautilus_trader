@@ -3025,16 +3025,12 @@ mod tests {
     #[cfg(not(all(feature = "simulation", madsim)))]
     mod lifecycle_tests {
         use std::{
-            process::{Command, Stdio},
+            process::Command,
             sync::{Arc, Barrier},
-            time::Duration,
         };
 
         use super::*;
-        use crate::{
-            logging::{logging_is_initialized, logging_shutdown, logging_sync_to_disk},
-            testing::wait_until,
-        };
+        use crate::logging::{logging_is_initialized, logging_shutdown, logging_sync_to_disk};
 
         const LIFECYCLE_CHILD_ENV: &str = "NAUTILUS_LOGGER_LIFECYCLE_CHILD";
 
@@ -3234,6 +3230,10 @@ mod tests {
         #[cfg(unix)]
         #[rstest]
         fn test_logging_survives_closed_stderr_pipe() {
+            use std::{process::Stdio, time::Duration};
+
+            use crate::testing::wait_until;
+
             const MARKER: &str = "closed-stderr";
 
             if !in_lifecycle_child(MARKER) {
