@@ -77,6 +77,10 @@ use ustr::Ustr;
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    upgrade_count: Arc<AtomicUsize>,
+    instrument_requests: Arc<AtomicUsize>,
+    upgrade_gate: tokio::sync::watch::Sender<bool>,
+    socket_drops: Arc<tokio::sync::Mutex<HashMap<usize, tokio::sync::oneshot::Sender<()>>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
     disconnect_trigger: Arc<AtomicBool>,
@@ -90,6 +94,10 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
+            upgrade_count: Arc::new(AtomicUsize::new(0)),
+            instrument_requests: Arc::new(AtomicUsize::new(0)),
+            upgrade_gate: tokio::sync::watch::channel(true).0,
+            socket_drops: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
@@ -101,13 +109,28 @@ impl Default for TestServerState {
     }
 }
 
+async fn wait_for_socket_registrations(state: &TestServerState, expected: &[usize]) {
+    wait_until_async(
+        || async {
+            let sockets = state.socket_drops.lock().await;
+            sockets.len() == expected.len() && expected.iter().all(|id| sockets.contains_key(id))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
 fn load_test_data(filename: &str) -> Value {
     let path = format!("test_data/{filename}");
     let content = std::fs::read_to_string(path).expect("Failed to read test data");
     serde_json::from_str(&content).expect("Failed to parse test data")
 }
 
-async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl IntoResponse {
+async fn handle_get_instruments(
+    State(state): State<TestServerState>,
+    query: Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    state.instrument_requests.fetch_add(1, Ordering::Relaxed);
     let category = query.get("category").map(String::as_str);
     let filename = match category {
         Some("linear") => "http_get_instruments_linear.json",
@@ -176,10 +199,22 @@ async fn handle_get_tickers(
 }
 
 async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    let mut gate = state.upgrade_gate.subscribe();
+    gate.wait_for(|open| *open).await.unwrap();
+    ws.on_upgrade(move |socket| async move {
+        let socket_id = state.upgrade_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        state.socket_drops.lock().await.insert(socket_id, drop_tx);
+        handle_socket(socket, state, socket_id, drop_rx).await;
+    })
 }
 
-async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: TestServerState,
+    socket_id: usize,
+    mut drop_rx: tokio::sync::oneshot::Receiver<()>,
+) {
     {
         let mut count = state.connection_count.lock().await;
         *count += 1;
@@ -200,7 +235,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
         }
 
-        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
+        let received = tokio::select! {
+            _ = &mut drop_rx => break,
+            received = tokio::time::timeout(Duration::from_millis(50), socket.recv()) => received,
+        };
+        let msg_opt = match received {
             Ok(opt) => opt,
             Err(_) => continue,
         };
@@ -374,6 +413,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         }
     }
 
+    state.socket_drops.lock().await.remove(&socket_id);
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
 }
@@ -598,6 +638,117 @@ async fn test_data_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*BYBIT_CLIENT_ID, endpoint).is_none());
+}
+
+#[rstest]
+#[case::linear(vec![BybitProductType::Linear], 1)]
+#[case::linear_and_spot_drop_first(vec![BybitProductType::Linear, BybitProductType::Spot], 1)]
+#[case::linear_and_spot_drop_second(vec![BybitProductType::Linear, BybitProductType::Spot], 2)]
+#[tokio::test]
+async fn test_data_client_transport_reconnect(
+    #[case] product_types: Vec<BybitProductType>,
+    #[case] dropped_socket: usize,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let mut config = create_test_config(addr);
+    let socket_count = product_types.len();
+    config.product_types = product_types;
+    let mut client = registry
+        .scope(|| BybitDataClient::new(*BYBIT_CLIENT_ID, config))
+        .unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    client.connect().await.unwrap();
+
+    let mut endpoints = Vec::new();
+
+    for _ in 0..socket_count {
+        let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let SystemEvent::SocketState(change) = event;
+        assert_eq!(change.state, SocketState::Connected);
+        endpoints.push(change.endpoint);
+    }
+    let mut registered_sockets: Vec<_> = (1..=socket_count).collect();
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert!(client.is_connected());
+    assert!(!client.is_disconnected());
+    assert_eq!(state.upgrade_count.load(Ordering::Relaxed), socket_count);
+    let instrument_requests = state.instrument_requests.load(Ordering::Relaxed);
+    assert_eq!(instrument_requests, socket_count);
+
+    state.upgrade_gate.send_replace(false);
+    state
+        .socket_drops
+        .lock()
+        .await
+        .remove(&dropped_socket)
+        .unwrap()
+        .send(())
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.state, SocketState::Disconnected);
+    let dropped_endpoint = change.endpoint;
+    assert!(endpoints.contains(&dropped_endpoint));
+    assert!(
+        !client.is_connected(),
+        "transport loss must clear aggregate availability"
+    );
+    assert!(client.is_disconnected());
+    registered_sockets.retain(|id| *id != dropped_socket);
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert_eq!(state.socket_drops.lock().await.len(), socket_count - 1);
+
+    tokio::time::timeout(Duration::from_secs(2), client.connect())
+        .await
+        .expect("connect mid-reconnect must reuse the established session")
+        .unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    assert_eq!(
+        state.instrument_requests.load(Ordering::Relaxed),
+        instrument_requests
+    );
+
+    state.upgrade_gate.send_replace(true);
+    let event = tokio::time::timeout(Duration::from_secs(10), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, dropped_endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+    assert!(!client.is_disconnected());
+    registered_sockets.push(socket_count + 1);
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert_eq!(
+        state.upgrade_count.load(Ordering::Relaxed),
+        socket_count + 1
+    );
+    assert_eq!(state.socket_drops.lock().await.len(), socket_count);
+    assert_eq!(
+        state.instrument_requests.load(Ordering::Relaxed),
+        instrument_requests
+    );
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    for endpoint in endpoints {
+        assert!(registry.handle(*BYBIT_CLIENT_ID, endpoint).is_none());
+    }
 }
 
 #[rstest]

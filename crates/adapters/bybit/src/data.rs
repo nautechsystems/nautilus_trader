@@ -101,7 +101,7 @@ pub struct BybitDataClient {
     config: BybitDataClientConfig,
     http_client: BybitHttpClient,
     ws_clients: Vec<BybitWebSocketClient>,
-    is_connected: AtomicBool,
+    session_established: AtomicBool,
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
@@ -193,7 +193,7 @@ impl BybitDataClient {
             config,
             http_client,
             ws_clients,
-            is_connected: AtomicBool::new(false),
+            session_established: AtomicBool::new(false),
             cancellation_token: session_tasks.cancellation_token(),
             session_tasks,
             command_tasks,
@@ -416,7 +416,7 @@ impl BybitDataClient {
         if let Err(e) = self.finish_tasks().await {
             self.shutdown_errors.push(e.to_string());
         }
-        self.is_connected.store(false, Ordering::Release);
+        self.session_established.store(false, Ordering::Release);
 
         if self.shutdown_errors.is_empty() {
             Ok(())
@@ -740,7 +740,7 @@ impl DataClient for BybitDataClient {
         for ws_client in &self.ws_clients {
             ws_client.begin_shutdown();
         }
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.session_established.store(false, Ordering::Relaxed);
         Ok(())
     }
 
@@ -751,7 +751,7 @@ impl DataClient for BybitDataClient {
         for ws_client in &self.ws_clients {
             ws_client.begin_shutdown();
         }
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.session_established.store(false, Ordering::Relaxed);
         self.book_depths.store(AHashMap::new());
         self.quote_subs.store(AHashSet::new());
         self.ticker_subs.store(AHashMap::new());
@@ -770,7 +770,10 @@ impl DataClient for BybitDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
+        if self.session_established.load(Ordering::Relaxed)
+            && self.session_tasks.is_open()
+            && self.command_tasks.is_open()
+        {
             return Ok(());
         }
 
@@ -949,7 +952,7 @@ impl DataClient for BybitDataClient {
         }
 
         setup_guard.disarm();
-        self.is_connected.store(true, Ordering::Release);
+        self.session_established.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
@@ -984,7 +987,7 @@ impl DataClient for BybitDataClient {
         self.instrument_subs.store(AHashSet::new());
         self.subscribe_all_instruments
             .store(false, Ordering::Relaxed);
-        self.is_connected.store(false, Ordering::Release);
+        self.session_established.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
 
         if self.shutdown_errors.is_empty() {
@@ -996,7 +999,8 @@ impl DataClient for BybitDataClient {
     }
 
     fn is_connected(&self) -> bool {
-        self.is_connected.load(Ordering::Relaxed)
+        self.session_established.load(Ordering::Relaxed)
+            && self.ws_clients.iter().all(BybitWebSocketClient::is_active)
     }
 
     fn is_disconnected(&self) -> bool {
