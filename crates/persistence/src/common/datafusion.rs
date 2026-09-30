@@ -127,7 +127,7 @@ impl DataBackendSession {
         self.session_ctx.register_object_store(url, object_store);
     }
 
-    /// Registers an OpenDAL-backed storage backend with the session context.
+    /// Registers a storage backend's object store with the session context.
     ///
     /// External catalog implementations can call this before adding native table providers or
     /// object-store-relative file paths to the session.

@@ -323,7 +323,7 @@ impl StorageBackend {
     }
 }
 
-/// Returns the root URL DataFusion should use when registering an `OpenDAL` object store.
+/// Returns the root URL DataFusion should use when registering a storage backend's object store.
 ///
 /// # Errors
 ///
@@ -389,7 +389,7 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
-/// Creates an OpenDAL-backed storage backend from a Nautilus storage URI.
+/// Creates an object-store storage backend from a Nautilus storage URI.
 ///
 /// # Errors
 ///

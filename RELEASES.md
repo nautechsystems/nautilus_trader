@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added recovery of unsealed Feather stream files left by a crashed writer (#5115), thanks @faysou
 - Added streaming promotion into a separate, optionally remote, `StreamingConfig.catalog` (#5115), thanks @faysou
 - Added `timezone` to `RotationConfig.scheduled_dates`, defaulting to UTC (#5115), thanks @faysou
+- Added shared-table `record/` and `instrument/` catalog paths for external catalog backends (#5115), thanks @faysou
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
@@ -107,6 +108,7 @@ Released on TBD (UTC).
 - Changed `ParquetDataCatalog.query_custom_data` to take a `NautilusDataType` (#5115), thanks @faysou
 - Changed `ParquetDataCatalog.list_data_types` to return type enums in place of names (#5115), thanks @faysou
 - Changed `RotationConfig.mode` to return a `RotationMode` enum (#5115), thanks @faysou
+- Changed Rust `CatalogCoverageRow.data_type` to a `CatalogDataType` (#5115), thanks @faysou
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
@@ -330,6 +332,7 @@ Released on TBD (UTC).
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
+- Improved catalog worker, Arrow batch grouping, and `ts_init` range test coverage (#5115), thanks @faysou
 - Improved testkit data downloads with atomic checksum manifest writes and stale partial cleanup
 - Improved order book and own order book regression coverage from mutation testing
 - Improved the live test harness own book invariant to detect missing orders and stale entry fields
