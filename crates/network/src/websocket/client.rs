@@ -5703,7 +5703,12 @@ mod rust_tests {
         assert!(futures_util::poll!(&mut initial).is_pending());
         tokio::time::advance(Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
+
+        // Paused time auto-advances while the runtime waits on socket I/O, which
+        // would fire the connect timeout, so run the handshake on the real clock
+        tokio::time::resume();
         let mut inner = initial.await.unwrap();
+        tokio::time::pause();
 
         inner
             .connection_mode
@@ -5713,6 +5718,7 @@ mod rust_tests {
         assert!(futures_util::poll!(&mut reconnect).is_pending());
         tokio::time::advance(Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
+        tokio::time::resume();
         assert_eq!(reconnect.await.unwrap(), ReconnectOutcome::Reconnected);
 
         server.abort();
