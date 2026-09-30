@@ -1747,9 +1747,11 @@ impl DataEngine {
                 })
                 .collect();
             let cache = self.cache.clone();
-            let validate_sequence = self.config.validate_data_sequence;
             let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
-                process_engine_bar(&cache, validate_sequence, false, bar);
+                // Request-generated bars are delivered only through the cache.
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar_historical(bar) {
+                    log_error_on_cache_insert(&e);
+                }
 
                 for aggregator in &downstream {
                     aggregator.borrow_mut().handle_bar(bar);
@@ -5986,8 +5988,8 @@ fn derive_quote_from_depth(depth: &OrderBookDepth) -> Option<QuoteTick> {
 }
 
 // Validates a bar against `last_bar` before writing and (optionally) publishing.
-// Shared by `handle_bar` and aggregator-emitted bars so both honor
-// `validate_data_sequence`.
+// Live bars and aggregator emissions honor `validate_data_sequence`;
+// request-generated bars use `Cache::add_bar_historical`.
 fn process_engine_bar(
     cache: &Rc<RefCell<Cache>>,
     validate_sequence: bool,
@@ -6038,8 +6040,6 @@ fn validate_bar_sequence(cache: &Rc<RefCell<Cache>>, validate_sequence: bool, ba
         return false;
     }
 
-    // Bar revision overwrite needs a `Bar.is_revision` field on the model;
-    // not present today. Tracked under #8 in the data engine parity plan
     true
 }
 

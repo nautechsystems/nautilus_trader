@@ -2143,7 +2143,10 @@ impl Cache {
         self.add_trade(trade).map_err(to_pyvalue_err)
     }
 
-    /// Adds the `bar` to the cache.
+    /// Adds the `bar` to the cache, keeping the per-`bar_type` series newest-first.
+    ///
+    /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+    /// `ts_event` replaces the front bar for time bars.
     ///
     /// # Errors
     ///
