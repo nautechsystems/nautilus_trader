@@ -1015,6 +1015,56 @@ async fn book_rejected_subscription_allows_resubscribe() {
 }
 
 #[tokio::test]
+async fn book_rejected_replacement_answers_waiting_subscriber() {
+    let state = Arc::new(TestServerState::default());
+    // A silent initial subscribe misses its snapshot deadline, which starts a recovery
+    state.book_ack_mode.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let subscriber = harness.client.clone();
+
+    let subscription = tokio::spawn(async move { subscriber.subscribe_book(id).await });
+    await_subscribe_count(&state, 1).await;
+    state.book_ack_mode.store(3, Ordering::SeqCst);
+
+    let error = tokio::time::timeout(Duration::from_secs(30), subscription)
+        .await
+        .expect("rejected replacement must answer the waiting subscriber")
+        .unwrap()
+        .expect_err("venue rejection must fail the subscribe");
+
+    // The rejected caller's release ends the recovery, which would otherwise drop a resubscribe
+    state.book_ack_mode.store(0, Ordering::SeqCst);
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+    harness
+        .client
+        .subscribe_book(id)
+        .await
+        .expect("resubscribe after rejection");
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("snapshot deltas");
+
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected snapshot Deltas, was {event:?}");
+    };
+
+    assert!(
+        error.to_string().contains("30012"),
+        "unexpected rejection: {error}"
+    );
+    assert_eq!(deltas.instrument_id, id);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(state.subscribes().await.len(), 3);
+    assert_eq!(state.unsubscribes().await.len(), 1);
+
+    harness.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
 async fn test_order_book_nonce_gap_drops_update_and_resubscribes() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
