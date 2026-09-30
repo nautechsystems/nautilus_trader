@@ -1339,6 +1339,11 @@ the Polymarket order ID (`venue_order_id`). The execution reconciliation procedu
 is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
+- Generate filled order reports from confirmed trades for orders that closed before startup and
+  are not in the cache, so their fills apply with the venue quantity and commission. For an
+  instrument with a position report, the fills must explain that position; see
+  [report precision](#report-precision). Without a lookback window, only those instruments qualify,
+  because fills miss balance changes such as redemption; see [missing reports](#missing-reports).
 - In owner mode, generate position reports from current user positions reported by Polymarket's Data API.
   Session mode omits these wallet-wide positions; see [session keys](#session-keys).
 - Compare these reports with Nautilus execution state.
@@ -1346,6 +1351,18 @@ is as follows:
   Polymarket.
 
 ### Position reports
+
+#### Report precision
+
+The Data API reports position size and average price to four decimal places. When the confirmed
+fills in a mass status build one long position from zero without returning to flat, and the
+resulting quantity differs from the reported size by less than `0.0001`, the position report takes
+the quantity and average entry price of those fills. Startup reconciliation then applies the fills
+without a synthetic adjustment for the rounding. A buy and a sell with the same match time do not
+qualify, because their order is ambiguous.
+
+Otherwise, including when the cache retains an open position that other trades built, the report
+keeps the Data API values, and the fills of closed orders in that instrument are not reported.
 
 #### Resolved balances
 

@@ -318,6 +318,7 @@ Released on TBD (UTC).
 - Fixed Polymarket BUY fills truncated to the order quantity; overfills now raise the order quantity
 - Fixed Polymarket commissions rounding instead of flooring to five decimals like the venue charge
 - Fixed Polymarket order quantity updates after a modify dropping fills from earlier venue orders
+- Fixed Polymarket restarts replacing fills of closed orders with synthetic fills that lack commission
 - Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp

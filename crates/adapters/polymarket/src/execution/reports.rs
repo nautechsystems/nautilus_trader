@@ -25,7 +25,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionEventEmitter, execution::context::OrderContext};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -1085,6 +1085,35 @@ impl PolymarketExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ctx = self.fill_context();
+
+        let (cached_venue_order_ids, retained_trade_ids) = {
+            let cache = self.core.cache();
+
+            // A reloaded cache indexes only each order's current venue order, not its earlier legs
+            let cached_venue_order_ids: AHashSet<VenueOrderId> = cache
+                .orders(Some(&self.core.venue), None, None, None, None)
+                .iter()
+                .flat_map(|order| order.events())
+                .filter_map(|event| event.venue_order_id())
+                .collect();
+            let mut retained_trade_ids: AHashMap<InstrumentId, AHashSet<TradeId>> = AHashMap::new();
+
+            for position in cache.positions_open(
+                Some(&self.core.venue),
+                None,
+                None,
+                Some(&self.core.account_id),
+                None,
+            ) {
+                retained_trade_ids
+                    .entry(position.instrument_id)
+                    .or_default()
+                    .extend(position.trade_ids.iter().copied());
+            }
+
+            (cached_venue_order_ids, retained_trade_ids)
+        };
+
         super::reconciliation::generate_mass_status(
             &self.http_client,
             &self.data_api_client,
@@ -1095,6 +1124,8 @@ impl PolymarketExecutionClient {
             lookback_mins,
             self.config.reconciliation_load_ids(),
             &self.resolved_balance_scope(),
+            &retained_trade_ids,
+            |venue_order_id| cached_venue_order_ids.contains(venue_order_id),
         )
         .await
     }
