@@ -63,6 +63,7 @@ impl DataEngineConfig {
         time_bars_interval_type = None,
         time_bars_build_delay = None,
         time_bars_origin_offset = None,
+        time_bars_origin_tz = None,
         validate_data_sequence = None,
         buffer_deltas = None,
         emit_quotes_from_book = None,
@@ -78,6 +79,7 @@ impl DataEngineConfig {
         time_bars_interval_type: Option<Py<PyAny>>,
         time_bars_build_delay: Option<u64>,
         time_bars_origin_offset: Option<HashMap<BarAggregation, u64>>,
+        time_bars_origin_tz: Option<HashMap<BarAggregation, String>>,
         validate_data_sequence: Option<bool>,
         buffer_deltas: Option<bool>,
         emit_quotes_from_book: Option<bool>,
@@ -102,6 +104,7 @@ impl DataEngineConfig {
             .maybe_time_bars_interval_type(time_bars_interval_type)
             .maybe_time_bars_build_delay(time_bars_build_delay)
             .maybe_time_bars_origin_offset(time_bars_origin_offset)
+            .maybe_time_bars_origin_tz(time_bars_origin_tz)
             .maybe_validate_data_sequence(validate_data_sequence)
             .maybe_buffer_deltas(buffer_deltas)
             .maybe_emit_quotes_from_book(emit_quotes_from_book)
@@ -149,6 +152,12 @@ impl DataEngineConfig {
             .iter()
             .map(|(aggregation, offset)| (*aggregation, offset.as_nanos() as u64))
             .collect()
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_origin_tz")]
+    fn py_time_bars_origin_tz(&self) -> HashMap<BarAggregation, String> {
+        self.time_bars_origin_tz.clone()
     }
 
     #[getter]

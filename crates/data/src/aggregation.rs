@@ -27,7 +27,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use jiff::SignedDuration;
+use jiff::{SignedDuration, tz::TimeZone};
 use nautilus_common::{
     clock::{Clock, VirtualClock},
     timer::{TimeEvent, TimeEventCallback},
@@ -1508,6 +1508,7 @@ pub struct TimeBarAggregator {
     first_close_ns: UnixNanos,
     bar_build_delay: u64,
     time_bars_origin_offset: Option<SignedDuration>,
+    time_bars_origin_tz: Option<TimeZone>,
     skip_first_non_full_bar: bool,
     pub historical_mode: bool,
     historical_events: Vec<TimeEvent>,
@@ -1547,6 +1548,7 @@ impl TimeBarAggregator {
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
         time_bars_origin_offset: Option<SignedDuration>,
+        time_bars_origin_tz: Option<TimeZone>,
         bar_build_delay: u64,
         skip_first_non_full_bar: bool,
     ) -> Self {
@@ -1570,6 +1572,7 @@ impl TimeBarAggregator {
             first_close_ns: UnixNanos::default(),
             bar_build_delay,
             time_bars_origin_offset,
+            time_bars_origin_tz,
             skip_first_non_full_bar,
             historical_mode: false,
             historical_events: Vec::new(),
@@ -1616,8 +1619,12 @@ impl TimeBarAggregator {
 
         // Computing start_time
         let now = self.clock.borrow().utc_now();
-        let mut start_time =
-            get_time_bar_start(now, &self.bar_type(), self.time_bars_origin_offset);
+        let mut start_time = get_time_bar_start(
+            now,
+            &self.bar_type(),
+            self.time_bars_origin_offset,
+            self.time_bars_origin_tz.as_ref(),
+        );
         start_time += SignedDuration::from_micros(self.bar_build_delay as i64);
 
         // Closing a partial bar at the transition from historical to backtest data
@@ -4772,6 +4779,7 @@ mod tests {
             false, // timestamp_on_close
             BarIntervalType::LeftOpen,
             None,  // time_bars_origin_offset
+            None,  // time_bars_origin_tz
             15,    // bar_build_delay
             false, // skip_first_non_full_bar
         );
@@ -4818,6 +4826,7 @@ mod tests {
             false,
             BarIntervalType::LeftOpen,
             None,
+            None,
             15,
             false,
         );
@@ -4854,6 +4863,7 @@ mod tests {
             false,
             BarIntervalType::LeftOpen,
             None,
+            None,
             0,
             false,
         );
@@ -4885,6 +4895,7 @@ mod tests {
             true, // build_with_no_updates
             true, // timestamp_on_close - changed to true to verify left-open behavior
             BarIntervalType::LeftOpen,
+            None,
             None,
             15,
             false, // skip_first_non_full_bar
@@ -4941,6 +4952,7 @@ mod tests {
             true, // build_with_no_updates
             true, // timestamp_on_close
             BarIntervalType::RightOpen,
+            None,
             None,
             15,
             false, // skip_first_non_full_bar
@@ -5001,6 +5013,7 @@ mod tests {
             true,  // timestamp_on_close
             BarIntervalType::LeftOpen,
             None,
+            None,
             15,
             false, // skip_first_non_full_bar
         );
@@ -5026,6 +5039,7 @@ mod tests {
             true, // build_with_no_updates enabled
             true, // timestamp_on_close
             BarIntervalType::LeftOpen,
+            None,
             None,
             15,
             false, // skip_first_non_full_bar
@@ -5074,6 +5088,7 @@ mod tests {
             true, // build_with_no_updates
             true, // timestamp_on_close
             BarIntervalType::RightOpen,
+            None,
             None,
             15,
             false, // skip_first_non_full_bar
@@ -6587,6 +6602,7 @@ mod tests {
             true,
             BarIntervalType::LeftOpen,
             None,
+            None,
             0,
             false,
         );
@@ -7341,6 +7357,7 @@ mod tests {
             false,
             interval_type,
             None,
+            None,
             0,
             true, // skip_first_non_full_bar
         );
@@ -7406,6 +7423,7 @@ mod tests {
             false,
             interval_type,
             None,
+            None,
             0,
             true, // skip_first_non_full_bar
         );
@@ -7466,6 +7484,7 @@ mod tests {
             false,
             false,
             BarIntervalType::LeftOpen,
+            None,
             None,
             0,
             true, // skip_first_non_full_bar
@@ -7538,6 +7557,7 @@ mod tests {
             false,
             false,
             BarIntervalType::LeftOpen,
+            None,
             None,
             100,  // bar_build_delay (microseconds)
             true, // skip_first_non_full_bar
@@ -7614,6 +7634,7 @@ mod tests {
             false,
             BarIntervalType::RightOpen, // ts_event = stored_open_ns
             None,
+            None,
             0,
             false, // skip_first_non_full_bar
         );
@@ -7657,6 +7678,7 @@ mod tests {
             true,
             true,
             BarIntervalType::LeftOpen,
+            None,
             None,
             0,
             false,
@@ -7838,6 +7860,7 @@ mod tests {
             true,
             BarIntervalType::LeftOpen,
             None,
+            None,
             0,
             false,
         );
@@ -7997,6 +8020,7 @@ mod tests {
             false, // timestamp_on_close
             interval_type,
             None,
+            None,
             0,
             false, // skip_first_non_full_bar
         );
@@ -8086,6 +8110,7 @@ mod property_tests {
                 false,
                 interval_type,
                 None,
+                None,
                 0,
                 skip_first,
             );
@@ -8162,6 +8187,7 @@ mod property_tests {
                 false,
                 false,
                 interval_type,
+                None,
                 None,
                 0,
                 true, // skip_first_non_full_bar

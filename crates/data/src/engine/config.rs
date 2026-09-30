@@ -54,6 +54,14 @@ pub struct DataEngineConfig {
     /// A dictionary mapping time bar aggregations to their origin time offsets.
     #[builder(default)]
     pub time_bars_origin_offset: HashMap<BarAggregation, Duration>,
+    /// A dictionary mapping time bar aggregations to an IANA timezone name
+    /// (e.g. `"America/New_York"`). When set for a Day/Week/Month/Year aggregation,
+    /// the bar boundary is computed in that timezone's civil calendar so DST
+    /// transitions do not drift the wall-clock anchor. Sub-day aggregations
+    /// ignore the timezone since their period arithmetic is UTC-fixed. An
+    /// unknown or invalid timezone name is logged and falls back to UTC anchoring.
+    #[builder(default)]
+    pub time_bars_origin_tz: HashMap<BarAggregation, String>,
     /// If data objects timestamp sequencing will be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,

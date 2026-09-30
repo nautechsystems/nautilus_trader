@@ -25,7 +25,11 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use jiff::{SignedDuration, Timestamp, civil::Date, tz::Offset};
+use jiff::{
+    SignedDuration, Timestamp,
+    civil::Date,
+    tz::{Offset, TimeZone},
+};
 use nautilus_core::{
     DurationNanos, UnixNanos,
     correctness::{FAILED, check_predicate_true},
@@ -205,6 +209,11 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> DurationNanos {
 
 /// Returns the time bar start as a timezone-aware `Timestamp`.
 ///
+/// When `time_bars_origin_tz` is provided, the DAY, WEEK, MONTH, and YEAR anchors
+/// are computed in that timezone's civil calendar so DST transitions do not drift
+/// the boundary. Sub-day aggregations ignore the timezone since their period
+/// arithmetic is inherently UTC-fixed.
+///
 /// # Panics
 ///
 /// Panics if computing the base civil date or datetime from `now` fails,
@@ -215,6 +224,7 @@ pub fn get_time_bar_start(
     now: Timestamp,
     bar_type: &BarType,
     time_bars_origin: Option<SignedDuration>,
+    time_bars_origin_tz: Option<&TimeZone>,
 ) -> Timestamp {
     let spec = bar_type.spec();
     let step = step_to_i64(spec.step);
@@ -233,97 +243,259 @@ pub fn get_time_bar_start(
         BarAggregation::Hour => {
             find_closest_smaller_time(now, origin_offset, SignedDuration::from_hours(step))
         }
-        BarAggregation::Day => find_closest_smaller_time(now, origin_offset, duration_days(step)),
-        BarAggregation::Week => {
-            let now_civil = Offset::UTC.to_datetime(now);
-            let days_from_monday = i64::from(now_civil.weekday().to_monday_zero_offset());
-            let week_start_date = now_civil
-                .date()
-                .checked_sub(jiff::Span::new().days(days_from_monday))
-                .expect("valid week start");
-            let mut start_time = Offset::UTC
-                .to_timestamp(week_start_date.at(0, 0, 0, 0))
-                .expect("valid UTC week start");
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -=
-                    duration_days(step.checked_mul(7).expect("`step` overflows i64 days"));
+        BarAggregation::Day => {
+            if let Some(tz) = time_bars_origin_tz {
+                anchor_local_day(now, tz, origin_offset, step)
+            } else {
+                find_closest_smaller_time(now, origin_offset, duration_days(step))
             }
+        }
+        BarAggregation::Week => {
+            if let Some(tz) = time_bars_origin_tz {
+                anchor_local_week(now, tz, origin_offset, step)
+            } else {
+                let now_civil = Offset::UTC.to_datetime(now);
+                let days_from_monday = i64::from(now_civil.weekday().to_monday_zero_offset());
+                let week_start_date = now_civil
+                    .date()
+                    .checked_sub(jiff::Span::new().days(days_from_monday))
+                    .expect("valid week start");
+                let mut start_time = Offset::UTC
+                    .to_timestamp(week_start_date.at(0, 0, 0, 0))
+                    .expect("valid UTC week start");
+                start_time += origin_offset;
 
-            start_time
+                if now < start_time {
+                    start_time -=
+                        duration_days(step.checked_mul(7).expect("`step` overflows i64 days"));
+                }
+
+                start_time
+            }
         }
         BarAggregation::Month => {
-            // Set to the first day of the year
-            let now_civil = Offset::UTC.to_datetime(now);
-            let mut start_time = Offset::UTC
-                .to_timestamp(
-                    Date::new(now_civil.year(), 1, 1)
-                        .expect("valid year start date")
-                        .at(0, 0, 0, 0),
-                )
-                .expect("valid UTC year start");
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time =
-                    subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
-            }
-
             let months_step =
                 u32::try_from(step).expect("`step` exceeds u32 range for month arithmetic");
 
-            while start_time <= now {
-                start_time =
-                    add_n_months(start_time, months_step).expect("Failed to add months in loop");
-            }
+            if let Some(tz) = time_bars_origin_tz {
+                anchor_local_month(now, tz, origin_offset, months_step)
+            } else {
+                let now_civil = Offset::UTC.to_datetime(now);
+                let mut start_time = Offset::UTC
+                    .to_timestamp(
+                        Date::new(now_civil.year(), 1, 1)
+                            .expect("valid year start date")
+                            .at(0, 0, 0, 0),
+                    )
+                    .expect("valid UTC year start");
+                start_time += origin_offset;
 
-            start_time =
-                subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
-            start_time
+                if now < start_time {
+                    start_time =
+                        subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
+                }
+
+                while start_time <= now {
+                    start_time = add_n_months(start_time, months_step)
+                        .expect("Failed to add months in loop");
+                }
+
+                start_time = subtract_n_months(start_time, months_step)
+                    .expect("Failed to subtract months_step");
+                start_time
+            }
         }
         BarAggregation::Year => {
             let step_i32 =
                 i32::try_from(step).expect("`step` exceeds i32 range for year arithmetic");
 
-            // Reconstruct from Jan 1 + origin each time to avoid leap-day drift
-            let year_start = |year: i32| {
-                let year = i16::try_from(year).expect("year exceeds Jiff supported range");
-                Offset::UTC
-                    .to_timestamp(
-                        Date::new(year, 1, 1)
-                            .expect("valid year start date")
-                            .at(0, 0, 0, 0),
-                    )
-                    .expect("valid UTC year start")
-                    + origin_offset
-            };
+            if let Some(tz) = time_bars_origin_tz {
+                anchor_local_year(now, tz, origin_offset, step_i32)
+            } else {
+                let year_start = |year: i32| {
+                    let year = i16::try_from(year).expect("year exceeds Jiff supported range");
+                    Offset::UTC
+                        .to_timestamp(
+                            Date::new(year, 1, 1)
+                                .expect("valid year start date")
+                                .at(0, 0, 0, 0),
+                        )
+                        .expect("valid UTC year start")
+                        + origin_offset
+                };
 
-            let mut year = i32::from(Offset::UTC.to_datetime(now).year());
-            if year_start(year) > now {
-                year = year
-                    .checked_sub(step_i32)
-                    .expect("year arithmetic underflow");
-            }
-
-            loop {
-                let next_year = year
-                    .checked_add(step_i32)
-                    .expect("year arithmetic overflow");
-
-                if year_start(next_year) > now {
-                    break;
+                let mut year = i32::from(Offset::UTC.to_datetime(now).year());
+                if year_start(year) > now {
+                    year = year
+                        .checked_sub(step_i32)
+                        .expect("year arithmetic underflow");
                 }
-                year = next_year;
-            }
 
-            year_start(year)
+                loop {
+                    let next_year = year
+                        .checked_add(step_i32)
+                        .expect("year arithmetic overflow");
+
+                    if year_start(next_year) > now {
+                        break;
+                    }
+                    year = next_year;
+                }
+
+                year_start(year)
+            }
         }
         _ => panic!(
             "Aggregation type {} not supported for time bars",
             spec.aggregation
         ),
     }
+}
+
+/// Resolves the timestamp for a local civil `date` at midnight in `tz`, adds
+/// the fixed `origin_offset`, and returns the resulting UTC `Timestamp`.
+///
+/// Midnight is not affected by DST transitions in any IANA zone, so the
+/// unambiguous timestamp is well defined. Adding `origin_offset` as a
+/// wall-clock duration then yields the intended anchor instant (e.g. 17:00
+/// local becomes 21:00 UTC in EDT and 22:00 UTC in EST).
+fn local_anchor_for_date(date: Date, tz: &TimeZone, origin_offset: SignedDuration) -> Timestamp {
+    date.at(0, 0, 0, 0)
+        .to_zoned(tz.clone())
+        .expect("valid zoned local midnight")
+        .timestamp()
+        + origin_offset
+}
+
+fn anchor_local_day(
+    now: Timestamp,
+    tz: &TimeZone,
+    origin_offset: SignedDuration,
+    step: i64,
+) -> Timestamp {
+    let mut date = now.to_zoned(tz.clone()).date();
+    let mut anchor = local_anchor_for_date(date, tz, origin_offset);
+
+    while anchor > now {
+        date = date
+            .checked_sub(jiff::Span::new().days(1))
+            .expect("valid civil day step back");
+        anchor = local_anchor_for_date(date, tz, origin_offset);
+    }
+
+    if step > 1 {
+        let step_span = jiff::Span::new()
+            .try_days(step)
+            .expect("`step` fits in Span days");
+        loop {
+            let earlier_date = date
+                .checked_sub(step_span)
+                .expect("valid civil day step back for grid alignment");
+            let earlier_anchor = local_anchor_for_date(earlier_date, tz, origin_offset);
+            if earlier_anchor > now {
+                date = earlier_date;
+                anchor = earlier_anchor;
+                continue;
+            }
+            break;
+        }
+    }
+
+    anchor
+}
+
+fn anchor_local_week(
+    now: Timestamp,
+    tz: &TimeZone,
+    origin_offset: SignedDuration,
+    step: i64,
+) -> Timestamp {
+    let zoned_now = now.to_zoned(tz.clone());
+    let days_from_monday = i64::from(zoned_now.weekday().to_monday_zero_offset());
+    let mut week_start = zoned_now
+        .date()
+        .checked_sub(jiff::Span::new().days(days_from_monday))
+        .expect("valid week start date");
+
+    let mut anchor = local_anchor_for_date(week_start, tz, origin_offset);
+    let week_span = jiff::Span::new()
+        .try_days(step.checked_mul(7).expect("`step` overflows i64 days"))
+        .expect("`step` weeks fits in Span days");
+
+    while anchor > now {
+        week_start = week_start
+            .checked_sub(week_span)
+            .expect("valid week step back");
+        anchor = local_anchor_for_date(week_start, tz, origin_offset);
+    }
+
+    anchor
+}
+
+fn anchor_local_month(
+    now: Timestamp,
+    tz: &TimeZone,
+    origin_offset: SignedDuration,
+    months_step: u32,
+) -> Timestamp {
+    let zoned_now = now.to_zoned(tz.clone());
+    let mut year_start = Date::new(zoned_now.year(), 1, 1).expect("valid year start date");
+
+    let mut anchor = local_anchor_for_date(year_start, tz, origin_offset);
+    if anchor > now {
+        year_start = year_start
+            .checked_sub(jiff::Span::new().months(12))
+            .expect("valid prior year start");
+        anchor = local_anchor_for_date(year_start, tz, origin_offset);
+    }
+
+    let step_span = jiff::Span::new().months(i64::from(months_step));
+    loop {
+        let next_start = year_start
+            .checked_add(step_span)
+            .expect("valid next month step");
+        let next_anchor = local_anchor_for_date(next_start, tz, origin_offset);
+        if next_anchor > now {
+            break;
+        }
+        year_start = next_start;
+        anchor = next_anchor;
+    }
+
+    anchor
+}
+
+fn anchor_local_year(
+    now: Timestamp,
+    tz: &TimeZone,
+    origin_offset: SignedDuration,
+    step_i32: i32,
+) -> Timestamp {
+    let year_start_date = |year: i32| {
+        let year = i16::try_from(year).expect("year exceeds Jiff supported range");
+        Date::new(year, 1, 1).expect("valid year start date")
+    };
+    let year_anchor = |year: i32| local_anchor_for_date(year_start_date(year), tz, origin_offset);
+
+    let mut year = i32::from(now.to_zoned(tz.clone()).year());
+    if year_anchor(year) > now {
+        year = year
+            .checked_sub(step_i32)
+            .expect("year arithmetic underflow");
+    }
+
+    loop {
+        let next_year = year
+            .checked_add(step_i32)
+            .expect("year arithmetic overflow");
+
+        if year_anchor(next_year) > now {
+            break;
+        }
+        year = next_year;
+    }
+
+    year_anchor(year)
 }
 
 /// Finds the closest smaller time based on a daily time origin and period.
@@ -1620,7 +1792,7 @@ mod tests {
     fn test_get_time_bar_start_month_step_exceeds_u32_panics() {
         let bar_type = bar_type_with_raw_step(1_usize << 40, BarAggregation::Month);
         let now = timestamp("2024-07-21T12:00:00Z");
-        let _ = get_time_bar_start(now, &bar_type, None);
+        let _ = get_time_bar_start(now, &bar_type, None, None);
     }
 
     #[rstest]
@@ -1628,7 +1800,7 @@ mod tests {
     fn test_get_time_bar_start_year_step_exceeds_i32_panics() {
         let bar_type = bar_type_with_raw_step(1_usize << 40, BarAggregation::Year);
         let now = timestamp("2024-07-21T12:00:00Z");
-        let _ = get_time_bar_start(now, &bar_type, None);
+        let _ = get_time_bar_start(now, &bar_type, None, None);
     }
 
     #[rstest]
@@ -1636,7 +1808,7 @@ mod tests {
     fn test_get_time_bar_start_year_step_exceeds_jiff_range_panics() {
         let bar_type = bar_type_with_raw_step(32_000, BarAggregation::Year);
         let now = timestamp("2024-07-21T12:00:00Z");
-        let _ = get_time_bar_start(now, &bar_type, None);
+        let _ = get_time_bar_start(now, &bar_type, None, None);
     }
 
     #[rstest]
@@ -1707,8 +1879,128 @@ mod tests {
             aggregation_source: AggregationSource::Internal,
         };
 
-        let start_time = get_time_bar_start(now, &bar_type, None);
+        let start_time = get_time_bar_start(now, &bar_type, None, None);
         assert_eq!(start_time, expected);
+    }
+
+    fn bar_type_for(aggregation: BarAggregation, step: usize) -> BarType {
+        BarType::Standard {
+            instrument_id: InstrumentId::from("SPX.SIM"),
+            spec: BarSpecification::new(step, aggregation, PriceType::Last),
+            aggregation_source: AggregationSource::Internal,
+        }
+    }
+
+    fn ny_tz() -> TimeZone {
+        TimeZone::get("America/New_York").expect("bundled tzdata carries America/New_York")
+    }
+
+    /// Daily bar anchored at 17:00 `America/New_York` must land at 21:00 UTC during
+    /// EDT (summer) and 22:00 UTC during EST (winter), covering both sides of the
+    /// spring-forward and fall-back transitions. Under UTC-fixed anchoring the
+    /// boundary would drift by one hour across each transition.
+    #[rstest]
+    #[case::edt_before_spring_forward(
+        timestamp("2026-03-07T22:30:00Z"),  // 17:30 EST on 2026-03-07 (still winter)
+        timestamp("2026-03-07T22:00:00Z"),  // 17:00 EST = 22:00 UTC
+    )]
+    #[case::edt_after_spring_forward(
+        timestamp("2026-03-09T21:30:00Z"),  // 17:30 EDT on 2026-03-09 (DST active)
+        timestamp("2026-03-09T21:00:00Z"),  // 17:00 EDT = 21:00 UTC
+    )]
+    #[case::edt_before_fall_back(
+        timestamp("2026-10-31T21:30:00Z"),  // 17:30 EDT on 2026-10-31 (still summer)
+        timestamp("2026-10-31T21:00:00Z"),  // 17:00 EDT = 21:00 UTC
+    )]
+    #[case::est_after_fall_back(
+        timestamp("2026-11-02T22:30:00Z"),  // 17:30 EST on 2026-11-02 (after fall back)
+        timestamp("2026-11-02T22:00:00Z"),  // 17:00 EST = 22:00 UTC
+    )]
+    fn test_get_time_bar_start_day_dst_aware_ny_close(
+        #[case] now: Timestamp,
+        #[case] expected: Timestamp,
+    ) {
+        let bar_type = bar_type_for(BarAggregation::Day, 1);
+        let origin = SignedDuration::from_hours(17); // 17:00 wall-clock
+        let tz = ny_tz();
+
+        let start = get_time_bar_start(now, &bar_type, Some(origin), Some(&tz));
+        assert_eq!(start, expected);
+    }
+
+    /// Verifies that with a tz set, requesting the boundary just before today's
+    /// anchor returns yesterday's anchor rather than today's.
+    #[rstest]
+    fn test_get_time_bar_start_day_dst_aware_before_anchor_returns_prior_day() {
+        let bar_type = bar_type_for(BarAggregation::Day, 1);
+        let tz = ny_tz();
+        let origin = SignedDuration::from_hours(17);
+        // 2026-06-15T16:00 EDT = 2026-06-15T20:00 UTC, one hour before that day's 17:00 anchor
+        let now = timestamp("2026-06-15T20:00:00Z");
+        // Prior day's anchor: 2026-06-14T17:00 EDT = 2026-06-14T21:00 UTC
+        let expected = timestamp("2026-06-14T21:00:00Z");
+
+        let start = get_time_bar_start(now, &bar_type, Some(origin), Some(&tz));
+        assert_eq!(start, expected);
+    }
+
+    /// A weekly bar anchored at Monday 09:30 `America/New_York` keeps the wall
+    /// clock stable across a DST spring-forward that falls mid-week.
+    #[rstest]
+    fn test_get_time_bar_start_week_dst_aware_ny_open() {
+        let bar_type = bar_type_for(BarAggregation::Week, 1);
+        let tz = ny_tz();
+        let origin = SignedDuration::from_mins(9 * 60 + 30); // 09:30 local
+        // 2026-03-11T15:00 EDT (Wednesday after spring-forward on 2026-03-08)
+        let now = timestamp("2026-03-11T19:00:00Z");
+        // Monday 2026-03-09 09:30 EDT = 13:30 UTC
+        let expected = timestamp("2026-03-09T13:30:00Z");
+
+        let start = get_time_bar_start(now, &bar_type, Some(origin), Some(&tz));
+        assert_eq!(start, expected);
+    }
+
+    /// A monthly bar anchored to `America/New_York` must roll over on the first of
+    /// each local month, not the first of the UTC month.
+    #[rstest]
+    fn test_get_time_bar_start_month_dst_aware_start_of_ny_month() {
+        let bar_type = bar_type_for(BarAggregation::Month, 1);
+        let tz = ny_tz();
+        let origin = SignedDuration::ZERO;
+        // 2026-06-15T14:00 EDT (mid-June)
+        let now = timestamp("2026-06-15T18:00:00Z");
+        // 2026-06-01 00:00 EDT = 04:00 UTC
+        let expected = timestamp("2026-06-01T04:00:00Z");
+
+        let start = get_time_bar_start(now, &bar_type, Some(origin), Some(&tz));
+        assert_eq!(start, expected);
+    }
+
+    /// UTC anchoring (no tz) preserves the pre-existing behaviour: the daily
+    /// boundary sits at UTC midnight plus the fixed offset, regardless of local
+    /// DST state, which is exactly the drift the tz-aware path fixes for local
+    /// sessions.
+    #[rstest]
+    fn test_get_time_bar_start_day_utc_matches_prior_behaviour() {
+        let bar_type = bar_type_for(BarAggregation::Day, 1);
+        let origin = SignedDuration::from_hours(17);
+
+        // now = 22:00 UTC on 2026-03-09. UTC anchoring floors to that day's
+        // midnight + 17h = 17:00 UTC, which is 12:00 EST / 13:00 EDT — i.e.
+        // it does not track a local wall clock across the DST transition.
+        let now = timestamp("2026-03-09T22:00:00Z");
+        let expected = timestamp("2026-03-09T17:00:00Z");
+        let start = get_time_bar_start(now, &bar_type, Some(origin), None);
+        assert_eq!(start, expected);
+    }
+
+    #[rstest]
+    fn test_get_time_bar_start_day_tz_unknown_zone_falls_back() {
+        // An unknown IANA name is a caller-side concern; the helper takes an
+        // already-resolved TimeZone, so failure resolution lives at the config
+        // boundary (crates/data/src/engine/mod.rs). Confirm here that resolving
+        // "America/New_York" via `TimeZone::get` is available in the bundled tzdb.
+        assert!(TimeZone::get("America/New_York").is_ok());
     }
 
     #[rstest]
@@ -2393,7 +2685,7 @@ mod property_tests {
             let bar_type = BarType::new(instrument_id, spec, AggregationSource::Internal);
 
             let now = Timestamp::new(epoch_secs, subsec_nanos.cast_signed()).unwrap();
-            let start = get_time_bar_start(now, &bar_type, None);
+            let start = get_time_bar_start(now, &bar_type, None, None);
             let interval = get_bar_interval(&bar_type);
 
             prop_assert!(start <= now, "start {start} must not be after now {now}");

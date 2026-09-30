@@ -4755,6 +4755,20 @@ impl DataEngine {
                 .get(&bar_type.spec().aggregation)
                 .map(|duration| jiff::SignedDuration::try_from(*duration).unwrap_or_default());
 
+            let time_bars_origin_tz = config
+                .time_bars_origin_tz
+                .get(&bar_type.spec().aggregation)
+                .map(|name| {
+                    jiff::tz::TimeZone::get(name).unwrap_or_else(|e| {
+                        log::warn!(
+                            "Unknown time_bars_origin_tz {name:?} for {}: {e}; \
+                             falling back to UTC anchoring",
+                            bar_type.spec().aggregation,
+                        );
+                        jiff::tz::TimeZone::UTC
+                    })
+                });
+
             Box::new(TimeBarAggregator::new(
                 bar_type,
                 price_precision,
@@ -4765,6 +4779,7 @@ impl DataEngine {
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
                 time_bars_origin_offset,
+                time_bars_origin_tz,
                 config.time_bars_build_delay,
                 skip_first_non_full_bar.unwrap_or(config.time_bars_skip_first_non_full_bar),
             ))
