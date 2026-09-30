@@ -789,10 +789,13 @@ impl NautilusKernel {
 
         self.start_engines();
 
-        log::info!("Initializing trader");
-        if let Err(e) = self.trader.borrow_mut().initialize() {
-            log::error!("Error initializing trader: {e:?}");
-            return;
+        // A trader that was reset is already `Ready`, so only a new trader needs initializing
+        if self.trader.borrow().state() == ComponentState::PreInitialized {
+            log::info!("Initializing trader");
+            if let Err(e) = self.trader.borrow_mut().initialize() {
+                log::error!("Error initializing trader: {e:?}");
+                return;
+            }
         }
 
         // Execution and data clients are started by their engines via `start_engines` above
@@ -2159,6 +2162,26 @@ mod lifecycle_tests {
         )));
 
         drop(emulator);
+        kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_start_after_reset_sets_ts_started() {
+        let mut kernel = NautilusKernelBuilder::default().build().unwrap();
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        kernel.reset();
+        assert_eq!(kernel.trader().borrow().state(), ComponentState::Ready);
+        assert!(kernel.ts_started().is_none());
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+
+        assert!(kernel.ts_started().is_some());
+        assert!(kernel.trader().borrow().is_running());
+
+        kernel.stop_trader();
         kernel.dispose();
     }
 }

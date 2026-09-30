@@ -7293,3 +7293,51 @@ fn test_end_returns_streaming_write_error() {
         ),
     );
 }
+
+mod serial_tests {
+    use super::*;
+
+    #[rstest]
+    fn test_run_after_reset_with_shutdown_on_error_processes_data(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let config = BacktestEngineConfig {
+            shutdown_on_error: true,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+        let quotes = vec![
+            quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+            quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+            quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+        ];
+        engine.add_data(quotes, None, true, true).unwrap();
+        engine.run(None, None, None, false).unwrap();
+        engine.reset().unwrap();
+
+        // Start later than the first run so a stale `ts_started` would not match
+        engine
+            .run(Some(2_000_000_000u64.into()), None, None, false)
+            .unwrap();
+
+        assert_eq!(engine.get_result().iterations, 2);
+        assert_eq!(
+            engine.kernel().ts_started(),
+            Some(UnixNanos::from(2_000_000_000))
+        );
+        assert!(!engine.kernel().is_shutdown_requested());
+    }
+}
