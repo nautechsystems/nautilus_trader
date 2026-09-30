@@ -3033,7 +3033,8 @@ impl Cache {
     /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
     /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
     /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
-    /// limit or raw range rules out `p + 1`.
+    /// limit or raw range rules out `p + 1`, and when `p` is the maximum float precision (16),
+    /// so a midpoint of a float-convertible quote stays float-convertible.
     #[pyo3(name = "price")]
     fn py_price(&self, instrument_id: InstrumentId, price_type: PriceType) -> Option<Price> {
         self.price(&instrument_id, price_type)

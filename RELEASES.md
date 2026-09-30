@@ -159,6 +159,7 @@ Released on TBD (UTC).
 - Fixed Parquet period consolidation stopping after 10,000 periods, duplicating rows or deleting unconsolidated data
 - Fixed logging thread panics when stderr is a closed pipe, which aborted release builds
 - Fixed Python float conversions of precision 17 and 18 prices, quantities, and money aborting release builds
+- Fixed `Cache.price` mid prices of precision 16 quotes aborting greeks calculations in release builds
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
 - Hardened TLS `certs_dir` loading to fail on unreadable files instead of silently skipping them

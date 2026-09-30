@@ -3931,4 +3931,62 @@ mod tests {
             None
         );
     }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_instrument_greeks_converts_mid_of_max_float_precision_quote() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(now + jiff::SignedDuration::from_hours(24 * 30));
+        let future = future_with_expiration("ES.GLBX", "ES", expiry_ns);
+        let instrument = InstrumentAny::FuturesContract(future.clone());
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let quote = QuoteTick::new(
+            future.id(),
+            Price::from("100.0000000000000000"),
+            Price::from("100.0000000000000001"),
+            Quantity::from(1),
+            Quantity::from(1),
+            now_ns,
+            now_ns,
+        );
+        cache.borrow_mut().add_quote(quote).unwrap();
+        let position =
+            position_from_fill(&instrument, "P-1", "O-1", "T-1", OrderSide::Buy, 1, "99.00");
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(now_ns);
+        let calculator = GreeksCalculator::new(cache, clock);
+
+        let greeks = calculator
+            .instrument_greeks(
+                future.id(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(position),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(greeks.delta, 1.0);
+        assert_eq!(greeks.pnl, 1.0);
+        assert_eq!(greeks.price, 1.0);
+    }
 }

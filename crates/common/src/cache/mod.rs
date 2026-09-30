@@ -91,7 +91,7 @@ use nautilus_model::{
     position::Position,
     types::{
         Currency, Money, Price, Quantity,
-        fixed::{FIXED_PRECISION, check_fixed_precision},
+        fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION, check_fixed_precision},
         price::PriceRaw,
     },
 };
@@ -5711,7 +5711,8 @@ impl Cache {
     /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
     /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
     /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
-    /// limit or raw range rules out `p + 1`.
+    /// limit or raw range rules out `p + 1`, and when `p` is the maximum float precision (16),
+    /// so a midpoint of a float-convertible quote stays float-convertible.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -5753,10 +5754,11 @@ impl Cache {
                     return Price::from_raw_checked(raw, precision + 1).ok();
                 }
 
-                if let Some(price) = sum
-                    .checked_mul(5)
-                    .and_then(|raw| PriceRaw::try_from(raw).ok())
-                    .and_then(|raw| Price::from_raw_checked(raw, precision + 1).ok())
+                if precision != MAX_FLOAT_PRECISION
+                    && let Some(price) = sum
+                        .checked_mul(5)
+                        .and_then(|raw| PriceRaw::try_from(raw).ok())
+                        .and_then(|raw| Price::from_raw_checked(raw, precision + 1).ok())
                 {
                     return Some(price);
                 }

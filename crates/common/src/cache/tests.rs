@@ -72,7 +72,9 @@ use nautilus_model::{
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
     types::{
-        AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw,
+        AccountBalance, Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION},
+        price::PriceRaw,
     },
 };
 use parking_lot::Mutex;
@@ -4871,7 +4873,8 @@ fn test_price_mid_matches_decimal(
     for precision in [FIXED_PRECISION - 1, FIXED_PRECISION, ceiling] {
         let bid = Price::from_raw(bid_raw, precision);
         let ask = Price::from_raw(ask_raw, precision);
-        let expected_precision = if precision < ceiling {
+
+        let expected_precision = if precision < ceiling && precision != MAX_FLOAT_PRECISION {
             precision + 1
         } else {
             precision
@@ -4970,24 +4973,34 @@ fn test_price_mid_rejects_sentinel(mut cache: Cache, audusd_sim: CurrencyPair) {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
-    for precision in [FIXED_PRECISION, FIXED_PRECISION + 1] {
-        assert_mid_raw(
-            &mut cache,
-            audusd_sim.id,
-            0,
-            1,
-            precision,
-            Some((5, precision + 1)),
-        );
-        assert_mid_raw(
-            &mut cache,
-            audusd_sim.id,
-            0,
-            2,
-            precision,
-            Some((10, precision + 1)),
-        );
+    let precision = FIXED_PRECISION + 1;
+    let max = Price::max(precision).raw();
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        0,
+        1,
+        precision,
+        Some((5, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        0,
+        2,
+        precision,
+        Some((10, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        max / 10,
+        max / 10,
+        precision,
+        Some((max, precision + 1)),
+    );
 
+    for precision in [FIXED_PRECISION, FIXED_PRECISION + 1] {
         let max = Price::max(precision).raw();
         assert_mid_raw(
             &mut cache,
@@ -5014,14 +5027,7 @@ fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
                 Some((expected_raw, precision)),
             );
         }
-        assert_mid_raw(
-            &mut cache,
-            audusd_sim.id,
-            max / 10,
-            max / 10,
-            precision,
-            Some((max, precision + 1)),
-        );
+
         assert_mid_raw(
             &mut cache,
             audusd_sim.id,
