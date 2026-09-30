@@ -3281,6 +3281,20 @@ fn test_add_general_when_value(mut cache: Cache) {
     assert_eq!(result, Some(&value));
 }
 
+// The general cache keys are opaque strings, and callers embed exchange symbols in
+// them (e.g. `cache://position-snapshots/<position_id>/<n>`, where the position id
+// carries the instrument symbol). Symbols are not required to be ASCII, so these
+// keys must accept UTF-8 — otherwise positions in such instruments cannot be
+// snapshotted and reopening them after a close fails permanently.
+#[rstest]
+fn test_add_and_get_general_when_key_is_non_ascii(mut cache: Cache) {
+    let key = "cache://position-snapshots/龙虾USDT-PERP.BINANCE-ALEX-000/0";
+    let value = Bytes::from_static(&[0_u8]);
+    cache.add(key, value.clone()).unwrap();
+    let result = cache.get(key).unwrap();
+    assert_eq!(result, Some(&value));
+}
+
 #[rstest]
 fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
     let order = OrderTestBuilder::new(OrderType::Limit)

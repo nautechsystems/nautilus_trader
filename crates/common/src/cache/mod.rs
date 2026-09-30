@@ -63,7 +63,7 @@ use nautilus_core::{
     DurationNanos, SharedCell, UnixNanos,
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
-        check_valid_string_ascii, check_valid_string_utf8,
+        check_valid_string_utf8,
     },
 };
 use nautilus_model::{
@@ -2113,7 +2113,7 @@ impl Cache {
     ///
     /// Returns an error if persisting the entry to the backing database fails.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string_ascii(key, stringify!(key))?;
+        check_valid_string_utf8(key, stringify!(key))?;
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
         log::debug!("Adding general {key}");
@@ -5671,7 +5671,7 @@ impl Cache {
     ///
     /// Returns an error if the `key` is invalid.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string_ascii(key, stringify!(key))?;
+        check_valid_string_utf8(key, stringify!(key))?;
 
         Ok(self.general.get(key))
     }
