@@ -167,6 +167,22 @@ graceful shutdown and returns immediately, so the awaiting task resolves only on
 finishes. Cancelling that task requests the same shutdown, waits for it, then re-raises the
 cancellation, which keeps `asyncio.timeout` and task groups behaving as their callers expect.
 
+During `delay_post_stop`, the node continues processing venue evidence and native managed-exit
+timers. It does not start new reconciliation queries. At the end of that window, any retained
+submission without a native outcome or venue confirmation makes shutdown report an error listing
+the unresolved client order IDs. This applies both to `RetainUnresolved` and to clients which
+require submission retention, including submissions whose recovery budget has not yet exhausted.
+Clients disconnect and the kernel stops even when submission recovery is incomplete. Evidence
+drained after this boundary cannot change the recorded shutdown result.
+If an awaiting Python task is cancelled, cancellation still propagates after teardown, with any
+shutdown error preserved as the cancellation exception's cause.
+
+The default `ResolveLocally` policy is unchanged for clients which do not require retention.
+Submission acknowledgement ends submission recovery; it does not prove that an accepted order's
+cancel or update completed, or that positions are flat. Managed exit keeps its existing attempt
+budget, and this result does not extend cleanup beyond `delay_post_stop` or implement recovery
+across restarts.
+
 ### Host integration and limits
 
 Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by

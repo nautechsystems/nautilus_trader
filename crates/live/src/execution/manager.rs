@@ -376,6 +376,15 @@ impl ExecutionManager {
                 .is_none_or(|order| Self::submission_is_unacknowledged(&order))
     }
 
+    /// Returns retained submissions which still lack a native outcome or venue confirmation.
+    pub(crate) fn unresolved_submission_ids(&self) -> Vec<ClientOrderId> {
+        self.submissions
+            .keys()
+            .copied()
+            .filter(|client_order_id| self.submission_recovery_pending(*client_order_id))
+            .collect()
+    }
+
     /// Retires submission recovery after a native outcome has been applied.
     ///
     /// An acknowledgement ends the submission budget, including recovery for commands
