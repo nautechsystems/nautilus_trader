@@ -17,7 +17,9 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::bias::Bias};
+use crate::{
+    average::MovingAverageType, indicator::Indicator, momentum::bias::Bias, python::float_precision,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -86,8 +88,10 @@ impl Bias {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

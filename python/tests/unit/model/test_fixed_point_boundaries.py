@@ -54,3 +54,48 @@ def test_fixed_point_boundaries_do_not_abort_subprocess() -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "fixed-point boundaries passed"
     assert result.stderr == ""
+
+
+def test_float_precision_boundaries_do_not_abort_subprocess() -> None:
+    """
+    Test float precision boundary errors do not abort a subprocess.
+    """
+    code = (
+        "from nautilus_trader.indicators import ExponentialMovingAverage\n"
+        "from nautilus_trader.model import AccountBalance, Bar, BarType, BookOrder, Currency\n"
+        "from nautilus_trader.model import CurrencyType, Money, OrderSide, Price, Quantity\n"
+        "currency = Currency('TST18', 18, 0, 'Test 18dp', CurrencyType.CRYPTO)\n"
+        "price = Price.from_str('1.500000000000000000')\n"
+        "quantity = Quantity.from_str('2.000000000000000000')\n"
+        "money = Money.from_raw(1, currency)\n"
+        "balance = AccountBalance(total=money, locked=Money.zero(currency), free=money)\n"
+        "assert balance.to_dict()['total'] == '0.000000000000000001'\n"
+        "bar_type = BarType.from_str('AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL')\n"
+        "bar = Bar(bar_type, price, price, price, price, quantity, 0, 0)\n"
+        "calls = (\n"
+        "    lambda: float(price),\n"
+        "    lambda: quantity.as_double(),\n"
+        "    lambda: float(money),\n"
+        "    lambda: BookOrder(OrderSide.BUY, price, quantity, 1).exposure(),\n"
+        "    lambda: ExponentialMovingAverage(10).handle_bar(bar),\n"
+        ")\n"
+        "for call in calls:\n"
+        "    try:\n"
+        "        call()\n"
+        "    except ValueError:\n"
+        "        pass\n"
+        "    else:\n"
+        "        raise AssertionError('expected ValueError')\n"
+        "print('float precision boundaries passed')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "float precision boundaries passed"
+    assert result.stderr == ""

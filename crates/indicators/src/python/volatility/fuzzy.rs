@@ -18,6 +18,7 @@ use pyo3::prelude::*;
 
 use crate::{
     indicator::Indicator,
+    python::float_precision,
     volatility::fuzzy::{
         CandleBodySize, CandleDirection, CandleSize, CandleWickSize, FuzzyCandle, FuzzyCandlesticks,
     },
@@ -165,8 +166,10 @@ impl FuzzyCandlesticks {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

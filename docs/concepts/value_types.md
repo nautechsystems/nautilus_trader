@@ -297,6 +297,11 @@ float_value = price.as_double()
 string_value = str(price)  # "123.456"
 ```
 
+Float conversion supports precision up to 16. `float()`, `as_double()`, and arithmetic with a
+`float` operand raise `ValueError` for precision 17 or 18 rather than round away the extra digits.
+Conversions at precision 16 or below can still round, since a float holds about 16 significant
+digits. Use `as_decimal()` for an exact value.
+
 ### Creating from strings
 
 Parse value types from string representations:

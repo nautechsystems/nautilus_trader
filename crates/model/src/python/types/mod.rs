@@ -21,4 +21,4 @@ pub mod money;
 pub mod price;
 pub mod quantity;
 
-mod fixed;
+pub(crate) mod fixed;

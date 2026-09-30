@@ -422,7 +422,11 @@ impl Position {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
+        let position: Self = from_dict_pyo3(py, values)?;
+        position
+            .check_state_float_precision()
+            .map_err(correctness_error_to_pyvalue_err)?;
+        Ok(position)
     }
 
     /// Converts this [`Position`] into a Python dict.
