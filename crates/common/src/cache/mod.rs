@@ -5707,6 +5707,11 @@ impl Cache {
     // -- DATA QUERIES ----------------------------------------------------------------------------
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
+    ///
+    /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
+    /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
+    /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
+    /// limit or raw range rules out `p + 1`.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -5756,12 +5761,12 @@ impl Cache {
                     return Some(price);
                 }
 
-                if sum % 2 == 0 {
-                    let raw = PriceRaw::try_from(sum / 2).ok()?;
-                    Price::from_raw_checked(raw, precision).ok()
-                } else {
-                    None
+                let mut raw = sum / 2;
+                if sum % 2 != 0 && raw % 2 != 0 {
+                    raw += sum.signum();
                 }
+                let raw = PriceRaw::try_from(raw).ok()?;
+                Price::from_raw_checked(raw, precision).ok()
             }),
             PriceType::Last => self
                 .trades

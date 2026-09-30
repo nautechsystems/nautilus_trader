@@ -4821,14 +4821,21 @@ fn test_price_mid_at_precision_ceiling(mut cache: Cache, audusd_sim: CurrencyPai
     #[cfg(not(feature = "defi"))]
     let ceiling = FIXED_PRECISION;
 
-    for (bid_raw, ask_raw, expected_raw) in [(0, 1, None), (0, 2, Some(1))] {
+    for (bid_raw, ask_raw, expected_raw) in [
+        (0, 1, 0),
+        (1, 2, 2),
+        (-1, 0, 0),
+        (-2, -1, -2),
+        (-3, -2, -2),
+        (0, 2, 1),
+    ] {
         assert_mid_raw(
             &mut cache,
             audusd_sim.id,
             bid_raw,
             ask_raw,
             ceiling,
-            expected_raw.map(|raw| (raw, ceiling)),
+            Some((expected_raw, ceiling)),
         );
     }
 
@@ -4841,6 +4848,45 @@ fn test_price_mid_at_precision_ceiling(mut cache: Cache, audusd_sim: CurrencyPai
         ceiling,
         Some((max - 1, ceiling)),
     );
+}
+
+#[rstest]
+#[case(0, 1)]
+#[case(1, 2)]
+#[case(-1, 0)]
+#[case(-2, -1)]
+#[case(-3, -2)]
+#[case(0, 2)]
+fn test_price_mid_matches_decimal(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] bid_raw: PriceRaw,
+    #[case] ask_raw: PriceRaw,
+) {
+    #[cfg(feature = "defi")]
+    let ceiling = WEI_PRECISION;
+    #[cfg(not(feature = "defi"))]
+    let ceiling = FIXED_PRECISION;
+
+    for precision in [FIXED_PRECISION - 1, FIXED_PRECISION, ceiling] {
+        let bid = Price::from_raw(bid_raw, precision);
+        let ask = Price::from_raw(ask_raw, precision);
+        let expected_precision = if precision < ceiling {
+            precision + 1
+        } else {
+            precision
+        };
+        let midpoint = (bid.as_decimal() + ask.as_decimal()) / dec!(2);
+        let expected = Price::from_decimal_dp(midpoint, expected_precision).unwrap();
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            bid_raw,
+            ask_raw,
+            precision,
+            Some((expected.raw(), expected.precision)),
+        );
+    }
 }
 
 fn assert_mid_raw(
@@ -4903,6 +4949,8 @@ fn test_price_mid_rejects_sentinel(mut cache: Cache, audusd_sim: CurrencyPair) {
     for (bid, ask) in [
         (Price::from_raw(PRICE_ERROR, 0), Price::from_raw(0, 0)),
         (Price::from_raw(PRICE_UNDEF, 0), Price::from_raw(0, 0)),
+        (Price::from_raw(0, 0), Price::from_raw(PRICE_ERROR, 0)),
+        (Price::from_raw(0, 0), Price::from_raw(PRICE_UNDEF, 0)),
         (ERROR_PRICE, ERROR_PRICE),
     ] {
         let quote = QuoteTick::new(
@@ -4949,7 +4997,39 @@ fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
             precision,
             Some((max - 1, precision)),
         );
-        assert_mid_raw(&mut cache, audusd_sim.id, max - 1, max, precision, None);
+        assert_eq!(max % 10, 0);
+        for (bid_raw, ask_raw, expected_raw) in [
+            (max - 1, max, max),
+            (max - 2, max - 1, max - 2),
+            (-max, -max + 1, -max),
+            (-max + 1, -max + 2, -max + 2),
+            (-max, -max + 2, -max + 1),
+        ] {
+            assert_mid_raw(
+                &mut cache,
+                audusd_sim.id,
+                bid_raw,
+                ask_raw,
+                precision,
+                Some((expected_raw, precision)),
+            );
+        }
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            max / 10,
+            max / 10,
+            precision,
+            Some((max, precision + 1)),
+        );
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            max / 10,
+            max / 10 + 1,
+            precision,
+            Some((max / 10, precision)),
+        );
     }
 }
 
