@@ -111,7 +111,8 @@ use nautilus_model::{
         PriceType, RecordFlag,
     },
     identifiers::{
-        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
+        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Venue,
+        parse_generic_spread_id_legs,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -5698,39 +5699,7 @@ fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentI
         return Some(vec![(instrument_id, 1)]);
     }
 
-    symbol
-        .split(GENERIC_SPREAD_ID_SEPARATOR)
-        .map(|component| parse_spread_leg(component, instrument_id.venue))
-        .collect()
-}
-
-fn parse_spread_leg(component: &str, venue: Venue) -> Option<(InstrumentId, i64)> {
-    if let Some(rest) = component.strip_prefix("((") {
-        let (ratio, symbol) = rest.split_once("))")?;
-        return parse_spread_leg_parts(ratio, symbol, venue, -1);
-    }
-
-    let rest = component.strip_prefix('(')?;
-    let (ratio, symbol) = rest.split_once(')')?;
-    parse_spread_leg_parts(ratio, symbol, venue, 1)
-}
-
-fn parse_spread_leg_parts(
-    ratio: &str,
-    symbol: &str,
-    venue: Venue,
-    sign: i64,
-) -> Option<(InstrumentId, i64)> {
-    if symbol.is_empty() {
-        return None;
-    }
-
-    let ratio = ratio.parse::<i64>().ok()?.checked_mul(sign)?;
-    if ratio == 0 {
-        return None;
-    }
-
-    Some((InstrumentId::new(Symbol::new(symbol), venue), ratio))
+    parse_generic_spread_id_legs(&instrument_id).ok()
 }
 
 #[inline(always)]

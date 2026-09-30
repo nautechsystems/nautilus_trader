@@ -22,6 +22,8 @@ Released on TBD (UTC).
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
+- Added Rust `new_generic_spread_id` and `parse_generic_spread_id_legs` identifier functions (#5041), thanks @faysou
+- Added Python `new_generic_spread_id` and `generic_spread_id_to_list` (#5041), thanks @faysou
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
@@ -185,6 +187,7 @@ Released on TBD (UTC).
 - Fixed simulated physical option exercise double counting intrinsic value from `InstrumentClose`
 - Fixed backtest L1 fills stalling on repeated identical trades (#5017), thanks for reporting @GwangPyo
 - Fixed backtest L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
+- Fixed spread quote aggregation accepting signed leg ratios that flipped the leg sign (#5041), thanks @faysou
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
 - Fixed typed catalog decode for kernel Feather streams of quotes, trades, bars, and related types
 - Fixed streaming Feather writers sealing a new file on every flush (#5115), thanks @faysou
@@ -400,6 +403,11 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Fixed `LiveNodeBuilder::with_streaming_config` docs, which said `build()` rejects streaming (#5115), thanks @faysou
+- Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
+- Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes
+- Fixed `ParquetDataCatalog` docs to state the 10,000 batch size and ZSTD level 1 defaults (#5111), thanks @Martingale42
+- Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Documented the adapter config field layout convention in the developer guide
 - Documented declined fill notification in the execution concepts guide
 - Documented own order book membership for emulated, quote-quantity, and external client orders
@@ -411,11 +419,7 @@ Released on TBD (UTC).
 - Documented legacy custom data layout migration
 - Documented streaming into a separate catalog and `RotationConfig` file rotation (#5115), thanks @faysou
 - Documented v1 `StreamingConfig` migration to `writer_path`, `catalog`, and `RotationConfig` (#5115), thanks @faysou
-- Fixed `LiveNodeBuilder::with_streaming_config` docs, which said `build()` rejects streaming (#5115), thanks @faysou
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
-- Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
-- Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes
-- Fixed `ParquetDataCatalog` docs to state the 10,000 batch size and ZSTD level 1 defaults (#5111), thanks @Martingale42
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
@@ -425,7 +429,6 @@ Released on TBD (UTC).
 - Documented that Kraken spot report requests warn at the page cap without marking incomplete (#5091), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
 - Documented OKX rejection reason format with venue error codes
-- Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Updated Databento and Tardis integration guides with new URL overrides
 - Updated OKX Rust exec tester example to use cross margin
 
