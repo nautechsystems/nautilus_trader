@@ -12781,6 +12781,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
+    let pool_identifier = pool.pool_identifier;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
@@ -12849,30 +12850,41 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let cmd = DataCommand::DefiSubscribe(sub);
     data_engine.borrow_mut().execute(cmd);
 
-    // Create and process swap that changes tick
-    let new_price = U160::from(56022770974786139918731938227u128); // Different price
-    let swap = PoolSwap::new(
-        chain,
-        dex,
-        instrument_id,
-        PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
-        "0x123".to_string(),
-        0,
-        0,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        Address::from([0x12; 20]),
-        Address::from([0x12; 20]),
-        I256::from_str("1000000000000000000").unwrap(),
-        I256::from_str("400000000000000").unwrap(),
-        new_price,
-        1000u128,
-        0i32,
-    );
+    // Replay a swap consistent with the profiler's initialized liquidity
+    let swap = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .simulate_swap_through_ticks(
+            I256::from_str("100").unwrap(),
+            true,
+            U160::from(56022770974786139918731938227u128),
+            true,
+        )
+        .unwrap()
+        .to_swap_event(
+            chain,
+            dex,
+            pool_identifier,
+            BlockPosition::new(1000, "0x123".to_string(), 0, 0),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Address::from([0x12; 20]),
+            Address::from([0x12; 20]),
+        );
+    let expected_tick = swap.tick;
+    let expected_price = swap.sqrt_price_x96;
+    let expected_liquidity = swap.liquidity;
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_defi_data(DefiData::PoolSwap(swap));
+
+    let cache_ref = cache.borrow();
+    let updated = cache_ref.pool_profiler(&instrument_id).unwrap();
+    assert_eq!(updated.state.current_tick, expected_tick);
+    assert_eq!(updated.state.price_sqrt_ratio_x96, expected_price);
+    assert_eq!(updated.tick_map.liquidity, expected_liquidity);
+    assert_eq!(updated.last_processed_event.as_ref().unwrap().number, 1000);
 
     // Verify profiler state was updated by PoolUpdater
     let final_tick = cache
