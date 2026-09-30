@@ -51,13 +51,6 @@ pub(crate) struct ObjectStoreLocation {
     pub object_store: Arc<dyn ObjectStore>,
     pub base_path: String,
     pub original_uri: String,
-    store_root_url: Option<Url>,
-}
-
-impl ObjectStoreLocation {
-    pub(crate) fn store_root_url(&self) -> Option<&Url> {
-        self.store_root_url.as_ref()
-    }
 }
 
 /// Writes a `RecordBatch` to a Parquet file using object store, with optional compression.
@@ -757,16 +750,10 @@ pub(crate) fn create_object_store_location_from_path(
         _ => create_local_store(&uri, false), // Fallback: assume local path
     }?;
 
-    let store_root_url = Url::parse(&original_uri)
-        .ok()
-        .filter(|url| is_remote_uri_scheme(url.scheme()))
-        .map(|_| remote_store_root_url(&original_uri))
-        .transpose()?;
     Ok(ObjectStoreLocation {
         object_store,
         base_path,
         original_uri,
-        store_root_url,
     })
 }
 

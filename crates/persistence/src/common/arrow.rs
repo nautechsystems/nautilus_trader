@@ -379,7 +379,9 @@ mod tests {
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
-    use nautilus_serialization::arrow::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
+    use nautilus_serialization::arrow::{
+        DecodeFromRecordBatch, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -437,5 +439,59 @@ mod tests {
             error.to_string(),
             "Instrument definitions do not have one shared Arrow schema"
         );
+    }
+
+    #[rstest]
+    fn data_to_arrow_batches_groups_different_identity_metadata() {
+        let first = QuoteTick::new(
+            InstrumentId::from("PRECISION-A.TEST"),
+            Price::from("1.23"),
+            Price::from("1.24"),
+            Quantity::from("2.5"),
+            Quantity::from("3.5"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+
+        let second = QuoteTick::new(
+            InstrumentId::from("PRECISION-B.TEST"),
+            Price::from("10.12345"),
+            Price::from("10.12346"),
+            Quantity::from("20.125"),
+            Quantity::from("30.125"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+
+        let third = QuoteTick::new(
+            InstrumentId::from("PRECISION-A.TEST"),
+            Price::from("2.23"),
+            Price::from("2.24"),
+            Quantity::from("4.5"),
+            Quantity::from("5.5"),
+            UnixNanos::from(3),
+            UnixNanos::from(3),
+        );
+
+        let batches = data_to_arrow_batches(
+            &NautilusDataType::QuoteTick,
+            vec![Data::Quote(second), Data::Quote(third), Data::Quote(first)],
+        )
+        .unwrap();
+        let identifiers = batches
+            .iter()
+            .map(|batch| batch.schema().metadata()[KEY_INSTRUMENT_ID].clone())
+            .collect::<Vec<_>>();
+
+        let decoded = batches
+            .into_iter()
+            .flat_map(|batch| {
+                let metadata = batch.schema().metadata().clone();
+                QuoteTick::decode_batch(&metadata, batch).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(identifiers, ["PRECISION-A.TEST", "PRECISION-B.TEST"]);
+        assert_eq!(decoded, vec![third, first, second]);
     }
 }

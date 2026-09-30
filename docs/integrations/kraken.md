@@ -547,8 +547,18 @@ flag.
   `raw_symbol`, and the altname (`XBTEUR`). `OpenPositions` returns the key, while `OpenOrders`
   and `TradesHistory` return the altname.
 - The adapter resolves both spellings, so an order or fill on a legacy-named pair is reported.
-- An open order whose pair cannot be resolved to a cached instrument fails the read, rather than
-  being omitted from an otherwise successful one.
+- A read scoped to one instrument resolves each row and compares instrument IDs, rather than
+  comparing a cached `raw_symbol` against the venue's spelling, so a scoped read returns that
+  pair's own records whichever way Kraken spells it.
+- A read scoped to an instrument the client does not hold returns nothing. Spot and futures IDs
+  share the `KRAKEN` venue, so a futures ID can reach the spot client and the reverse; neither
+  falls back to returning every instrument's records.
+- A spot instrument whose altname differs from its `AssetPairs` key carries the altname in its
+  `info` map, so a client whose instruments arrive through `cache_instrument` or
+  `cache_instruments` resolves altname-spelled records without refetching `AssetPairs`.
+- On an unscoped read, an open order whose pair cannot be resolved to a cached instrument fails the
+  read, rather than being omitted from an otherwise successful one. A scoped read skips a record it
+  cannot resolve, since it cannot belong to the requested instrument.
 - A closed order or fill that cannot be resolved is logged as a warning and skipped, preserving the
   records that do resolve. Historical records routinely outlive the loaded instrument set.
 

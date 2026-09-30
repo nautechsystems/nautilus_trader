@@ -27,10 +27,11 @@ use std::{
 
 use nautilus_common::{
     clock::Clock,
+    enums::Environment,
     live::block_on_nautilus_with,
     python::{cache::PyCache, clock::PyClock},
 };
-use nautilus_core::{UnixNanos, datetime::get_timezone};
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -51,15 +52,18 @@ use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
     common::{
-        paths::{local_writer_directory, normalize_path_separators},
+        paths::{environment_from_directory, local_writer_directory, normalize_path_separators},
         storage::{StorageBackend, create_storage_backend_from_path},
     },
-    python::backend::{
-        PyCatalogDataType, catalog_filter_family_from_py, writer_record_filter_from_py,
+    config::RotationConfig,
+    python::{
+        backend::{PyCatalogDataType, catalog_filter_family_from_py, writer_record_filter_from_py},
+        config::PyRotationConfig,
     },
     writer::{
         factory::{WriterConnectConfig, replace_existing_writer_data},
-        feather::{FeatherWriter, RotationConfig, WriterClock, recover_partial_feather_files},
+        feather::{FeatherWriter, WriterClock, recover_partial_feather_files},
+        run::RunStatus,
         subscription::StreamingSinkSubscription,
     },
 };
@@ -80,7 +84,7 @@ type ClockBridge = (Rc<RefCell<dyn Clock>>, Arc<AtomicU64>);
 pub struct PyStreamingFeatherWriter {
     writer: Rc<RefCell<FeatherWriter>>,
     handler: Option<StreamingSinkSubscription>,
-    run_manifest: Option<(StorageBackend, String, String)>,
+    run_manifest: Option<(StorageBackend, Environment, String)>,
     run_manifest_has_data: RefCell<bool>,
     /// Present when constructed with a non-live clock: the source clock plus the
     /// shared atomic the core writer reads, refreshed before each forwarded call.
@@ -100,11 +104,8 @@ impl PyStreamingFeatherWriter {
     /// - `cache`: The cache for query info (`PyCache`).
     /// - `clock`: The clock to use for time-related operations (`PyClock`).
     /// - `include_types`: Optional data or record types to include, as `NautilusDataType` or
-    ///   `NautilusRecordType` values or their catalog names (e.g., `["quotes", "trades"]`).
-    /// - `rotation_mode`: Rotation mode (0=SIZE, 1=INTERVAL, `2=SCHEDULED_DATES`, `3=NO_ROTATION`).
-    /// - `max_file_size`: Maximum file size in bytes before rotation (for SIZE mode).
-    /// - `rotation_interval_ns`: Rotation interval in nanoseconds (for `INTERVAL/SCHEDULED_DATES` modes).
-    /// - `rotation_time_ns`: Scheduled rotation time in nanoseconds (for `SCHEDULED_DATES` mode).
+    ///   `NautilusRecordType` values.
+    /// - `rotation_config`: File rotation policy (default: no rotation).
     /// - `flush_interval_ms`: Interval in milliseconds for flushing open files to disk (default:
     ///   1000). Set to 0 to disable auto-flush.
     /// - `replace`: If existing files at the given path should be replaced (default: False).
@@ -116,11 +117,7 @@ impl PyStreamingFeatherWriter {
         include_types=None,
         record_types=None,
         record_filters=None,
-        rotation_mode=3,
-        max_file_size=1_073_741_824,
-        rotation_interval_ns=None,
-        rotation_time_ns=None,
-        rotation_timezone="UTC",
+        rotation_config=None,
         flush_interval_ms=None,
         replace=false
     ))]
@@ -136,16 +133,16 @@ impl PyStreamingFeatherWriter {
         include_types: Option<Vec<Bound<'_, PyAny>>>,
         record_types: Option<&Bound<'_, PyAny>>,
         record_filters: Option<&Bound<'_, PyAny>>,
-        rotation_mode: u8,
-        max_file_size: u64,
-        rotation_interval_ns: Option<u64>,
-        rotation_time_ns: Option<u64>,
-        rotation_timezone: &str,
+        rotation_config: Option<PyRotationConfig>,
         flush_interval_ms: Option<u64>,
         replace: bool,
     ) -> PyResult<Self> {
         let directory =
             local_writer_directory(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let rotation_config = rotation_config
+            .map_or(RotationConfig::NoRotation, Into::into)
+            .to_writer_rotation_config()
+            .map_err(to_pyvalue_err)?;
 
         if replace {
             replace_existing_writer_data(&WriterConnectConfig::new(path.clone(), None)).map_err(
@@ -158,57 +155,26 @@ impl PyStreamingFeatherWriter {
         let storage = create_storage_backend_from_path(&path, None)
             .map_err(|e| PyIOError::new_err(format!("Failed to create storage backend: {e}")))?;
 
-        let run_manifest =
-            if let Some((kind, instance_id)) = run_kind_and_instance_id_from_path(&path) {
-                let manifest_storage = storage.clone();
-                let manifest_kind = kind.clone();
-                let manifest_instance_id = instance_id.clone();
-                block_on_nautilus_with(move || async move {
-                    manifest_storage
-                        .write_current_run_manifest(
-                            &manifest_kind,
-                            &manifest_instance_id,
-                            "in_progress",
-                            true,
-                        )
-                        .await
-                })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write run manifest: {e}")))?;
+        let run_manifest = if let Some((environment, instance_id)) =
+            run_environment_and_instance_id_from_path(&path)
+        {
+            let manifest_storage = storage.clone();
+            let manifest_instance_id = instance_id.clone();
+            block_on_nautilus_with(move || async move {
+                manifest_storage
+                    .write_current_run_manifest(
+                        environment,
+                        &manifest_instance_id,
+                        RunStatus::InProgress,
+                        true,
+                    )
+                    .await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write run manifest: {e}")))?;
 
-                Some((storage, kind, instance_id))
-            } else {
-                None
-            };
-
-        // Convert rotation mode to RotationConfig
-        // Python RotationMode: 0=SIZE, 1=INTERVAL, 2=SCHEDULED_DATES, 3=NO_ROTATION
-        let rotation_config = match rotation_mode {
-            0 => RotationConfig::Size {
-                max_size: max_file_size,
-            },
-            1 => {
-                let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
-
-                RotationConfig::Interval {
-                    interval_ns: interval,
-                }
-            }
-            2 => {
-                let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
-
-                let tz = get_timezone(rotation_timezone).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to parse rotation_timezone: {e}"))
-                })?;
-
-                let time_ns = rotation_time_ns.unwrap_or(0);
-
-                RotationConfig::ScheduledDates {
-                    interval_ns: interval,
-                    rotation_time: UnixNanos::from(time_ns),
-                    rotation_timezone: tz,
-                }
-            }
-            _ => RotationConfig::NoRotation, // Default to no rotation for invalid values
+            Some((storage, environment, instance_id))
+        } else {
+            None
         };
 
         let type_filter = include_types
@@ -421,7 +387,7 @@ impl PyStreamingFeatherWriter {
             .map_err(|e| PyIOError::new_err(format!("Failed to close: {e}")))?;
 
         self.write_run_manifest(
-            "completed",
+            RunStatus::Completed,
             !*self.run_manifest_has_data.borrow(),
             "complete",
         )
@@ -476,30 +442,29 @@ impl PyStreamingFeatherWriter {
             return Ok(());
         }
 
-        self.write_run_manifest("in_progress", false, "update")?;
+        self.write_run_manifest(RunStatus::InProgress, false, "update")?;
         *self.run_manifest_has_data.borrow_mut() = true;
         Ok(())
     }
 
-    fn write_run_manifest(&self, status: &str, empty: bool, operation: &str) -> PyResult<()> {
-        let Some((storage, kind, instance_id)) = &self.run_manifest else {
+    fn write_run_manifest(&self, status: RunStatus, empty: bool, operation: &str) -> PyResult<()> {
+        let Some((storage, environment, instance_id)) = &self.run_manifest else {
             return Ok(());
         };
 
         let storage = storage.clone();
-        let kind = kind.clone();
+        let environment = *environment;
         let instance_id = instance_id.clone();
-        let status = status.to_string();
         block_on_nautilus_with(move || async move {
             storage
-                .write_current_run_manifest(&kind, &instance_id, &status, empty)
+                .write_current_run_manifest(environment, &instance_id, status, empty)
                 .await
         })
         .map_err(|e| PyIOError::new_err(format!("Failed to {operation} run manifest: {e}")))
     }
 }
 
-fn run_kind_and_instance_id_from_path(path: &str) -> Option<(String, String)> {
+fn run_environment_and_instance_id_from_path(path: &str) -> Option<(Environment, String)> {
     let normalized = normalize_path_separators(path);
     let parsed_url = url::Url::parse(&normalized).ok();
 
@@ -513,47 +478,49 @@ fn run_kind_and_instance_id_from_path(path: &str) -> Option<(String, String)> {
         .filter(|component| !component.is_empty())
         .collect();
     let instance_id = components.last()?;
-    let kind = components.get(components.len().checked_sub(2)?)?;
+    let environment =
+        environment_from_directory(components.get(components.len().checked_sub(2)?)?)?;
 
-    match *kind {
-        "backtest" | "live" | "sandbox" => Some(((*kind).to_string(), (*instance_id).to_string())),
-        _ => None,
-    }
+    Some((environment, (*instance_id).to_string()))
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::enums::Environment;
     use rstest::rstest;
 
-    use super::run_kind_and_instance_id_from_path;
+    use super::run_environment_and_instance_id_from_path;
 
     #[rstest]
     #[case(
         r"C:\Users\Administrator\AppData\Local\Temp\pytest-0\backtest\run-greeks",
-        "backtest",
+        Environment::Backtest,
         "run-greeks"
     )]
-    #[case("C:/catalog/backtest/run-1", "backtest", "run-1")]
-    #[case(r"\\server\share\live\run-2", "live", "run-2")]
-    #[case("/tmp/catalog/sandbox/run-3", "sandbox", "run-3")]
-    #[case("file:///C:/catalog/backtest/run-1", "backtest", "run-1")]
-    fn run_kind_and_instance_id_handles_platform_paths(
+    #[case("C:/catalog/backtest/run-1", Environment::Backtest, "run-1")]
+    #[case(r"\\server\share\live\run-2", Environment::Live, "run-2")]
+    #[case("/tmp/catalog/sandbox/run-3", Environment::Sandbox, "run-3")]
+    #[case("file:///C:/catalog/backtest/run-1", Environment::Backtest, "run-1")]
+    fn run_environment_and_instance_id_handles_platform_paths(
         #[case] path: &str,
-        #[case] kind: &str,
+        #[case] environment: Environment,
         #[case] instance_id: &str,
     ) {
         assert_eq!(
-            run_kind_and_instance_id_from_path(path),
-            Some((kind.to_string(), instance_id.to_string())),
+            run_environment_and_instance_id_from_path(path),
+            Some((environment, instance_id.to_string())),
         );
     }
 
     #[rstest]
-    fn run_kind_and_instance_id_rejects_non_run_paths() {
+    fn run_environment_and_instance_id_rejects_non_run_paths() {
         assert_eq!(
-            run_kind_and_instance_id_from_path(r"C:\catalog\data\quotes"),
+            run_environment_and_instance_id_from_path(r"C:\catalog\data\quotes"),
             None
         );
-        assert_eq!(run_kind_and_instance_id_from_path("/tmp/catalog"), None);
+        assert_eq!(
+            run_environment_and_instance_id_from_path("/tmp/catalog"),
+            None
+        );
     }
 }

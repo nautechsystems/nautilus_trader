@@ -189,7 +189,7 @@ def test_custom_data_round_trips_with_declared_arrow_schema(tmp_path: Path) -> N
     data_type = DataType("SensorReadingWithSchema")
     catalog.write_custom_data([CustomData(data_type, SensorReadingWithSchema("s1", 42.5, 11, 12))])
 
-    result = catalog.query_custom_data("SensorReadingWithSchema")
+    result = catalog.query_custom_data(NautilusDataType.Custom("SensorReadingWithSchema"))
 
     assert len(result) == 1
     reading = result[0].data
@@ -249,6 +249,7 @@ sys.meta_path.insert(0, _PandasBlocker())
 
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.persistence import ParquetDataCatalog
@@ -265,7 +266,7 @@ catalog.write_custom_data(
     [CustomData(DataType("PandasFreeSignal"), PandasFreeSignal(11, 12, 42.5))],
 )
 
-result = catalog.query_custom_data("PandasFreeSignal")
+result = catalog.query_custom_data(NautilusDataType.Custom("PandasFreeSignal"))
 assert len(result) == 1, result
 assert result[0].data.value == 42.5
 assert result[0].data.ts_event == 11

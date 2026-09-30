@@ -1731,6 +1731,16 @@ impl KrakenFuturesHttpClient {
         open_only: bool,
     ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         let mut complete = true;
+
+        // A scoped read for an instrument this client does not hold can match nothing, so
+        // return before the request rather than reporting every instrument's rows.
+        if let Some(ref target_id) = instrument_id
+            && self
+                .get_cached_instrument(&target_id.symbol.inner())
+                .is_none()
+        {
+            return Ok((Vec::new(), complete));
+        }
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
 
@@ -1775,16 +1785,16 @@ impl KrakenFuturesHttpClient {
         };
 
         for order in &response.open_orders {
-            if let Some(ref target_id) = instrument_id {
-                let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                if let Some(inst) = instrument
-                    && inst.raw_symbol().as_str() != order.symbol
-                {
-                    continue;
-                }
+            // Resolve the row and compare instrument ids, so a scoped read cannot match on a
+            // spelling and cannot fall through to every instrument when the id is not held.
+            let resolved = self.get_instrument_by_raw_symbol(&order.symbol);
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
-            if let Some(instrument) = self.get_instrument_by_raw_symbol(&order.symbol) {
+            if let Some(instrument) = resolved {
                 let position_size = if order.unfilled_size.is_none()
                     && matches!(
                         order.order_type,
@@ -1837,16 +1847,16 @@ impl KrakenFuturesHttpClient {
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
 
-                if let Some(ref target_id) = instrument_id {
-                    let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                    if let Some(inst) = instrument
-                        && inst.raw_symbol().as_str() != event.symbol
-                    {
-                        continue;
-                    }
+                // Resolve the row and compare instrument ids, so a scoped read cannot match on a
+                // spelling and cannot fall through to every instrument when the id is not held.
+                let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
+                if let Some(ref target_id) = instrument_id
+                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                {
+                    continue;
                 }
 
-                if let Some(instrument) = self.get_instrument_by_raw_symbol(&event.symbol) {
+                if let Some(instrument) = resolved {
                     match parse_futures_order_event_status_report(
                         event,
                         Some(event_wrapper.event_type),
@@ -1960,6 +1970,15 @@ impl KrakenFuturesHttpClient {
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
 
+        // As above: a scoped read for an instrument this client does not hold matches nothing.
+        if let Some(ref target_id) = instrument_id
+            && self
+                .get_cached_instrument(&target_id.symbol.inner())
+                .is_none()
+        {
+            return Ok((all_reports, complete));
+        }
+
         let response = self.inner.get_fills(None).await?;
         if response.result != KrakenApiResult::Success {
             let error_msg = response
@@ -1990,16 +2009,16 @@ impl KrakenFuturesHttpClient {
                 }
             }
 
-            if let Some(ref target_id) = instrument_id {
-                let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                if let Some(inst) = instrument
-                    && inst.raw_symbol().as_str() != fill.symbol
-                {
-                    continue;
-                }
+            // Resolve the row and compare instrument ids, so a scoped read cannot match on a
+            // spelling and cannot fall through to every instrument when the id is not held.
+            let resolved = self.get_instrument_by_raw_symbol(&fill.symbol);
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
-            if let Some(instrument) = self.get_instrument_by_raw_symbol(&fill.symbol) {
+            if let Some(instrument) = resolved {
                 match parse_futures_fill_report(&fill, &instrument, account_id, ts_init) {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
@@ -2028,6 +2047,15 @@ impl KrakenFuturesHttpClient {
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
 
+        // As above: a scoped read for an instrument this client does not hold matches nothing.
+        if let Some(ref target_id) = instrument_id
+            && self
+                .get_cached_instrument(&target_id.symbol.inner())
+                .is_none()
+        {
+            return Ok(all_reports);
+        }
+
         let response = self.inner.get_open_positions().await?;
         if response.result != KrakenApiResult::Success {
             let error_msg = response
@@ -2037,16 +2065,16 @@ impl KrakenFuturesHttpClient {
         }
 
         for position in response.open_positions {
-            if let Some(ref target_id) = instrument_id {
-                let instrument = self.get_cached_instrument(&target_id.symbol.inner());
-                if let Some(inst) = instrument
-                    && inst.raw_symbol().as_str() != position.symbol
-                {
-                    continue;
-                }
+            // Resolve the row and compare instrument ids, so a scoped read cannot match on a
+            // spelling and cannot fall through to every instrument when the id is not held.
+            let resolved = self.get_instrument_by_raw_symbol(&position.symbol);
+            if let Some(ref target_id) = instrument_id
+                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+            {
+                continue;
             }
 
-            if let Some(instrument) = self.get_instrument_by_raw_symbol(&position.symbol) {
+            if let Some(instrument) = resolved {
                 match parse_futures_position_status_report(
                     &position,
                     &instrument,

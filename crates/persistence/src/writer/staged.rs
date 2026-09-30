@@ -408,7 +408,7 @@ where
                     staging.seal()?;
                     let files = list_session_feather_files(
                         &source.storage,
-                        &source.kind,
+                        source.environment,
                         &source.instance_id,
                     )?;
                     let files = schedule_new_paths(&scheduled_paths, files)?;
@@ -457,7 +457,8 @@ where
         delete_feather_after_commit: bool,
     ) -> anyhow::Result<Option<PromotionWork<B>>> {
         self.staging.client.seal()?;
-        let files = list_session_feather_files(&source.storage, &source.kind, &source.instance_id)?;
+        let files =
+            list_session_feather_files(&source.storage, source.environment, &source.instance_id)?;
         let files = self.promotion_driver.schedule_new(files)?;
         if files.is_empty() {
             return Ok(None);

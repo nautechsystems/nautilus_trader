@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{correctness_error_to_pyvalue_err, to_pyvalue_err};
 use pyo3::{
-    Bound, PyErr,
+    Bound, PyErr, PyResult,
     exceptions::{PyOverflowError, PyZeroDivisionError},
     types::{PyAny, PyAnyMethods},
 };
@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 
 use crate::types::{
     Money, Price, Quantity,
-    fixed::{MAX_FLOAT_PRECISION, raw_scales_match},
+    fixed::{check_float_precision, raw_scales_match},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,7 +31,6 @@ pub(super) enum ArithmeticError {
     Overflow,
     DivisionByZero,
     IncompatibleOperands,
-    InvalidFloatPrecision(u8),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,8 +42,10 @@ pub(super) enum ArithmeticOperation {
     Rem,
 }
 
-pub(super) trait FloatArithmetic {
-    fn as_f64_checked(&self) -> Result<f64, ArithmeticError>;
+pub(crate) trait FloatArithmetic {
+    fn check_float_precision(&self) -> PyResult<()>;
+
+    fn as_f64_checked(&self) -> PyResult<f64>;
 }
 
 impl ArithmeticOperation {
@@ -83,22 +84,34 @@ impl ArithmeticOperation {
 }
 
 impl FloatArithmetic for Price {
-    fn as_f64_checked(&self) -> Result<f64, ArithmeticError> {
-        check_float_precision(self.precision)?;
+    fn check_float_precision(&self) -> PyResult<()> {
+        check_float_precision(self.precision).map_err(correctness_error_to_pyvalue_err)
+    }
+
+    fn as_f64_checked(&self) -> PyResult<f64> {
+        self.check_float_precision()?;
         Ok(self.as_f64())
     }
 }
 
 impl FloatArithmetic for Quantity {
-    fn as_f64_checked(&self) -> Result<f64, ArithmeticError> {
-        check_float_precision(self.precision)?;
+    fn check_float_precision(&self) -> PyResult<()> {
+        check_float_precision(self.precision).map_err(correctness_error_to_pyvalue_err)
+    }
+
+    fn as_f64_checked(&self) -> PyResult<f64> {
+        self.check_float_precision()?;
         Ok(self.as_f64())
     }
 }
 
 impl FloatArithmetic for Money {
-    fn as_f64_checked(&self) -> Result<f64, ArithmeticError> {
-        check_float_precision(self.currency.precision)?;
+    fn check_float_precision(&self) -> PyResult<()> {
+        check_float_precision(self.currency.precision).map_err(correctness_error_to_pyvalue_err)
+    }
+
+    fn as_f64_checked(&self) -> PyResult<f64> {
+        self.check_float_precision()?;
         Ok(self.as_f64())
     }
 }
@@ -127,14 +140,6 @@ pub(super) fn extract_arithmetic_decimal(value: &Bound<'_, PyAny>) -> Option<Dec
     }
 }
 
-fn check_float_precision(precision: u8) -> Result<(), ArithmeticError> {
-    if precision <= MAX_FLOAT_PRECISION {
-        Ok(())
-    } else {
-        Err(ArithmeticError::InvalidFloatPrecision(precision))
-    }
-}
-
 impl From<ArithmeticError> for PyErr {
     fn from(error: ArithmeticError) -> Self {
         match error {
@@ -147,9 +152,6 @@ impl From<ArithmeticError> for PyErr {
             ArithmeticError::IncompatibleOperands => {
                 to_pyvalue_err("Incompatible fixed-point scales")
             }
-            ArithmeticError::InvalidFloatPrecision(precision) => to_pyvalue_err(format!(
-                "Fixed-point precision {precision} exceeds maximum float precision {MAX_FLOAT_PRECISION}"
-            )),
         }
     }
 }
@@ -164,8 +166,8 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    use super::{ArithmeticError, ArithmeticOperation, check_float_precision, check_raw_scales};
-    use crate::types::fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION};
+    use super::{ArithmeticError, ArithmeticOperation, check_raw_scales};
+    use crate::types::fixed::FIXED_PRECISION;
 
     #[rstest]
     fn test_check_raw_scales_accepts_matching_effective_scales() {
@@ -282,11 +284,6 @@ mod tests {
         ArithmeticError::IncompatibleOperands,
         "ValueError",
         "Incompatible fixed-point scales"
-    )]
-    #[case(
-        ArithmeticError::InvalidFloatPrecision(18),
-        "ValueError",
-        "Fixed-point precision 18 exceeds maximum float precision 16"
     )]
     fn test_arithmetic_error_maps_to_exact_python_exception(
         #[case] error: ArithmeticError,
@@ -406,17 +403,6 @@ mod tests {
                     prop_assert_eq!(actual.to_bits(), expected.to_bits());
                 }
             }
-        }
-
-        #[rstest]
-        fn prop_check_float_precision_matches_supported_range(precision in any::<u8>()) {
-            let expected = if precision <= MAX_FLOAT_PRECISION {
-                Ok(())
-            } else {
-                Err(ArithmeticError::InvalidFloatPrecision(precision))
-            };
-
-            prop_assert_eq!(check_float_precision(precision), expected);
         }
 
         #[rstest]

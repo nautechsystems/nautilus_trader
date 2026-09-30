@@ -1557,6 +1557,8 @@ mod tests {
     #[case(dec!(0.96), dec!(5.208), PolymarketOrderSide::Sell, 2, dec!(5_200_000), dec!(4_992_000))]
     // amt=23.696681 → trunc(2)=23.69, taker=(23.69*0.211).trunc(5)=4.99859→4_998_590
     #[case(dec!(0.211), dec!(23.696681), PolymarketOrderSide::Sell, 3, dec!(23_690_000), dec!(4_998_590))]
+    // Captured 5 pUSD BUY at 0.66 signs 7.5757 shares; the venue filled 7.575758
+    #[case(dec!(0.66), dec!(5), PolymarketOrderSide::Buy, 2, dec!(5_000_000), dec!(7_575_700))]
     fn test_compute_market_maker_taker_amounts(
         #[case] price: Decimal,
         #[case] amount: Decimal,

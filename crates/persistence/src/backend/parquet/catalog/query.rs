@@ -49,35 +49,6 @@ use crate::{
 };
 
 impl ParquetDataCatalog {
-    /// Queries one data family through the existing row iterator API.
-    pub fn query<T>(
-        &mut self,
-        identifiers: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        where_clause: Option<&str>,
-        files: Option<Vec<String>>,
-        optimize_file_loading: bool,
-    ) -> anyhow::Result<crate::backend::session::QueryResult>
-    where
-        T: DecodeTypedFromRecordBatch
-            + HasCatalogDataType
-            + HasTsInit
-            + Into<Data>
-            + Send
-            + 'static,
-    {
-        self.query_typed_pages::<T>(
-            identifiers,
-            start,
-            end,
-            where_clause,
-            files,
-            optimize_file_loading,
-        )
-        .map(crate::backend::session::QueryResult::from_typed_pages)
-    }
-
     /// Queries instruments from the catalog.
     ///
     /// Instruments are stored under v1-compatible concrete instrument type folders:
@@ -332,16 +303,11 @@ impl ParquetDataCatalog {
         ))
     }
 
-    /// Queries typed data from the catalog and returns results as a strongly-typed vector.
-    ///
-    /// This is a convenience method that wraps the generic `query` method and automatically
-    /// collects and converts the results into a vector of the specific data type. It handles
-    /// the type conversion from the generic [`Data`] enum to the concrete type `T`.
+    /// Queries data of type `T` from the catalog.
     ///
     /// # Type Parameters
     ///
-    /// - `T`: The specific data type to query and return. Must implement required traits for
-    ///   deserialization, cataloging, and conversion from the [`Data`] enum.
+    /// - `T`: The data type to query and return, which selects the catalog directory and decoder.
     ///
     /// # Parameters
     ///
@@ -352,6 +318,10 @@ impl ParquetDataCatalog {
     /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering. Use standard SQL syntax
     ///   with column names matching the Parquet schema (e.g., "`bid_price` > 1.2000", "volume > 1000").
+    /// - `files`: Optional list of catalog files to read in place of the files matching the filters.
+    /// - `optimize_file_loading`: Whether to register each parent directory as one table rather
+    ///   than each file as its own table. When `true`, every file in those directories is read,
+    ///   including files not listed in `files`.
     ///
     /// # Returns
     ///
@@ -362,7 +332,8 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if:
     /// - The underlying query execution fails.
-    /// - Data type conversion fails.
+    /// - Record batch decoding fails.
+    /// - A file uses a legacy catalog schema.
     /// - Object store access fails.
     /// - Invalid WHERE clause syntax is provided.
     ///
@@ -389,7 +360,7 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Query all quotes for a specific instrument
-    /// let quotes: Vec<QuoteTick> = catalog.query_typed_data(
+    /// let quotes: Vec<QuoteTick> = catalog.query(
     ///     Some(vec!["EUR/USD.SIM".to_string()]),
     ///     None,
     ///     None,
@@ -399,7 +370,7 @@ impl ParquetDataCatalog {
     /// )?;
     ///
     /// // Query trades within a specific time range
-    /// let trades: Vec<TradeTick> = catalog.query_typed_data(
+    /// let trades: Vec<TradeTick> = catalog.query(
     ///     Some(vec!["BTC/USD.SIM".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
@@ -409,7 +380,7 @@ impl ParquetDataCatalog {
     /// )?;
     ///
     /// // Query bars with volume filter (using instrument_id - partial match for bar_type)
-    /// let bars: Vec<Bar> = catalog.query_typed_data(
+    /// let bars: Vec<Bar> = catalog.query(
     ///     Some(vec!["AAPL.NASDAQ".to_string()]),
     ///     None,
     ///     None,
@@ -419,7 +390,7 @@ impl ParquetDataCatalog {
     /// )?;
     ///
     /// // Query bars with specific bar_type
-    /// let bars: Vec<Bar> = catalog.query_typed_data(
+    /// let bars: Vec<Bar> = catalog.query(
     ///     Some(vec!["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string()]),
     ///     None,
     ///     None,
@@ -429,7 +400,7 @@ impl ParquetDataCatalog {
     /// )?;
     ///
     /// // Query multiple instruments with price filter
-    /// let quotes: Vec<QuoteTick> = catalog.query_typed_data(
+    /// let quotes: Vec<QuoteTick> = catalog.query(
     ///     Some(vec!["EUR/USD.SIM".to_string(), "GBP/USD.SIM".to_string()]),
     ///     None,
     ///     None,
@@ -439,71 +410,7 @@ impl ParquetDataCatalog {
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn query_typed_data<T>(
-        &mut self,
-        identifiers: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        where_clause: Option<&str>,
-        files: Option<Vec<String>>,
-        optimize_file_loading: bool,
-    ) -> anyhow::Result<Vec<T>>
-    where
-        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
-    {
-        self.query_typed::<T>(
-            identifiers,
-            start,
-            end,
-            where_clause,
-            files,
-            optimize_file_loading,
-        )
-    }
-
-    pub(super) fn query_typed_pages<T>(
-        &mut self,
-        identifiers: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        where_clause: Option<&str>,
-        files: Option<Vec<String>>,
-        optimize_file_loading: bool,
-    ) -> anyhow::Result<TypedPages<T>>
-    where
-        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit + Send + 'static,
-    {
-        self.clear_session_tables();
-        self.register_remote_object_store()?;
-        let data_type = T::catalog_data_type();
-
-        let files = match files {
-            Some(files) => files,
-            None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
-        };
-
-        let paths = self.resolve_paths_for_datafusion(&files, optimize_file_loading);
-        let mut sources = Vec::with_capacity(paths.len());
-        for (index, path) in paths.into_iter().enumerate() {
-            let table = format!("parquet_{index}");
-            let sql = build_query(&table, start, end, where_clause);
-            let stream = self
-                .session
-                .parquet_files_batch_stream(&table, vec![path], Some(&sql))?;
-            let pages = decode_typed_pages::<T>(stream);
-            sources.push(
-                Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
-                    pages,
-                    &self.session.runtime,
-                )) as TypedPages<T>,
-            );
-        }
-
-        Ok(Box::new(MergedPages::new(sources, self.batch_size)))
-    }
-
-    /// Queries typed records that are not represented by the [`Data`] enum.
-    pub fn query_typed<T>(
+    pub fn query<T>(
         &mut self,
         identifiers: Option<Vec<String>>,
         start: Option<UnixNanos>,
@@ -581,6 +488,47 @@ impl ParquetDataCatalog {
         }
 
         Ok(all_records)
+    }
+
+    pub(super) fn query_typed_pages<T>(
+        &mut self,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<TypedPages<T>>
+    where
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit + Send + 'static,
+    {
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+        let data_type = T::catalog_data_type();
+
+        let files = match files {
+            Some(files) => files,
+            None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
+        };
+
+        let paths = self.resolve_paths_for_datafusion(&files, optimize_file_loading);
+        let mut sources = Vec::with_capacity(paths.len());
+        for (index, path) in paths.into_iter().enumerate() {
+            let table = format!("parquet_{index}");
+            let sql = build_query(&table, start, end, where_clause);
+            let stream = self
+                .session
+                .parquet_files_batch_stream(&table, vec![path], Some(&sql))?;
+            let pages = decode_typed_pages::<T>(stream);
+            sources.push(
+                Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
+                    pages,
+                    &self.session.runtime,
+                )) as TypedPages<T>,
+            );
+        }
+
+        Ok(Box::new(MergedPages::new(sources, self.batch_size)))
     }
 
     /// Queries raw catalog Arrow record batches for any supported record table.
@@ -1012,7 +960,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.query_typed_data::<QuoteTick>(instrument_ids, start, end, None, None, true)
+        self.query::<QuoteTick>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries trade tick data for the specified instrument(s) and time range.
@@ -1022,7 +970,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.query_typed_data::<TradeTick>(instrument_ids, start, end, None, None, true)
+        self.query::<TradeTick>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries bar data for the specified instrument(s) and time range.
@@ -1032,7 +980,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<Bar>> {
-        self.query_typed_data::<Bar>(instrument_ids, start, end, None, None, true)
+        self.query::<Bar>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries order book delta data for the specified instrument(s) and time range.
@@ -1042,7 +990,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        self.query_typed_data::<OrderBookDelta>(instrument_ids, start, end, None, None, true)
+        self.query::<OrderBookDelta>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries order book depth data for the specified instrument(s) and time range.
@@ -1052,7 +1000,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<OrderBookDepth>> {
-        self.query_typed_data::<OrderBookDepth>(instrument_ids, start, end, None, None, true)
+        self.query::<OrderBookDepth>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries funding rate updates for the specified instrument(s) and time range.
@@ -1062,7 +1010,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
-        self.query_typed::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
+        self.query::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries instrument close data for the specified instrument(s) and time range.
@@ -1072,7 +1020,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<InstrumentClose>> {
-        self.query_typed_data::<InstrumentClose>(instrument_ids, start, end, None, None, true)
+        self.query::<InstrumentClose>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries option greeks data for the specified instrument(s) and time range.
@@ -1082,7 +1030,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<OptionGreeks>> {
-        self.query_typed_data::<OptionGreeks>(instrument_ids, start, end, None, None, true)
+        self.query::<OptionGreeks>(instrument_ids, start, end, None, None, true)
     }
 
     /// Queries any instrument data for the specified instrument(s) and time range.

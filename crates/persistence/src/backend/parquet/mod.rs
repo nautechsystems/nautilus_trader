@@ -41,18 +41,25 @@ pub(crate) fn register_catalog_factory(registry: &mut catalog_factory::CatalogFa
     registry.insert(
         catalog_factory::PARQUET_CATALOG_FACTORY_NAME.to_string(),
         Arc::new(|config: &catalog_factory::CatalogConnectConfig| {
-            let params = config.params.as_ref();
-            Ok(Box::new(catalog::ParquetDataCatalog::from_uri(
-                &config.uri,
-                config.storage_options.clone(),
-                params.and_then(|params| params.get_usize("batch_size")),
-                params
-                    .and_then(|params| params.get_u64("compression"))
-                    .map(compression_from_code),
-                params.and_then(|params| params.get_usize("max_row_group_size")),
-            )?) as catalog_traits::DataCatalog)
+            Ok(Box::new(open_catalog(config)?) as catalog_traits::DataCatalog)
         }),
     );
+}
+
+// Streaming promotion opens its catalog here too, so both honor the catalog parameters
+pub(crate) fn open_catalog(
+    config: &catalog_factory::CatalogConnectConfig,
+) -> anyhow::Result<catalog::ParquetDataCatalog> {
+    let params = config.params.as_ref();
+    catalog::ParquetDataCatalog::from_uri(
+        &config.uri,
+        config.storage_options.clone(),
+        params.and_then(|params| params.get_usize("batch_size")),
+        params
+            .and_then(|params| params.get_u64("compression"))
+            .map(compression_from_code),
+        params.and_then(|params| params.get_usize("max_row_group_size")),
+    )
 }
 
 fn compression_from_code(code: u64) -> Compression {

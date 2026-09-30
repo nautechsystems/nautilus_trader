@@ -76,7 +76,6 @@ indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
-parking_lot = { workspace = true }
 parquet = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -94,32 +93,10 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
   "datasets",
 ] }
 
-criterion = { workspace = true }
-pretty_assertions = { workspace = true }
-proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
-
-[[bench]]
-name = "persistence"
-path = "benches/persistence.rs"
-harness = false
-
-[[bin]]
-name = "to-json"
-path = "bin/to_json.rs"
-required-features = ["python"]
-doc = false
-test = false
-
-[[bin]]
-name = "to-parquet"
-path = "bin/to_parquet.rs"
-required-features = ["python"]
-doc = false
-test = false
 
 [[example]]
 name = "generate-arrow-fixtures"

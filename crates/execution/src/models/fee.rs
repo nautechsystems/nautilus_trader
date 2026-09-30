@@ -18,7 +18,7 @@ use std::{fmt::Debug, rc::Rc};
 use nautilus_model::{
     enums::LiquiditySide,
     fees::{MakerTakerFeeRates, MakerTakerFeeSchedule, calculate_maker_taker_commission},
-    identifiers::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId},
+    identifiers::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, parse_generic_spread_id_legs},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity},
@@ -289,34 +289,13 @@ fn spread_contract_count(instrument: &InstrumentAny) -> anyhow::Result<Decimal> 
 
     let mut total = 0_i64;
 
-    for component in symbol.split(GENERIC_SPREAD_ID_SEPARATOR) {
-        let ratio = spread_leg_ratio(component)
-            .ok_or_else(|| anyhow::anyhow!("Invalid generic spread leg component: {component}"))?;
-        total = total.checked_add(ratio).ok_or_else(|| {
+    for (_, ratio) in parse_generic_spread_id_legs(&instrument_id)? {
+        total = total.checked_add(ratio.abs()).ok_or_else(|| {
             anyhow::anyhow!("Generic spread contract count overflowed for {symbol}")
         })?;
     }
 
     Ok(total.into())
-}
-
-fn spread_leg_ratio(component: &str) -> Option<i64> {
-    if let Some(rest) = component.strip_prefix("((") {
-        let (ratio, symbol) = rest.split_once("))")?;
-        return spread_leg_ratio_parts(ratio, symbol);
-    }
-
-    let rest = component.strip_prefix('(')?;
-    let (ratio, symbol) = rest.split_once(')')?;
-    spread_leg_ratio_parts(ratio, symbol)
-}
-
-fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
-    if symbol.is_empty() {
-        return None;
-    }
-
-    ratio.parse::<i64>().ok().filter(|ratio| *ratio > 0)
 }
 
 #[derive(Debug, Clone)]

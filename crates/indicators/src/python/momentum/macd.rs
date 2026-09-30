@@ -24,6 +24,7 @@ use crate::{
     average::MovingAverageType,
     indicator::{Indicator, MovingAverage},
     momentum::macd::MovingAverageConvergenceDivergence,
+    python::float_precision,
 };
 
 #[pymethods]
@@ -93,17 +94,22 @@ impl MovingAverageConvergenceDivergence {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

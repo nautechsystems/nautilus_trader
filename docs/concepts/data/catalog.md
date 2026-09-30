@@ -463,12 +463,12 @@ outside the range.
 
 ## Feather streaming and conversion
 
-The runtime can stage records in Feather and promote them into the Parquet catalog with
-`StreamingConfig(writer_backend="Parquet", ...)`. Staged records become available to catalog queries
-after promotion succeeds. A staging flush and a catalog commit are separate steps.
+The runtime can stage records in local Feather files and promote them into a catalog with
+`StreamingConfig(writer_path=..., catalog=DataCatalogConfig(...))`. Staged records become available
+to catalog queries after promotion succeeds. A staging flush and a catalog commit are separate steps.
 
-Parquet defaults to promotion on close, no interval-based promotion, and retention of committed
-Feather sources. A positive `parquet_commit_interval_ms` uses live wall-clock scheduling or checks
+Streaming defaults to promotion on close, no interval-based promotion, and retention of committed
+Feather sources. A positive `promotion_interval_ms` uses live wall-clock scheduling or checks
 against the supplied backtest clock during writes and flushes. See
 [stream data into a Parquet catalog](../../how_to/stream_parquet_catalog.md) for defaults, configuration,
 query visibility, and recovery.

@@ -4706,6 +4706,270 @@ fn test_trailing_stop_sell_rejects_activation_already_in_market(
 }
 
 #[derive(Debug, Clone, Copy)]
+enum TrailingStopModify {
+    QuantityOnly,
+    TriggerOutOfMarket,
+    TriggerInMarket,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TrailingStopActivation {
+    // Activated at market by the first iteration after submit
+    Activated,
+    // Submitted without an activation price and not yet iterated, so it activates at market
+    ActivatesAtMarket,
+    // Activation price not yet reached
+    Pending,
+}
+
+// A trailing stop that is activated, or activates at the current market, rests as a stop, so a
+// modify validates its new trigger like a stop (SELL in market when bid <= trigger). While its
+// activation price is pending it cannot trigger, so the trigger is not checked, as on submit
+#[rstest]
+fn test_modify_trailing_stop_validates_trigger_with_stop_semantics(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    #[values(OrderType::TrailingStopMarket, OrderType::TrailingStopLimit)] order_type: OrderType,
+    #[values(OrderSide::Sell, OrderSide::Buy)] side: OrderSide,
+    #[values(
+        TrailingStopActivation::Activated,
+        TrailingStopActivation::ActivatesAtMarket,
+        TrailingStopActivation::Pending
+    )]
+    activation: TrailingStopActivation,
+    #[values(
+        TrailingStopModify::QuantityOnly,
+        TrailingStopModify::TriggerOutOfMarket,
+        TrailingStopModify::TriggerInMarket
+    )]
+    modify: TrailingStopModify,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+    add_l2_best_bid_ask(
+        &mut engine_l2,
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Price::from("1501.00"),
+    );
+
+    // (pending activation, initial, out of market, in market) for a stop at bid 1500 / ask 1501
+    let (pending_activation, initial, out_of_market, in_market) = match side {
+        OrderSide::Sell => ("1510.00", "1495.00", "1494.00", "1502.00"),
+        _ => ("1490.00", "1507.00", "1508.00", "1499.00"),
+    };
+    let activation_price = match activation {
+        TrailingStopActivation::Pending => Some(Price::from(pending_activation)),
+        _ => None,
+    };
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = build_trailing_stop_for_in_market_policy(
+        order_type,
+        instrument_eth_usdt.id(),
+        side,
+        client_order_id,
+        activation_price,
+        Some(Price::from(initial)),
+    );
+    engine_l2.process_order(&mut order, account_id);
+
+    let submit_events = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        submit_events
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Accepted(_))),
+        "expected OrderAccepted, was {submit_events:?}",
+    );
+
+    // The next iteration activates at market and trails the trigger to bid - 1 / ask + 1
+    if !matches!(activation, TrailingStopActivation::ActivatesAtMarket) {
+        engine_l2.iterate(UnixNanos::default(), AggressorSide::NoAggressor);
+    }
+    let resting = cache.borrow().order(&client_order_id).unwrap().clone();
+    assert_eq!(
+        trailing_stop_is_activated(&resting),
+        matches!(activation, TrailingStopActivation::Activated)
+    );
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let (quantity, trigger_price) = match modify {
+        TrailingStopModify::QuantityOnly => (Some(Quantity::from("2.000")), None),
+        TrailingStopModify::TriggerOutOfMarket => (None, Some(Price::from(out_of_market))),
+        TrailingStopModify::TriggerInMarket => (None, Some(Price::from(in_market))),
+    };
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        None,
+        quantity,
+        None,
+        trigger_price,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    engine_l2.process_modify(&modify_command, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(events.len(), 1, "expected one event, was {events:?}");
+    let checks_trigger = !matches!(activation, TrailingStopActivation::Pending);
+
+    match (modify, &events[0]) {
+        (TrailingStopModify::TriggerInMarket, OrderEventAny::ModifyRejected(_))
+            if checks_trigger => {}
+        (TrailingStopModify::QuantityOnly, OrderEventAny::Updated(updated)) => {
+            assert_eq!(updated.quantity, Quantity::from("2.000"));
+        }
+        (TrailingStopModify::TriggerOutOfMarket, OrderEventAny::Updated(updated)) => {
+            assert_eq!(updated.trigger_price, trigger_price);
+        }
+        (TrailingStopModify::TriggerInMarket, OrderEventAny::Updated(updated))
+            if !checks_trigger =>
+        {
+            assert_eq!(updated.trigger_price, trigger_price);
+        }
+        (modify, event) => {
+            panic!("{modify:?} modify of {activation:?} {side} {order_type}: unexpected {event:?}")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OuoSiblingResize {
+    TakeProfitPartialFill,
+    TakeProfitModify,
+}
+
+// A take-profit partial fill (`fill_order`) or quantity modify (`update_contingent_order`) resizes
+// its OUO sibling through the modify path, so an activated trailing stop-loss is checked there too
+#[rstest]
+fn test_ouo_resize_of_activated_trailing_stop_sibling(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    engine_config: OrderMatchingEngineConfig,
+    #[values(
+        OuoSiblingResize::TakeProfitPartialFill,
+        OuoSiblingResize::TakeProfitModify
+    )]
+    resize: OuoSiblingResize,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+    );
+    // Ask above the take-profit so a bid at its price does not cross the book
+    add_l2_best_bid_ask(
+        &mut engine_l2,
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Price::from("1503.00"),
+    );
+
+    let stop_loss_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let take_profit_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut stop_loss = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1495.00"))
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(stop_loss_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![take_profit_id])
+        .submit(true)
+        .build();
+    let mut take_profit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1502.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(take_profit_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![stop_loss_id])
+        .submit(true)
+        .build();
+    // Both legs are cached before either is processed, as the execution engine does
+    cache_order(&cache, &stop_loss);
+    cache_order(&cache, &take_profit);
+    engine_l2.process_order(&mut stop_loss, account_id);
+    engine_l2.process_order(&mut take_profit, account_id);
+    // Next iteration activates the stop-loss at market and trails it to bid - 1
+    engine_l2.iterate(UnixNanos::default(), AggressorSide::NoAggressor);
+    assert!(trailing_stop_is_activated(
+        &cache.borrow().order(&stop_loss_id).unwrap()
+    ));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    match resize {
+        OuoSiblingResize::TakeProfitPartialFill => {
+            // A bid at the take-profit price fills 0.4 of it
+            let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+                .book_action(BookAction::Add)
+                .book_order(BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from("1502.00"),
+                    Quantity::from("0.400"),
+                    3,
+                ))
+                .build();
+            engine_l2.process_order_book_delta(&bid_delta).unwrap();
+        }
+        OuoSiblingResize::TakeProfitModify => {
+            let modify_command = ModifyOrder::new(
+                TraderId::test_default(),
+                Some(ClientId::from("CLIENT-001")),
+                StrategyId::test_default(),
+                instrument_eth_usdt.id(),
+                take_profit_id,
+                None,
+                Some(Quantity::from("0.600")),
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None, // correlation_id
+            );
+            engine_l2.process_modify(&modify_command, account_id);
+        }
+    }
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::ModifyRejected(_))),
+        "{events:?}",
+    );
+    let cache = cache.borrow();
+    assert_eq!(
+        cache.order(&take_profit_id).unwrap().leaves_qty(),
+        Quantity::from("0.600")
+    );
+    let stop_loss = cache.order(&stop_loss_id).unwrap();
+    assert!(stop_loss.is_open());
+    assert_eq!(stop_loss.quantity(), Quantity::from("0.600"));
+}
+
+#[derive(Debug, Clone, Copy)]
 enum TrailingStopSubmitScenario {
     ActivationMatched,
     TriggerMatched,

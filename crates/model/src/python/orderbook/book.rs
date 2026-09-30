@@ -30,6 +30,7 @@ use crate::{
         analysis::book_check_integrity,
         own::{OwnOrderBook, validate_accepted_buffer},
     },
+    python::{orderbook::level::check_sizes_float_precision, types::fixed::FloatArithmetic},
     types::{Price, Quantity},
 };
 
@@ -493,14 +494,16 @@ impl OrderBook {
 
     /// Returns the spread between best ask and bid prices if both exist.
     #[pyo3(name = "spread")]
-    fn py_spread(&self) -> Option<f64> {
-        self.spread()
+    fn py_spread(&self) -> PyResult<Option<f64>> {
+        check_top_float_precision(self)?;
+        Ok(self.spread())
     }
 
     /// Returns the midpoint between best ask and bid prices if both exist.
     #[pyo3(name = "midpoint")]
-    fn py_midpoint(&self) -> Option<f64> {
-        self.midpoint()
+    fn py_midpoint(&self) -> PyResult<Option<f64>> {
+        check_top_float_precision(self)?;
+        Ok(self.midpoint())
     }
 
     /// Calculates the average price to fill the specified quantity.
@@ -523,8 +526,15 @@ impl OrderBook {
         &self,
         qty: Quantity,
         order_side: OrderSide,
-    ) -> (f64, f64, f64) {
-        self.get_avg_px_qty_for_exposure(qty, order_side)
+    ) -> PyResult<(f64, f64, f64)> {
+        qty.check_float_precision()?;
+
+        for level in side_levels(self, order_side) {
+            level.price.value.check_float_precision()?;
+            check_sizes_float_precision(level)?;
+        }
+
+        Ok(self.get_avg_px_qty_for_exposure(qty, order_side))
     }
 
     /// Returns the cumulative quantity available at or better than the specified price.
@@ -532,8 +542,12 @@ impl OrderBook {
     /// For a BUY order, sums ask levels at or below the price.
     /// For a SELL order, sums bid levels at or above the price.
     #[pyo3(name = "get_quantity_for_price")]
-    fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
-        self.get_quantity_for_price(price, order_side)
+    fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> PyResult<f64> {
+        for level in side_levels(self, order_side) {
+            check_sizes_float_precision(level)?;
+        }
+
+        Ok(self.get_quantity_for_price(price, order_side))
     }
 
     /// Returns the quantity at a specific price level only, or 0 if no level exists.
@@ -625,4 +639,20 @@ pub fn py_update_book_with_quote_tick(book: &mut OrderBook, quote: &QuoteTick) -
 #[pyo3(name = "update_book_with_trade_tick")]
 pub fn py_update_book_with_trade_tick(book: &mut OrderBook, trade: &TradeTick) -> PyResult<()> {
     book.update_trade_tick(trade).map_err(to_pyvalue_err)
+}
+
+fn check_top_float_precision(book: &OrderBook) -> PyResult<()> {
+    if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
+        bid.check_float_precision()?;
+        ask.check_float_precision()?;
+    }
+
+    Ok(())
+}
+
+fn side_levels(book: &OrderBook, order_side: OrderSide) -> impl Iterator<Item = &BookLevel> {
+    match order_side {
+        OrderSide::Buy => book.asks.levels.values(),
+        OrderSide::Sell => book.bids.levels.values(),
+    }
 }

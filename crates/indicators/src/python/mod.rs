@@ -30,6 +30,8 @@ pub mod momentum;
 pub mod ratio;
 pub mod volatility;
 
+mod float_precision;
+
 use pyo3::{prelude::*, pymodule};
 
 /// Initializes the Python `indicators` module by adding all indicator classes.

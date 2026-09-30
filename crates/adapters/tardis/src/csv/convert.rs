@@ -500,7 +500,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -510,7 +510,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -576,17 +576,10 @@ mod tests {
         let call_id = "BTC-9JUN20-10000-C.DERIBIT".to_string();
         let next_expiry_id = "BTC-10JUN20-10000-C.DERIBIT".to_string();
         let call_quotes = catalog
-            .query_typed_data::<QuoteTick>(
-                Some(vec![call_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<QuoteTick>(Some(vec![call_id.clone()]), None, None, None, None, true)
             .unwrap();
         let next_expiry_greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![next_expiry_id.clone()]),
                 None,
                 None,
@@ -627,7 +620,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -637,7 +630,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -681,7 +674,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -691,7 +684,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -739,20 +732,13 @@ mod tests {
         let btc_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let eth_id = "ETH-9JUN20-250-P.DERIBIT".to_string();
         let btc_quotes = catalog
-            .query_typed_data::<QuoteTick>(Some(vec![btc_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>(Some(vec![btc_id.clone()]), None, None, None, None, true)
             .unwrap();
         let eth_quotes = catalog
-            .query_typed_data::<QuoteTick>(Some(vec![eth_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>(Some(vec![eth_id.clone()]), None, None, None, None, true)
             .unwrap();
         let eth_greeks = catalog
-            .query_typed_data::<OptionGreeks>(
-                Some(vec![eth_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>(Some(vec![eth_id.clone()]), None, None, None, None, true)
             .unwrap();
 
         assert_eq!(btc_quotes.len(), 1);

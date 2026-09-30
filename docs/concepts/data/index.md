@@ -583,103 +583,10 @@ initialization, storage options, writing, querying, and file operations.
 The `nautilus_model` crate defines the internal data format. NautilusTrader serializes these models
 as Arrow record batches and stores them in Parquet files.
 
-Use the migration utilities when changing
-[precision modes](../../getting_started/installation.md#precision-mode) or schemas.
-
-### Migration tools
-
-The `nautilus_persistence` crate provides two utilities:
-
-#### `to-json`
-
-`to-json` converts Parquet files to JSON and preserves their metadata:
-
-- Creates two files:
-
-  - `<input>.json`: Deserialized data.
-  - `<input>.metadata.json`: Schema metadata and row group configuration.
-
-- Automatically detects data type from filename:
-
-  - `OrderBookDelta`: File name contains `deltas` or `order_book_delta`.
-  - `QuoteTick`: File name contains `quotes` or `quote_tick`.
-  - `TradeTick`: File name contains `trades` or `trade_tick`.
-  - `Bar`: File name contains `bars`.
-
-#### `to-parquet`
-
-`to-parquet` converts JSON back to Parquet:
-
-- Reads both the data JSON and metadata JSON files.
-- Preserves row group sizes from original metadata.
-- Uses ZSTD compression.
-- Creates `<input>.parquet`.
-
-### Migration process
-
-These examples use trade data. Run each command from `crates/persistence`.
-
-#### Migrating from standard-precision (64-bit) to high-precision (128-bit)
-
-Convert a standard-precision schema to a high-precision schema:
-
-:::note
-For catalogs that used the `Int64` and `UInt64` Arrow data types for prices and sizes, build the
-initial `to-json` conversion from
-[commit `e284162`](https://github.com/nautechsystems/nautilus_trader/commit/e284162cf27a3222115aeb5d10d599c8cf09cf50).
-:::
-
-1. Convert standard-precision Parquet to JSON:
-
-   ```bash
-   cargo run --features python --bin to-json -- trades.parquet
-   ```
-
-   This creates `trades.json` and `trades.metadata.json`.
-
-1. Convert the JSON to high-precision Parquet:
-
-   ```bash
-   cargo run --features "python high-precision" --bin to-parquet -- trades.json
-   ```
-
-   This creates `trades.parquet` with the high-precision schema.
-
-#### Migrating schema changes
-
-Convert data from one schema version to another:
-
-1. Convert the old-schema Parquet file to JSON:
-
-   For a high-precision source, replace `--features python` with
-   `--features "python high-precision"`.
-
-   ```bash
-   cargo run --features python --bin to-json -- trades.parquet
-   ```
-
-   This creates `trades.json` and `trades.metadata.json`.
-
-1. Switch to the new schema version:
-
-   ```bash
-   git checkout <new-version>
-   ```
-
-1. Convert the JSON to Parquet with the new schema:
-
-   ```bash
-   cargo run --features "python high-precision" --bin to-parquet -- trades.json
-   ```
-
-   This creates `trades.parquet` with the new schema.
-
-### Best practices
-
-- Test migrations with a small dataset first.
-- Back up the original files.
-- Verify data integrity after migration.
-- Perform migrations in a staging environment before applying them to production data.
+Use `nautilus catalog migrate-parquet` to rewrite a catalog written with an earlier schema or
+[precision mode](../../getting_started/installation.md#precision-mode) into the current Arrow format.
+See [Migrate a Parquet catalog](../../how_to/migrate_parquet_catalog.md) for the dry run, remote
+storage options, and the migration report.
 
 ## Custom data
 
@@ -702,6 +609,7 @@ constructor without declaring them as dataclass fields. Register the class once 
 ```python
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.persistence import ParquetDataCatalog
@@ -726,7 +634,7 @@ wrapped = [
 ]
 
 catalog.write_custom_data(wrapped)
-result = catalog.query_custom_data("MarketTickPython")
+result = catalog.query_custom_data(NautilusDataType.Custom("MarketTickPython"))
 ticks = [item.data for item in result]
 ```
 

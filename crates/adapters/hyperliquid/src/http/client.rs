@@ -77,9 +77,9 @@ use crate::{
             bar_type_to_interval, cache_alias_for_symbol, clamp_price_to_precision,
             derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
             normalize_or_validate_wire_price, order_to_hyperliquid_request_with_optional_decimals,
-            parse_combined_account_balances_and_margins, parse_spot_account_balances,
-            parse_trigger_order_type, parse_trigger_order_type_label, round_to_sig_figs,
-            time_in_force_to_hyperliquid_tif,
+            parse_combined_account_balances_and_margins, parse_outcome_symbol,
+            parse_spot_account_balances, parse_trigger_order_type, parse_trigger_order_type_label,
+            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -104,10 +104,11 @@ use crate::{
             SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
-            HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
-            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
-            parse_perp_instruments_with_settlement, parse_position_status_report,
-            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
+            HyperliquidInstrumentDef, create_instrument_from_def, filter_recent_public_trades,
+            instruments_from_defs_owned, parse_fill_report, parse_order_status_report_from_basic,
+            parse_outcome_instruments, parse_perp_instruments_with_settlement,
+            parse_position_status_report, parse_recent_public_trade, parse_spot_instruments,
+            parse_spot_position_status_report, parse_unlisted_outcome_instrument,
             resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
@@ -1430,6 +1431,17 @@ impl HyperliquidHttpClient {
             if let Some(instrument) = self.instruments.load().get(symbol) {
                 return Some(instrument.clone());
             }
+        }
+
+        // Settled HIP-4 outcomes drop out of `outcomeMeta`, but their coin
+        // encoding fixes every instrument field a report needs
+        if let Ok(asset_id) = parse_outcome_symbol(coin)
+            && let Ok(def) = parse_unlisted_outcome_instrument(asset_id)
+            && let Some(instrument) = create_instrument_from_def(&def, self.clock.get_time_ns())
+        {
+            log::debug!("Creating instrument for unlisted outcome coin: {coin}");
+            self.cache_instrument(&instrument);
+            return Some(instrument);
         }
 
         // Vault tokens aren't in standard API, create synthetic instruments
@@ -4559,6 +4571,40 @@ mod tests {
 
         let missing = client.get_or_create_instrument(&Ustr::from("#9999"), None);
         assert!(missing.is_none());
+    }
+
+    #[rstest]
+    #[case::coin_form("#200", None, "20-YES-OUTCOME", "#200", 100_000_200)]
+    #[case::token_form(
+        "+201",
+        Some(HyperliquidProductType::Outcome),
+        "20-NO-OUTCOME",
+        "#201",
+        100_000_201
+    )]
+    fn test_get_or_create_instrument_resolves_unlisted_outcome(
+        #[case] coin: &str,
+        #[case] product_type: Option<HyperliquidProductType>,
+        #[case] symbol: &str,
+        #[case] raw_symbol: &str,
+        #[case] asset_index: u32,
+    ) {
+        // Settled outcomes drop out of `outcomeMeta`, so fills carry `#E` coins
+        // and spot balances carry `+E` tokens for markets never loaded
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        let instrument = client
+            .get_or_create_instrument(&Ustr::from(coin), product_type)
+            .expect("unlisted outcome coin must resolve from its encoding");
+
+        assert_eq!(
+            instrument.id(),
+            InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE)
+        );
+        assert_eq!(instrument.raw_symbol(), Symbol::new(raw_symbol));
+        assert_eq!(instrument.price_precision(), 4);
+        assert_eq!(instrument.size_precision(), 2);
+        assert_eq!(client.get_asset_index(symbol), Some(asset_index));
     }
 
     #[rstest]

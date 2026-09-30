@@ -1275,10 +1275,12 @@ rate is fixed at zero and is not configurable.
 Instrument `fee_schedule` metadata stores decimal parameters as strings; readers also accept legacy
 numeric metadata.
 
-The live fee curve retains the reference SDK's floating-point power calculation. Fee inputs remain
-decimals until that step; negative rates or exponents and arithmetic overflow return errors.
+The live fee curve uses exact decimal arithmetic, so the exponent must be a whole number. Negative
+rates, fractional or negative exponents, and arithmetic overflow return errors.
 
-`FillReport.commission` is denominated in pUSD and rounds the platform fee to five decimal places.
+`FillReport.commission` is denominated in pUSD and floors the platform fee to five decimal places,
+matching the venue charge. The venue charges a BUY taker fee in pUSD on top of the fill and deducts a
+SELL taker fee from the pUSD proceeds, so the position quantity equals the shares filled.
 If the exact result cannot be represented as `Money`, the adapter returns an error instead of using
 zero or a generic commission. See the
 [commission failure contract](../developer_guide/adapters.md#commission-failure-handling).
@@ -1337,6 +1339,11 @@ the Polymarket order ID (`venue_order_id`). The execution reconciliation procedu
 is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
+- Generate filled order reports from confirmed trades for orders that closed before startup and
+  are not in the cache, so their fills apply with the venue quantity and commission. For an
+  instrument with a position report, the fills must explain that position; see
+  [report precision](#report-precision). Without a lookback window, only those instruments qualify,
+  because fills miss balance changes such as redemption; see [missing reports](#missing-reports).
 - In owner mode, generate position reports from current user positions reported by Polymarket's Data API.
   Session mode omits these wallet-wide positions; see [session keys](#session-keys).
 - Compare these reports with Nautilus execution state.
@@ -1344,6 +1351,18 @@ is as follows:
   Polymarket.
 
 ### Position reports
+
+#### Report precision
+
+The Data API reports position size and average price to four decimal places. When the confirmed
+fills in a mass status build one long position from zero without returning to flat, and the
+resulting quantity differs from the reported size by less than `0.0001`, the position report takes
+the quantity and average entry price of those fills. Startup reconciliation then applies the fills
+without a synthetic adjustment for the rounding. A buy and a sell with the same match time do not
+qualify, because their order is ambiguous.
+
+Otherwise, including when the cache retains an open position that other trades built, the report
+keeps the Data API values, and the fills of closed orders in that instrument are not reported.
 
 #### Resolved balances
 
@@ -1533,14 +1552,71 @@ settlement finality.
 
 Polymarket wire amounts use six-decimal fixed-point mantissas. Market SELL signing truncates the
 share-denominated `makerAmount` to two decimal places, while market BUY quote conversion can leave
-a few microshares of drift between the registered and filled quantities. Both effects are fixed in
-absolute share terms, so the adapter uses `DUST_SNAP_THRESHOLD_DEC = 0.01` shares. Anything at or above
-that threshold remains a real partial fill or overfill.
+a few microshares of drift between the registered and filled quantities. Every fill keeps the venue
+quantity. Truncation is fixed in absolute share terms, so for underfill the adapter uses
+`DUST_SNAP_THRESHOLD_DEC = 0.01` shares; a shortfall at or above that threshold remains a real
+partial fill.
 
 | Direction | Source                                         | Adapter behavior                             |
 | --------- | ---------------------------------------------- | -------------------------------------------- |
-| Overfill  | Market BUY quote conversion (microshares)      | Snap fill down to `submitted_qty`            |
+| Overfill  | BUY filled below its limit, or quote drift     | Raise the BUY order quantity to the fill     |
 | Underfill | Signed or venue quantity truncation (`< 0.01`) | Normalize atomic FOK; cancel a FAK remainder |
+
+See [BUY overfills](#buy-overfills) for how a BUY can receive more shares than it signed.
+
+### BUY overfills
+
+A Polymarket BUY is sized by the pUSD it spends, so it can receive more shares than it signed. The
+adapter keeps every fill at the venue quantity and raises the order quantity to match. A SELL is
+sized in shares and never fills past its signed quantity.
+
+:::info
+A BUY order's quantity can increase after submission, through an `OrderUpdated` event. Treat its
+filled quantity, or the position quantity, as the shares held.
+:::
+
+#### Why a BUY receives extra shares
+
+The signed order sets `makerAmount` (pUSD to spend) and `takerAmount` (shares to receive). The
+exchange guarantees at least that ratio of shares per pUSD for whatever part executes, then credits
+the shares actually delivered. A partial execution spends less and receives proportionally fewer
+shares. A full execution receives more than `takerAmount` in two cases:
+
+- Price improvement: a limit BUY of 9 shares at 0.58 commits 5.22 pUSD. Filled entirely at 0.56, it
+  receives 9.321429 shares.
+- Signing precision: a market BUY signs shares truncated to the tick's decimal places plus two,
+  while settlement uses six. A 5 pUSD market BUY at 0.66 signs 7.5757 shares and receives 7.575758.
+
+#### How the adapter raises the order quantity
+
+Nautilus orders are sized in shares, and the execution engine rejects a fill past the order quantity
+by default. The quantity therefore rises before the fill applies, through an `OrderUpdated` event
+recorded in the order's history like any other amendment:
+
+- WebSocket fills: the adapter emits `OrderUpdated` with the cumulative filled quantity, then
+  `OrderFilled`, so the order reaches `Filled`.
+- REST reports: a `Filled` BUY status report carries its evidence-capped filled quantity as its
+  quantity. Reconciliation sees that it differs from the cached order and applies a reconciliation
+  `OrderUpdated` before the fills. Status checks accept the raised quantity.
+- Modified orders: the raised quantity covers the whole order, including fills on earlier venue
+  orders.
+
+Commission is computed on the venue fill quantity.
+
+#### Recovery limitations
+
+Two REST recovery paths apply a recovered BUY overfill without raising the order quantity first, so
+the engine rejects the fill unless `LiveExecutionEngineConfig.allow_overfills` is enabled:
+
+- The periodic position check applies recovered fills as standalone reports. A rejected fill holds
+  back position reconciliation until `position_check_threshold_ms` passes. A later check then
+  synthesizes a correcting fill, without the venue commission, when `generate_missing_orders` is
+  enabled.
+- Reconciliation of an order with a pending cancel or modify skips the quantity update for a
+  `Filled` report, so its fills apply against the signed quantity.
+
+Both paths apply only when the user stream misses the fill and stream-gap trade discovery does not
+recover it.
 
 ### Terminal order handling
 
@@ -1559,13 +1635,13 @@ confirmed trade arrives before the submit response. A buffered `Canceled`, `Expi
 
 ### Commissions and tracking scope
 
-`FillReport.commission` reflects the venue-reported size and is not recalculated after snapping.
-The resulting difference depends on the snapped quantity, fill price, fee schedule, and rounding.
+`FillReport.commission` is computed from the venue-reported fill size, the same quantity the fill
+carries.
 
-The fill tracker is keyed by `venue_order_id` and registered on order
-accept, so fill reports for orders placed in another session pass through
-unchanged. `DUST_SNAP_THRESHOLD_DEC` is not configurable per-strategy; it lives
-in `nautilus_polymarket::common::consts`.
+The fill tracker is keyed by `venue_order_id`. It registers orders on accept and restores cached
+open orders on startup, so the WebSocket overfill raise applies only to orders it tracks.
+`DUST_SNAP_THRESHOLD_DEC` is not configurable per-strategy; it lives in
+`nautilus_polymarket::common::consts`.
 
 ### Order message size denomination
 
@@ -1663,11 +1739,11 @@ adapter selects each side's size as follows:
 - With [effective deltas](#effective-deltas), an active book delta subscription, and book updates not
   gated pending a valid snapshot, a side takes its size from the maintained local book when its top
   price matches. Before the first snapshot, or when the top does not match, its size is zero.
-- Without a maintained local book, or while book updates are gated pending a valid snapshot, a side
+- Without effective deltas, or while book updates are gated pending a valid snapshot, a side
   keeps the previous quote size when its top price matches. A moved or unknown side has zero size.
 
-The adapter ignores events older than the last emitted quote or maintained local book. It also
-rejects locked, crossed, out-of-range, and off-grid events.
+The adapter ignores events older than the last emitted quote or, with effective deltas, the local
+book. It also rejects locked, crossed, out-of-range, and off-grid events.
 
 An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
 `drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
@@ -1688,6 +1764,23 @@ Polymarket also sends hashed book updates that omit fields included in the serve
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
 verification because their exact hash preimage is unavailable. Snapshots without a hash remain
 compatible.
+
+#### Price change bursts
+
+Polymarket reports a match as a burst of `price_change` messages that share one timestamp. When the
+taker order rests a remainder, that remainder arrives first, followed by one removal for each
+opposite-side level it consumed, and a `book` event closes the burst. Each message's `best_bid` and
+`best_ask` already reflect the completed match, so applying the messages one at a time can cross the
+book until the consumed levels are removed.
+
+A book delta subscription keeps a local book from its first accepted snapshot. When a
+`price_change` batch leaves that book crossed, with a bid above an ask, the adapter appends deletes
+for the bids above that asset's `best_bid` and the asks below its `best_ask`. The emitted batch then
+leaves the book uncrossed, and the venue's later removals of those levels delete nothing. Batches
+that leave the book uncrossed, including a book locked at one price, pass through unchanged.
+
+A missing `best_bid` or `best_ask` leaves its side unpruned, and an invalid one skips pruning. The
+adapter logs a warning whenever an emitted batch leaves the book crossed.
 
 #### Live recovery validation
 
@@ -1718,7 +1811,9 @@ CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
   reconnect at the ceiling, unsubscribe during recovery, and shutdown during a reconnect.
 
 `--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
-`--rounds` sets the number of rounds (12 by default).
+`--rounds` sets the number of rounds (12 by default). `--tokens` takes comma-separated outcome
+token IDs from six distinct open, order-accepting markets to test instead of the most traded
+markets, since a quiet book can miss the recovery waits.
 
 Two venue behaviors limit what the harness can force:
 
@@ -1741,7 +1836,8 @@ snapshot batches (see [Data client options](#data-client-options)):
   snapshots emit nothing, and the final record carries `F_LAST`.
 - Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
   passes through unchanged to seed the new book epoch.
-- Incremental `price_change` batches remain unchanged and update the local comparison state.
+- Incremental `price_change` batches follow [price change bursts](#price-change-bursts) handling
+  and update the local comparison state.
 - When book deltas are subscribed, the maintained comparison book can supply matching sizes to
   `best_bid_ask` quote ticks. This can change those quote sizes and their unchanged-quote
   suppression, and the carried sizes can affect later `price_change` quotes. Trades are unchanged.

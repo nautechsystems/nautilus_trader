@@ -213,9 +213,10 @@ normal Python type checks:
 | `BacktestEngine.add_data` with duck typing    | Pass supported NautilusTrader model objects   |
 | Duck-typed portfolio-statistic position input | Pass `nautilus_trader.model.Position` objects |
 
-`DataQueryResult` iteration returns list chunks containing typed Python objects. Use `to_list()` to
-flatten all remaining chunks. Query and decode failures raise `RuntimeError` instead of appearing as
-an exhausted iterator.
+`DataBackendSession`, `DataQueryResult`, and `ParquetDataCatalog.backend_session()` are removed.
+Query a catalog with `ParquetDataCatalog.query(...)` or a typed method such as
+`query_quote_ticks(...)`, which return typed Python objects, or stream Arrow data with
+`query_data_arrow_stream(...)`.
 
 ### Enum absence and side names
 
@@ -455,6 +456,19 @@ workflows. `DatabaseConfig` has no public v2 Python equivalent. For live trading
 Postgres cache backing through `LiveNodeBuilder`; this does not restore the generic v1
 `DatabaseConfig` workflow. See
 [cache database configuration](docs/how_to/configure_live_trading.md#cache-database-configuration).
+
+`StreamingConfig` writes Feather files to a local `writer_path` and promotes them into an optional
+`catalog`, which can be remote. It takes rotation through one `RotationConfig`, with intervals and
+the time of day in integer nanoseconds:
+
+| v1 `StreamingConfig` fields                              | v2 `StreamingConfig` argument                                          |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `catalog_path`, `fs_protocol`, `fs_rust_storage_options` | `writer_path` for Feather files, plus `catalog=DataCatalogConfig(...)` |
+| `rotation_mode=SIZE`, `max_file_size`                    | `rotation_config=RotationConfig.size(max_size)`                        |
+| `rotation_mode=INTERVAL`, `rotation_interval`            | `rotation_config=RotationConfig.interval(interval_ns)`                 |
+| `rotation_mode=SCHEDULED_DATES`, `rotation_interval`     | `rotation_config=RotationConfig.scheduled_dates(interval_ns, ...)`     |
+| `rotation_time`, `rotation_timezone`                     | `schedule_ns` and `timezone` of `RotationConfig.scheduled_dates`       |
+| `rotation_mode=NO_ROTATION`                              | `rotation_config=RotationConfig.no_rotation()`, or omit it             |
 
 Custom Rust cache database adapters used with live orders must implement the batch
 `index_order_clients` operation. The default trait implementation rejects non-empty claims.

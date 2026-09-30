@@ -23,6 +23,7 @@ from tests.stubs import TestDataProviderPyo3
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import Clock
+from nautilus_trader.common import Environment
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import CatalogBackend
 from nautilus_trader.persistence import ParquetDataCatalog
@@ -75,6 +76,26 @@ def test_parquet_converts_current_feather_stream(tmp_path) -> None:
 
     catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick)
 
+    assert catalog.query_quote_ticks() == [quote]
+
+
+def test_parquet_converts_feather_stream_for_environment(tmp_path) -> None:
+    """
+    Verify parquet converts a feather stream from the environment's run folder.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    staging = tmp_path / "live" / "run"
+    staging.mkdir(parents=True)
+    writer = StreamingFeatherWriter(str(staging), cache=Cache(), clock=Clock.new_test())
+    quote = TestDataProviderPyo3.quote_tick(ts_event=123_456_788, ts_init=123_456_789)
+    writer.write(quote)
+    writer.close()
+
+    catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick)
+    backtest_quotes = catalog.query_quote_ticks()
+    catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick, environment=Environment.LIVE)
+
+    assert backtest_quotes == []
     assert catalog.query_quote_ticks() == [quote]
 
 

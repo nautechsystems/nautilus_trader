@@ -21,6 +21,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::enums::Environment;
 use nautilus_core::{
     UnixNanos,
     python::{to_pytype_err, to_pyvalue_err},
@@ -103,7 +104,7 @@ where
     T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
 {
     catalog
-        .query_typed_data::<T>(
+        .query::<T>(
             identifiers,
             start.map(UnixNanos::from),
             end.map(UnixNanos::from),
@@ -1734,10 +1735,11 @@ impl PyParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a list of data type names (as directory stems) in the catalog.
-    pub fn list_data_types(&self) -> PyResult<Vec<String>> {
+    /// Returns the data, record, and instrument types stored in the catalog.
+    pub fn list_data_types(&self) -> PyResult<Vec<PyCatalogDataType>> {
         self.inner
             .list_data_types()
+            .map(|data_types| data_types.into_iter().map(PyCatalogDataType::new).collect())
             .map_err(|e| PyIOError::new_err(format!("Failed to list data types: {e}")))
     }
 
@@ -1828,7 +1830,7 @@ impl PyParquetDataCatalog {
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
     /// - `data_type`: The stored family to convert (data type or record type).
-    /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
+    /// - `environment`: The environment of the run, which names the folder holding its feather files (default: `Environment.BACKTEST`)
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
     ///
@@ -1843,35 +1845,34 @@ impl PyParquetDataCatalog {
     /// catalog.convert_stream_to_data(
     ///     "instance-123",
     ///     NautilusDataType.QuoteTick,
-    ///     subdirectory="backtest"
+    ///     environment=Environment.BACKTEST
     /// )
     ///
     /// # Convert live run data with identifier filtering
     /// catalog.convert_stream_to_data(
     ///     "instance-456",
     ///     NautilusDataType.TradeTick,
-    ///     subdirectory="live",
+    ///     environment=Environment.LIVE,
     ///     identifiers=["EUR/USD.SIM"]
     /// )
     /// ```
-    #[pyo3(signature = (instance_id, data_type, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[pyo3(signature = (instance_id, data_type, environment=Environment::Backtest, identifiers=None, use_ts_event_for_ts_init=false))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
         data_type: PyCatalogDataType,
-        subdirectory: Option<&str>,
+        environment: Environment,
         identifiers: Option<Vec<String>>,
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
         let data_type = data_type.into_inner();
-        let subdir = subdirectory.unwrap_or("backtest");
 
         self.inner
             .convert_stream_to_data(
                 instance_id,
                 &data_type,
-                Some(subdir),
+                environment,
                 identifiers.as_deref(),
                 use_ts_event_for_ts_init,
             )
@@ -1879,24 +1880,31 @@ impl PyParquetDataCatalog {
     }
 
     /// Query custom data from Parquet files.
-    #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_custom_data(
         &mut self,
         py: Python<'_>,
-        type_name: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Vec<Py<PyAny>>> {
+        let NautilusDataType::Custom { type_name } = nautilus_data_type_from_py(data_type)? else {
+            return Err(to_pytype_err("data_type must be a custom NautilusDataType"));
+        };
+
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         let data = py
             .detach(|| {
                 self.inner.query_custom_data_dynamic(
-                    type_name,
+                    &type_name,
                     identifiers.as_deref(),
                     start_nanos,
                     end_nanos,

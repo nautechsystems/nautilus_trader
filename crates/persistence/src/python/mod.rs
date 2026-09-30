@@ -21,9 +21,7 @@
 )]
 
 pub mod backend;
-pub mod catalog;
 pub mod config;
-pub mod feather;
 pub mod wranglers;
 
 use nautilus_model::data::ensure_rust_extractor_registered;
@@ -52,16 +50,15 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Test/example types (RustTestCustomData, MacroYieldCurveData) are exposed so Python tests
     // and examples can use them; they are not gated behind cfg(test) to keep the extension build simple.
-    m.add_class::<crate::backend::session::DataBackendSession>()?;
-    m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<config::PyCatalogBackend>()?;
     m.add_class::<crate::config::StreamingConfig>()?;
     m.add_class::<config::PyRotationConfig>()?;
+    m.add_class::<crate::config::RotationMode>()?;
     m.add_class::<crate::test_data::RustTestFixedCustomData>()?;
     m.add_class::<backend::writer::PyStreamingWriter>()?;
     m.add_class::<crate::config::DataCatalogConfig>()?;
-    m.add_class::<catalog::PyParquetDataCatalog>()?;
-    m.add_class::<feather::PyStreamingFeatherWriter>()?;
+    m.add_class::<backend::parquet::catalog::PyParquetDataCatalog>()?;
+    m.add_class::<backend::feather::PyStreamingFeatherWriter>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
     m.add_class::<wranglers::depth::OrderBookDepthDataWrangler>()?;

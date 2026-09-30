@@ -19,6 +19,7 @@ Test backtest configs behavior.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from decimal import Decimal
 
 import pandas as pd
@@ -53,12 +54,16 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
+from nautilus_trader.model import NautilusInstrumentType
+from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import StandardMarginModel
+from nautilus_trader.persistence import CatalogBackend
 from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import RotationConfig
+from nautilus_trader.persistence import RotationMode
 from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
@@ -177,9 +182,10 @@ def test_engine_config_accepts_streaming_and_catalog_configs(
     """
     Test engine config retains streaming and catalog configs.
     """
+    promotion_catalog = DataCatalogConfig(path="bucket/output", fs_protocol="s3")
     streaming = StreamingConfig(
-        catalog_path="/data/output",
-        fs_protocol="s3",
+        writer_path="/data/stream",
+        catalog=promotion_catalog,
         flush_interval_ms=250,
         replace_existing=True,
     )
@@ -188,63 +194,162 @@ def test_engine_config_accepts_streaming_and_catalog_configs(
     config = config_type(streaming=streaming, catalogs=[catalog])
 
     assert type(config.streaming) is StreamingConfig
-    assert config.streaming.catalog_path == "/data/output"
-    assert config.streaming.fs_protocol == "s3"
+    assert config.streaming.writer_path == "/data/stream"
+    assert config.streaming.catalog == promotion_catalog
     assert config.streaming.flush_interval_ms == 250
     assert config.streaming.replace_existing is True
     assert config.catalogs == [catalog]
 
 
-def test_streaming_config_consumes_rotation_inputs() -> None:
+def test_streaming_config_defaults_to_feather_without_catalog() -> None:
     """
-    Test streaming config converts public rotation inputs to typed values.
+    Test streaming config keeps only Feather files when no catalog is configured.
     """
+    config = StreamingConfig(writer_path="/data/stream")
+
+    assert config.writer_path == "/data/stream"
+    assert config.catalog is None
+    assert config.writer_backend == "Feather"
+    assert config.flush_interval_ms == 1000
+    assert config.replace_existing is False
+    assert config.rotation_config.mode == RotationMode.NO_ROTATION
+    assert config.rotation_config.timezone is None
+    assert config.promotion_interval_ms is None
+    assert config.promote_on_close is True
+    assert config.delete_feather_after_promotion is False
+    assert config.use_ts_event_for_ts_init is False
+
+
+def test_streaming_config_consumes_promotion_options() -> None:
+    """
+    Test streaming config retains typed promotion options for its catalog.
+    """
+    catalog = DataCatalogConfig(path="/data/catalog")
+
     config = StreamingConfig(
-        catalog_path="bucket/output",
-        fs_protocol="s3",
-        flush_interval_ms=250,
-        replace_existing=True,
-        rotation_mode="SCHEDULED_DATES",
-        rotation_interval_ns=5_000,
-        schedule_ns=750,
+        writer_path="/data/stream",
+        catalog=catalog,
+        promotion_interval_ms=5_000,
+        promote_on_close=False,
+        delete_feather_after_promotion=True,
+        use_ts_event_for_ts_init=True,
     )
 
-    assert config.catalog_path == "bucket/output"
-    assert config.fs_protocol == "s3"
-    assert config.flush_interval_ms == 250
-    assert config.replace_existing is True
-    assert config.rotation_mode == "SCHEDULED_DATES"
-    assert config.rotation_interval_ns == 5_000
-    assert config.schedule_ns == 750
-
-
-def test_streaming_config_exposes_shared_rotation() -> None:
-    """
-    Retain shared rotation and legacy readback properties.
-    """
-    config = StreamingConfig(
-        catalog_path="catalog",
-        rotation_config=RotationConfig.interval(17),
-        writer_backend="parquet",
-    )
-    assert config.rotation_config.mode == "interval"
-    assert config.rotation_config.interval_ns == 17
-    assert config.rotation_mode == "INTERVAL"
-    assert config.rotation_interval_ns == 17
+    assert config.catalog == catalog
     assert config.writer_backend == "Parquet"
+    assert config.promotion_interval_ms == 5_000
+    assert config.promote_on_close is False
+    assert config.delete_feather_after_promotion is True
+    assert config.use_ts_event_for_ts_init is True
 
 
-def test_streaming_config_rejects_ambiguous_rotation() -> None:
+def test_streaming_config_writer_backend_follows_external_catalog() -> None:
     """
-    Reject conflicting rotation representations.
+    Test an external catalog backend selects the writer factory of the same name.
     """
-    with pytest.raises(ValueError, match="cannot be combined"):
-        StreamingConfig(
-            catalog_path="catalog",
-            rotation_config=RotationConfig.size(17),
-            rotation_mode="SIZE",
-            max_file_size=23,
-        )
+    config = StreamingConfig(
+        writer_path="/data/stream",
+        catalog=DataCatalogConfig(
+            path="/data/catalog",
+            catalog_backend=CatalogBackend.External("DuckLake"),
+        ),
+    )
+
+    assert config.writer_backend == "DuckLake"
+
+
+def test_streaming_config_exposes_scheduled_rotation() -> None:
+    """
+    Test streaming config exposes scheduled rotation with its timezone.
+    """
+    config = StreamingConfig(
+        writer_path="/data/stream",
+        rotation_config=RotationConfig.scheduled_dates(
+            5_000,
+            750,
+            timezone="Australia/Sydney",
+        ),
+    )
+
+    assert config.rotation_config.mode == RotationMode.SCHEDULED_DATES
+    assert config.rotation_config.interval_ns == 5_000
+    assert config.rotation_config.schedule_ns == 750
+    assert config.rotation_config.timezone == "Australia/Sydney"
+    assert config.rotation_config.max_size is None
+
+
+def test_rotation_config_scheduled_dates_defaults_to_utc() -> None:
+    """
+    Test scheduled rotation defaults to UTC, matching v1.
+    """
+    rotation = RotationConfig.scheduled_dates(5_000, 750)
+
+    assert rotation.timezone == "UTC"
+
+
+@pytest.mark.parametrize(
+    ("create", "field"),
+    [
+        (lambda: RotationConfig.size(0), "rotation_config.max_size"),
+        (lambda: RotationConfig.interval(0), "rotation_config.interval_ns"),
+        (lambda: RotationConfig.scheduled_dates(0, 0), "rotation_config.interval_ns"),
+        (
+            lambda: RotationConfig.scheduled_dates(1, 0, timezone="Mars/Olympus_Mons"),
+            "rotation_config.timezone",
+        ),
+    ],
+)
+def test_rotation_config_rejects_invalid_parameters(
+    create: Callable[[], RotationConfig],
+    field: str,
+) -> None:
+    """
+    Test rotation constructors reject zero sizes, zero intervals, and unknown timezones.
+    """
+    with pytest.raises(ValueError, match=f"invalid {field}"):
+        create()
+
+
+def test_streaming_config_types_are_enums() -> None:
+    """
+    Test streaming config keeps its type selectors and record filters as enums.
+    """
+    config = StreamingConfig(
+        writer_path="/data/output",
+        data_types=[NautilusDataType.QuoteTick, NautilusRecordType.OrderFilled],
+        instrument_types=[NautilusInstrumentType.Equity],
+        record_filters={NautilusRecordType.AccountState: ["SIM-001"]},
+    )
+
+    assert config.data_types == [NautilusDataType.QuoteTick]
+    assert config.record_types == [NautilusRecordType.OrderFilled]
+    assert config.instrument_types == [NautilusInstrumentType.Equity]
+    assert config.record_filters == {NautilusRecordType.AccountState: ["SIM-001"]}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"data_types": ["quotes"]}, "streaming type must be NautilusDataType"),
+        ({"record_types": ["order_filled"]}, "record_type must be NautilusRecordType"),
+        ({"instrument_types": ["equity"]}, "instrument_type must be NautilusInstrumentType"),
+        ({"record_filters": {"account_state": None}}, "record_type must be NautilusRecordType"),
+    ],
+)
+def test_streaming_config_rejects_type_strings(kwargs: dict, message: str) -> None:
+    """
+    Test streaming config rejects strings where it expects type enums.
+    """
+    with pytest.raises(TypeError, match=message):
+        StreamingConfig(writer_path="/data/output", **kwargs)
+
+
+def test_streaming_config_rejects_flat_rotation_arguments() -> None:
+    """
+    Test streaming config takes rotation only through `rotation_config`.
+    """
+    with pytest.raises(TypeError, match="rotation_mode"):
+        StreamingConfig(writer_path="/data/stream", rotation_mode="SIZE")
 
 
 def test_venue_config_required_params() -> None:

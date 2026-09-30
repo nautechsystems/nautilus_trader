@@ -72,6 +72,8 @@ struct DeltaStreamIterator {
     size_precision: u8,
     last_ts_init: Option<UnixNanos>,
     last_is_snapshot: bool,
+    seen_first_snapshot: bool,
+    skipped_before_snapshot: usize,
     limit: Option<usize>,
     deltas_emitted: usize,
 
@@ -120,6 +122,8 @@ impl DeltaStreamIterator {
             size_precision: final_size_precision,
             last_ts_init: None,
             last_is_snapshot: false,
+            seen_first_snapshot: false,
+            skipped_before_snapshot: 0,
             limit,
             deltas_emitted: 0,
             pending: None,
@@ -182,6 +186,18 @@ impl Iterator for DeltaStreamIterator {
                 None => match self.read_record() {
                     Ok(Some(data)) => data,
                     Ok(None) => {
+                        if !self.seen_first_snapshot && self.skipped_before_snapshot > 0 {
+                            log::warn!(
+                                "No snapshot row found in Tardis CSV: all {} row(s) were \
+                                 pre-snapshot buffered records and have been skipped, zero deltas \
+                                 will be produced (see https://docs.tardis.dev/faq/order-books)",
+                                self.skipped_before_snapshot,
+                            );
+                            // Reset so a repeated call after exhaustion (out-of-spec but
+                            // harmless) does not log the same summary again.
+                            self.skipped_before_snapshot = 0;
+                        }
+
                         if self.buffer.is_empty() {
                             return None;
                         }
@@ -194,6 +210,27 @@ impl Iterator for DeltaStreamIterator {
                     Err(e) => return Some(Err(e)),
                 },
             };
+
+            // Rows before the first snapshot are pre-snapshot orphans and must be skipped, see
+            // https://docs.tardis.dev/faq/order-books
+            if !self.seen_first_snapshot {
+                if !data.is_snapshot {
+                    self.skipped_before_snapshot += 1;
+                    continue;
+                }
+
+                if self.skipped_before_snapshot > 0 {
+                    log::warn!(
+                        "Skipped {} pre-snapshot buffered delta record(s) for {}/{} (received \
+                         before the first snapshot row, see \
+                         https://docs.tardis.dev/faq/order-books)",
+                        self.skipped_before_snapshot,
+                        data.exchange,
+                        data.symbol,
+                    );
+                }
+                self.seen_first_snapshot = true;
+            }
 
             let ts_event = parse_timestamp(data.timestamp);
             let ts_init = parse_timestamp(data.local_timestamp);
@@ -359,6 +396,8 @@ struct BatchedDeltasStreamIterator {
     size_precision: u8,
     last_ts_init: Option<UnixNanos>,
     last_is_snapshot: bool,
+    seen_first_snapshot: bool,
+    skipped_before_snapshot: usize,
     limit: Option<usize>,
     deltas_emitted: usize,
 }
@@ -417,6 +456,8 @@ impl BatchedDeltasStreamIterator {
             size_precision: final_size_precision,
             last_ts_init: None,
             last_is_snapshot: false,
+            seen_first_snapshot: false,
+            skipped_before_snapshot: 0,
             limit,
             deltas_emitted: 0,
         })
@@ -467,6 +508,27 @@ impl BatchedDeltasStreamIterator {
                             return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
                         }
                     };
+
+                    // Rows before the first snapshot are pre-snapshot orphans and must be
+                    // skipped, see https://docs.tardis.dev/faq/order-books
+                    if !self.seen_first_snapshot {
+                        if !data.is_snapshot {
+                            self.skipped_before_snapshot += 1;
+                            continue;
+                        }
+
+                        if self.skipped_before_snapshot > 0 {
+                            log::warn!(
+                                "Skipped {} pre-snapshot buffered delta record(s) for {}/{} \
+                                 (received before the first snapshot row, see \
+                                 https://docs.tardis.dev/faq/order-books)",
+                                self.skipped_before_snapshot,
+                                data.exchange,
+                                data.symbol,
+                            );
+                        }
+                        self.seen_first_snapshot = true;
+                    }
 
                     let ts_event = parse_timestamp(data.timestamp);
                     let ts_init = parse_timestamp(data.local_timestamp);
@@ -528,6 +590,17 @@ impl BatchedDeltasStreamIterator {
                 }
                 Ok(false) => {
                     // End of file
+                    if !self.seen_first_snapshot && self.skipped_before_snapshot > 0 {
+                        log::warn!(
+                            "No snapshot row found in Tardis CSV: all {} row(s) were \
+                             pre-snapshot buffered records and have been skipped, zero deltas \
+                             will be produced (see https://docs.tardis.dev/faq/order-books)",
+                            self.skipped_before_snapshot,
+                        );
+                        // Reset so a repeated call after exhaustion (out-of-spec but harmless)
+                        // does not log the same summary again.
+                        self.skipped_before_snapshot = 0;
+                    }
                     break;
                 }
                 Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
@@ -1854,8 +1927,8 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
     }
 
     #[rstest]
-    #[case(2, vec![2, 2])]
-    #[case(3, vec![3, 1])]
+    #[case(2, vec![2, 2, 2])]
+    #[case(3, vec![3, 3])]
     fn test_stream_deltas_groups_messages_by_local_timestamp(
         #[case] chunk_size: usize,
         #[case] expected_chunk_lengths: Vec<usize>,
@@ -1876,13 +1949,21 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
 
     #[rstest]
     fn test_stream_deltas_defers_lookahead_error() {
+        // Leading snapshot row (distinct local_timestamp) establishes book state so the two
+        // valid delta rows that follow are not treated as pre-snapshot orphans.
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+deribit,BTC-PERPETUAL,900,1900,true,bid,98.0,9.0
 deribit,BTC-PERPETUAL,1000,2000,false,bid,100.0,1.0
 deribit,BTC-PERPETUAL,1000,2000,false,ask,101.0,2.0
 deribit,BTC-PERPETUAL,invalid,2010,false,bid,99.0,3.0";
         let temp_file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(temp_file.path(), csv_data).unwrap();
         let mut stream = stream_deltas(temp_file.path(), 2, Some(1), Some(1), None, None).unwrap();
+
+        // First chunk: the leading snapshot row alone (CLEAR + Add).
+        let snapshot_chunk = stream.next().unwrap().unwrap();
+        assert_eq!(snapshot_chunk.len(), 2);
+        assert_eq!(snapshot_chunk[0].action, BookAction::Clear);
 
         let chunk = stream.next().unwrap().unwrap();
         let error = stream.next().unwrap().unwrap_err();
@@ -1955,7 +2036,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
                 .iter()
                 .map(Vec::len)
                 .collect::<Vec<_>>(),
-            vec![2, 2]
+            vec![2, 2, 2]
         );
         assert_eq!(
             iterator
@@ -2057,6 +2138,42 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
             0,
             "CLEAR at index 5 should not have F_LAST flag"
         );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_stream_batched_deltas_skips_rows_before_first_snapshot() {
+        // Two leading rows are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
+binance-futures,BTCUSDT,3,3,true,bid,100.0,5.0
+binance-futures,BTCUSDT,3,3,true,ask,100.5,6.0
+binance-futures,BTCUSDT,4,4,false,bid,100.0,7.0";
+
+        let temp_file =
+            std::env::temp_dir().join("test_stream_batched_deltas_pre_snapshot_orphans.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(0), None, None)
+                .unwrap();
+        iterator.fill_pending_batches().transpose().unwrap();
+
+        let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
+
+        // The 2 pre-snapshot rows are skipped entirely: 1 CLEAR + 2 snapshot Adds + 1 Update.
+        assert_eq!(all_deltas.len(), 4);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[1].action, BookAction::Add);
+        assert_eq!(all_deltas[1].order.price, Price::from("100.0"));
+        assert_eq!(all_deltas[2].action, BookAction::Add);
+        assert_eq!(all_deltas[2].order.price, Price::from("100.5"));
+        assert_eq!(all_deltas[3].action, BookAction::Update);
+        assert_eq!(all_deltas[3].order.price, Price::from("100.0"));
 
         std::fs::remove_file(&temp_file).ok();
     }
@@ -2750,8 +2867,10 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
 
     #[rstest]
     pub fn test_stream_deltas_with_limit() {
+        // First row is a snapshot so the file has valid book state to establish (CLEAR + Add
+        // both count toward `limit`); the remaining rows are plain deltas as before.
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
-binance,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
 binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
 binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,1.5
 binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,3.0
@@ -2910,6 +3029,36 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
             0,
             "CLEAR at index 5 should not have F_LAST flag"
         );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_stream_deltas_skips_rows_before_first_snapshot() {
+        // Two leading rows are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
+binance-futures,BTCUSDT,3,3,true,bid,100.0,5.0
+binance-futures,BTCUSDT,3,3,true,ask,100.5,6.0
+binance-futures,BTCUSDT,4,4,false,bid,100.0,7.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_deltas_pre_snapshot_orphans.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(0), None, None).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+
+        // The 2 pre-snapshot rows are skipped entirely: 1 CLEAR + 2 snapshot Adds + 1 Update.
+        assert_eq!(all_deltas.len(), 4);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[1].action, BookAction::Add);
+        assert_eq!(all_deltas[1].order.price, Price::from("100.0"));
+        assert_eq!(all_deltas[2].action, BookAction::Add);
+        assert_eq!(all_deltas[2].order.price, Price::from("100.5"));
+        assert_eq!(all_deltas[3].action, BookAction::Update);
+        assert_eq!(all_deltas[3].order.price, Price::from("100.0"));
 
         std::fs::remove_file(&temp_file).ok();
     }
@@ -3178,9 +3327,11 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49998.0,0.5"
 
     #[rstest]
     fn test_stream_deltas_chunk_boundary_no_f_last() {
-        // Test that F_LAST is NOT set when only chunk_size boundary is hit (more data follows)
+        // Test that F_LAST is NOT set when only chunk_size boundary is hit (more data follows).
+        // First row is a snapshot (same local_timestamp as the group) so it alone fills the
+        // first chunk (CLEAR + Add) via the same same-timestamp lookahead being tested.
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
-binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
 binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,ask,50001.0,2.0
 binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,49999.0,0.5";
 
@@ -3192,6 +3343,7 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,49999.0,0.5"
 
         let chunk1 = stream.next().unwrap().unwrap();
         assert_eq!(chunk1.len(), 2);
+        assert_eq!(chunk1[0].action, BookAction::Clear);
 
         // First chunk's last delta should NOT have F_LAST (more data follows with same timestamp)
         assert_eq!(
@@ -3202,12 +3354,14 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,49999.0,0.5"
 
         // Second chunk exists and has F_LAST (end of file)
         let chunk2 = stream.next().unwrap().unwrap();
-        assert_eq!(chunk2.len(), 1);
+        assert_eq!(chunk2.len(), 2);
         assert_eq!(
-            chunk2[0].flags & RecordFlag::F_LAST as u8,
+            chunk2[1].flags & RecordFlag::F_LAST as u8,
             RecordFlag::F_LAST as u8,
             "Final chunk at EOF should have F_LAST flag"
         );
+
+        assert!(stream.next().is_none());
 
         std::fs::remove_file(&temp_file).ok();
     }

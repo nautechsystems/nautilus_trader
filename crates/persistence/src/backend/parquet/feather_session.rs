@@ -37,6 +37,7 @@ use datafusion::arrow::{
 };
 use futures::StreamExt;
 use indexmap::IndexMap;
+use nautilus_common::enums::Environment;
 use nautilus_core::UnixNanos;
 #[cfg(feature = "defi")]
 use nautilus_model::data::NautilusRecordType;
@@ -65,7 +66,8 @@ use crate::{
         custom::decode_custom_batches_to_data,
         datafusion::{filter_record_batch_by_identifier, identifiers_from_record_batches},
         paths::{
-            catalog_data_type_from_session_feather_path, identifier_from_session_feather_path,
+            catalog_data_type_from_session_feather_path, environment_directory,
+            identifier_from_session_feather_path,
         },
     },
     writer::{
@@ -95,7 +97,7 @@ impl ParquetDataCatalog {
 
         let data_type = catalog_data_type_from_session_feather_path(
             feather_path,
-            &source.kind,
+            source.environment,
             &source.instance_id,
         )?;
         Self::ensure_stream_data_type(&data_type)?;
@@ -103,7 +105,7 @@ impl ParquetDataCatalog {
         let identifier = Self::identifier_from_batch_or_path(
             &batches[0],
             feather_path,
-            &source.kind,
+            source.environment,
             &source.instance_id,
         )
         .filter(|identifier| {
@@ -111,7 +113,7 @@ impl ParquetDataCatalog {
                 Self::identifier_from_batch_or_path(
                     batch,
                     feather_path,
-                    &source.kind,
+                    source.environment,
                     &source.instance_id,
                 )
                 .as_ref()
@@ -120,7 +122,7 @@ impl ParquetDataCatalog {
         });
 
         self.convert_feather_batches_to_parquet(
-            &source.kind,
+            source.environment,
             &source.instance_id,
             &data_type,
             feather_path,
@@ -187,7 +189,7 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn read_live_run(&self, instance_id: &str) -> anyhow::Result<Vec<Data>> {
-        self.read_run("live", instance_id)
+        self.read_run(Environment::Live, instance_id)
     }
 
     /// Reads data from a backtest run instance.
@@ -232,7 +234,7 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn read_backtest(&self, instance_id: &str) -> anyhow::Result<Vec<Data>> {
-        self.read_run("backtest", instance_id)
+        self.read_run(Environment::Backtest, instance_id)
     }
 
     /// Reads the sealed Feather files of a run instance (backtest or live).
@@ -240,14 +242,14 @@ impl ParquetDataCatalog {
     /// Abandoned `.feather.partial` files are recovered first, and files a writer still holds
     /// open are not read. Families that do not decode to `Data`, such as order events, are
     /// skipped.
-    fn read_run(&self, kind: &str, instance_id: &str) -> anyhow::Result<Vec<Data>> {
-        self.recover_partial_run_files(kind, instance_id);
-        let feather_files = self.list_feather_files(kind, instance_id, None, None)?;
+    fn read_run(&self, environment: Environment, instance_id: &str) -> anyhow::Result<Vec<Data>> {
+        self.recover_partial_run_files(environment, instance_id);
+        let feather_files = self.list_feather_files(environment, instance_id, None, None)?;
         let mut all_data: Vec<Data> = Vec::new();
 
         for file_path in feather_files {
             let data_type =
-                catalog_data_type_from_session_feather_path(&file_path, kind, instance_id)?;
+                catalog_data_type_from_session_feather_path(&file_path, environment, instance_id)?;
 
             // A file may hold several batches
             let batches = self.read_feather_file(&file_path)?;
@@ -338,10 +340,10 @@ impl ParquetDataCatalog {
     }
 
     // Writers stage only to local directories, so other catalogs hold no partial files
-    fn recover_partial_run_files(&self, kind: &str, instance_id: &str) {
+    fn recover_partial_run_files(&self, environment: Environment, instance_id: &str) {
         if self.original_uri.starts_with("file://") {
             let directory = PathBuf::from(self.native_base_path_string())
-                .join(kind)
+                .join(environment_directory(environment))
                 .join(instance_id);
             recover_partial_feather_files(&directory);
         }
@@ -351,12 +353,15 @@ impl ParquetDataCatalog {
     /// `None`.
     fn list_feather_files(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
         data_type: Option<&CatalogDataType>,
         identifiers: Option<&[String]>,
     ) -> anyhow::Result<Vec<String>> {
-        let base_dir = make_object_store_path(&self.base_path, [kind, instance_id]);
+        let base_dir = make_object_store_path(
+            &self.base_path,
+            [environment_directory(environment), instance_id],
+        );
 
         let mut files = self.execute_async(|| async {
             let prefix = ObjectPath::from(format!("{base_dir}/"));
@@ -371,9 +376,11 @@ impl ParquetDataCatalog {
                     continue;
                 }
 
-                let Ok(path_data_type) =
-                    catalog_data_type_from_session_feather_path(&path_str, kind, instance_id)
-                else {
+                let Ok(path_data_type) = catalog_data_type_from_session_feather_path(
+                    &path_str,
+                    environment,
+                    instance_id,
+                ) else {
                     continue;
                 };
 
@@ -382,7 +389,7 @@ impl ParquetDataCatalog {
                 }
 
                 let path_identifier =
-                    identifier_from_session_feather_path(&path_str, kind, instance_id);
+                    identifier_from_session_feather_path(&path_str, environment, instance_id);
 
                 if let (Some(identifiers), Some(path_identifier)) =
                     (identifiers, path_identifier.as_deref())
@@ -406,7 +413,7 @@ impl ParquetDataCatalog {
     fn filter_batches_by_identifiers(
         batches: Vec<RecordBatch>,
         file_path: &str,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
         identifiers: Option<&[String]>,
     ) -> anyhow::Result<Vec<RecordBatch>> {
@@ -414,7 +421,8 @@ impl ParquetDataCatalog {
             return Ok(batches);
         };
 
-        let path_identifier = identifier_from_session_feather_path(file_path, kind, instance_id);
+        let path_identifier =
+            identifier_from_session_feather_path(file_path, environment, instance_id);
 
         batches
             .iter()
@@ -518,7 +526,7 @@ impl ParquetDataCatalog {
     /// - `instance_id`: The ID of the backtest or live run instance.
     /// - `data_type`: The data or record type to convert, with the registered type name verbatim
     ///   for custom data.
-    /// - `subdirectory`: The subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest").
+    /// - `environment`: The environment of the run, which names the folder holding its feather files.
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types).
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing.
     ///
@@ -541,7 +549,7 @@ impl ParquetDataCatalog {
     /// materializing Nautilus data objects. An instance with no staged files for the family
     /// converts nothing and returns success. It requires:
     /// - Recovering abandoned `.feather.partial` files of a local run
-    /// - Listing feather files in the specified subdirectory
+    /// - Listing feather files in the environment's run folder
     /// - Reading feather files (Arrow IPC stream reading)
     /// - Applying table-only stream conversion transforms
     /// - Writing Arrow batches to the catalog
@@ -549,6 +557,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_common::enums::Environment;
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
@@ -564,7 +573,7 @@ impl ParquetDataCatalog {
     /// catalog.convert_stream_to_data(
     ///     "instance-123",
     ///     &NautilusDataType::QuoteTick.into(),
-    ///     Some("backtest"),
+    ///     Environment::Backtest,
     ///     None,
     ///     false,
     /// )?;
@@ -574,15 +583,14 @@ impl ParquetDataCatalog {
         &mut self,
         instance_id: &str,
         data_type: &CatalogDataType,
-        subdirectory: Option<&str>,
+        environment: Environment,
         identifiers: Option<&[String]>,
         use_ts_event_for_ts_init: bool,
     ) -> anyhow::Result<()> {
-        let subdirectory = subdirectory.unwrap_or("backtest");
         Self::ensure_stream_data_type(data_type)?;
-        self.recover_partial_run_files(subdirectory, instance_id);
+        self.recover_partial_run_files(environment, instance_id);
         let feather_files =
-            self.list_feather_files(subdirectory, instance_id, Some(data_type), identifiers)?;
+            self.list_feather_files(environment, instance_id, Some(data_type), identifiers)?;
 
         // Each file is planned before it is written; a file holds every identifier of its type,
         // and each restored batch carries its own identifier
@@ -590,7 +598,7 @@ impl ParquetDataCatalog {
             let batches = Self::filter_batches_by_identifiers(
                 self.read_feather_file(&file_path)?,
                 &file_path,
-                subdirectory,
+                environment,
                 instance_id,
                 identifiers,
             )?;
@@ -600,7 +608,7 @@ impl ParquetDataCatalog {
             }
 
             self.convert_feather_batches_to_parquet(
-                subdirectory,
+                environment,
                 instance_id,
                 data_type,
                 &file_path,
@@ -619,7 +627,7 @@ impl ParquetDataCatalog {
     )]
     fn convert_feather_batches_to_parquet(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
         data_type: &CatalogDataType,
         feather_path: &str,
@@ -656,7 +664,7 @@ impl ParquetDataCatalog {
             *ordinal += 1;
 
             if let Some(plan) = self.plan_catalog_write(
-                kind,
+                environment,
                 instance_id,
                 data_type,
                 feather_path,
@@ -705,7 +713,7 @@ impl ParquetDataCatalog {
     )]
     fn plan_catalog_write(
         &self,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
         data_type: &CatalogDataType,
         feather_path: &str,
@@ -728,7 +736,7 @@ impl ParquetDataCatalog {
         })?;
 
         let identifier =
-            Self::identifier_from_batch_or_path(&batch, feather_path, kind, instance_id);
+            Self::identifier_from_batch_or_path(&batch, feather_path, environment, instance_id);
 
         let identifier = identifier.as_deref();
 
@@ -882,7 +890,7 @@ impl ParquetDataCatalog {
     fn identifier_from_batch_or_path(
         batch: &RecordBatch,
         feather_path: &str,
-        kind: &str,
+        environment: Environment,
         instance_id: &str,
     ) -> Option<String> {
         let metadata = batch.schema().metadata().clone();
@@ -900,7 +908,7 @@ impl ParquetDataCatalog {
             return identifiers.into_iter().next();
         }
 
-        identifier_from_session_feather_path(feather_path, kind, instance_id)
+        identifier_from_session_feather_path(feather_path, environment, instance_id)
     }
 
     fn ensure_stream_data_type(data_type: &CatalogDataType) -> anyhow::Result<()> {
@@ -1168,6 +1176,7 @@ mod promotion_group_tests {
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
+    use nautilus_common::enums::Environment;
     use nautilus_model::data::NautilusDataType;
     use nautilus_serialization::arrow::KEY_IDENTIFIER;
     use rstest::rstest;
@@ -1284,7 +1293,7 @@ mod promotion_group_tests {
 
         catalog
             .convert_feather_batches_to_parquet(
-                "backtest",
+                Environment::Backtest,
                 "run-1",
                 &NautilusDataType::QuoteTick.into(),
                 "backtest/run-1/quotes_1.feather",
@@ -1295,7 +1304,7 @@ mod promotion_group_tests {
             .unwrap();
         catalog
             .convert_feather_batches_to_parquet(
-                "backtest",
+                Environment::Backtest,
                 "run-1",
                 &NautilusDataType::QuoteTick.into(),
                 "backtest/run-1/quotes_1.feather",
@@ -1327,7 +1336,7 @@ mod promotion_group_tests {
 
         let error = catalog
             .convert_feather_batches_to_parquet(
-                "backtest",
+                Environment::Backtest,
                 "run-1",
                 &NautilusDataType::QuoteTick.into(),
                 "backtest/run-1/quotes_1.feather",
@@ -1359,7 +1368,7 @@ mod promotion_group_tests {
 
         catalog
             .convert_feather_batches_to_parquet(
-                "backtest",
+                Environment::Backtest,
                 "run-1",
                 &NautilusDataType::QuoteTick.into(),
                 "backtest/run-1/quotes_1.feather",
@@ -1420,7 +1429,7 @@ mod promotion_group_tests {
         let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
         let storage =
             create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
-        let source = FeatherSessionSource::new(storage, "backtest", "run-1");
+        let source = FeatherSessionSource::new(storage, Environment::Backtest, "run-1");
         let staged = RecordBatch::new_empty(Arc::new(Schema::new(vec![
             Field::new("ts_init", DataType::UInt64, false),
             Field::new(NAUTILUS_ARROW_METADATA_ID_COLUMN, DataType::Utf8, false),
@@ -1467,7 +1476,7 @@ mod promotion_group_tests {
 
         let error = catalog
             .convert_feather_batches_to_parquet(
-                "backtest",
+                Environment::Backtest,
                 "run-1",
                 &NautilusDataType::QuoteTick.into(),
                 "backtest/run-1/quotes_1.feather",
@@ -1492,6 +1501,7 @@ mod promotion_group_tests {
 
 #[cfg(test)]
 mod stream_folder_tests {
+    use nautilus_common::enums::Environment;
     use nautilus_model::data::NautilusDataType;
     use rstest::rstest;
 
@@ -1523,7 +1533,8 @@ mod stream_folder_tests {
         let path = format!("backtest/run-1/{folder}/{folder}_0.feather");
 
         assert_eq!(
-            catalog_data_type_from_session_feather_path(&path, "backtest", "run-1").unwrap(),
+            catalog_data_type_from_session_feather_path(&path, Environment::Backtest, "run-1")
+                .unwrap(),
             CatalogDataType::from(expected),
         );
     }
@@ -1536,6 +1547,7 @@ mod read_run_tests {
         sync::{Arc, atomic::AtomicU64},
     };
 
+    use nautilus_common::enums::Environment;
     use nautilus_core::UnixNanos;
     use nautilus_model::data::{
         Data, NautilusDataType, QuoteTick, TradeTick,
@@ -1677,7 +1689,7 @@ mod read_run_tests {
                 .convert_stream_to_data(
                     "run-001",
                     &CatalogDataType::from(NautilusDataType::QuoteTick),
-                    Some("backtest"),
+                    Environment::Backtest,
                     identifiers,
                     false,
                 )
@@ -1686,7 +1698,7 @@ mod read_run_tests {
 
         assert_eq!(
             catalog
-                .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+                .query::<QuoteTick>(None, None, None, None, None, true)
                 .unwrap(),
             vec![quote_aud(1_000), quote_eth(2_000)],
         );
@@ -1730,7 +1742,7 @@ mod read_run_tests {
             .convert_stream_to_data(
                 "run-001",
                 &CatalogDataType::from(NautilusDataType::QuoteTick),
-                Some("backtest"),
+                Environment::Backtest,
                 None,
                 false,
             )
@@ -1738,7 +1750,7 @@ mod read_run_tests {
 
         assert_eq!(
             catalog
-                .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+                .query::<QuoteTick>(None, None, None, None, None, true)
                 .unwrap(),
             vec![quote_aud(1_000)],
         );

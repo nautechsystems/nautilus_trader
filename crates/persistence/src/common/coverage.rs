@@ -30,6 +30,9 @@ use super::{
     CREATED_TS_COLUMN, DATA_TYPE_COLUMN, DATA_VERSION_COLUMN, END_TS_COLUMN, ROW_COUNT_COLUMN,
     SCHEMA_VERSION_COLUMN, SOURCE_COLUMN, START_TS_COLUMN, STATUS_COLUMN, TABLE_PATH_COLUMN,
 };
+use crate::catalog::types::{
+    CatalogDataType, catalog_data_type_from_path, catalog_data_type_path_prefix,
+};
 
 pub const COVERAGE_SCHEMA_VERSION: u32 = 1;
 
@@ -72,7 +75,7 @@ pub struct CoverageIntervals {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CatalogCoverageRow {
     pub table_path: String,
-    pub data_type: String,
+    pub data_type: CatalogDataType,
     pub identifier: Option<String>,
     pub start_ts: u64,
     pub end_ts: u64,
@@ -127,7 +130,7 @@ pub fn deduplicate_coverage_rows(rows: Vec<CatalogCoverageRow>) -> Vec<CatalogCo
     for row in rows {
         let key = (
             row.table_path.clone(),
-            row.data_type.clone(),
+            catalog_data_type_path_prefix(&row.data_type).into_owned(),
             row.identifier.clone(),
             row.start_ts,
             row.end_ts,
@@ -267,7 +270,7 @@ pub fn coverage_rows_to_batch(rows: &[CatalogCoverageRow]) -> anyhow::Result<Rec
             )),
             Arc::new(StringArray::from(
                 rows.iter()
-                    .map(|row| row.data_type.clone())
+                    .map(|row| catalog_data_type_path_prefix(&row.data_type).into_owned())
                     .collect::<Vec<_>>(),
             )),
             Arc::new(StringArray::from(
@@ -341,9 +344,11 @@ pub fn decode_coverage_batches(
                 table_path: table_path[row]
                     .clone()
                     .ok_or_else(|| anyhow::anyhow!("{TABLE_PATH_COLUMN} is null"))?,
-                data_type: data_type[row]
-                    .clone()
-                    .ok_or_else(|| anyhow::anyhow!("{DATA_TYPE_COLUMN} is null"))?,
+                data_type: catalog_data_type_from_path(
+                    data_type[row]
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("{DATA_TYPE_COLUMN} is null"))?,
+                )?,
                 identifier: identifier[row].clone(),
                 start_ts: start_ts[row],
                 end_ts: end_ts[row],
@@ -608,6 +613,7 @@ pub fn missing_intervals(
 #[cfg(test)]
 mod tests {
     use arrow::array::{ArrayRef, Int32Array};
+    use nautilus_model::data::{NautilusDataType, NautilusRecordType};
     use rstest::rstest;
 
     use super::*;
@@ -713,7 +719,7 @@ mod tests {
     ) -> CatalogCoverageRow {
         CatalogCoverageRow {
             table_path: "quotes".to_string(),
-            data_type: "QuoteTick".to_string(),
+            data_type: NautilusDataType::QuoteTick.into(),
             identifier: Some("AUD/USD.SIM".to_string()),
             start_ts,
             end_ts,
@@ -830,7 +836,7 @@ mod tests {
         let rows = vec![
             CatalogCoverageRow {
                 table_path: "quotes".to_string(),
-                data_type: "QuoteTick".to_string(),
+                data_type: NautilusDataType::QuoteTick.into(),
                 identifier: None,
                 start_ts: 1,
                 end_ts: 5,
@@ -843,7 +849,7 @@ mod tests {
             },
             CatalogCoverageRow {
                 table_path: "bars".to_string(),
-                data_type: "Bar".to_string(),
+                data_type: NautilusDataType::Bar.into(),
                 identifier: Some("ES.GLBX".to_string()),
                 start_ts: 6,
                 end_ts: 9,
@@ -856,7 +862,7 @@ mod tests {
             },
             CatalogCoverageRow {
                 table_path: "trades".to_string(),
-                data_type: "TradeTick".to_string(),
+                data_type: NautilusDataType::TradeTick.into(),
                 identifier: Some("ETHUSDT.BINANCE".to_string()),
                 start_ts: 10,
                 end_ts: 12,
@@ -872,6 +878,32 @@ mod tests {
         let batch = coverage_rows_to_batch(&rows).unwrap();
 
         assert_eq!(decode_coverage_batches(vec![batch]).unwrap(), rows);
+    }
+
+    #[rstest]
+    #[case::path_prefix("quotes", Ok(NautilusDataType::QuoteTick.into()))]
+    #[case::type_name("QuoteTick", Ok(NautilusDataType::QuoteTick.into()))]
+    #[case::shared_record(
+        "record/account_state",
+        Ok(CatalogDataType::Record(NautilusRecordType::AccountState))
+    )]
+    #[case::unknown("not_a_type", Err("Unknown catalog type path 'not_a_type'"))]
+    fn decode_coverage_batches_parses_data_type_column(
+        #[case] stored: &str,
+        #[case] expected: Result<CatalogDataType, &str>,
+    ) {
+        let batch =
+            coverage_rows_to_batch(&[coverage_row(1, 5, CoverageKind::Data, None, 1)]).unwrap();
+        let data_type_index = batch.schema().index_of(DATA_TYPE_COLUMN).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[data_type_index] = Arc::new(StringArray::from(vec![stored]));
+        let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
+
+        let decoded = decode_coverage_batches(vec![batch])
+            .map(|rows| rows[0].data_type.clone())
+            .map_err(|e| e.to_string());
+
+        assert_eq!(decoded, expected.map_err(str::to_string));
     }
 
     #[rstest]

@@ -125,7 +125,7 @@ def test_streaming_feather_writer_accepts_rust_custom_data(tmp_path: Path) -> No
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.convert_stream_to_data("run-rust-custom", NautilusDataType.Custom("RustTestCustomData"))
 
-    result = catalog.query_custom_data("RustTestCustomData")
+    result = catalog.query_custom_data(NautilusDataType.Custom("RustTestCustomData"))
     assert [item.data.value for item in result] == [1.25, 2.5]
     assert all(isinstance(item.data, RustTestCustomData) for item in result)
 
@@ -146,27 +146,20 @@ def test_streaming_feather_writer_accepts_python_custom_data(tmp_path: Path) -> 
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.convert_stream_to_data("run-py-custom", NautilusDataType.Custom("StreamSignal"))
 
-    result = catalog.query_custom_data("StreamSignal")
+    result = catalog.query_custom_data(NautilusDataType.Custom("StreamSignal"))
     assert len(result) == 1
     assert result[0].data.value == 42.5
     assert result[0].data.ts_event == 11
     assert result[0].data.ts_init == 12
 
 
-@pytest.mark.parametrize(
-    "include",
-    ["custom/RustTestCustomData", NautilusDataType.Custom("RustTestCustomData")],
-)
-def test_streaming_feather_writer_include_types_match_custom_data(
-    tmp_path: Path,
-    include: object,
-) -> None:
+def test_streaming_feather_writer_include_types_match_custom_data(tmp_path: Path) -> None:
     """
     Verify streaming feather writer include types match custom data.
     """
     register_custom_data_class(RustTestCustomData)
     staging = tmp_path / "backtest" / "run-filtered"
-    writer = _writer(staging, include_types=[include])
+    writer = _writer(staging, include_types=[NautilusDataType.Custom("RustTestCustomData")])
     instrument_id = InstrumentId.from_str("RUST.FILTER")
     data_type = DataType("RustTestCustomData", None, str(instrument_id))
     writer.write(CustomData(data_type, RustTestCustomData(instrument_id, 1.25, True, 1, 1)))
@@ -207,7 +200,7 @@ def test_streaming_feather_writer_include_types_drop_custom_data(tmp_path: Path)
     """
     register_custom_data_class(RustTestCustomData)
     staging = tmp_path / "backtest" / "run-dropped"
-    writer = _writer(staging, include_types=["quotes"])
+    writer = _writer(staging, include_types=[NautilusDataType.QuoteTick])
     instrument_id = InstrumentId.from_str("RUST.DROP")
     data_type = DataType("RustTestCustomData", None, str(instrument_id))
     writer.write(CustomData(data_type, RustTestCustomData(instrument_id, 1.25, True, 1, 1)))

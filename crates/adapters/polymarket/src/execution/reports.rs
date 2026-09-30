@@ -25,7 +25,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionEventEmitter, execution::context::OrderContext};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -47,6 +47,7 @@ use super::{
         build_reconciliation_position_reports, build_target_order_report,
         cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity, venue_leg_filled_before_and_quantity,
+        venue_qty_matches,
     },
     responses::confirm_modify_replacement,
 };
@@ -232,7 +233,7 @@ impl PolymarketExecutionClient {
         let cached_side = cached.as_ref().map(|order| order.order_side());
         let expected_order_side = authority.order_side;
 
-        let (mut order_fills, fill_discards) = build_fill_reports_from_trades(
+        let (order_fills, fill_discards) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
@@ -278,8 +279,6 @@ impl PolymarketExecutionClient {
             );
             return Ok(Some(report));
         }
-
-        self.fill_tracker.snap_fill_reports(&mut order_fills);
 
         if order_fills.is_empty() {
             let Some(cached) = cached.as_ref() else {
@@ -950,7 +949,12 @@ impl PolymarketExecutionClient {
                     report.quantity.precision,
                 )?;
                 anyhow::ensure!(
-                    report.quantity == leg_quantity,
+                    venue_qty_matches(
+                        report.order_side == Some(OrderSide::Buy),
+                        report.quantity.as_decimal(),
+                        report.filled_qty.as_decimal(),
+                        leg_quantity.as_decimal(),
+                    ),
                     "provider venue-leg quantity {} does not match expected quantity {leg_quantity}",
                     report.quantity,
                 );
@@ -1028,7 +1032,8 @@ impl PolymarketExecutionClient {
         } else {
             self.config.reconciliation_load_ids()
         };
-        let (mut reports, _) = build_fill_reports_from_trades(
+
+        let (reports, _) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
@@ -1038,8 +1043,6 @@ impl PolymarketExecutionClient {
             collection_load_ids,
             None,
         )?;
-
-        self.fill_tracker.snap_fill_reports(&mut reports);
 
         let reports = apply_fill_time_filters(reports, cmd.start, cmd.end);
 
@@ -1082,17 +1085,47 @@ impl PolymarketExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ctx = self.fill_context();
+
+        let (cached_venue_order_ids, retained_trade_ids) = {
+            let cache = self.core.cache();
+
+            // A reloaded cache indexes only each order's current venue order, not its earlier legs
+            let cached_venue_order_ids: AHashSet<VenueOrderId> = cache
+                .orders(Some(&self.core.venue), None, None, None, None)
+                .iter()
+                .flat_map(|order| order.events())
+                .filter_map(|event| event.venue_order_id())
+                .collect();
+            let mut retained_trade_ids: AHashMap<InstrumentId, AHashSet<TradeId>> = AHashMap::new();
+
+            for position in cache.positions_open(
+                Some(&self.core.venue),
+                None,
+                None,
+                Some(&self.core.account_id),
+                None,
+            ) {
+                retained_trade_ids
+                    .entry(position.instrument_id)
+                    .or_default()
+                    .extend(position.trade_ids.iter().copied());
+            }
+
+            (cached_venue_order_ids, retained_trade_ids)
+        };
+
         super::reconciliation::generate_mass_status(
             &self.http_client,
             &self.data_api_client,
             &self.shared_token_instruments,
-            &self.fill_tracker,
             &ctx,
             self.core.client_id,
             self.core.venue,
             lookback_mins,
             self.config.reconciliation_load_ids(),
             &self.resolved_balance_scope(),
+            &retained_trade_ids,
+            |venue_order_id| cached_venue_order_ids.contains(venue_order_id),
         )
         .await
     }

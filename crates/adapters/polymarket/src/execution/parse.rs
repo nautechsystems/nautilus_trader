@@ -28,7 +28,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use thiserror::Error;
 
 use crate::{
@@ -497,10 +497,8 @@ fn fee_schedule_decimal(schedule: &serde_json::Value, field: &str) -> anyhow::Re
 /// Otherwise solves for the principal that, with fees, exactly consumes the
 /// balance, then truncates to `USDC_DECIMALS` (the on-chain pUSD scale).
 ///
-/// The fee-curve step `(p * (1 - p))^exponent` is the only computation that
-/// crosses into `f64`, matching the reference SDK so we agree with the
-/// venue's authoritative match-time fee calculation regardless of whether
-/// Polymarket ships a fractional exponent in the future.
+/// The fee curve `(p * (1 - p))^exponent` uses exact decimal arithmetic, so the
+/// exponent must be a whole number.
 ///
 /// `price` must be strictly inside `(0, 1)`. The SDK relies on its
 /// order-builder pipeline to enforce this. Because [`adjust_market_buy_amount`]
@@ -509,8 +507,8 @@ fn fee_schedule_decimal(schedule: &serde_json::Value, field: &str) -> anyhow::Re
 /// # Errors
 ///
 /// Returns an error if `price` is outside the open `(0, 1)` interval, or if
-/// amount or balance is non-positive, a fee input is negative, arithmetic overflows,
-/// or the adjusted amount truncates to zero.
+/// amount or balance is non-positive, a fee input is negative, the exponent is not
+/// a whole number, arithmetic overflows, or the adjusted amount truncates to zero.
 pub fn adjust_market_buy_amount(
     amount: Decimal,
     user_pusd_balance: Decimal,
@@ -574,7 +572,7 @@ pub fn adjust_market_buy_amount(
 /// Computes a pUSD commission using Polymarket's platform fee formula.
 ///
 /// `fee = C * feeRate * (p * (1 - p))^exponent`, paid only by takers.
-/// The fee is rounded to 5 decimal places.
+/// The fee is floored to 5 decimal places, matching the venue charge.
 ///
 /// The `fee_rate` here is the effective rate from `feeSchedule.rate` (e.g. 0.03 for
 /// 3%), not the `fee_rate_bps` field on a V2 trade response. The response field is
@@ -584,8 +582,8 @@ pub fn adjust_market_buy_amount(
 ///
 /// # Errors
 ///
-/// Returns an error for negative rates, exponents, or sizes, prices outside `[0, 1]`,
-/// or a calculation that cannot be represented.
+/// Returns an error for negative rates or sizes, an exponent that is not a whole number,
+/// prices outside `[0, 1]`, or a calculation that cannot be represented.
 ///
 /// # References
 /// <https://docs.polymarket.com/trading/fees>
@@ -605,7 +603,7 @@ pub fn compute_commission(
     let commission = size
         .checked_mul(rate)
         .context("commission calculation overflow")?;
-    Ok(commission.round_dp(5))
+    Ok(commission.round_dp_with_strategy(5, RoundingStrategy::ToZero))
 }
 
 fn fee_curve_rate(
@@ -614,10 +612,14 @@ fn fee_curve_rate(
     fee_exponent: Decimal,
 ) -> anyhow::Result<Decimal> {
     anyhow::ensure!(fee_rate >= Decimal::ZERO, "fee rate must be non-negative");
-    anyhow::ensure!(
-        fee_exponent >= Decimal::ZERO,
-        "fee exponent must be non-negative"
-    );
+
+    let Some(mut exponent) = fee_exponent
+        .to_u64()
+        .filter(|_| fee_exponent.fract().is_zero())
+    else {
+        anyhow::bail!("fee exponent must be a non-negative whole number, was {fee_exponent}");
+    };
+
     anyhow::ensure!(
         (Decimal::ZERO..=Decimal::ONE).contains(&price),
         "fee price must be in [0, 1]"
@@ -626,15 +628,20 @@ fn fee_curve_rate(
     if fee_rate.is_zero() {
         return Ok(Decimal::ZERO);
     }
-    let base = price * (Decimal::ONE - price);
-    let base_f64: f64 = base
-        .try_into()
-        .context("fee curve base is not representable")?;
-    let exponent_f64: f64 = fee_exponent
-        .try_into()
-        .context("fee exponent is not representable")?;
-    let curve =
-        Decimal::try_from(base_f64.powf(exponent_f64)).context("fee curve is not representable")?;
+
+    // Exponentiation by squaring bounds the loop by the exponent's bit length
+    let mut base = price * (Decimal::ONE - price);
+    let mut curve = Decimal::ONE;
+
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            curve *= base;
+        }
+
+        exponent >>= 1;
+        base *= base;
+    }
+
     fee_rate
         .checked_mul(curve)
         .context("fee curve calculation overflow")
@@ -682,11 +689,10 @@ pub(crate) fn recovered_terminal_order_status(
     }
 }
 
-/// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
-/// difference is within `DUST_SNAP_THRESHOLD_DEC`. Polymarket reports `size_matched`
-/// directly from venue truncation: CLOB cent-tick rounding (underfill) or V2
-/// market-BUY USDC-scale truncation (overfill). Without this snap an order at
-/// `MATCHED` can show non-zero leaves to the engine.
+/// At terminal `Filled` status, snap `filled_qty` up to `quantity` when the
+/// shortfall is within `DUST_SNAP_THRESHOLD_DEC`. Polymarket reports `size_matched`
+/// after CLOB cent-tick rounding, so without this snap an order at `MATCHED` can
+/// show non-zero leaves to the engine. An overfill keeps the venue quantity.
 ///
 /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
 pub(crate) fn snap_filled_qty_to_quantity(
@@ -698,7 +704,7 @@ pub(crate) fn snap_filled_qty_to_quantity(
         return filled_qty;
     }
     let diff = quantity.as_decimal() - filled_qty.as_decimal();
-    if !diff.is_zero() && diff.abs() < DUST_SNAP_THRESHOLD_DEC {
+    if diff > Decimal::ZERO && diff < DUST_SNAP_THRESHOLD_DEC {
         quantity
     } else {
         filled_qty
@@ -867,14 +873,14 @@ mod tests {
         PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType, PolymarketOutcome,
     };
 
-    // Symmetric dust band: at terminal Filled, snap filled_qty to quantity
+    // Underfill dust band: at terminal Filled, snap filled_qty up to quantity
     // when within 0.01 shares. Other statuses (Accepted, Canceled, etc.)
     // pass through unchanged so partial fills remain visible.
     #[rstest]
     // CLOB cent-tick underfill at MATCHED: snap UP to quantity.
     #[case::filled_underfill_dust(100.000000, 99.995000, OrderStatus::Filled, 100.000000)]
-    // V2 BUY USDC-scale overfill at MATCHED: snap DOWN to quantity.
-    #[case::filled_overfill_dust(714.285710, 714.285714, OrderStatus::Filled, 714.285710)]
+    // V2 BUY USDC-scale overfill at MATCHED: keeps the venue quantity.
+    #[case::filled_overfill_dust(714.285710, 714.285714, OrderStatus::Filled, 714.285714)]
     // Underfill at exactly the band: NOT dust, leave alone.
     #[case::filled_underfill_at_band(100.000000, 99.990000, OrderStatus::Filled, 99.990000)]
     // Underfill above the band: real partial leaves, leave alone.
@@ -1026,7 +1032,7 @@ mod tests {
     fn test_compute_commission_issue_3860_strategy_buy() {
         // Issue #3860: strategy BUY fill
         // qty=15.463900, price=0.97, fee_rate=0.072
-        // Expected: 15.4639 * 0.97 * 0.072 * (1 - 0.97) = 0.03240
+        // 15.4639 * 0.97 * 0.072 * (1 - 0.97) = 0.03239996328, floored to 0.03239
         let commission = compute_commission(
             dec!(0.072),
             dec!(1),
@@ -1035,7 +1041,7 @@ mod tests {
             LiquiditySide::Taker,
         )
         .unwrap();
-        assert_eq!(commission, dec!(0.03240));
+        assert_eq!(commission, dec!(0.03239));
     }
 
     #[rstest]
@@ -1043,7 +1049,7 @@ mod tests {
         // Issue #3860: reconciliation EXTERNAL SELL fill
         // qty=0.033400, price=0.98, fee_rate=0.072
         // Was 0.002357 with old generic formula (qty * price * fee_rate)
-        // Correct: 0.0334 * 0.98 * 0.072 * (1 - 0.98) = 0.00005
+        // Correct: 0.0334 * 0.98 * 0.072 * (1 - 0.98) = 0.00004713408, floored to 0.00004
         let commission = compute_commission(
             dec!(0.072),
             dec!(1),
@@ -1052,7 +1058,37 @@ mod tests {
             LiquiditySide::Taker,
         )
         .unwrap();
-        assert_eq!(commission, dec!(0.00005));
+        assert_eq!(commission, dec!(0.00004));
+    }
+
+    // p * (1 - p) = 0.10817244 at p = 0.1234; its cube needs more digits than an f64 carries
+    #[rstest]
+    #[case::exponent_zero(dec!(0), dec!(0.07))]
+    #[case::exponent_one(dec!(1), dec!(0.0075720708))]
+    #[case::exponent_two(dec!(2), dec!(0.000819089374288752))]
+    #[case::exponent_three(dec!(3), dec!(0.00008860289619488756839488))]
+    fn test_fee_curve_rate_is_exact(#[case] exponent: Decimal, #[case] expected: Decimal) {
+        let rate = fee_curve_rate(dec!(0.07), dec!(0.1234), exponent).unwrap();
+
+        assert_eq!(rate, expected);
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_uses_exact_fee_curve() {
+        // curve = (0.0625 * 0.9375)^3 = 0.000201165676116943359375, which an f64 rounds up
+        // divisor = 1 + 0.07 * curve / 0.0625 = 1.0002253055572509765625
+        // raw = balance / divisor = 1 exactly, which a larger divisor truncates to 0.999999
+        let adjusted = adjust_market_buy_amount(
+            dec!(2),
+            dec!(1.0002253055572509765625),
+            dec!(0.0625),
+            dec!(0.07),
+            dec!(3),
+            dec!(0),
+        )
+        .unwrap();
+
+        assert_eq!(adjusted, dec!(1.000000));
     }
 
     #[rstest]
@@ -1227,13 +1263,8 @@ mod tests {
             dec!(0),
         )
         .unwrap();
-        // The exact divisor in 28-dp Decimal differs slightly from the
-        // human-rounded 9.615755 above, so allow a 1e-5 tolerance.
-        let expected = dec!(9.615755);
-        assert!(
-            (adjusted - expected).abs() < dec!(0.00001),
-            "expected ~{expected}, was {adjusted}",
-        );
+        // 10 / 1.03996 = 9.6157544520..., truncated to 6dp.
+        assert_eq!(adjusted, dec!(9.615754));
     }
 
     #[rstest]
@@ -1247,32 +1278,20 @@ mod tests {
         let adjusted =
             adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.5), dec!(0.04), dec!(2), dec!(0))
                 .unwrap();
-        assert!(
-            (adjusted - dec!(9.950248)).abs() < dec!(0.00001),
-            "expected ~9.950248, was {adjusted}",
-        );
+        assert_eq!(adjusted, dec!(9.950248));
     }
 
     #[rstest]
-    fn test_adjust_market_buy_amount_fractional_exponent() {
-        // Confirms the f64 boundary on the curve copes with fractional
-        // exponents the way the SDK does. exp=0.5 -> sqrt(p*(1-p)).
-        // For price=0.5: sqrt(0.25) = 0.5
-        // platform_fee_rate = 0.04 * 0.5 = 0.02
-        // divisor = 1 + 0.02/0.5 = 1.04
-        // raw = 10 / 1.04 = 9.61538...
-        let adjusted = adjust_market_buy_amount(
-            dec!(10),
-            dec!(10),
-            dec!(0.5),
-            dec!(0.04),
-            dec!(0.5),
-            dec!(0),
-        )
-        .unwrap();
-        assert!(
-            (adjusted - dec!(9.615384)).abs() < dec!(0.00001),
-            "expected ~9.615384, was {adjusted}",
+    #[case::fractional(dec!(0.5))]
+    #[case::negative(dec!(-1))]
+    fn test_adjust_market_buy_amount_rejects_non_whole_exponent(#[case] exponent: Decimal) {
+        let err =
+            adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.5), dec!(0.04), exponent, dec!(0))
+                .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!("fee exponent must be a non-negative whole number, was {exponent}")
         );
     }
 
@@ -1338,14 +1357,8 @@ mod tests {
             dec!(0),
         )
         .unwrap();
-        // Verify the result has at most 6 decimal places.
-        assert!(adjusted.scale() <= 6);
-        // And the value is in the expected neighborhood.
-        let expected = dec!(8.944565);
-        assert!(
-            (adjusted - expected).abs() < dec!(0.000001),
-            "expected ~{expected}, was {adjusted}",
-        );
+        assert_eq!(adjusted, dec!(8.944565));
+        assert_eq!(adjusted.scale(), 6);
     }
 
     // SDK-ported parity tests for `adjust_market_buy_amount`. These mirror the
@@ -1362,11 +1375,8 @@ mod tests {
         exponent: u32,
     ) -> Decimal {
         let base = price * (Decimal::ONE - price);
-        let base_f64 = f64::try_from(base).unwrap_or(0.0);
-        let rate_factor = rate
-            * Decimal::try_from(base_f64.powi(i32::try_from(exponent).unwrap_or(0)))
-                .unwrap_or(Decimal::ZERO);
-        (amount / price) * rate_factor
+        let curve = (0..exponent).fold(Decimal::ONE, |curve, _| curve * base);
+        (amount / price) * rate * curve
     }
 
     /// `builder_fee = amount * rate` (flat percentage on notional).
@@ -1612,18 +1622,19 @@ mod tests {
     // correctly. Unit-level cases live above; this guards the integration.
     #[rstest]
     // CLOB cent-tick underfill at MATCHED: snap UP to original_size.
-    #[case::matched_underfill_dust(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.995000), 100.000000)]
-    // V2 BUY USDC-scale overfill at MATCHED: snap DOWN to original_size.
-    #[case::matched_overfill_dust(PolymarketOrderStatus::Matched, dec!(714.285710), dec!(714.285714), 714.285710)]
+    #[case::matched_underfill_dust(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.995000), dec!(100.000000), dec!(100.000000))]
+    // V2 BUY USDC-scale overfill at MATCHED: keeps the venue fill for the evidence cap.
+    #[case::matched_overfill_dust(PolymarketOrderStatus::Matched, dec!(714.285710), dec!(714.285714), dec!(714.285710), dec!(714.285714))]
     // Same dust gap at LIVE: not snapped (legitimate partial fill in flight).
-    #[case::live_underfill_dust(PolymarketOrderStatus::Live, dec!(100.000000), dec!(99.995000), 99.995000)]
+    #[case::live_underfill_dust(PolymarketOrderStatus::Live, dec!(100.000000), dec!(99.995000), dec!(100.000000), dec!(99.995000))]
     // Real partial leaves (above band) at MATCHED stay visible to the engine.
-    #[case::matched_real_partial(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.000000), 99.000000)]
+    #[case::matched_real_partial(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.000000), dec!(100.000000), dec!(99.000000))]
     fn test_parse_order_status_report_snaps_dust_filled_qty(
         #[case] status: PolymarketOrderStatus,
         #[case] original_size: Decimal,
         #[case] size_matched: Decimal,
-        #[case] expected_filled: f64,
+        #[case] expected_qty: Decimal,
+        #[case] expected_filled: Decimal,
     ) {
         let order = PolymarketOpenOrder {
             associate_trades: None,
@@ -1654,11 +1665,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.filled_qty, Quantity::new(expected_filled, 6));
-        assert_eq!(
-            report.quantity,
-            Quantity::new(original_size.try_into().unwrap_or(0.0), 6)
-        );
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.filled_qty.as_decimal(), expected_filled);
     }
 
     /// A `MATCHED` underfill must reach a terminal status, and `Filled` must never carry
@@ -1971,7 +1979,7 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let currency = Currency::pUSD();
 
-        // Expected: 25 * 0.03 * (0.5 * 0.5)^2 = 0.04688 pUSD after rounding.
+        // Expected: 25 * 0.03 * (0.5 * 0.5)^2 = 0.046875, floored to 0.04687 pUSD.
         let report = parse_fill_report(
             &trade,
             instrument_id,
@@ -1987,7 +1995,64 @@ mod tests {
         .expect("fixture commission is representable");
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(report.commission.as_decimal(), dec!(0.04688));
+        assert_eq!(report.commission.as_decimal(), dec!(0.04687));
+    }
+
+    // Taker legs of on-chain `OrderFilled` events; see `chain_order_filled_taker_fees.source.md`
+    #[rstest]
+    fn test_parse_fill_report_matches_chain_taker_fills() {
+        let content = std::fs::read_to_string("test_data/chain_order_filled_taker_fees.json")
+            .expect("Failed to read test data");
+        let vectors: Vec<serde_json::Value> =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        let content = std::fs::read_to_string("test_data/http_trade_report.json")
+            .expect("Failed to read test data");
+        let base_trade: PolymarketTradeReport =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        let wire_scale = dec!(1_000_000);
+
+        for vector in &vectors {
+            let field =
+                |name: &str| Decimal::from_str_exact(vector[name].as_str().unwrap()).unwrap();
+
+            let (side, shares) = match vector["side"].as_str().unwrap() {
+                "BUY" => (
+                    PolymarketOrderSide::Buy,
+                    field("taker_amount_filled") / wire_scale,
+                ),
+                _ => (
+                    PolymarketOrderSide::Sell,
+                    field("maker_amount_filled") / wire_scale,
+                ),
+            };
+
+            let mut trade = base_trade.clone();
+            trade.side = side;
+            trade.size = shares;
+            trade.price = field("price");
+            trade.trader_side = PolymarketLiquiditySide::Taker;
+
+            let report = parse_fill_report(
+                &trade,
+                InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+                AccountId::from("POLYMARKET-001"),
+                None,
+                2,
+                6,
+                Currency::pUSD(),
+                field("fee_rate"),
+                dec!(1),
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap();
+
+            assert_eq!(report.last_qty.as_decimal(), shares, "{vector}");
+            assert_eq!(
+                report.commission.as_decimal(),
+                field("fee") / wire_scale,
+                "{vector}"
+            );
+        }
     }
 
     #[rstest]
@@ -2358,13 +2423,11 @@ mod tests {
             amount: Decimal,
             price: Decimal,
             fee_rate: Decimal,
-            fee_exponent: Decimal,
+            exponent: u32,
             builder: Decimal,
         ) -> Decimal {
             let base = price * (Decimal::ONE - price);
-            let base_f64: f64 = base.try_into().unwrap_or(0.0);
-            let curve = Decimal::try_from(base_f64.powf(fee_exponent.try_into().unwrap()))
-                .unwrap_or(Decimal::ZERO);
+            let curve = (0..exponent).fold(Decimal::ONE, |curve, _| curve * base);
             let platform_fee_rate = fee_rate * curve;
             let platform_fee = amount / price * platform_fee_rate;
             amount + platform_fee + amount * builder
@@ -2379,7 +2442,7 @@ mod tests {
                 balance_micros in 1u64..=1_000_000_000_000u64,
                 price_milli in 1u32..=999u32,
                 fee_rate_bps in 0u32..=1_000u32,
-                fee_exponent_milli in 1_000u32..=3_000u32,
+                exponent in 0u32..=3u32,
                 builder_bps in 0u32..=500u32,
             ) {
                 let amount = decimal_at_usdc_scale(amount_micros);
@@ -2387,7 +2450,7 @@ mod tests {
                 let price = Decimal::new(i64::from(price_milli), 3);
                 let fee_rate = decimal_from_bps(fee_rate_bps);
                 let builder = decimal_from_bps(builder_bps);
-                let fee_exponent = Decimal::new(i64::from(fee_exponent_milli), 3);
+                let fee_exponent = Decimal::from(exponent);
 
                 let r1 = adjust_market_buy_amount(amount, balance, price, fee_rate, fee_exponent, builder);
                 let r2 = adjust_market_buy_amount(amount, balance, price, fee_rate, fee_exponent, builder);
@@ -2406,20 +2469,20 @@ mod tests {
                 amount_micros in 1u64..=1_000_000_000u64,
                 price_milli in 1u32..=999u32,
                 fee_rate_bps in 0u32..=1_000u32,
-                fee_exponent_milli in 1_000u32..=3_000u32,
+                exponent in 0u32..=3u32,
                 builder_bps in 0u32..=500u32,
             ) {
                 let amount = decimal_at_usdc_scale(amount_micros);
                 let price = Decimal::new(i64::from(price_milli), 3);
                 let fee_rate = decimal_from_bps(fee_rate_bps);
                 let builder = decimal_from_bps(builder_bps);
-                let fee_exponent = Decimal::new(i64::from(fee_exponent_milli), 3);
+                let fee_exponent = Decimal::from(exponent);
 
                 // Balance covers total_cost with margin. Use 10x as a generous
                 // upper bound on cost-vs-amount even at extreme p, fee, and
                 // builder values within the generator bounds.
                 let total_cost =
-                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                    compute_total_cost(amount, price, fee_rate, exponent, builder);
                 let balance = total_cost * Decimal::from(10);
 
                 let adjusted = adjust_market_buy_amount(
@@ -2441,7 +2504,7 @@ mod tests {
                 amount_micros in 1_000u64..=1_000_000_000u64,
                 price_milli in 10u32..=990u32,
                 fee_rate_bps in 0u32..=1_000u32,
-                fee_exponent_milli in 1_000u32..=3_000u32,
+                exponent in 0u32..=3u32,
                 builder_bps in 0u32..=500u32,
                 fraction_thousandths in 100u32..=900u32,
             ) {
@@ -2449,12 +2512,12 @@ mod tests {
                 let price = Decimal::new(i64::from(price_milli), 3);
                 let fee_rate = decimal_from_bps(fee_rate_bps);
                 let builder = decimal_from_bps(builder_bps);
-                let fee_exponent = Decimal::new(i64::from(fee_exponent_milli), 3);
+                let fee_exponent = Decimal::from(exponent);
 
                 // Balance set to a fraction (0.1 .. 0.9) of total_cost so the
                 // shrink branch is always exercised with non-trivial values.
                 let total_cost =
-                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                    compute_total_cost(amount, price, fee_rate, exponent, builder);
                 let fraction = Decimal::new(i64::from(fraction_thousandths), 3);
                 let balance = (total_cost * fraction).trunc_with_scale(USDC_DECIMALS);
                 if balance.is_zero() {
@@ -2480,7 +2543,7 @@ mod tests {
                     "adjusted must be at USDC_DECIMALS scale",
                 );
                 let recomputed_cost =
-                    compute_total_cost(adjusted, price, fee_rate, fee_exponent, builder);
+                    compute_total_cost(adjusted, price, fee_rate, exponent, builder);
                 prop_assert!(
                     recomputed_cost <= balance,
                     "total_cost {recomputed_cost} must fit balance {balance}",
@@ -2495,7 +2558,7 @@ mod tests {
                 amount_pico in 1_000_000u64..=1_000_000_000_000u64,
                 price_milli in 1u32..=999u32,
                 fee_rate_bps in 0u32..=1_000u32,
-                fee_exponent_milli in 1_000u32..=3_000u32,
+                exponent in 0u32..=3u32,
                 builder_bps in 0u32..=500u32,
             ) {
                 // Sample at 9 dp (pico-USDC) so amounts have 3 dp beyond the
@@ -2504,11 +2567,11 @@ mod tests {
                 let price = Decimal::new(i64::from(price_milli), 3);
                 let fee_rate = decimal_from_bps(fee_rate_bps);
                 let builder = decimal_from_bps(builder_bps);
-                let fee_exponent = Decimal::new(i64::from(fee_exponent_milli), 3);
+                let fee_exponent = Decimal::from(exponent);
 
                 // Non-binding so we exercise the trunc-on-amount path.
                 let total_cost =
-                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                    compute_total_cost(amount, price, fee_rate, exponent, builder);
                 let balance = total_cost * Decimal::from(10);
 
                 if let Ok(adjusted) = adjust_market_buy_amount(

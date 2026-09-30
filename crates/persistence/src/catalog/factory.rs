@@ -21,7 +21,9 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::Params;
 
-use crate::{catalog::traits::DataCatalog, common::paths::file_protocol_uri};
+use crate::{
+    catalog::traits::DataCatalog, common::paths::file_protocol_uri, config::CatalogBackendType,
+};
 
 /// Conventional name of the Parquet catalog factory registration.
 pub const PARQUET_CATALOG_FACTORY_NAME: &str = "Parquet";
@@ -76,6 +78,24 @@ pub type CatalogFactory =
 /// Ordered registry of catalog factories keyed by name.
 pub type CatalogFactoryRegistry = IndexMap<String, CatalogFactory>;
 
+/// Resolves a catalog backend through the factory registry and opens the catalog.
+///
+/// All variants resolve through the registry so built-ins and custom names share one code path.
+///
+/// # Errors
+///
+/// Returns an error if the backend's factory is not registered or opening the catalog fails.
+pub fn create_catalog(
+    backend: &CatalogBackendType,
+    config: &CatalogConnectConfig,
+    factories: &CatalogFactoryRegistry,
+) -> anyhow::Result<DataCatalog> {
+    let name = backend.to_string();
+    factories
+        .get(&name)
+        .ok_or_else(|| anyhow::anyhow!("No catalog factory registered for '{name}'"))?(config)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -124,5 +144,22 @@ mod tests {
             None,
         );
         assert_eq!(cfg.uri, r"file://\\server\share\catalog");
+    }
+
+    #[rstest]
+    fn create_catalog_rejects_unregistered_backend() {
+        let config = CatalogConnectConfig::new("/tmp/catalog", None);
+
+        let error = create_catalog(
+            &CatalogBackendType::External("Missing".to_string()),
+            &config,
+            &CatalogFactoryRegistry::new(),
+        )
+        .expect_err("an unregistered backend should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "No catalog factory registered for 'Missing'"
+        );
     }
 }

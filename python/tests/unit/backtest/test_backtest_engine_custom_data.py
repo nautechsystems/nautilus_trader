@@ -24,6 +24,7 @@ from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import custom_data_backend_kind
 from nautilus_trader.model import register_custom_data_class
@@ -70,7 +71,7 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
     ]
     catalog.write_custom_data(custom_data)
     loaded = catalog.query_custom_data(
-        "RustTestCustomData",
+        NautilusDataType.Custom("RustTestCustomData"),
         identifiers=[str(instrument_id)],
     )
 

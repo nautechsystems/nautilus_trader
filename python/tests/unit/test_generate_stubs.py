@@ -2074,7 +2074,6 @@ def test_live_stub_exposes_builder_engine_config_methods() -> None:
         ("nautilus_trader.infrastructure", "RedisCacheConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
-        ("nautilus_trader.persistence", "DataBackendSession"),
         ("nautilus_trader.persistence", "ParquetDataCatalog"),
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),
     ],

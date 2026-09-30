@@ -72,6 +72,122 @@ pub use crate::identifiers::{
     venue_order_id::VenueOrderId,
 };
 
+/// Creates a generic spread instrument ID from `(instrument_id, ratio)` legs.
+///
+/// Sorts the legs by symbol and joins them with [`GENERIC_SPREAD_ID_SEPARATOR`], formatting a
+/// positive ratio as `(ratio)symbol` and a negative ratio as `((ratio))symbol`. For example,
+/// `MSFT.NASDAQ` with ratio 1 and `AAPL.NASDAQ` with ratio -2 produce
+/// `((2))AAPL___(1)MSFT.NASDAQ`.
+///
+/// A leg symbol that contains the separator or ends with `_` produces an ID that does not parse
+/// back into the same legs.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Fewer than two legs are given.
+/// - A ratio is zero or `i64::MIN`.
+/// - The legs have different venues.
+pub fn new_generic_spread_id(
+    instrument_ratios: &[(InstrumentId, i64)],
+) -> anyhow::Result<InstrumentId> {
+    anyhow::ensure!(
+        instrument_ratios.len() > 1,
+        "instrument_ratios list needs to have at least 2 legs"
+    );
+
+    let first_venue = instrument_ratios[0].0.venue;
+    for (instrument_id, ratio) in instrument_ratios {
+        anyhow::ensure!(*ratio != 0, "ratio cannot be zero");
+        anyhow::ensure!(*ratio != i64::MIN, "ratio cannot be i64::MIN");
+        anyhow::ensure!(
+            instrument_id.venue == first_venue,
+            "All venues must match. Expected {first_venue}, was {}",
+            instrument_id.venue
+        );
+    }
+
+    let mut sorted_ratios = instrument_ratios.to_vec();
+    sorted_ratios.sort_by_key(|(instrument_id, _)| instrument_id.symbol);
+
+    let symbol_parts: Vec<String> = sorted_ratios
+        .into_iter()
+        .map(|(instrument_id, ratio)| {
+            if ratio > 0 {
+                format!("({ratio}){}", instrument_id.symbol)
+            } else {
+                format!("(({})){}", ratio.abs(), instrument_id.symbol)
+            }
+        })
+        .collect();
+
+    Ok(InstrumentId::new(
+        Symbol::new(symbol_parts.join(GENERIC_SPREAD_ID_SEPARATOR)),
+        first_venue,
+    ))
+}
+
+/// Parses a generic spread instrument ID into `(instrument_id, ratio)` legs.
+///
+/// Accepts the format [`new_generic_spread_id`] produces and returns the legs in the order they
+/// appear in the symbol, with a negative ratio for each `((ratio))symbol` leg. Each ratio must be
+/// non-zero and contain only ASCII digits, so a sign inside the parentheses is rejected.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The symbol does not contain [`GENERIC_SPREAD_ID_SEPARATOR`].
+/// - A leg is not in the `(ratio)symbol` or `((ratio))symbol` format.
+pub fn parse_generic_spread_id_legs(
+    instrument_id: &InstrumentId,
+) -> anyhow::Result<Vec<(InstrumentId, i64)>> {
+    let symbol = instrument_id.symbol.as_str();
+    anyhow::ensure!(
+        symbol.contains(GENERIC_SPREAD_ID_SEPARATOR),
+        "Invalid generic spread instrument ID: {instrument_id}"
+    );
+
+    symbol
+        .split(GENERIC_SPREAD_ID_SEPARATOR)
+        .map(|component| {
+            parse_generic_spread_leg(component, instrument_id.venue)
+                .ok_or_else(|| anyhow::anyhow!("Invalid generic spread leg component: {component}"))
+        })
+        .collect()
+}
+
+fn parse_generic_spread_leg(component: &str, venue: Venue) -> Option<(InstrumentId, i64)> {
+    if let Some(rest) = component.strip_prefix("((") {
+        let (ratio, symbol) = rest.split_once("))")?;
+        return parse_generic_spread_leg_parts(ratio, symbol, venue, -1);
+    }
+
+    let rest = component.strip_prefix('(')?;
+    let (ratio, symbol) = rest.split_once(')')?;
+    parse_generic_spread_leg_parts(ratio, symbol, venue, 1)
+}
+
+fn parse_generic_spread_leg_parts(
+    ratio: &str,
+    symbol: &str,
+    venue: Venue,
+    sign: i64,
+) -> Option<(InstrumentId, i64)> {
+    // Only digit ratios are valid: `parse::<i64>` would accept a leading sign,
+    // silently flipping the sign encoded by the surrounding parentheses.
+    if !ratio.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+
+    let ratio = ratio.parse::<i64>().ok()?.checked_mul(sign)?;
+    if ratio == 0 {
+        return None;
+    }
+
+    let symbol = Symbol::new_checked(symbol).ok()?;
+    Some((InstrumentId::new(symbol, venue), ratio))
+}
+
 impl_from_str_for_identifier!(account_id::AccountId);
 impl_from_str_for_identifier!(actor_id::ActorId);
 impl_from_str_for_identifier!(client_id::ClientId);
@@ -118,4 +234,112 @@ impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 /// Print interned string cache statistics for debugging purposes.
 pub fn interned_string_stats() {
     ustr::string_cache_iter().for_each(|s| println!("{s}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{InstrumentId, new_generic_spread_id, parse_generic_spread_id_legs};
+
+    #[rstest]
+    fn test_new_generic_spread_id_sorts_and_formats_legs() {
+        let msft = InstrumentId::from("MSFT.NASDAQ");
+        let aapl = InstrumentId::from("AAPL.NASDAQ");
+
+        let spread = new_generic_spread_id(&[(msft, 1), (aapl, -2)]).unwrap();
+
+        assert_eq!(spread, InstrumentId::from("((2))AAPL___(1)MSFT.NASDAQ"));
+    }
+
+    #[rstest]
+    #[case(
+        vec![("MSFT.NASDAQ", 1)],
+        "instrument_ratios list needs to have at least 2 legs"
+    )]
+    #[case(vec![("MSFT.NASDAQ", 0), ("AAPL.NASDAQ", 1)], "ratio cannot be zero")]
+    #[case(
+        vec![("MSFT.NASDAQ", 1), ("AAPL.XNAS", 1)],
+        "All venues must match. Expected NASDAQ, was XNAS"
+    )]
+    #[case(vec![("MSFT.NASDAQ", i64::MIN), ("AAPL.NASDAQ", 1)], "ratio cannot be i64::MIN")]
+    fn test_new_generic_spread_id_rejects_invalid_legs(
+        #[case] legs: Vec<(&str, i64)>,
+        #[case] expected: &str,
+    ) {
+        let legs: Vec<(InstrumentId, i64)> = legs
+            .into_iter()
+            .map(|(instrument_id, ratio)| (InstrumentId::from(instrument_id), ratio))
+            .collect();
+
+        let result = new_generic_spread_id(&legs);
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    #[case("((-2))AAPL___(1)MSFT.NASDAQ", "((-2))AAPL")] // Signed ratio in negative leg
+    #[case("(+1)MSFT___(2)AAPL.NASDAQ", "(+1)MSFT")] // Signed ratio in positive leg
+    #[case("(-1)MSFT___(2)AAPL.NASDAQ", "(-1)MSFT")] // Signed ratio in positive leg
+    #[case("()MSFT___(2)AAPL.NASDAQ", "()MSFT")] // Empty ratio
+    #[case("(1a)MSFT___(2)AAPL.NASDAQ", "(1a)MSFT")] // Non-digit ratio
+    fn test_parse_generic_spread_id_legs_rejects_non_digit_ratios(
+        #[case] value: &str,
+        #[case] component: &str,
+    ) {
+        let result = parse_generic_spread_id_legs(&InstrumentId::from(value));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Invalid generic spread leg component: {component}")
+        );
+    }
+
+    #[rstest]
+    #[case("(0)MSFT___(2)AAPL.NASDAQ", "(0)MSFT")] // Zero ratio
+    #[case("(1)___(2)AAPL.NASDAQ", "(1)")] // Empty symbol
+    #[case("(1) ___(2)AAPL.NASDAQ", "(1) ")] // Whitespace symbol
+    #[case("MSFT___(2)AAPL.NASDAQ", "MSFT")] // Missing ratio
+    #[case(
+        "(9223372036854775808)MSFT___(2)AAPL.NASDAQ",
+        "(9223372036854775808)MSFT"
+    )] // Ratio overflows i64
+    fn test_parse_generic_spread_id_legs_rejects_malformed_legs(
+        #[case] value: &str,
+        #[case] component: &str,
+    ) {
+        let result = parse_generic_spread_id_legs(&InstrumentId::from(value));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Invalid generic spread leg component: {component}")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_generic_spread_id_legs_rejects_id_without_separator() {
+        let result = parse_generic_spread_id_legs(&InstrumentId::from("(1)MSFT.NASDAQ"));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid generic spread instrument ID: (1)MSFT.NASDAQ"
+        );
+    }
+
+    #[rstest]
+    fn test_generic_spread_id_round_trip() {
+        let spread = new_generic_spread_id(&[
+            (InstrumentId::from("ESM4 P5230.XCME"), -1),
+            (InstrumentId::from("ESM4 P5250.XCME"), 1),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            parse_generic_spread_id_legs(&spread).unwrap(),
+            vec![
+                (InstrumentId::from("ESM4 P5230.XCME"), -1),
+                (InstrumentId::from("ESM4 P5250.XCME"), 1),
+            ]
+        );
+    }
 }

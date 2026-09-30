@@ -301,6 +301,10 @@ jobs:
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
+    permissions:
+      contents: read
+      actions: read
+      packages: read # Required for pulling service images from GHCR
     defaults:
       run:
         shell: bash
@@ -326,7 +330,10 @@ jobs:
     # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        image: ghcr.io/nautechsystems/redis:7.4.5-alpine3.21@sha256:0302cccee2b2043e61b497c8f4075467c5f7ba27a9f38be7e092634f2734baed
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -335,7 +342,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        image: ghcr.io/nautechsystems/postgres:16.4-alpine@sha256:f5aa7cac1dc299a77761ada5a5cf9c6ef4064bc85c89fed49c587dd2381d6f05
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -450,6 +460,10 @@ jobs:
       - plan
       - pre-commit
       - test-scripts
+    permissions:
+      contents: read
+      actions: read
+      packages: read # Required for pulling service images from GHCR
     env:
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
@@ -471,7 +485,10 @@ jobs:
     # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        image: ghcr.io/nautechsystems/redis:7.4.5-alpine3.21@sha256:0302cccee2b2043e61b497c8f4075467c5f7ba27a9f38be7e092634f2734baed
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -480,7 +497,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        image: ghcr.io/nautechsystems/postgres:16.4-alpine@sha256:f5aa7cac1dc299a77761ada5a5cf9c6ef4064bc85c89fed49c587dd2381d6f05
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass

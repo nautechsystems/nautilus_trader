@@ -31,14 +31,14 @@ use nautilus_model::{
     instruments::NautilusInstrumentType,
 };
 use nautilus_persistence::{
-    backend::{
-        parquet::{
-            catalog::ParquetDataCatalog,
-            migration::{ParquetMigrationConfig, migrate_parquet_catalog},
-        },
-        session::DataBackendSession,
+    backend::parquet::{
+        catalog::ParquetDataCatalog,
+        migration::{ParquetMigrationConfig, migrate_parquet_catalog},
     },
-    catalog::types::CatalogDataType,
+    catalog::{
+        traits::CatalogReader,
+        types::{CatalogDataType, CatalogQuery},
+    },
     test_data::RustTestCustomData,
 };
 use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
@@ -78,11 +78,13 @@ fn runtime_queries_reject_legacy_catalogs(
 
     let result = match query {
         "typed" => catalog
-            .query_typed_data::<QuoteTick>(None, None, None, predicate, None, true)
-            .map(|_| ()),
-        "pages" => catalog
             .query::<QuoteTick>(None, None, None, predicate, None, true)
             .map(|_| ()),
+        "pages" => {
+            let query = CatalogQuery::new(NautilusDataType::QuoteTick)
+                .with_where_clause(predicate.map(String::from));
+            CatalogReader::query_batch_session(&mut catalog, &query, None).map(|_| ())
+        }
         "records" => catalog
             .query_record_batches(
                 &NautilusRecordType::AccountState.into(),
@@ -123,34 +125,6 @@ fn runtime_queries_reject_legacy_catalogs(
 }
 
 #[rstest]
-#[case(false)]
-#[case(true)]
-fn backend_session_rejects_legacy_before_filtering(#[case] raw: bool) {
-    let source = fixture_path();
-    let relative = catalog_files(&source)
-        .into_iter()
-        .find(|(path, _)| path.to_string_lossy().contains("data/quotes/"))
-        .unwrap()
-        .0;
-    let file = source.join(relative);
-    let mut session = DataBackendSession::new(10);
-    let query = Some("SELECT * FROM legacy_quotes WHERE false");
-
-    let result = if raw {
-        session
-            .collect_query_batches("legacy_quotes", file.to_str().unwrap(), query)
-            .map(|_| ())
-    } else {
-        session.add_file::<QuoteTick>("legacy_quotes", file.to_str().unwrap(), query, None)
-    };
-
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        "External error: Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
-    );
-}
-
-#[rstest]
 fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     ensure_custom_data_registered::<RustTestCustomData>();
     let source = fixture_path();
@@ -169,7 +143,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     macro_rules! check_rows {
         ($ty:ty, $key:literal, $many:expr) => {{
             let actual = catalog
-                .query_typed_data::<$ty>(None, None, None, None, None, true)
+                .query::<$ty>(None, None, None, None, None, true)
                 .unwrap();
             let expected_rows = if $many {
                 expected[$key].clone()
@@ -195,7 +169,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     }
 
     let depths = catalog
-        .query_typed_data::<OrderBookDepth>(None, None, None, None, None, true)
+        .query::<OrderBookDepth>(None, None, None, None, None, true)
         .unwrap();
     assert_eq!(depths, vec![expected_depth]);
     let instruments = catalog.query_instruments(None).unwrap();
@@ -330,7 +304,7 @@ fn migrated_catalog_consolidates_with_fresh_writes() {
     macro_rules! write_later_copy {
         ($ty:ty) => {{
             let migrated = catalog
-                .query_typed_data::<$ty>(None, None, None, None, None, true)
+                .query::<$ty>(None, None, None, None, None, true)
                 .unwrap();
             let fresh = migrated
                 .iter()
@@ -357,7 +331,7 @@ fn migrated_catalog_consolidates_with_fresh_writes() {
     macro_rules! query {
         ($ty:ty) => {
             catalog
-                .query_typed_data::<$ty>(None, None, None, None, None, true)
+                .query::<$ty>(None, None, None, None, None, true)
                 .unwrap()
         };
     }
@@ -682,7 +656,7 @@ fn remote_migration_preserves_encoded_object_paths(#[case] prefix: &str) {
 
     let report = target.migrate_from_legacy_parquet_catalog(&source).unwrap();
     let actual = target
-        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .query::<QuoteTick>(None, None, None, None, None, true)
         .unwrap();
     let expected: Value =
         serde_json::from_slice(&fs::read(fixture_path().join("expected.json")).unwrap()).unwrap();

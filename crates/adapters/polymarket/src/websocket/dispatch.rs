@@ -724,6 +724,7 @@ fn take_status_update_fills(
             venue_order_id,
             report.client_order_id,
             report.quantity,
+            Quantity::zero(report.quantity.precision),
             report
                 .order_side
                 .expect("order status report side must be Buy or Sell"),
@@ -787,6 +788,7 @@ fn promote_modify_replacement_from_ws(
         venue_order_id,
         Some(promotion.client_order_id),
         promotion.leg_quantity,
+        promotion.quantity.saturating_sub(promotion.leg_quantity),
         context.identity.order_side,
     ));
     buffered_reports.extend(ctx.fill_tracker.take_pending_reports(&venue_order_id));
@@ -1312,9 +1314,6 @@ fn apply_authorized_leg(
 
     let mut report = leg.fill_report(ctx.account_id, ctx.clock.get_time_ns());
     report.client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
-    report.last_qty = ctx
-        .fill_tracker
-        .snap_fill_qty(&venue_order_id, report.last_qty);
 
     let correction_info = fill_info.clone();
 
@@ -4767,6 +4766,98 @@ mod tests {
     }
 
     #[rstest]
+    fn test_modified_buy_overfill_raises_order_qty_with_prior_legs() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.size = "100.000058".to_string();
+        let instrument = instrument_for_trade(&trade);
+        let old_venue_order_id = VenueOrderId::from("0xold-overfill-leg");
+        let replacement_venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            old_venue_order_id,
+            Quantity::from("120"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let client_order_id = ClientOrderId::from("O-MODIFIED-OVERFILL");
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            old_venue_order_id,
+            instrument.id(),
+            client_order_id.as_str(),
+        );
+        order_contexts.mark_accepted(old_venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.note_order_submitted(replacement_venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+
+        // The old venue order filled 20 of 120, so the replacement carries the other 100
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(client_order_id, old_venue_order_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            client_order_id,
+            replacement_venue_order_id,
+            Quantity::from("120"),
+            Quantity::from("100"),
+            Price::from("0.5"),
+        ));
+
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let promoted = receiver.try_recv().expect("expected replacement update");
+        let bumped = receiver.try_recv().expect("expected overfill update");
+        let filled = receiver.try_recv().expect("expected replacement fill");
+
+        match promoted {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, Quantity::from("120"));
+            }
+            other => panic!("expected replacement update, was {other:?}"),
+        }
+
+        match bumped {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.client_order_id, client_order_id);
+                assert_eq!(updated.venue_order_id, Some(replacement_venue_order_id));
+                assert_eq!(updated.quantity.as_decimal(), dec!(120.000058));
+            }
+            other => panic!("expected overfill update, was {other:?}"),
+        }
+
+        match filled {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+                assert_eq!(fill.venue_order_id, replacement_venue_order_id);
+                assert_eq!(fill.last_qty.as_decimal(), dec!(100.000058));
+            }
+            other => panic!("expected replacement fill, was {other:?}"),
+        }
+
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_late_modify_completion_does_not_finish_newer_modify() {
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
         let client_order_id = ClientOrderId::from("O-MODIFY-GENERATION");
@@ -5092,6 +5183,7 @@ mod tests {
         fill_tracker.restore_order(
             venue_order_id,
             Quantity::from("100"),
+            Quantity::from("0"),
             Quantity::from("25"),
             OrderSide::Buy,
         );
@@ -5626,11 +5718,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_taker_fill_snaps_overfill_to_submitted_qty() {
-        // Reproduces the V2 market-BUY scenario that motivated the dust-snap
-        // fix: SDK truncates the registered qty to USDC scale, but the
-        // on-chain fill comes back at full precision and exceeds submitted
-        // by microshares. Without the snap the engine rejects as overfill.
+    fn test_dispatch_taker_fill_bumps_qty_for_dust_overfill() {
+        // Captured V2 market BUY: 5 pUSD at 0.66 signs 7.5757 shares, and the on-chain
+        // `takerAmountFilled` was 7.575758 (`chain_order_filled_taker_fees.json`). The
+        // order quantity rises to the fill so the engine accepts the venue quantity.
         use crate::common::enums::{
             PolymarketEventType, PolymarketOrderSide, PolymarketOutcome, PolymarketTradeStatus,
         };
@@ -5642,8 +5733,8 @@ mod tests {
 
         let fill_tracker = OrderFillTrackerMap::new();
         let venue_order_id = VenueOrderId::from("0xtaker-overfill");
-        // Submitted qty truncated to USDC scale.
-        let submitted = Quantity::new(714.285710, instrument.size_precision());
+        let submitted =
+            Quantity::from_decimal_dp(dec!(7.5757), instrument.size_precision()).unwrap();
         fill_tracker.register(
             venue_order_id,
             submitted,
@@ -5697,11 +5788,9 @@ mod tests {
             match_time: "1700000000".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
-            price: "0.014".to_string(),
+            price: "0.66".to_string(),
             side: PolymarketOrderSide::Buy,
-            // Fill exceeds submitted_qty by 4 ulps at size_precision=6,
-            // matching the production drift observed during smoke tests.
-            size: "714.285714".to_string(),
+            size: "7.575758".to_string(),
             status: PolymarketTradeStatus::Confirmed,
             taker_order_id: venue_order_id.as_str().to_string(),
             timestamp: "1700000000000".to_string(),
@@ -5713,27 +5802,32 @@ mod tests {
 
         dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
-        // The dispatcher must record the snapped quantity in the tracker so
-        // any subsequent ORDER MATCHED with size_matched > submitted_qty is
-        // capped to it. record_fill happens before the FillReport is sent.
-        let cumulative = fill_tracker
-            .get_cumulative_filled(&venue_order_id)
-            .expect("order must be registered");
-        assert_eq!(cumulative, submitted);
+        let venue_qty =
+            Quantity::from_decimal_dp(dec!(7.575758), instrument.size_precision()).unwrap();
+        let cumulative = fill_tracker.get_cumulative_filled(&venue_order_id);
+        let updated = receiver.try_recv().expect("expected an updated event");
+        let filled = receiver.try_recv().expect("expected a filled event");
 
-        // The emitted OrderFilled must carry the snapped qty so the engine
-        // does not reject it as an overfill.
-        let event = receiver.try_recv().expect("expected a filled event");
-        match event {
+        assert_eq!(cumulative, Some(venue_qty));
+        assert_eq!(fill_tracker.submitted_qty(&venue_order_id), Some(venue_qty));
+
+        match updated {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, venue_qty);
+                assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected updated event, was {other:?}"),
+        }
+
+        match filled {
             ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
-                assert_eq!(
-                    filled.last_qty, submitted,
-                    "filled qty must be snapped to submitted",
-                );
+                assert_eq!(filled.last_qty, venue_qty);
                 assert_eq!(filled.venue_order_id, venue_order_id);
             }
             other => panic!("expected filled event, was {other:?}"),
         }
+
+        assert!(receiver.try_recv().is_err());
     }
 
     #[rstest]

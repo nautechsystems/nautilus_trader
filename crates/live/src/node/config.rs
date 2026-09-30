@@ -1305,8 +1305,8 @@ mean_dispatch_ns_clear = 700
     fn test_validate_runtime_support_accepts_streaming_config() {
         let config = LiveNodeConfig {
             streaming: Some(StreamingConfig::new(
-                "catalog".to_string(),
-                "file".to_string(),
+                "stream".to_string(),
+                None,
                 1_000,
                 false,
                 RotationConfig::NoRotation,

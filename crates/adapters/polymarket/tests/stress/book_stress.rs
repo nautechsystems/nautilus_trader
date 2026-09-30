@@ -24,11 +24,11 @@
 //! - `boundaries`: probes retry exhaustion into the retry ceiling, a reconnect while recovery waits at
 //!   the ceiling, unsubscribe during recovery, and shutdown during a reconnect.
 //!
-//! The harness subscribes one outcome token of each of the most traded open markets, one per
-//! socket, so every frame on a socket belongs to one book. No orders are submitted. Every emitted
-//! batch passes through the shared `BookStreamChecker` and is verified against a reference book
-//! rebuilt from the raw frames the proxy relays; a session fails unless every snapshot episode was
-//! verified.
+//! The harness subscribes one outcome token of each of the most traded open markets, or the
+//! outcome tokens of six distinct markets given with `--tokens`, one per socket, so every frame on
+//! a socket belongs to one book. No orders are submitted. Every emitted batch passes through the
+//! shared `BookStreamChecker` and is verified against a reference book rebuilt from the raw frames
+//! the proxy relays; a session fails unless every snapshot episode was verified.
 
 #[path = "../../../../live/tests/book/stress/mod.rs"]
 mod stress;
@@ -66,8 +66,8 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use stress::{
-    BookProgress, Coverage, FrameKind, Route, Session, StressArgs, StressVenue, Upstream, WireBook,
-    WireCodec, WireConnection, WireView, WireViews,
+    BookProgress, Coverage, Flag, FrameKind, Route, Session, StressArgs, StressVenue, Upstream,
+    WireBook, WireCodec, WireConnection, WireView, WireViews,
 };
 use tokio_tungstenite::tungstenite::Message;
 
@@ -94,7 +94,7 @@ type PolymarketSession = Session<Polymarket>;
 
 fn main() {
     stress::run::<Polymarket, _, _>(|args| async move {
-        let tokens = select_markets().await;
+        let tokens = select_markets(&args).await;
         let ids = tokens.keys().copied().collect::<Vec<_>>();
         TOKENS.set(tokens).expect("markets select once");
 
@@ -369,18 +369,33 @@ fn subscribe_all(session: &mut PolymarketSession, ids: &[InstrumentId]) {
     }
 }
 
-// Selects the first outcome token of the most traded open markets with an order book
-async fn select_markets() -> HashMap<InstrumentId, String> {
+// Selects the `--tokens` outcome tokens, or else the first outcome token of the most traded open
+// markets with an order book
+async fn select_markets(args: &StressArgs) -> HashMap<InstrumentId, String> {
     let client = PolymarketGammaHttpClient::new(None, 30, RetryConfig::default())
         .expect("Gamma client builds");
 
-    let params = GetGammaMarketsParams {
-        active: Some(true),
-        closed: Some(false),
-        order: Some("volume24hr".to_string()),
-        ascending: Some(false),
-        max_markets: Some(50),
-        ..Default::default()
+    let requested = args
+        .flag("tokens")
+        .split(',')
+        .filter(|token| !token.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    let params = if requested.is_empty() {
+        GetGammaMarketsParams {
+            active: Some(true),
+            closed: Some(false),
+            order: Some("volume24hr".to_string()),
+            ascending: Some(false),
+            max_markets: Some(50),
+            ..Default::default()
+        }
+    } else {
+        GetGammaMarketsParams {
+            clob_token_ids: Some(requested.clone()),
+            ..Default::default()
+        }
     };
 
     let markets = client
@@ -395,7 +410,13 @@ async fn select_markets() -> HashMap<InstrumentId, String> {
         })
         .filter_map(|market| {
             let tokens = serde_json::from_str::<Vec<String>>(&market.clob_token_ids).ok()?;
-            let token = tokens.into_iter().next()?;
+
+            let token = if requested.is_empty() {
+                tokens.into_iter().next()?
+            } else {
+                tokens.into_iter().find(|token| requested.contains(token))?
+            };
+
             let id = InstrumentId::from(format!("{}-{token}.POLYMARKET", market.condition_id));
             Some((id, token))
         })
@@ -429,6 +450,11 @@ impl StressVenue for Polymarket {
     const NAME: &'static str = "polymarket";
     const SCENARIOS: &'static [&'static str] = &["churn", "boundaries"];
     const ROUNDS: usize = 12;
+    const FLAGS: &'static [Flag] = &[Flag {
+        name: "tokens",
+        default: "",
+        help: "Comma-separated outcome token IDs from six distinct open markets to test instead",
+    }];
     // Polymarket books carry no sequence, so the wire oracle verifies content
     const SEQUENCED: bool = false;
     const COVERAGE: Coverage = Coverage::Episodes;
