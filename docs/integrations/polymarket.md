@@ -1275,10 +1275,12 @@ rate is fixed at zero and is not configurable.
 Instrument `fee_schedule` metadata stores decimal parameters as strings; readers also accept legacy
 numeric metadata.
 
-The live fee curve retains the reference SDK's floating-point power calculation. Fee inputs remain
-decimals until that step; negative rates or exponents and arithmetic overflow return errors.
+The live fee curve uses exact decimal arithmetic, so the exponent must be a whole number. Negative
+rates, fractional or negative exponents, and arithmetic overflow return errors.
 
-`FillReport.commission` is denominated in pUSD and rounds the platform fee to five decimal places.
+`FillReport.commission` is denominated in pUSD and floors the platform fee to five decimal places,
+matching the venue charge. The venue charges a BUY taker fee in pUSD on top of the fill and deducts a
+SELL taker fee from the pUSD proceeds, so the position quantity equals the shares filled.
 If the exact result cannot be represented as `Money`, the adapter returns an error instead of using
 zero or a generic commission. See the
 [commission failure contract](../developer_guide/adapters.md#commission-failure-handling).
@@ -1533,14 +1535,71 @@ settlement finality.
 
 Polymarket wire amounts use six-decimal fixed-point mantissas. Market SELL signing truncates the
 share-denominated `makerAmount` to two decimal places, while market BUY quote conversion can leave
-a few microshares of drift between the registered and filled quantities. Both effects are fixed in
-absolute share terms, so the adapter uses `DUST_SNAP_THRESHOLD_DEC = 0.01` shares. Anything at or above
-that threshold remains a real partial fill or overfill.
+a few microshares of drift between the registered and filled quantities. Every fill keeps the venue
+quantity. Truncation is fixed in absolute share terms, so for underfill the adapter uses
+`DUST_SNAP_THRESHOLD_DEC = 0.01` shares; a shortfall at or above that threshold remains a real
+partial fill.
 
 | Direction | Source                                         | Adapter behavior                             |
 | --------- | ---------------------------------------------- | -------------------------------------------- |
-| Overfill  | Market BUY quote conversion (microshares)      | Snap fill down to `submitted_qty`            |
+| Overfill  | BUY filled below its limit, or quote drift     | Raise the BUY order quantity to the fill     |
 | Underfill | Signed or venue quantity truncation (`< 0.01`) | Normalize atomic FOK; cancel a FAK remainder |
+
+See [BUY overfills](#buy-overfills) for how a BUY can receive more shares than it signed.
+
+### BUY overfills
+
+A Polymarket BUY is sized by the pUSD it spends, so it can receive more shares than it signed. The
+adapter keeps every fill at the venue quantity and raises the order quantity to match. A SELL is
+sized in shares and never fills past its signed quantity.
+
+:::info
+A BUY order's quantity can increase after submission, through an `OrderUpdated` event. Treat its
+filled quantity, or the position quantity, as the shares held.
+:::
+
+#### Why a BUY receives extra shares
+
+The signed order sets `makerAmount` (pUSD to spend) and `takerAmount` (shares to receive). The
+exchange guarantees at least that ratio of shares per pUSD for whatever part executes, then credits
+the shares actually delivered. A partial execution spends less and receives proportionally fewer
+shares. A full execution receives more than `takerAmount` in two cases:
+
+- Price improvement: a limit BUY of 9 shares at 0.58 commits 5.22 pUSD. Filled entirely at 0.56, it
+  receives 9.321429 shares.
+- Signing precision: a market BUY signs shares truncated to the tick's decimal places plus two,
+  while settlement uses six. A 5 pUSD market BUY at 0.66 signs 7.5757 shares and receives 7.575758.
+
+#### How the adapter raises the order quantity
+
+Nautilus orders are sized in shares, and the execution engine rejects a fill past the order quantity
+by default. The quantity therefore rises before the fill applies, through an `OrderUpdated` event
+recorded in the order's history like any other amendment:
+
+- WebSocket fills: the adapter emits `OrderUpdated` with the cumulative filled quantity, then
+  `OrderFilled`, so the order reaches `Filled`.
+- REST reports: a `Filled` BUY status report carries its evidence-capped filled quantity as its
+  quantity. Reconciliation sees that it differs from the cached order and applies a reconciliation
+  `OrderUpdated` before the fills. Status checks accept the raised quantity.
+- Modified orders: the raised quantity covers the whole order, including fills on earlier venue
+  orders.
+
+Commission is computed on the venue fill quantity.
+
+#### Recovery limitations
+
+Two REST recovery paths apply a recovered BUY overfill without raising the order quantity first, so
+the engine rejects the fill unless `LiveExecutionEngineConfig.allow_overfills` is enabled:
+
+- The periodic position check applies recovered fills as standalone reports. A rejected fill holds
+  back position reconciliation until `position_check_threshold_ms` passes. A later check then
+  synthesizes a correcting fill, without the venue commission, when `generate_missing_orders` is
+  enabled.
+- Reconciliation of an order with a pending cancel or modify skips the quantity update for a
+  `Filled` report, so its fills apply against the signed quantity.
+
+Both paths apply only when the user stream misses the fill and stream-gap trade discovery does not
+recover it.
 
 ### Terminal order handling
 
@@ -1559,13 +1618,13 @@ confirmed trade arrives before the submit response. A buffered `Canceled`, `Expi
 
 ### Commissions and tracking scope
 
-`FillReport.commission` reflects the venue-reported size and is not recalculated after snapping.
-The resulting difference depends on the snapped quantity, fill price, fee schedule, and rounding.
+`FillReport.commission` is computed from the venue-reported fill size, the same quantity the fill
+carries.
 
-The fill tracker is keyed by `venue_order_id` and registered on order
-accept, so fill reports for orders placed in another session pass through
-unchanged. `DUST_SNAP_THRESHOLD_DEC` is not configurable per-strategy; it lives
-in `nautilus_polymarket::common::consts`.
+The fill tracker is keyed by `venue_order_id`. It registers orders on accept and restores cached
+open orders on startup, so the WebSocket overfill raise applies only to orders it tracks.
+`DUST_SNAP_THRESHOLD_DEC` is not configurable per-strategy; it lives in
+`nautilus_polymarket::common::consts`.
 
 ### Order message size denomination
 

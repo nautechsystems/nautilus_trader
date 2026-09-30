@@ -787,6 +787,7 @@ impl PolymarketExecutionClient {
                 self.fill_tracker.restore_order(
                     venue_order_id,
                     current_leg_quantity,
+                    order.quantity().saturating_sub(current_leg_quantity),
                     current_leg_filled,
                     order.order_side(),
                 );
@@ -1976,6 +1977,55 @@ mod tests {
         );
     }
 
+    // The first venue order filled 3 of 10, so the restored replacement carries 7 and its BUY
+    // overfill raises the order quantity to 3 plus the replacement's fills.
+    #[rstest]
+    fn load_orders_from_cache_restores_replacement_with_prior_qty() {
+        let (client, cache) = test_client();
+        let instrument = test_binary_option("0xMODIFY-PRIOR", false, false);
+        let new_venue_order_id = VenueOrderId::from("V-002");
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument.clone()).unwrap();
+            let order = cache_accepted_open_order(&mut cache, instrument.id());
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from("trade-first-leg")),
+                None,
+                Some(ModelPrice::from("0.5000")),
+                Some(ModelQuantity::from("3")),
+                None,
+                None,
+                None,
+                Some(AccountId::from("POLYMARKET-001")),
+            );
+            let order = cache.update_order(&filled).unwrap();
+            let updated = OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(client.core.account_id)
+                    .venue_order_id(new_venue_order_id)
+                    .quantity(ModelQuantity::from("10"))
+                    .price(ModelPrice::from("0.6000"))
+                    .build(),
+            );
+            cache.update_order(&updated).unwrap();
+        }
+
+        client.load_orders_from_cache();
+        client
+            .fill_tracker
+            .record_fill(&new_venue_order_id, ModelQuantity::from("8"));
+        let bumped = client.fill_tracker.buy_overfill_bump(&new_venue_order_id);
+
+        assert_eq!(bumped, Some(ModelQuantity::from("11")));
+    }
+
     #[rstest]
     fn load_orders_from_cache_preserves_promoted_replacement_identity() {
         let (client, cache) = test_client();
@@ -2023,6 +2073,7 @@ mod tests {
         client.fill_tracker.restore_order(
             new_venue_order_id,
             ModelQuantity::new(12.0, 0),
+            ModelQuantity::zero(0),
             ModelQuantity::zero(0),
             OrderSide::Buy,
         );

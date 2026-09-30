@@ -48,6 +48,7 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
+        OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -1059,6 +1060,98 @@ async fn test_generate_fill_reports_explicit_target_ignores_load_ids_scope() {
     assert_eq!(reports[0].instrument_id, instrument_id);
 }
 
+// A resting BUY whose earlier crossing fill beat its limit has fills above its signed size while
+// still live, so the cached quantity was raised to those fills.
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_accepts_raised_buy_qty() {
+    let state = TestServerState::default();
+    let mut venue_order = load_json("http_open_orders_page.json")["data"][0].clone();
+    venue_order["original_size"] = json!("9.0000");
+    venue_order["size_matched"] = json!("9.0400");
+    let venue_order_id = venue_order["id"].as_str().unwrap().to_string();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [venue_order],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument.clone());
+
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-RAISED-BUY",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.6000"),
+        Quantity::from("9.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, &venue_order_id);
+
+    let raised = OrderEventAny::Updated(OrderUpdated::new(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument_id,
+        order.client_order_id(),
+        Quantity::from("9.0400"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        order.venue_order_id(),
+        order.account_id(),
+        None,
+        None,
+        None,
+        false,
+    ));
+    order = cache.borrow_mut().update_order(&raised).unwrap();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("raised-buy-fill")),
+        None,
+        Some(Price::from("0.5800")),
+        Some(Quantity::from("9.0400")),
+        Some(LiquiditySide::Taker),
+        None,
+        None,
+        Some(AccountId::from("POLYMARKET-001")),
+    );
+    cache.borrow_mut().update_order(&filled).unwrap();
+
+    let reports = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("a raised BUY quantity must not fail the collection");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].quantity, Quantity::from("9.0400"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("9.0400"));
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_reports_rejects_wrong_condition() {
@@ -1536,6 +1629,43 @@ async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
     assert_eq!(report.filled_qty, Quantity::from("4.0000"));
     assert!(mass_status.lookback_start().is_some());
     assert!(mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_lookback_raises_filled_buy_overfill_qty() {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["status"] = json!("MATCHED");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("10.0040");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+    let reports = mass_status.order_reports();
+    let report = reports.values().next().expect("matched order report");
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from("10.0040"));
+    assert_eq!(report.filled_qty, Quantity::from("10.0040"));
 }
 
 #[rstest]
@@ -4014,6 +4144,51 @@ async fn test_venue_only_order_report_accepts_provider_overfill() {
 
 #[rstest]
 #[tokio::test]
+async fn test_venue_only_buy_order_report_raises_qty_to_confirmed_overfill() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+    let state = TestServerState::default();
+    let mut response = load_json("http_open_order.json");
+    response["status"] = json!("MATCHED");
+    response["original_size"] = json!("10.0000");
+    response["size_matched"] = json!("10.0040");
+    *state.single_order_response.lock().await = Some(response);
+    let mut trade = load_json("http_trade_report.json");
+    trade["size"] = json!("10.0040");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("confirmed BUY overfill is legitimate evidence")
+        .expect("provider returned an active order");
+
+    assert_eq!(report.quantity, Quantity::from("10.0040"));
+    assert_eq!(report.filled_qty, Quantity::from("10.0040"));
+    assert_eq!(report.order_status, OrderStatus::Filled);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_venue_only_gtd_order_report_carries_valid_expiration() {
     let venue_order_id =
         VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
@@ -4359,10 +4534,11 @@ async fn test_limit_submit_normalizes_signed_quantity_for_reporting(#[case] side
                 causation_id: None,
             })
             .await
-            .expect("signed quantity must also bind fill tracking");
+            .expect("fill report must build for the signed order");
 
+        // The fill keeps the venue quantity above the signed quantity
         assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].last_qty.as_decimal(), dec!(23.45));
+        assert_eq!(fills[0].last_qty.as_decimal(), dec!(23.4550));
     }
 }
 

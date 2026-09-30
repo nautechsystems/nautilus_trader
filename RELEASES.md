@@ -122,6 +122,7 @@ Released on TBD (UTC).
 - Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
 - Changed Polymarket fills on orders from before a reconnect or restart to wait for a terminal REST result
 - Changed Polymarket reconciliation reports to fail while trade settlement evidence is unresolved
+- Changed Polymarket fee curves to exact decimal arithmetic, rejecting fractional fee exponents
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
 - Changed Tardis derived trade IDs to hash decimal values, changing IDs for trades without venue IDs
 - Changed Tardis `replay` feature to opt-in (no longer a default); it now enables `arrow`
@@ -309,6 +310,9 @@ Released on TBD (UTC).
 - Fixed Polymarket unknown submissions being rejected locally after recovery exhaustion
 - Fixed Polymarket late submit evidence repeating acceptance or fills and overwriting replacement order mappings
 - Fixed Polymarket uncertain order recovery losing venue cancellation duties after local closure
+- Fixed Polymarket BUY fills truncated to the order quantity; overfills now raise the order quantity
+- Fixed Polymarket commissions rounding instead of flooring to five decimals like the venue charge
+- Fixed Polymarket order quantity updates after a modify dropping fills from earlier venue orders
 - Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp

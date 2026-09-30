@@ -53,25 +53,17 @@ pub const DUST_POSITION_THRESHOLD: Decimal = dec!(0.01);
 /// Maximum six-decimal position difference below [`DUST_POSITION_THRESHOLD`].
 pub const POSITION_RECONCILIATION_TOLERANCE: Decimal = dec!(0.009999);
 
-/// Dust band (in shares) for fill quantity normalization. Set to one
-/// cent-share, matching Polymarket's CLOB tick quantization.
+/// Dust band (in shares) for underfill normalization. Set to one cent-share,
+/// matching Polymarket's CLOB tick quantization.
 ///
-/// Live-fill snapping is overfill-only: when the venue fill exceeds
-/// `submitted_qty` by less than `DUST_SNAP_THRESHOLD`, the fill is snapped
-/// DOWN to `submitted_qty`. Underfill is preserved on the per-fill path and
-/// resolved after terminal trade confirmation by lowering the order quantity
-/// to its venue-filled quantity. `OrderStatusReport.filled_qty` snapping at
-/// terminal `Filled` status uses this same threshold in both directions.
+/// Fills keep the venue quantity. CLOB cent-tick truncation can leave a
+/// terminal order up to `0.01` shares short of its quantity; after terminal
+/// trade confirmation the order quantity is lowered to its venue-filled
+/// quantity, and `OrderStatusReport.filled_qty` at terminal `Filled` status
+/// snaps up to the quantity. A BUY overfill raises the order quantity instead.
 ///
-/// Two observed drift sources sit within this band:
-///
-/// - CLOB cent-tick truncation (underfill, up to `0.01` shares).
-/// - V2 market-BUY USDC-scale truncation in `adjust_market_buy_amount`
-///   (overfill, microshares; largest reproduced production overage is
-///   `0.000066` shares).
-///
-/// A diff at or above this threshold is left unsnapped and surfaces to the
-/// engine. See `docs/integrations/polymarket.md` (Fill quantity normalization).
+/// A shortfall at or above this threshold is a real remainder and surfaces to
+/// the engine. See `docs/integrations/polymarket.md` (Fill quantity normalization).
 pub const DUST_SNAP_THRESHOLD_DEC: Decimal = dec!(0.01);
 
 /// Default per-connection market subscription cap.

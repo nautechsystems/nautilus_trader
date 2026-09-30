@@ -35,7 +35,6 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    order_fill_tracker::OrderFillTrackerMap,
     parse::{OrderReportParseContext, parse_timestamp, parse_validated_order_status_report},
     settlement::{AdmissionContext, AdmissionError, AdmittedLeg, TradeEvidence, admit_trade_legs},
 };
@@ -43,7 +42,8 @@ use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{
-            PolymarketLiquiditySide, PolymarketOutcome, PolymarketSignerType, PolymarketTradeStatus,
+            PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType,
+            PolymarketTradeStatus,
         },
         models::is_owned_by_account,
     },
@@ -362,12 +362,28 @@ pub(super) fn validate_client_bound_order_quantity(
     expected_quantity: Quantity,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        expected_quantity.as_decimal() == provider_order.original_size,
+        venue_qty_matches(
+            provider_order.side == PolymarketOrderSide::Buy,
+            provider_order.original_size,
+            provider_order.size_matched,
+            expected_quantity.as_decimal(),
+        ),
         "provider order quantity {} does not match cached order quantity {}",
         provider_order.original_size,
         expected_quantity,
     );
     Ok(())
+}
+
+// A BUY whose venue fills exceed its signed size had its cached quantity raised to those fills
+pub(super) fn venue_qty_matches(
+    is_buy: bool,
+    signed_qty: Decimal,
+    matched_qty: Decimal,
+    expected_qty: Decimal,
+) -> bool {
+    expected_qty == signed_qty
+        || (is_buy && matched_qty > signed_qty && expected_qty == matched_qty)
 }
 
 fn validate_client_bound_order_row(
@@ -1198,7 +1214,6 @@ pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
     data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    fill_tracker: &OrderFillTrackerMap,
     ctx: &FillContext<'_>,
     client_id: ClientId,
     venue: Venue,
@@ -1228,7 +1243,7 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
+    let (fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
         ctx,
         instruments,
@@ -1245,8 +1260,6 @@ pub(crate) async fn generate_mass_status(
             fill_discards.unowned_maker_trades,
         );
     }
-
-    fill_tracker.snap_fill_reports(&mut fill_reports);
 
     let position_reports = if ctx.signer_type == PolymarketSignerType::Session {
         Vec::new()
@@ -1283,6 +1296,10 @@ pub(crate) async fn generate_mass_status(
 
     if lookback_start.is_none() {
         cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
+    } else {
+        order_reports
+            .iter_mut()
+            .for_each(normalize_terminal_order_report_quantity);
     }
 
     let mut mass_status = ExecutionMassStatus::new(client_id, ctx.account_id, venue, ts_init, None);
@@ -1497,8 +1514,23 @@ pub(crate) fn cap_order_report_filled_qty(
 pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
     if report.order_status != OrderStatus::Filled
         || report.filled_qty.is_zero()
-        || report.filled_qty >= report.quantity
+        || report.filled_qty == report.quantity
     {
+        return;
+    }
+
+    if report.filled_qty > report.quantity {
+        // A BUY is bounded by its pUSD spend, so it can fill more shares than it signed
+        if report.order_side == Some(OrderSide::Buy) {
+            log::debug!(
+                "Raising terminal BUY order report {} quantity from {} to venue fills {}",
+                report.venue_order_id,
+                report.quantity,
+                report.filled_qty,
+            );
+            report.quantity = report.filled_qty;
+        }
+
         return;
     }
 
@@ -2170,5 +2202,66 @@ mod tests {
 
         assert!(reports.is_empty());
         assert_eq!(filtered, 1);
+    }
+
+    #[rstest]
+    #[case::signed_qty(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0000), true)]
+    #[case::raised_buy(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0040), true)]
+    #[case::raised_sell(PolymarketOrderSide::Sell, dec!(10.0040), dec!(10.0040), false)]
+    #[case::buy_short_of_fills(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0020), false)]
+    #[case::buy_without_overfill(PolymarketOrderSide::Buy, dec!(10.0000), dec!(10.0040), false)]
+    fn test_validate_client_bound_order_quantity(
+        #[case] side: PolymarketOrderSide,
+        #[case] size_matched: Decimal,
+        #[case] expected_qty: Decimal,
+        #[case] valid: bool,
+    ) {
+        let mut order = open_order();
+        order.side = side;
+        order.original_size = dec!(10.0000);
+        order.size_matched = size_matched;
+
+        let result = validate_client_bound_order_quantity(
+            &order,
+            Quantity::from_decimal_dp(expected_qty, 4).unwrap(),
+        );
+
+        assert_eq!(result.is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case::buy_overfill_raises(OrderSide::Buy, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285714))]
+    #[case::sell_overfill_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::buy_overfill_not_filled(OrderSide::Buy, OrderStatus::PartiallyFilled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::dust_underfill_lowers(OrderSide::Sell, OrderStatus::Filled, dec!(100.000000), dec!(99.995000), dec!(99.995000))]
+    #[case::real_underfill_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(100.000000), dec!(99.000000), dec!(100.000000))]
+    fn test_normalize_terminal_order_report_quantity(
+        #[case] order_side: OrderSide,
+        #[case] order_status: OrderStatus,
+        #[case] quantity: Decimal,
+        #[case] filled_qty: Decimal,
+        #[case] expected_qty: Decimal,
+    ) {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            None,
+            VenueOrderId::from("0xorder"),
+            order_side.into(),
+            OrderType::Limit,
+            TimeInForce::Fok,
+            order_status,
+            Quantity::from_decimal_dp(quantity, 6).unwrap(),
+            Quantity::from_decimal_dp(filled_qty, 6).unwrap(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        normalize_terminal_order_report_quantity(&mut report);
+
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.filled_qty.as_decimal(), filled_qty);
     }
 }

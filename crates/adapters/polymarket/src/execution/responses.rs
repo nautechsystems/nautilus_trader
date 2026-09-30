@@ -338,6 +338,7 @@ pub(super) fn confirm_modify_replacement(
         promotion.venue_order_id,
         Some(promotion.client_order_id),
         promotion.leg_quantity,
+        promotion.quantity.saturating_sub(promotion.leg_quantity),
         context.identity.order_side,
     );
     let buffered = fill_tracker.take_pending_reports(&promotion.venue_order_id);
@@ -559,6 +560,7 @@ pub(super) fn drain_pending_reports_for_known_order(
             venue_order_id,
             Some(order.client_order_id()),
             tracker_quantity,
+            Quantity::zero(tracker_quantity.precision),
             order.order_side(),
         )
     } else {
@@ -681,6 +683,7 @@ pub(super) fn handle_order_response(
                         venue_order_id,
                         Some(order.client_order_id()),
                         order.quantity(),
+                        Quantity::zero(order.quantity().precision),
                         order.order_side(),
                     );
 
@@ -1405,6 +1408,48 @@ mod tests {
             trade_ids: None,
             error_msg: None,
         }
+    }
+
+    // The replacement venue order carries 100 of a 120 order, so a BUY overfill on it raises the
+    // order quantity by the overfill rather than to the replacement's own fills.
+    #[rstest]
+    fn test_confirm_modify_replacement_bumps_order_level_qty() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-REPLACE-OVERFILL", instrument.id());
+        let old_id = VenueOrderId::from("V-REPLACE-OLD");
+        let new_id = VenueOrderId::from("V-REPLACE-NEW");
+        let registry = OrderContextRegistry::default();
+        registry.register_context(old_id, OrderContext::from(&order));
+        registry.mark_accepted(old_id);
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(order.client_order_id(), old_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            order.client_order_id(),
+            new_id,
+            Quantity::from("120.000000"),
+            Quantity::from("100.000000"),
+            Price::from("0.5000"),
+        ));
+        let state = Arc::new(Mutex::new(state));
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        let (emitter, _receiver) = test_emitter();
+
+        let promoted = confirm_modify_replacement(
+            &order,
+            new_id,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &tracker,
+            &settlement,
+            &registry,
+            &state,
+        );
+        tracker.record_fill(&new_id, Quantity::from("100.000058"));
+        let bumped = tracker.buy_overfill_bump(&new_id);
+
+        assert!(promoted);
+        assert_eq!(bumped, Some(Quantity::from("120.000058")));
     }
 
     #[rstest]
@@ -2505,6 +2550,15 @@ mod tests {
             other => panic!("expected accepted event, was {other:?}"),
         }
 
+        // The drained BUY overfill raises the quantity to the venue fill first.
+        match receiver.try_recv().expect("expected overfill update") {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+                assert_eq!(event.quantity, Quantity::new(18.181, 3));
+            }
+            other => panic!("expected updated event, was {other:?}"),
+        }
+
         // The drained own-order fill emits an OrderFilled event, not a report.
         let fill = receiver.try_recv().expect("expected filled event");
         match fill {
@@ -2512,7 +2566,7 @@ mod tests {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.venue_order_id, venue_order_id);
                 assert_eq!(event.order_side, OrderSide::Buy);
-                assert_eq!(event.last_qty, Quantity::new(18.180, 3));
+                assert_eq!(event.last_qty, Quantity::new(18.181, 3));
             }
             other => panic!("expected filled event, was {other:?}"),
         }
@@ -2520,7 +2574,7 @@ mod tests {
         assert!(fill_tracker.contains(&venue_order_id));
         assert_eq!(
             fill_tracker.get_cumulative_filled(&venue_order_id),
-            Some(Quantity::new(18.18, 3))
+            Some(Quantity::new(18.181, 3))
         );
         assert!(!fill_tracker.has_pending_fill(&venue_order_id));
     }
