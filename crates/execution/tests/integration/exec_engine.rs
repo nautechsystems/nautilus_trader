@@ -4142,7 +4142,7 @@ fn test_overfill_rejection_logs_reason_once(
     assert_eq!(
         take_reconciliation_logs(),
         vec![(
-            Level::Error,
+            Level::Warn,
             format!(
                 "Order overfill rejected: {} potential_overfill=100000, current_filled=0, \
                 last_qty=200000, quantity=100000. Set `allow_overfills=true` in \

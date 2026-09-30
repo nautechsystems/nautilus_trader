@@ -3959,7 +3959,7 @@ impl ExecutionEngine {
                     fill.last_qty,
                     order.quantity()
                 );
-                log::error!("{msg}");
+                log::warn!("{msg}");
                 anyhow::bail!("{msg}");
             }
         }
