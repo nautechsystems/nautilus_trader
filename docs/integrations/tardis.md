@@ -483,6 +483,10 @@ from disk and parses it into Nautilus data. Both interfaces call the same Rust l
 You can also specify a `limit` parameter for the `load_*` functions to control the maximum number
 of rows loaded.
 
+The delta loaders and streamers skip any rows before the first snapshot row in the file, per the
+[Tardis FAQ](https://docs.tardis.dev/faq/order-books). A CSV that has been trimmed or split so it
+no longer starts with a snapshot row will produce zero deltas.
+
 :::note
 Loading mixed-instrument CSV files is challenging due to precision requirements and is not
 recommended. Use single-instrument CSV files instead.

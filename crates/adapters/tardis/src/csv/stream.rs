@@ -211,12 +211,8 @@ impl Iterator for DeltaStreamIterator {
                 },
             };
 
-            // Tardis documents that a file may open with buffered updates received before the
-            // exchange sent the initial snapshot after a connection restart; these rows have no
-            // book state to apply against and should be skipped (see
-            // https://docs.tardis.dev/faq/order-books). Skipped rows are counted rather than
-            // logged individually: a trimmed file with no snapshot row at all would otherwise
-            // emit one warning per row, drowning out the fact that the whole file was dropped.
+            // Rows before the first snapshot are pre-snapshot orphans and must be skipped, see
+            // https://docs.tardis.dev/faq/order-books
             if !self.seen_first_snapshot {
                 if !data.is_snapshot {
                     self.skipped_before_snapshot += 1;
@@ -513,13 +509,8 @@ impl BatchedDeltasStreamIterator {
                         }
                     };
 
-                    // Tardis documents that a file may open with buffered updates received
-                    // before the exchange sent the initial snapshot after a connection
-                    // restart; these rows have no book state to apply against and should be
-                    // skipped (see https://docs.tardis.dev/faq/order-books). Skipped rows are
-                    // counted rather than logged individually: a trimmed file with no snapshot
-                    // row at all would otherwise emit one warning per row, drowning out the fact
-                    // that the whole file was dropped.
+                    // Rows before the first snapshot are pre-snapshot orphans and must be
+                    // skipped, see https://docs.tardis.dev/faq/order-books
                     if !self.seen_first_snapshot {
                         if !data.is_snapshot {
                             self.skipped_before_snapshot += 1;
@@ -2182,10 +2173,8 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
     #[cfg(feature = "python")]
     #[rstest]
     fn test_stream_batched_deltas_skips_rows_before_first_snapshot() {
-        // Tardis documents that a file may open with buffered updates received before the
-        // exchange sent the initial snapshot after a connection restart (see
-        // https://docs.tardis.dev/faq/order-books). These two leading rows have
-        // `is_snapshot=false` and must be skipped, not applied to an empty book.
+        // Two leading rows are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
 binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
 binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
@@ -2964,10 +2953,8 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
 
     #[rstest]
     fn test_stream_deltas_skips_rows_before_first_snapshot() {
-        // Tardis documents that a file may open with buffered updates received before the
-        // exchange sent the initial snapshot after a connection restart (see
-        // https://docs.tardis.dev/faq/order-books). These two leading rows have
-        // `is_snapshot=false` and must be skipped, not applied to an empty book.
+        // Two leading rows are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
 binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
 binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
