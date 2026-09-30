@@ -314,7 +314,7 @@ pub trait Strategy: DataActor {
             .any(|o| o.emulation_trigger().is_some() || o.is_emulated());
 
         if has_emulated_order {
-            send_emulator_command(TradingCommand::SubmitOrderList(command));
+            send_risk_command(TradingCommand::SubmitOrderList(command));
         } else if let Some(algo_id) = exec_algorithm_id {
             let endpoint = format!("{algo_id}.execute");
             msgbus::send_any(endpoint.into(), &TradingCommand::SubmitOrderList(command));
@@ -1434,10 +1434,8 @@ pub trait Strategy: DataActor {
                     let topic = msgbus::switchboard::get_event_order_topic(event.strategy_id());
                     msgbus::publish_order_event(topic, &event);
                 }
-                OrderManagerAction::SubmitToEmulator(command) => {
-                    send_emulator_command(TradingCommand::SubmitOrder(command));
-                }
-                OrderManagerAction::SubmitToRisk(command) => {
+                OrderManagerAction::SubmitToEmulator(command)
+                | OrderManagerAction::SubmitToRisk(command) => {
                     send_risk_command(TradingCommand::SubmitOrder(command));
                 }
                 OrderManagerAction::SubmitToAlgorithm {
@@ -2399,7 +2397,7 @@ where
     );
 
     if order.emulation_trigger().is_some() {
-        send_emulator_command(TradingCommand::SubmitOrder(command));
+        send_risk_command(TradingCommand::SubmitOrder(command));
     } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
         send_algo_command(command, exec_algorithm_id);
     } else {
@@ -3422,20 +3420,18 @@ mod tests {
             OrderEventAny::PendingUpdate(event)
                 if event.client_order_id == modify_order.client_order_id()
         ));
-        assert!(matches!(
-            emulator_messages.get_messages().as_slice(),
-            [TradingCommand::SubmitOrder(command)]
-                if command.client_order_id == emulator_order.client_order_id()
-        ));
+        assert!(emulator_messages.get_messages().is_empty());
         assert!(matches!(
             risk_messages.get_messages().as_slice(),
             [
-                TradingCommand::SubmitOrder(submit),
+                TradingCommand::SubmitOrder(emulator_submit),
+                TradingCommand::SubmitOrder(risk_submit),
                 TradingCommand::ModifyOrder(first_modify),
                 TradingCommand::ModifyOrder(second_modify),
             ]
 
-                if submit.client_order_id == risk_order.client_order_id()
+                if emulator_submit.client_order_id == emulator_order.client_order_id()
+                    && risk_submit.client_order_id == risk_order.client_order_id()
                     && first_modify.client_order_id == modify_order.client_order_id()
                     && first_modify.quantity == Some(Quantity::from(50_000))
                     && second_modify.client_order_id == modify_order.client_order_id()
@@ -3693,7 +3689,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_routes_emulated_order_to_order_emulator() {
+    fn test_submit_order_routes_emulated_order_to_risk_engine() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
         let (emulator_handler, emulator_messages): (
@@ -3722,14 +3718,14 @@ mod tests {
 
         strategy.submit_order(order, None, None, None).unwrap();
 
-        let emulator_messages = emulator_messages.get_messages();
-        assert_eq!(emulator_messages.len(), 1);
+        assert!(emulator_messages.get_messages().is_empty());
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
         assert!(matches!(
-            emulator_messages.first(),
+            risk_messages.first(),
             Some(TradingCommand::SubmitOrder(command))
                 if command.client_order_id == client_order_id
         ));
-        assert!(risk_messages.get_messages().is_empty());
     }
 
     #[rstest]
@@ -4415,30 +4411,24 @@ mod tests {
         deregister_actor(&actor_id);
 
         let emulator_messages = emulator_messages.get_messages();
-        assert_eq!(emulator_messages.len(), 2);
+        assert_eq!(emulator_messages.len(), 1);
         assert!(matches!(
             emulator_messages.first(),
             Some(TradingCommand::ModifyOrder(command))
                 if command.client_order_id == client_order_id
                     && command.quantity == Some(modified_quantity)
         ));
-        assert!(
-            risk_messages
-                .get_messages()
-                .iter()
-                .all(|command| !matches!(command, TradingCommand::ModifyOrder(_)))
-        );
+        assert!(matches!(
+            risk_messages.get_messages().as_slice(),
+            [TradingCommand::SubmitOrder(command)]
+                if command.client_order_id == client_order_id
+        ));
         assert!(
             algo_messages
                 .get_messages()
                 .iter()
                 .all(|command| !matches!(command, TradingCommand::ModifyOrder(_)))
         );
-        assert!(matches!(
-            emulator_messages.get(1),
-            Some(TradingCommand::SubmitOrder(command))
-                if command.client_order_id == client_order_id
-        ));
     }
 
     #[rstest]

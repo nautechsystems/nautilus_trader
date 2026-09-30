@@ -500,7 +500,8 @@ can still be initialized directly with the `Order.__init__(...)` constructor if 
 
 The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
 
-- If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`.
+- If an `emulation_trigger` is specified, the command will *firstly* be sent to the `RiskEngine`.
+  Once approved, the risk engine forwards it to the `OrderEmulator`.
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
@@ -529,7 +530,8 @@ def buy(self) -> None:
 
 :::info
 You can specify both order emulation and an execution algorithm. In this case, the order is
-first sent to the `OrderEmulator`, and upon release is then routed to the `ExecutionAlgorithm`.
+first checked by the `RiskEngine` and sent to the `OrderEmulator`. Upon release it is routed to the
+`ExecutionAlgorithm`, whose child submissions pass through risk in the normal way.
 :::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:

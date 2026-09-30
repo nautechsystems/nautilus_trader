@@ -66,7 +66,8 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
-        OrderPendingUpdate, OrderPriceField, OrderSubmitted, PositionEvent, PositionOpened,
+        OrderInitialized, OrderPendingUpdate, OrderPriceField, OrderReleased, OrderSubmitted,
+        PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
@@ -255,6 +256,287 @@ fn test_deny_order_exceeding_max_notional(
     let saved_events = get_process_order_event_handler_messages(&process_handler);
     assert_eq!(saved_events.len(), 1);
     matches!(saved_events[0], OrderEventAny::Denied(_));
+}
+
+#[rstest]
+fn test_emulated_order_routes_to_emulator_after_risk_approval(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    let (emulator_handler, emulator_commands) =
+        get_typed_into_message_saving_handler::<TradingCommand>(Some(Ustr::from(
+            "OrderEmulator.execute.approved",
+        )));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::order_emulator_execute(),
+        emulator_handler,
+    );
+    let (exec_handler, exec_commands) = get_typed_into_message_saving_handler::<TradingCommand>(
+        Some(Ustr::from("ExecEngine.queue_execute.approved_emulated")),
+    );
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd()).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1.00050"))
+        .quantity(Quantity::from("1000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command));
+
+    assert_eq!(emulator_commands.get_messages().len(), 1);
+    assert!(exec_commands.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_emulated_order_over_max_notional_is_denied_before_emulator(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    let process_events = register_process_handler();
+    let (emulator_handler, emulator_commands) =
+        get_typed_into_message_saving_handler::<TradingCommand>(Some(Ustr::from(
+            "OrderEmulator.execute.denied",
+        )));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::order_emulator_execute(),
+        emulator_handler,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd()).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk_engine.set_max_notional_per_order(instrument_audusd.id(), Decimal::ONE);
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1.00050"))
+        .quantity(Quantity::from("100"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command));
+
+    assert!(emulator_commands.get_messages().is_empty());
+    assert!(matches!(
+        process_events.get_messages().as_slice(),
+        [OrderEventAny::Denied(event)] if event.client_order_id == order.client_order_id()
+    ));
+}
+
+#[rstest]
+fn test_released_emulated_order_routes_to_execution_after_risk_approval(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    let (emulator_handler, emulator_commands) =
+        get_typed_into_message_saving_handler::<TradingCommand>(Some(Ustr::from(
+            "OrderEmulator.execute.released",
+        )));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::order_emulator_execute(),
+        emulator_handler,
+    );
+    let (exec_handler, exec_commands) = get_typed_into_message_saving_handler::<TradingCommand>(
+        Some(Ustr::from("ExecEngine.queue_execute.released")),
+    );
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd()).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1000"))
+        .build();
+    let ts_now = risk_engine.clock().borrow().timestamp_ns();
+    order
+        .apply(OrderEventAny::Released(OrderReleased::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Price::from("1.00010"),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        )))
+        .unwrap();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        OrderInitialized::from(&order),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        ts_now,
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command));
+
+    assert!(emulator_commands.get_messages().is_empty());
+    assert_eq!(exec_commands.get_messages().len(), 1);
+}
+
+#[rstest]
+fn test_released_emulated_order_over_max_notional_is_denied(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    let process_events = register_process_handler();
+    let (exec_handler, exec_commands) = get_typed_into_message_saving_handler::<TradingCommand>(
+        Some(Ustr::from("ExecEngine.queue_execute.denied_released")),
+    );
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd()).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk_engine.set_max_notional_per_order(instrument_audusd.id(), Decimal::ONE);
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .build();
+    let ts_now = risk_engine.clock().borrow().timestamp_ns();
+    order
+        .apply(OrderEventAny::Released(OrderReleased::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Price::from("1.00010"),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        )))
+        .unwrap();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        OrderInitialized::from(&order),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        ts_now,
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command));
+
+    assert!(exec_commands.get_messages().is_empty());
+    assert!(matches!(
+        process_events.get_messages().as_slice(),
+        [OrderEventAny::Denied(event)] if event.client_order_id == order.client_order_id()
+    ));
 }
 
 #[fixture]

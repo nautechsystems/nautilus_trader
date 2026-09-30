@@ -207,9 +207,9 @@ impl RiskEngine {
         cache: Rc<RefCell<Cache>>,
     ) -> Throttler<TradingCommand, SubmitCommandFn> {
         let success_handler = {
+            let cache = Rc::clone(&cache);
             Box::new(move |command: TradingCommand| {
-                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
-                msgbus::send_trading_command(endpoint, command);
+                Self::send_submit_command(&cache, command);
             }) as Box<dyn Fn(TradingCommand)>
         };
 
@@ -581,7 +581,7 @@ impl RiskEngine {
 
     fn handle_submit_order(&mut self, command: SubmitOrder) {
         if self.config.bypass {
-            Self::send_to_execution(TradingCommand::SubmitOrder(command));
+            Self::send_submit_command(&self.cache, TradingCommand::SubmitOrder(command));
             return;
         }
 
@@ -771,7 +771,7 @@ impl RiskEngine {
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
         if self.config.bypass {
-            Self::send_to_execution(TradingCommand::SubmitOrderList(command));
+            Self::send_submit_command(&self.cache, TradingCommand::SubmitOrderList(command));
             return;
         }
 
@@ -1782,7 +1782,10 @@ impl RiskEngine {
             reason
         );
 
-        if order.status() != OrderStatus::Initialized {
+        if !matches!(
+            order.status(),
+            OrderStatus::Initialized | OrderStatus::Released
+        ) {
             return;
         }
 
@@ -1920,6 +1923,36 @@ impl RiskEngine {
 
     fn send_to_execution(command: TradingCommand) {
         let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
+        msgbus::send_trading_command(endpoint, command);
+    }
+
+    fn send_submit_command(cache: &Rc<RefCell<Cache>>, command: TradingCommand) {
+        let is_emulated = {
+            let cache = cache.borrow();
+            match &command {
+                TradingCommand::SubmitOrder(command) => {
+                    cache.order(&command.client_order_id).is_some_and(|order| {
+                        order.emulation_trigger().is_some() || order.is_emulated()
+                    })
+                }
+                TradingCommand::SubmitOrderList(command) => command
+                    .order_list
+                    .client_order_ids
+                    .iter()
+                    .any(|client_order_id| {
+                        cache.order(client_order_id).is_some_and(|order| {
+                            order.emulation_trigger().is_some() || order.is_emulated()
+                        })
+                    }),
+                _ => false,
+            }
+        };
+
+        let endpoint = if is_emulated {
+            MessagingSwitchboard::order_emulator_execute()
+        } else {
+            MessagingSwitchboard::exec_engine_queue_execute()
+        };
         msgbus::send_trading_command(endpoint, command);
     }
 

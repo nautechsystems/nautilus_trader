@@ -41,7 +41,9 @@ use nautilus_core::{UUID4, WeakCell};
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
-    events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
+    events::{
+        OrderCanceled, OrderEmulated, OrderEventAny, OrderInitialized, OrderReleased, OrderUpdated,
+    },
     identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
     orders::{LimitOrder, MarketOrder, Order, OrderAny},
@@ -530,7 +532,27 @@ impl OrderEmulator {
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        let matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        let (quote, trade) = {
+            let cache = self.cache.borrow();
+            (
+                cache.quote(&instrument_id).copied(),
+                cache.trade(&instrument_id).copied(),
+            )
+        };
+
+        let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        if let Some(quote) = quote {
+            matching_core.set_bid_raw(quote.bid_price);
+            matching_core.set_ask_raw(quote.ask_price);
+        }
+        if let Some(trade) = trade {
+            matching_core.set_last_raw(trade.price);
+            if quote.is_none() {
+                matching_core.set_bid_raw(trade.price);
+                matching_core.set_ask_raw(trade.price);
+            }
+        }
+
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {instrument_id:?}");
@@ -1294,7 +1316,7 @@ impl OrderEmulator {
                 None => return, // Order stays queued for retry
             };
 
-        let command = match self
+        let mut command = match self
             .manager
             .pop_submit_order_command(order.client_order_id())
         {
@@ -1351,6 +1373,7 @@ impl OrderEmulator {
             let original_events = order.events();
 
             transformed.prepend_events(original_events.into_iter().cloned());
+            command.order_init = OrderInitialized::from(&transformed);
 
             let add_result = {
                 let mut cache = self.cache.borrow_mut();
@@ -1401,7 +1424,7 @@ impl OrderEmulator {
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.send_algo_command(command, exec_algorithm_id);
             } else {
-                self.send_exec_command(TradingCommand::SubmitOrder(command));
+                self.send_risk_command(TradingCommand::SubmitOrder(command));
             }
         }
     }
@@ -1443,7 +1466,7 @@ impl OrderEmulator {
                 None => return, // Order stays queued for retry
             };
 
-        let command = self
+        let mut command = self
             .manager
             .pop_submit_order_command(order.client_order_id())
             .expect("invalid operation `fill_market_order` with no command");
@@ -1481,6 +1504,7 @@ impl OrderEmulator {
             let original_events = order.events();
 
             transformed.prepend_events(original_events.into_iter().cloned());
+            command.order_init = OrderInitialized::from(&transformed);
 
             let add_result = {
                 let mut cache = self.cache.borrow_mut();
@@ -1528,7 +1552,7 @@ impl OrderEmulator {
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.send_algo_command(command, exec_algorithm_id);
             } else {
-                self.send_exec_command(TradingCommand::SubmitOrder(command));
+                self.send_risk_command(TradingCommand::SubmitOrder(command));
             }
         }
     }
@@ -2595,6 +2619,74 @@ mod tests {
     }
 
     #[rstest]
+    fn test_submit_order_uses_cached_quote_for_immediate_release(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.cached_quote_release");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5099.00", "5101.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5200.00"))
+            .unwrap();
+
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&client_order_id).unwrap().status(),
+            OrderStatus::Released
+        );
+        let emulator = emulator.borrow();
+        let core = emulator.get_matching_core(&instrument.id()).unwrap();
+        assert_eq!(core.bid, Some(Price::from("5099.00")));
+        assert_eq!(core.ask, Some(Price::from("5101.00")));
+        assert_eq!(core.last, Some(Price::from("5200.00")));
+    }
+
+    #[rstest]
+    fn test_submit_order_uses_cached_trade_for_immediate_release(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.cached_trade_release");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5101.00"))
+            .unwrap();
+
+        let order = create_stop_market_order(&instrument, TriggerType::LastPrice);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&client_order_id).unwrap().status(),
+            OrderStatus::Released
+        );
+        let emulator = emulator.borrow();
+        let core = emulator.get_matching_core(&instrument.id()).unwrap();
+        assert_eq!(core.bid, Some(Price::from("5101.00")));
+        assert_eq!(core.ask, Some(Price::from("5101.00")));
+        assert_eq!(core.last, Some(Price::from("5101.00")));
+    }
+
+    #[rstest]
     fn test_reset_unsubscribes_market_data_and_clears_state(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
         let data_commands = register_data_command_handler("DataEngine.queue_execute.reset");
@@ -3224,6 +3316,99 @@ mod tests {
     }
 
     #[rstest]
+    fn test_release_market_order_sends_transformed_command_to_risk(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.market_command");
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let mut command = create_submit_order(&instrument, &order);
+        command.correlation_id = Some(UUID4::new());
+        command.causation_id = Some(UUID4::new());
+        let original_command = command.clone();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+        {
+            let mut emulator = emulator.borrow_mut();
+            emulator
+                .matching_cores
+                .get_mut(&instrument.id())
+                .unwrap()
+                .set_ask_raw(Price::from("5100.00"));
+            emulator.fill_market_order(client_order_id);
+        }
+
+        let commands = risk_commands.get_messages();
+        let Some(TradingCommand::SubmitOrder(released_command)) = commands.first() else {
+            panic!("Expected released SubmitOrder command, was {commands:?}");
+        };
+        let released_order = OrderAny::try_from(released_command.order_init.clone()).unwrap();
+        assert_eq!(released_order.order_type(), OrderType::Market);
+        assert!(released_order.emulation_trigger().is_none());
+        assert_eq!(released_command.command_id, original_command.command_id);
+        assert_eq!(
+            released_command.correlation_id,
+            original_command.correlation_id
+        );
+        assert_eq!(released_command.causation_id, original_command.causation_id);
+        assert_eq!(released_command.params, original_command.params);
+    }
+
+    #[rstest]
+    fn test_release_limit_order_sends_transformed_command_to_risk(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.limit_command");
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_limit_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        let original_command = command.clone();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+        {
+            let mut emulator = emulator.borrow_mut();
+            emulator
+                .matching_cores
+                .get_mut(&instrument.id())
+                .unwrap()
+                .set_ask_raw(Price::from("5100.00"));
+            emulator.fill_limit_order(client_order_id);
+        }
+
+        let commands = risk_commands.get_messages();
+        let Some(TradingCommand::SubmitOrder(released_command)) = commands.first() else {
+            panic!("Expected released SubmitOrder command, was {commands:?}");
+        };
+        let released_order = OrderAny::try_from(released_command.order_init.clone()).unwrap();
+        assert_eq!(released_order.order_type(), OrderType::Limit);
+        assert!(released_order.emulation_trigger().is_none());
+        assert_eq!(released_command.command_id, original_command.command_id);
+        assert_eq!(released_command.position_id, original_command.position_id);
+        assert_eq!(released_command.client_id, original_command.client_id);
+        assert_eq!(released_command.params, original_command.params);
+    }
+
+    #[rstest]
     fn test_quote_tick_updates_matching_core_prices(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
         add_instrument_to_cache(&cache, &instrument);
@@ -3324,10 +3509,10 @@ mod tests {
     fn test_trailing_stop_waits_for_activation_price(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
         let risk_events = register_risk_event_handler("RiskEngine.process.trailing_activation");
-        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
-            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::exec_engine_queue_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
         add_instrument_to_cache(&cache, &instrument);
@@ -3398,14 +3583,14 @@ mod tests {
             assert!(is_activated);
             assert_eq!(cached.trigger_price(), Some(Price::from("5045.00")));
         }
-        assert!(exec_commands.get_messages().is_empty());
+        assert!(risk_commands.get_messages().is_empty());
 
         // Market falls through the trailed trigger: order releases
         emulator
             .borrow_mut()
             .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
 
-        let commands = exec_commands.get_messages();
+        let commands = risk_commands.get_messages();
         assert_eq!(commands.len(), 1);
         assert!(matches!(
             &commands[0],
@@ -3418,10 +3603,10 @@ mod tests {
         instrument: CryptoPerpetual,
     ) {
         let (_clock, cache, emulator) = create_emulator();
-        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
-            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::exec_engine_queue_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
         add_instrument_to_cache(&cache, &instrument);
@@ -3465,7 +3650,7 @@ mod tests {
             .borrow_mut()
             .on_quote_tick(create_quote_tick(&instrument, "4985.00", "4986.00"));
 
-        assert!(exec_commands.get_messages().is_empty());
+        assert!(risk_commands.get_messages().is_empty());
         assert!(
             emulator
                 .borrow()
@@ -3478,10 +3663,10 @@ mod tests {
     #[rstest]
     fn test_trailing_stop_with_preset_trigger_activates_and_triggers(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
-        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
-            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::exec_engine_queue_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
         add_instrument_to_cache(&cache, &instrument);
@@ -3519,7 +3704,7 @@ mod tests {
         emulator.borrow_mut().handle_submit_order(&command);
 
         assert!(
-            exec_commands.get_messages().is_empty(),
+            risk_commands.get_messages().is_empty(),
             "preset trigger must not release before activation"
         );
 
@@ -3529,14 +3714,14 @@ mod tests {
             .borrow_mut()
             .on_quote_tick(create_quote_tick(&instrument, "5055.00", "5056.00"));
 
-        assert!(exec_commands.get_messages().is_empty());
+        assert!(risk_commands.get_messages().is_empty());
 
         // Bid falls through the preset trigger: the order must release
         emulator
             .borrow_mut()
             .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
 
-        let commands = exec_commands.get_messages();
+        let commands = risk_commands.get_messages();
         assert_eq!(commands.len(), 1);
         assert!(matches!(
             &commands[0],
@@ -3547,10 +3732,10 @@ mod tests {
     #[rstest]
     fn test_trailing_stop_activates_despite_trailing_calculate_error(instrument: CryptoPerpetual) {
         let (_clock, cache, emulator) = create_emulator();
-        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
-            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::exec_engine_queue_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
         add_instrument_to_cache(&cache, &instrument);
@@ -3597,7 +3782,7 @@ mod tests {
             .borrow_mut()
             .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
 
-        let commands = exec_commands.get_messages();
+        let commands = risk_commands.get_messages();
         assert_eq!(commands.len(), 1);
         assert!(matches!(
             &commands[0],

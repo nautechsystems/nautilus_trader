@@ -45,8 +45,9 @@ publishes events such as `OrderInitialized`.
 
 Commands follow different routes:
 
-- `submit_order(...)` routes to `OrderEmulator` for emulated orders, to an `ExecutionAlgorithm` when
-  `exec_algorithm_id` is set, and to the `RiskEngine` otherwise.
+- `submit_order(...)` routes to the `RiskEngine` first for emulated orders, which forwards approved
+  commands to the `OrderEmulator`. With no emulation trigger it routes to an `ExecutionAlgorithm`
+  when `exec_algorithm_id` is set, and to the `RiskEngine` otherwise.
 - `submit_order_list(...)` follows the same branching behavior based on emulation and
   `exec_algorithm_id`.
 - `modify_order(...)` routes to the `OrderEmulator` for emulated orders, to an `ExecutionAlgorithm`
@@ -57,11 +58,12 @@ Commands follow different routes:
 
 New orders typically enter one of these paths:
 
-`Strategy` -> `OrderEmulator` or `ExecutionAlgorithm` or `RiskEngine`
+`Strategy` -> `RiskEngine` -> `OrderEmulator` (emulated), or `Strategy` -> `ExecutionAlgorithm`, or
+`Strategy` -> `RiskEngine`
 
 The downstream flow is:
 
-`OrderEmulator` -> `ExecutionAlgorithm` or `ExecutionEngine`
+`OrderEmulator` -> `RiskEngine` -> `ExecutionEngine`, or `OrderEmulator` -> `ExecutionAlgorithm`
 
 `ExecutionAlgorithm` -> `RiskEngine` -> `ExecutionEngine` -> `ExecutionClient`
 
@@ -74,13 +76,12 @@ flowchart LR
     engine[ExecutionEngine]
     client[ExecutionClient]
 
-    strategy --> emulator
     strategy --> algo
     strategy --> risk
     strategy --> engine
+    risk -->|Approved emulated order| emulator
     emulator -. OrderReleased .-> risk
     emulator --> algo
-    emulator --> engine
     algo --> risk
     risk <--> engine
     engine <--> client
