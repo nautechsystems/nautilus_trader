@@ -3948,20 +3948,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let activates_now = match order.activation_price() {
-            Some(activation_price) => self.core.is_touch_triggered(side, activation_price),
-            None => self
-                .get_trailing_activation_price(
-                    trigger_type,
-                    side,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                )
-                .is_some(),
-        };
-
-        if activates_now
+        if self.trailing_stop_activates_now(order)
             && let Some(trigger_price) = order.trigger_price()
             && self
                 .core
@@ -3992,6 +3979,24 @@ impl OrderMatchingEngine {
         order.set_liquidity_side(LiquiditySide::Maker);
 
         self.accept_order(order);
+    }
+
+    /// Returns whether a trailing stop activates at the current market: its activation price is
+    /// touched, or it has none and a market price to activate at is available.
+    fn trailing_stop_activates_now(&self, order: &OrderAny) -> bool {
+        let side = order.order_side();
+        match order.activation_price() {
+            Some(activation_price) => self.core.is_touch_triggered(side, activation_price),
+            None => self
+                .get_trailing_activation_price(
+                    order.trigger_type().unwrap_or(TriggerType::Default),
+                    side,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                )
+                .is_some(),
+        }
     }
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -6332,28 +6337,34 @@ impl OrderMatchingEngine {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
                 self.update_limit_if_touched_order(order, quantity, price, trigger_price)
             }
-            OrderAny::TrailingStopMarket(_) => {
-                if let Some(trigger_price) = trigger_price.or(order.trigger_price()) {
-                    self.update_market_if_touched_order(order, quantity, trigger_price)
-                } else {
+            // A trailing stop that is activated, or activates at the current market, rests as a
+            // stop, so its new trigger is validated like one (as on submit). Otherwise it cannot
+            // trigger yet, so the trigger is not checked
+            OrderAny::TrailingStopMarket(inner) => match trigger_price.or(order.trigger_price()) {
+                Some(trigger_price)
+                    if inner.is_activated || self.trailing_stop_activates_now(order) =>
+                {
+                    self.update_stop_market_order(order, quantity, trigger_price)
+                }
+                trigger_price => {
                     self.generate_order_updated(order, quantity, None, trigger_price, None);
                     ModifyOutcome::Applied
                 }
-            }
-            OrderAny::TrailingStopLimit(_) => {
-                match (
-                    price.or(order.price()),
-                    trigger_price.or(order.trigger_price()),
-                ) {
-                    (Some(price), Some(trigger_price)) => {
-                        self.update_limit_if_touched_order(order, quantity, price, trigger_price)
-                    }
-                    _ => {
-                        self.generate_order_updated(order, quantity, price, trigger_price, None);
-                        ModifyOutcome::Applied
-                    }
+            },
+            OrderAny::TrailingStopLimit(inner) => match (
+                price.or(order.price()),
+                trigger_price.or(order.trigger_price()),
+            ) {
+                (Some(price), Some(trigger_price))
+                    if inner.is_activated || self.trailing_stop_activates_now(order) =>
+                {
+                    self.update_stop_limit_order(order, quantity, price, trigger_price)
                 }
-            }
+                (price, trigger_price) => {
+                    self.generate_order_updated(order, quantity, price, trigger_price, None);
+                    ModifyOutcome::Applied
+                }
+            },
             _ => {
                 panic!(
                     "Unsupported order type {} for update_order",
