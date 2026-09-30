@@ -15,10 +15,9 @@
 
 //! Provides an Apache Parquet backend powered by [DataFusion](https://arrow.apache.org/datafusion).
 
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use indexmap::{IndexMap, map::Entry};
-use tokio::runtime::Handle;
 
 use crate::{
     catalog::factory as catalog_factory,
@@ -26,13 +25,8 @@ use crate::{
     writer::{factory as writer_factory, feather as feather_writer, traits as writer_traits},
 };
 
-pub mod binary_heap;
-pub mod compare;
-pub mod feather;
-pub mod kmerge_batch;
 pub mod migration;
 pub mod parquet;
-pub mod session;
 
 /// Returns the persistence-owned catalog-factory registry.
 ///
@@ -128,18 +122,49 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
     );
 }
 
-/// Runs an async operation from a synchronous persistence API.
-///
-/// `block_in_place` permits re-entering the shared multi-thread Nautilus runtime and executes the
-/// closure directly when called outside a Tokio runtime.
-///
-/// # Panics
-///
-/// Panics when called from a Tokio `current_thread` runtime. The shared Nautilus runtime is
-/// required to be multi-threaded.
-pub(crate) fn block_on<F>(runtime: &Handle, future: F) -> F::Output
-where
-    F: Future,
-{
-    tokio::task::block_in_place(|| runtime.block_on(future))
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn unused_catalog_factory() -> catalog_factory::CatalogFactory {
+        Arc::new(|_| anyhow::bail!("not invoked"))
+    }
+
+    #[rstest]
+    fn extend_catalog_factories_accepts_external_factory() {
+        let factories =
+            extend_catalog_factories(vec![("ExternalTest".to_string(), unused_catalog_factory())])
+                .unwrap();
+
+        assert_eq!(
+            factories.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                catalog_factory::PARQUET_CATALOG_FACTORY_NAME,
+                "ExternalTest"
+            ],
+        );
+    }
+
+    #[rstest]
+    #[case::builtin(vec!["Parquet"], "Parquet")]
+    #[case::user(vec!["Duplicate", "Duplicate"], "Duplicate")]
+    fn extend_catalog_factories_rejects_duplicate_names(
+        #[case] names: Vec<&str>,
+        #[case] duplicate: &str,
+    ) {
+        let extra = names
+            .into_iter()
+            .map(|name| (name.to_string(), unused_catalog_factory()));
+
+        let error = extend_catalog_factories(extra)
+            .err()
+            .expect("duplicate registration should fail");
+
+        assert_eq!(
+            error.to_string(),
+            format!("Catalog factory already registered: {duplicate}"),
+        );
+    }
 }

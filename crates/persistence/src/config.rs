@@ -24,6 +24,7 @@ use nautilus_model::{
     instruments::NautilusInstrumentType,
 };
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
 use crate::{
     catalog::factory::{CatalogConnectConfig, PARQUET_CATALOG_FACTORY_NAME},
@@ -115,21 +116,6 @@ impl DataCatalogConfig {
     #[must_use]
     pub fn fs_rust_storage_options(&self) -> Option<&ahash::AHashMap<String, String>> {
         self.fs_rust_storage_options.as_ref()
-    }
-
-    /// Creates the configured catalog through the built-in factory registry.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the backend is unavailable or its connection cannot be opened.
-    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::DataCatalog> {
-        let factories = crate::backend::default_catalog_factories();
-        let name = self.catalog_backend.to_string();
-        factories
-            .get(&name)
-            .ok_or_else(|| anyhow::anyhow!("No catalog factory registered for '{name}'"))?(
-            &self.connect_config(),
-        )
     }
 
     /// Returns the connection settings catalog and writer factories open this catalog with.
@@ -239,6 +225,17 @@ pub enum RotationConfig {
 }
 
 impl RotationConfig {
+    /// Returns the rotation policy without its parameters.
+    #[must_use]
+    pub const fn mode(&self) -> RotationMode {
+        match self {
+            Self::Size { .. } => RotationMode::Size,
+            Self::Interval { .. } => RotationMode::Interval,
+            Self::ScheduledDates { .. } => RotationMode::ScheduledDates,
+            Self::NoRotation => RotationMode::NoRotation,
+        }
+    }
+
     /// Validates the rotation parameters, collecting every field violation.
     ///
     /// # Errors
@@ -306,6 +303,33 @@ impl RotationConfig {
             Self::NoRotation => crate::writer::feather::RotationConfig::NoRotation,
         })
     }
+}
+
+/// The rotation policy of a streaming writer, without its parameters.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, FromRepr, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.persistence",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")
+)]
+pub enum RotationMode {
+    Size,
+    Interval,
+    ScheduledDates,
+    NoRotation,
 }
 
 fn positive_interval_error() -> ConfigError {
@@ -913,6 +937,30 @@ read_only = true
         assert_eq!(interval_ns, 31);
         assert_eq!(rotation_time, UnixNanos::from(37));
         assert_eq!(rotation_timezone.iana_name(), Some("Australia/Sydney"));
+    }
+
+    #[rstest]
+    #[case::size(RotationConfig::Size { max_size: 1 }, RotationMode::Size)]
+    #[case::interval(
+        RotationConfig::Interval {
+            interval_ns: DurationNanos::new(1),
+        },
+        RotationMode::Interval,
+    )]
+    #[case::scheduled_dates(
+        RotationConfig::ScheduledDates {
+            interval_ns: DurationNanos::new(1),
+            schedule_ns: UnixNanos::from(1),
+            timezone: DEFAULT_ROTATION_TIMEZONE.to_string(),
+        },
+        RotationMode::ScheduledDates,
+    )]
+    #[case::no_rotation(RotationConfig::NoRotation, RotationMode::NoRotation)]
+    fn rotation_config_mode_names_its_policy(
+        #[case] config: RotationConfig,
+        #[case] expected: RotationMode,
+    ) {
+        assert_eq!(config.mode(), expected);
     }
 
     #[rstest]

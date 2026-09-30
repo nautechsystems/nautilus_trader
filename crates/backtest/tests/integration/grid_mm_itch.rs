@@ -126,7 +126,7 @@ fn test_grid_mm_itch_catalog_load() {
 
     let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     let loaded_deltas: Vec<OrderBookDelta> = catalog
-        .query_typed_data(
+        .query(
             Some(vec![instrument_id.to_string()]),
             None,
             None,

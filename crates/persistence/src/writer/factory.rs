@@ -419,7 +419,7 @@ mod tests {
             .unwrap();
 
         let loaded = catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap();
         assert_eq!(loaded, vec![expected]);
     }
@@ -509,10 +509,10 @@ mod tests {
         }
 
         let loaded_statuses = catalog
-            .query_typed_data::<InstrumentStatus>(None, None, None, None, None, true)
+            .query::<InstrumentStatus>(None, None, None, None, None, true)
             .unwrap();
         let loaded_closes = catalog
-            .query_typed_data::<InstrumentClose>(None, None, None, None, None, true)
+            .query::<InstrumentClose>(None, None, None, None, None, true)
             .unwrap();
         assert_eq!(loaded_statuses, statuses);
         assert_eq!(loaded_closes, closes);

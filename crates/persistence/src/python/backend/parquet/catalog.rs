@@ -104,7 +104,7 @@ where
     T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
 {
     catalog
-        .query_typed_data::<T>(
+        .query::<T>(
             identifiers,
             start.map(UnixNanos::from),
             end.map(UnixNanos::from),
@@ -1735,10 +1735,11 @@ impl PyParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a list of data type names (as directory stems) in the catalog.
-    pub fn list_data_types(&self) -> PyResult<Vec<String>> {
+    /// Returns the data, record, and instrument types stored in the catalog.
+    pub fn list_data_types(&self) -> PyResult<Vec<PyCatalogDataType>> {
         self.inner
             .list_data_types()
+            .map(|data_types| data_types.into_iter().map(PyCatalogDataType::new).collect())
             .map_err(|e| PyIOError::new_err(format!("Failed to list data types: {e}")))
     }
 
@@ -1879,24 +1880,31 @@ impl PyParquetDataCatalog {
     }
 
     /// Query custom data from Parquet files.
-    #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_custom_data(
         &mut self,
         py: Python<'_>,
-        type_name: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Vec<Py<PyAny>>> {
+        let NautilusDataType::Custom { type_name } = nautilus_data_type_from_py(data_type)? else {
+            return Err(to_pytype_err("data_type must be a custom NautilusDataType"));
+        };
+
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         let data = py
             .detach(|| {
                 self.inner.query_custom_data_dynamic(
-                    type_name,
+                    &type_name,
                     identifiers.as_deref(),
                     start_nanos,
                     end_nanos,

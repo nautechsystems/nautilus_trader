@@ -37,10 +37,7 @@ use pyo3_stub_gen::impl_stub_type;
 use serde_json::json;
 
 use crate::{
-    catalog::{
-        traits::CatalogMetadata,
-        types::{CatalogDataType, data_type_from_data_path_prefix},
-    },
+    catalog::{traits::CatalogMetadata, types::CatalogDataType},
     writer::filter::WriterRecordFilter,
 };
 
@@ -208,17 +205,7 @@ pub(crate) fn catalog_filter_family_from_py(value: &Bound<'_, PyAny>) -> PyResul
         return Ok(CatalogDataType::Data(data_type.inner()));
     }
 
-    if let Ok(value) = value.extract::<String>() {
-        if let Ok(record_type) = value.parse::<NautilusRecordType>() {
-            return Ok(CatalogDataType::Record(record_type));
-        }
-
-        return data_type_from_data_path_prefix(&value)
-            .map(CatalogDataType::Data)
-            .map_err(to_pytype_err);
-    }
-
     Err(to_pytype_err(
-        "filter key must be NautilusRecordType, NautilusDataType, or str",
+        "filter key must be NautilusRecordType or NautilusDataType",
     ))
 }

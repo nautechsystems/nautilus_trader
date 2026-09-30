@@ -54,6 +54,8 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
+from nautilus_trader.model import NautilusInstrumentType
+from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
@@ -61,6 +63,7 @@ from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.persistence import CatalogBackend
 from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import RotationConfig
+from nautilus_trader.persistence import RotationMode
 from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
@@ -209,7 +212,7 @@ def test_streaming_config_defaults_to_feather_without_catalog() -> None:
     assert config.writer_backend == "Feather"
     assert config.flush_interval_ms == 1000
     assert config.replace_existing is False
-    assert config.rotation_config.mode == "no_rotation"
+    assert config.rotation_config.mode == RotationMode.NO_ROTATION
     assert config.rotation_config.timezone is None
     assert config.promotion_interval_ms is None
     assert config.promote_on_close is True
@@ -268,7 +271,7 @@ def test_streaming_config_exposes_scheduled_rotation() -> None:
         ),
     )
 
-    assert config.rotation_config.mode == "scheduled_dates"
+    assert config.rotation_config.mode == RotationMode.SCHEDULED_DATES
     assert config.rotation_config.interval_ns == 5_000
     assert config.rotation_config.schedule_ns == 750
     assert config.rotation_config.timezone == "Australia/Sydney"
@@ -305,6 +308,40 @@ def test_rotation_config_rejects_invalid_parameters(
     """
     with pytest.raises(ValueError, match=f"invalid {field}"):
         create()
+
+
+def test_streaming_config_types_are_enums() -> None:
+    """
+    Test streaming config keeps its type selectors and record filters as enums.
+    """
+    config = StreamingConfig(
+        writer_path="/data/output",
+        data_types=[NautilusDataType.QuoteTick, NautilusRecordType.OrderFilled],
+        instrument_types=[NautilusInstrumentType.Equity],
+        record_filters={NautilusRecordType.AccountState: ["SIM-001"]},
+    )
+
+    assert config.data_types == [NautilusDataType.QuoteTick]
+    assert config.record_types == [NautilusRecordType.OrderFilled]
+    assert config.instrument_types == [NautilusInstrumentType.Equity]
+    assert config.record_filters == {NautilusRecordType.AccountState: ["SIM-001"]}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"data_types": ["quotes"]}, "streaming type must be NautilusDataType"),
+        ({"record_types": ["order_filled"]}, "record_type must be NautilusRecordType"),
+        ({"instrument_types": ["equity"]}, "instrument_type must be NautilusInstrumentType"),
+        ({"record_filters": {"account_state": None}}, "record_type must be NautilusRecordType"),
+    ],
+)
+def test_streaming_config_rejects_type_strings(kwargs: dict, message: str) -> None:
+    """
+    Test streaming config rejects strings where it expects type enums.
+    """
+    with pytest.raises(TypeError, match=message):
+        StreamingConfig(writer_path="/data/output", **kwargs)
 
 
 def test_streaming_config_rejects_flat_rotation_arguments() -> None:

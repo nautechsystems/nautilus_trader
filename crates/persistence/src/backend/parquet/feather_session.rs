@@ -1698,7 +1698,7 @@ mod read_run_tests {
 
         assert_eq!(
             catalog
-                .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+                .query::<QuoteTick>(None, None, None, None, None, true)
                 .unwrap(),
             vec![quote_aud(1_000), quote_eth(2_000)],
         );
@@ -1750,7 +1750,7 @@ mod read_run_tests {
 
         assert_eq!(
             catalog
-                .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+                .query::<QuoteTick>(None, None, None, None, None, true)
                 .unwrap(),
             vec![quote_aud(1_000)],
         );

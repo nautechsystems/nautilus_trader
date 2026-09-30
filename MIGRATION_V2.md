@@ -213,9 +213,10 @@ normal Python type checks:
 | `BacktestEngine.add_data` with duck typing    | Pass supported NautilusTrader model objects   |
 | Duck-typed portfolio-statistic position input | Pass `nautilus_trader.model.Position` objects |
 
-`DataQueryResult` iteration returns list chunks containing typed Python objects. Use `to_list()` to
-flatten all remaining chunks. Query and decode failures raise `RuntimeError` instead of appearing as
-an exhausted iterator.
+`DataBackendSession`, `DataQueryResult`, and `ParquetDataCatalog.backend_session()` are removed.
+Query a catalog with `ParquetDataCatalog.query(...)` or a typed method such as
+`query_quote_ticks(...)`, which return typed Python objects, or stream Arrow data with
+`query_data_arrow_stream(...)`.
 
 ### Enum absence and side names
 

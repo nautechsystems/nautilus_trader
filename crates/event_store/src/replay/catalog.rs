@@ -78,36 +78,30 @@ impl ReplayCatalog for ParquetReplayCatalog<'_> {
         let files = Some(plan.coverage.files.clone());
 
         match plan.query.data_cls.as_str() {
-            "quotes" => Ok(catalog_replay_records(
-                self.catalog.query_typed_data::<QuoteTick>(
-                    identifiers,
-                    start,
-                    end,
-                    None,
-                    files,
-                    false,
-                )?,
-            )),
-            "trades" => Ok(catalog_replay_records(
-                self.catalog.query_typed_data::<TradeTick>(
-                    identifiers,
-                    start,
-                    end,
-                    None,
-                    files,
-                    false,
-                )?,
-            )),
-            "bars" => Ok(catalog_replay_records(
-                self.catalog.query_typed_data::<Bar>(
-                    identifiers,
-                    start,
-                    end,
-                    None,
-                    files,
-                    false,
-                )?,
-            )),
+            "quotes" => Ok(catalog_replay_records(self.catalog.query::<QuoteTick>(
+                identifiers,
+                start,
+                end,
+                None,
+                files,
+                false,
+            )?)),
+            "trades" => Ok(catalog_replay_records(self.catalog.query::<TradeTick>(
+                identifiers,
+                start,
+                end,
+                None,
+                files,
+                false,
+            )?)),
+            "bars" => Ok(catalog_replay_records(self.catalog.query::<Bar>(
+                identifiers,
+                start,
+                end,
+                None,
+                files,
+                false,
+            )?)),
             data_cls => {
                 anyhow::bail!("catalog replay loading for {data_cls} is not supported")
             }

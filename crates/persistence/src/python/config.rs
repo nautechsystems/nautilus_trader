@@ -15,6 +15,8 @@
 
 //! Python bindings for persistence configuration types.
 
+use std::str::FromStr;
+
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{
     DurationNanos, UnixNanos, from_pydict,
@@ -24,17 +26,18 @@ use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
     instruments::NautilusInstrumentType,
     python::{
+        common::EnumIterator,
         data::{PyNautilusDataType, PyNautilusRecordType},
         instruments::PyNautilusInstrumentType,
     },
 };
 use pyo3::{
-    Bound, Py, PyAny, PyRef, PyResult, Python,
-    types::{PyAnyMethods, PyDict},
+    Bound, Py, PyAny, PyRef, PyResult, PyTypeInfo, Python,
+    types::{PyAnyMethods, PyDict, PyType},
 };
 
 use crate::config::{
-    CatalogBackendType, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig, RotationConfig,
+    CatalogBackendType, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig, RotationConfig, RotationMode,
     StreamingConfig, StreamingRecordFilterConfig,
 };
 
@@ -221,13 +224,8 @@ impl PyRotationConfig {
     }
 
     #[getter]
-    fn mode(&self) -> &'static str {
-        match self.inner {
-            RotationConfig::Size { .. } => "size",
-            RotationConfig::Interval { .. } => "interval",
-            RotationConfig::ScheduledDates { .. } => "scheduled_dates",
-            RotationConfig::NoRotation => "no_rotation",
-        }
+    const fn mode(&self) -> RotationMode {
+        self.inner.mode()
     }
 
     #[getter]
@@ -265,6 +263,53 @@ impl PyRotationConfig {
 
     fn __repr__(&self) -> String {
         format!("{:?}", self.inner)
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pyo3::pymethods]
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "PyO3 enum methods take self by reference for Python API parity"
+)]
+impl RotationMode {
+    /// The rotation policy of a streaming writer, without its parameters.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub const fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        Self::from_str(data_str).map_err(to_pyvalue_err)
     }
 }
 
@@ -408,24 +453,27 @@ impl StreamingConfig {
     }
 
     #[getter]
-    fn data_types(&self) -> Option<Vec<String>> {
+    fn data_types(&self) -> Option<Vec<PyNautilusDataType>> {
         self.data_types
             .clone()
-            .map(|values| values.into_iter().map(|value| value.to_string()).collect())
+            .map(|values| values.into_iter().map(PyNautilusDataType::new).collect())
     }
 
     #[getter]
-    fn record_types(&self) -> Option<Vec<String>> {
+    fn record_types(&self) -> Option<Vec<PyNautilusRecordType>> {
         self.record_types
             .clone()
-            .map(|values| values.into_iter().map(|value| value.to_string()).collect())
+            .map(|values| values.into_iter().map(PyNautilusRecordType::new).collect())
     }
 
     #[getter]
-    fn instrument_types(&self) -> Option<Vec<String>> {
-        self.instrument_types
-            .clone()
-            .map(|values| values.into_iter().map(|value| value.to_string()).collect())
+    fn instrument_types(&self) -> Option<Vec<PyNautilusInstrumentType>> {
+        self.instrument_types.clone().map(|values| {
+            values
+                .into_iter()
+                .map(PyNautilusInstrumentType::new)
+                .collect()
+        })
     }
 
     #[getter]
@@ -436,7 +484,10 @@ impl StreamingConfig {
 
         let result = PyDict::new(py);
         for filter in filters {
-            result.set_item(filter.record_type.to_string(), filter.identifiers.clone())?;
+            result.set_item(
+                PyNautilusRecordType::new(filter.record_type),
+                filter.identifiers.clone(),
+            )?;
         }
 
         Ok(Some(result.unbind()))
@@ -562,25 +613,8 @@ fn py_streaming_type_from_any(
         return Ok(());
     }
 
-    if let Ok(value) = value.extract::<String>() {
-        if let Ok(data_type) = value.parse::<NautilusDataType>() {
-            parsed.data.push(data_type);
-            return Ok(());
-        }
-
-        if let Ok(record_type) = value.parse::<NautilusRecordType>() {
-            parsed.records.push(record_type);
-            return Ok(());
-        }
-
-        if let Ok(instrument_type) = value.parse::<NautilusInstrumentType>() {
-            parsed.instruments.push(instrument_type);
-            return Ok(());
-        }
-    }
-
     Err(to_pytype_err(
-        "streaming type must be NautilusDataType, NautilusRecordType, NautilusInstrumentType, or str",
+        "streaming type must be NautilusDataType, NautilusRecordType, or NautilusInstrumentType",
     ))
 }
 
@@ -603,15 +637,7 @@ fn py_record_type_from_any(record_type: &Bound<'_, PyAny>) -> pyo3::PyResult<Nau
         return Ok(record_type.inner());
     }
 
-    if let Ok(record_type) = record_type.extract::<String>() {
-        return record_type
-            .parse::<NautilusRecordType>()
-            .map_err(to_pytype_err);
-    }
-
-    Err(to_pytype_err(
-        "record_type must be NautilusRecordType or str",
-    ))
+    Err(to_pytype_err("record_type must be NautilusRecordType"))
 }
 
 fn py_record_types_from_any(
@@ -634,14 +660,8 @@ pub(crate) fn py_instrument_type_from_any(
         return Ok(instrument_type.inner());
     }
 
-    if let Ok(instrument_type) = instrument_type.extract::<String>() {
-        return instrument_type
-            .parse::<NautilusInstrumentType>()
-            .map_err(to_pytype_err);
-    }
-
     Err(to_pytype_err(
-        "instrument_type must be NautilusInstrumentType or str",
+        "instrument_type must be NautilusInstrumentType",
     ))
 }
 

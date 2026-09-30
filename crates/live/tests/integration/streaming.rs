@@ -270,25 +270,25 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
 
     assert_eq!(
         catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap(),
         quotes,
     );
     assert_eq!(
         catalog
-            .query_typed_data::<TradeTick>(None, None, None, None, None, true)
+            .query::<TradeTick>(None, None, None, None, None, true)
             .unwrap(),
         trades,
     );
     assert_eq!(
         catalog
-            .query_typed_data::<OrderBookDelta>(None, None, None, None, None, true)
+            .query::<OrderBookDelta>(None, None, None, None, None, true)
             .unwrap(),
         vec![delta],
     );
     assert_eq!(
         catalog
-            .query_typed_data::<Bar>(None, None, None, None, None, true)
+            .query::<Bar>(None, None, None, None, None, true)
             .unwrap(),
         vec![bar],
     );
@@ -402,7 +402,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         .unwrap();
     assert_eq!(
         catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap(),
         quotes,
     );
@@ -465,7 +465,7 @@ async fn test_livenode_streaming_records_quotes_published_after_stop() {
         .unwrap();
     assert_eq!(
         catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap(),
         quotes,
     );

@@ -104,7 +104,7 @@ impl PyStreamingFeatherWriter {
     /// - `cache`: The cache for query info (`PyCache`).
     /// - `clock`: The clock to use for time-related operations (`PyClock`).
     /// - `include_types`: Optional data or record types to include, as `NautilusDataType` or
-    ///   `NautilusRecordType` values or their catalog names (e.g., `["quotes", "trades"]`).
+    ///   `NautilusRecordType` values.
     /// - `rotation_config`: File rotation policy (default: no rotation).
     /// - `flush_interval_ms`: Interval in milliseconds for flushing open files to disk (default:
     ///   1000). Set to 0 to disable auto-flush.

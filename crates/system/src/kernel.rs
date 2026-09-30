@@ -70,7 +70,8 @@ use nautilus_execution::{
 use nautilus_model::identifiers::{ClientId, TraderId};
 #[cfg(feature = "streaming")]
 use nautilus_persistence::{
-    backend::default_writer_factories,
+    backend::{default_catalog_factories, default_writer_factories},
+    catalog::factory::create_catalog,
     common::paths::environment_directory,
     config::{DataCatalogConfig, StreamingConfig},
     writer::{
@@ -416,6 +417,7 @@ impl NautilusKernel {
         let mut data_engine = data_engine;
         #[cfg(feature = "streaming")]
         {
+            let catalog_factories = default_catalog_factories();
             let mut unnamed_index = 0;
             let mut catalog_names = HashSet::new();
 
@@ -432,7 +434,13 @@ impl NautilusKernel {
                     catalog_names.insert(name.clone()),
                     "Duplicate data catalog name '{name}'",
                 );
-                let catalog = catalog_config.create_catalog().with_context(|| {
+
+                let catalog = create_catalog(
+                    catalog_config.catalog_backend(),
+                    &catalog_config.connect_config(),
+                    &catalog_factories,
+                )
+                .with_context(|| {
                     format!(
                         "Failed to create data catalog from '{}'",
                         catalog_config.path()
@@ -1539,7 +1547,7 @@ mod streaming_tests {
 
         let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
         let promoted = catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap();
         let run_directory = writer_directory
             .path()

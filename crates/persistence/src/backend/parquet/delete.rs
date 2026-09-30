@@ -333,7 +333,7 @@ impl ParquetDataCatalog {
                     // Query the data preserved by the split and write it
                     // Use optimize_file_loading=false for precise file control during split operations
                     let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-                    let preserved_data = self.query_typed_data::<T>(
+                    let preserved_data = self.query::<T>(
                         instrument_ids,
                         Some(UnixNanos::from(operation.query_start)),
                         Some(UnixNanos::from(operation.query_end)),

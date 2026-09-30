@@ -92,6 +92,51 @@ def test_parse_pyo3_items_tolerates_attribute_with_trailing_comment() -> None:
     assert items[0]["in_pymethods"] is True
 
 
+def test_parse_pyo3_items_keeps_doc_after_parameter_attribute() -> None:
+    """
+    Test parse pyo3 items keeps the doc of a function after a parameter attribute.
+    """
+    # Arrange: the parameter attribute must not swallow the next function's doc comment
+    lines = [
+        "#[pymethods]",
+        "impl PyCatalog {",
+        "    pub fn query(",
+        "        &mut self,",
+        '        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<',
+        "            '_,",
+        "            PyAny,",
+        "        >,",
+        "    ) -> PyResult<()> {",
+        "        Ok(())",
+        "    }",
+        "}",
+        "",
+        "/// Reads a run.",
+        "#[pyfunction]",
+        "pub fn py_read_run() -> PyResult<()> {",
+        "    Ok(())",
+        "}",
+    ]
+
+    # Act
+    items = generate_docstrings.parse_pyo3_items(lines)
+
+    # Assert
+    assert items == [
+        {
+            "fn_name": "py_read_run",
+            "fn_line": 15,
+            "fn_signature": "pub fn py_read_run() -> PyResult<()> {",
+            "impl_type": None,
+            "is_constructor": False,
+            "in_pymethods": False,
+            "doc_start": 13,
+            "doc_end": 13,
+            "insert_line": 13,
+        },
+    ]
+
+
 def test_parse_pyo3_items_captures_multiline_result_signature() -> None:
     """
     Test parse pyo3 items captures multiline result signature.
@@ -324,3 +369,32 @@ pub struct Bar {}
     # Assert
     assert docs[(None, "Foo")] == ["Calculates the thing.", "", "More detail."]
     assert (None, "Bar") not in docs  # No doc comment on Bar
+
+
+def test_collect_source_docs_keeps_doc_after_parameter_attribute(tmp_path: Path) -> None:
+    """
+    Test collect source docs keeps the doc of an item after a parameter attribute.
+    """
+    # Arrange: the parameter attribute must not swallow the rest of the file
+    source = """\
+impl RetryManager {
+    /// Runs the operation.
+    pub fn run(
+        #[builder(start_fn)] operation_name: &str,
+    ) {
+    }
+}
+
+/// Creates the default retry manager.
+pub fn create_default_retry_manager() {}
+"""
+    (tmp_path / "lib.rs").write_text(source, encoding="utf-8")
+
+    # Act
+    docs = generate_docstrings.collect_source_docs(tmp_path)
+
+    # Assert
+    assert docs == {
+        ("RetryManager", "run"): ["Runs the operation."],
+        (None, "create_default_retry_manager"): ["Creates the default retry manager."],
+    }
