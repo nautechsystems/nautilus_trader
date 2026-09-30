@@ -40,11 +40,14 @@
 //!
 //! Ordinary sends return after entering the writer channel. Failed ordinary writes and ordinary
 //! messages encountered during reconnect enter a FIFO buffer for replay on an active replacement
-//! connection. Registered authentication state can hold or discard that replay before it reaches
-//! the replacement sink. [`WebSocketConfig::writer_capacity`] bounds ordinary messages across
-//! the channel, in-flight writes, and replay. Full capacity rejects a send with
-//! [`SendError::BufferFull`] before enqueueing. Ownership-bound sends and control traffic use
-//! a separate bounded allowance so authentication can unblock replay.
+//! connection. While that replay is pending, ordinary sends also enter the buffer and queue behind
+//! it instead of reaching the replacement sink early. Registered authentication state can hold or
+//! discard that replay before it reaches the sink. Control frames are never buffered, so a pong
+//! sent while replay waits still writes to the replacement sink directly.
+//! [`WebSocketConfig::writer_capacity`] bounds ordinary messages across the channel, in-flight
+//! writes, and replay. Full capacity rejects a send with [`SendError::BufferFull`] before
+//! enqueueing. Ownership-bound sends and control traffic use a separate bounded allowance so
+//! authentication can unblock replay.
 //!
 //! Ownership-bound sends wait for the writer result, require the expected connection epoch, and
 //! never enter the reconnect buffer. The writer advances the epoch only when it installs a
@@ -2061,7 +2064,10 @@ impl WebSocketClientInner {
                                     );
                                 }
                             }
-                            WriterCommand::Send(msg) if mode.is_reconnect() => {
+                            WriterCommand::Send(msg)
+                                if mode.is_reconnect()
+                                    || (!reconnect_buffer.is_empty() && !msg.is_control()) =>
+                            {
                                 Self::buffer_for_replay(&mut reconnect_buffer, msg, permit);
                             }
                             WriterCommand::Heartbeat(_)
@@ -5922,6 +5928,7 @@ mod rust_tests {
         task: JoinHandle<()>,
         port: u16,
         messages: Arc<tokio::sync::Mutex<Vec<String>>>,
+        control_frames: Arc<tokio::sync::Mutex<Vec<String>>>,
         connections: Arc<AtomicUsize>,
     }
 
@@ -5984,6 +5991,8 @@ mod rust_tests {
             let port = listener.local_addr().unwrap().port();
             let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
             let messages_clone = Arc::clone(&messages);
+            let control_frames = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+            let control_frames_clone = Arc::clone(&control_frames);
             let connections = Arc::new(AtomicUsize::new(0));
             let connections_clone = Arc::clone(&connections);
 
@@ -5993,12 +6002,19 @@ mod rust_tests {
                     let mut websocket = accept_async(stream).await.unwrap();
                     connections_clone.fetch_add(1, Ordering::SeqCst);
                     let messages = Arc::clone(&messages_clone);
+                    let control_frames = Arc::clone(&control_frames_clone);
 
                     task::spawn(async move {
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 WsMessage::Text(text) => {
                                     messages.lock().await.push(text.to_string());
+                                }
+                                WsMessage::Pong(data) => {
+                                    control_frames
+                                        .lock()
+                                        .await
+                                        .push(format!("pong:{}", String::from_utf8_lossy(&data)));
                                 }
                                 WsMessage::Close(_) => {
                                     let _ = websocket.close(None).await;
@@ -6015,12 +6031,17 @@ mod rust_tests {
                 task,
                 port,
                 messages,
+                control_frames,
                 connections,
             }
         }
 
         async fn messages(&self) -> Vec<String> {
             self.messages.lock().await.clone()
+        }
+
+        async fn control_frames(&self) -> Vec<String> {
+            self.control_frames.lock().await.clone()
         }
 
         async fn wait_for_connections(&self, expected: usize) {
@@ -9687,6 +9708,251 @@ mod rust_tests {
         assert_eq!(
             server.messages().await,
             vec!["authenticate".to_string(), "stale".to_string()]
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_write_task_buffers_send_behind_pending_replay() {
+        use nautilus_common::testing::wait_until_async;
+
+        let server = RecordingServer::setup().await;
+        let url = format!("ws://127.0.0.1:{}", server.port);
+        let (writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let auth_tracker = Arc::new(OnceLock::new());
+        let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(true));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
+        let tracker = AuthTracker::new();
+        auth_tracker.set(tracker.clone()).unwrap();
+
+        // Two slots: the buffered message holds one while replay waits for auth, so a second
+        // ordinary send is still admissible and reaches the writer loop.
+        let (writer_tx, writer_rx) = crate::writer::channel(2);
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::clone(&connection_epoch),
+            Arc::clone(&auth_tracker),
+            Arc::clone(&reconnect_buffer_waits_for_auth),
+            None,
+        );
+
+        writer_tx
+            .send(WriterCommand::Send(Message::Text("stale".into())))
+            .unwrap();
+
+        let (new_writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send_update(WriterCommand::Update(new_writer, tx))
+            .unwrap();
+        assert_eq!(rx.await.unwrap(), 1);
+
+        // Active with a non-empty replay buffer: the drain is gated on authentication.
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            server.messages().await.is_empty(),
+            "buffered message should wait for re-authentication"
+        );
+
+        // A later ordinary send must not overtake the still-buffered message, nor bypass
+        // the authentication gate by writing to the replacement connection.
+        writer_tx
+            .send(WriterCommand::Send(Message::Text("fresh".into())))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            server.messages().await.is_empty(),
+            "a send arriving before the gate opens must not reach the connection, was {:?}",
+            server.messages().await
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send_control(WriterCommand::SendOnConnection {
+                message: Message::text("authenticate"),
+                connection_epoch: 1,
+                response_tx,
+            })
+            .unwrap();
+        response_rx.await.unwrap().unwrap();
+        tracker.succeed();
+
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&server.messages);
+                async move { messages.lock().await.len() == 3 }
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(
+            server.messages().await,
+            vec![
+                "authenticate".to_string(),
+                "stale".to_string(),
+                "fresh".to_string(),
+            ],
+            "replay must preserve FIFO order behind the authentication handshake"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_write_task_control_send_reaches_connection_behind_pending_replay() {
+        use nautilus_common::testing::wait_until_async;
+
+        let server = RecordingServer::setup().await;
+        let url = format!("ws://127.0.0.1:{}", server.port);
+        let (writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let auth_tracker = Arc::new(OnceLock::new());
+        let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(true));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
+        let tracker = AuthTracker::new();
+        auth_tracker.set(tracker.clone()).unwrap();
+
+        let (writer_tx, writer_rx) = crate::writer::channel(2);
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::clone(&connection_epoch),
+            Arc::clone(&auth_tracker),
+            Arc::clone(&reconnect_buffer_waits_for_auth),
+            None,
+        );
+
+        writer_tx
+            .send(WriterCommand::Send(Message::Text("stale".into())))
+            .unwrap();
+
+        let (new_writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send_update(WriterCommand::Update(new_writer, tx))
+            .unwrap();
+        assert_eq!(rx.await.unwrap(), 1);
+
+        // Active with a non-empty replay buffer: the drain is gated on authentication.
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            server.messages().await.is_empty(),
+            "buffered message should wait for re-authentication"
+        );
+
+        // A control frame enqueued through the ordinary send path in the same window must not be
+        // buffered with the replay: it has to reach the replacement connection while the gate is
+        // still closed.
+        writer_tx
+            .send_control(WriterCommand::Send(Message::Pong(
+                b"keepalive".to_vec().into(),
+            )))
+            .unwrap();
+
+        wait_until_async(
+            || {
+                let control_frames = Arc::clone(&server.control_frames);
+                async move { !control_frames.lock().await.is_empty() }
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(
+            server.control_frames().await,
+            vec!["pong:keepalive".to_string()],
+            "a control frame sent during the wait must reach the new connection without replay"
+        );
+        assert!(
+            server.messages().await.is_empty(),
+            "ordinary sends must still wait for re-authentication, was {:?}",
+            server.messages().await
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send_control(WriterCommand::SendOnConnection {
+                message: Message::text("authenticate"),
+                connection_epoch: 1,
+                response_tx,
+            })
+            .unwrap();
+        response_rx.await.unwrap().unwrap();
+        tracker.succeed();
+
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&server.messages);
+                async move { messages.lock().await.len() == 2 }
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(
+            server.messages().await,
+            vec!["authenticate".to_string(), "stale".to_string()],
+            "the control frame must not disturb ordinary replay ordering"
         );
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
