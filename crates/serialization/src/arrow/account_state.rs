@@ -20,11 +20,14 @@ use nautilus_model::events::AccountState;
 
 use super::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    KEY_ACCOUNT_ID,
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
-    JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("account_type", false),
     JsonFieldSpec::utf8("base_currency", true),
     JsonFieldSpec::utf8_json("balances", false),
@@ -38,7 +41,7 @@ const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
 
 impl ArrowSchemaProvider for AccountState {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type("AccountState", metadata, ACCOUNT_STATE_FIELDS)
+        schema_for_type_with_identifier("AccountState", metadata, ACCOUNT_STATE_FIELDS)
     }
 }
 
@@ -50,16 +53,25 @@ impl EncodeToRecordBatch for AccountState {
     where
         T: std::borrow::Borrow<Self>,
     {
-        encode_batch(
+        encode_batch_with_identifier(
             "AccountState",
             metadata,
             data.iter().map(std::borrow::Borrow::borrow),
             ACCOUNT_STATE_FIELDS,
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|state| state.account_id),
         )
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        metadata_for_type("AccountState")
+        let mut metadata = metadata_for_type("AccountState");
+        metadata.insert(KEY_ACCOUNT_ID.to_string(), self.account_id.to_string());
+        metadata
+    }
+
+    fn identifier(&self) -> Option<String> {
+        Some(self.account_id.to_string())
     }
 }
 
@@ -73,18 +85,26 @@ impl DecodeTypedFromRecordBatch for AccountState {
         } else {
             &ACCOUNT_STATE_FIELDS[..ACCOUNT_STATE_FIELDS.len() - 1]
         };
-        decode_batch(metadata, &record_batch, fields, Some("AccountState"))
+        decode_batch_with_metadata_fields(
+            metadata,
+            &record_batch,
+            fields,
+            &[KEY_ACCOUNT_ID],
+            Some("AccountState"),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::Array;
     use nautilus_core::Params;
     use nautilus_model::events::account::stubs::cash_account_state;
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+    use crate::arrow::{KEY_IDENTIFIER, json::encode_batch};
 
     #[rstest]
     fn test_account_state_round_trip(cash_account_state: AccountState) {
@@ -105,6 +125,31 @@ mod tests {
         assert_eq!(decoded[0].margins, state.margins);
         assert_eq!(decoded[0].base_currency, state.base_currency);
         assert_eq!(decoded[0].info, state.info);
+    }
+
+    #[rstest]
+    fn test_account_state_stores_account_id_once_as_identifier(cash_account_state: AccountState) {
+        let metadata = cash_account_state.metadata();
+
+        let batch =
+            AccountState::encode_batch(&metadata, std::slice::from_ref(&cash_account_state))
+                .unwrap();
+        let identifiers = batch
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+        let decoded =
+            AccountState::decode_typed_batch(batch.schema().metadata(), batch.clone()).unwrap();
+
+        assert_eq!(identifiers.len(), 1);
+        assert_eq!(
+            identifiers.value(0),
+            cash_account_state.account_id.to_string()
+        );
+        assert!(batch.column_by_name("account_id").is_none());
+        assert_eq!(decoded[0].account_id, cash_account_state.account_id);
     }
 
     #[rstest]

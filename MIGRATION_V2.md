@@ -296,6 +296,10 @@ The payload on `nautilus_trader.model.CustomData` remains available through `.da
 `nautilus_trader.common.CustomData` byte container exposes `.value`; it is not the type accepted by
 `DataActor.publish_data()`.
 
+`BacktestDataConfig` takes its catalog as `catalog=DataCatalogConfig(...)` instead of `catalog_path`,
+`catalog_fs_protocol`, `catalog_storage_options`, `catalog_backend`, and `catalog_params`. Put
+object-store credentials and provider options in the catalog's `params["storage_options"]`.
+
 ### Config readback and sensitive values
 
 V2 immutable configs expose non-secret constructor values as read-only properties. This includes
@@ -305,10 +309,9 @@ from Python integers or decimal values.
 
 Potential credentials use bounded inspection properties instead of raw readback:
 
-| Constructor field                                    | Inspection property                   |
-| ---------------------------------------------------- | ------------------------------------- |
-| `BacktestDataConfig.catalog_fs_storage_options`      | `catalog_fs_storage_option_keys`      |
-| `BacktestDataConfig.catalog_fs_rust_storage_options` | `catalog_fs_rust_storage_option_keys` |
+| Constructor field                             | Inspection property                                     |
+| --------------------------------------------- | ------------------------------------------------------- |
+| `DataCatalogConfig.params["storage_options"]` | `params["storage_options"]` with values masked as `***` |
 
 These raw fields and adapter credentials remain private. Some configs provide `has_*` checks for
 credential-bearing proxy, database, or gateway settings without returning their values. Keep
@@ -461,22 +464,20 @@ Postgres cache backing through `LiveNodeBuilder`; this does not restore the gene
 `catalog`, which can be remote. It takes rotation through one `RotationConfig`, with intervals and
 the time of day in integer nanoseconds:
 
-| v1 `StreamingConfig` fields                              | v2 `StreamingConfig` argument                                          |
-| -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `catalog_path`, `fs_protocol`, `fs_rust_storage_options` | `writer_path` for Feather files, plus `catalog=DataCatalogConfig(...)` |
-| `rotation_mode=SIZE`, `max_file_size`                    | `rotation_config=RotationConfig.size(max_size)`                        |
-| `rotation_mode=INTERVAL`, `rotation_interval`            | `rotation_config=RotationConfig.interval(interval_ns)`                 |
-| `rotation_mode=SCHEDULED_DATES`, `rotation_interval`     | `rotation_config=RotationConfig.scheduled_dates(interval_ns, ...)`     |
-| `rotation_time`, `rotation_timezone`                     | `schedule_ns` and `timezone` of `RotationConfig.scheduled_dates`       |
-| `rotation_mode=NO_ROTATION`                              | `rotation_config=RotationConfig.no_rotation()`, or omit it             |
+| v1 `StreamingConfig` fields                              | v2 `StreamingConfig` argument                                                                                              |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `catalog_path`, `fs_protocol`, `fs_rust_storage_options` | `writer_path` for Feather files, plus `catalog=DataCatalogConfig(...)` with storage options in `params["storage_options"]` |
+| `rotation_mode=SIZE`, `max_file_size`                    | `rotation_config=RotationConfig.size(max_size)`                                                                            |
+| `rotation_mode=INTERVAL`, `rotation_interval`            | `rotation_config=RotationConfig.interval(interval_ns)`                                                                     |
+| `rotation_mode=SCHEDULED_DATES`, `rotation_interval`     | `rotation_config=RotationConfig.scheduled_dates(interval_ns, ...)`                                                         |
+| `rotation_time`, `rotation_timezone`                     | `schedule_ns` and `timezone` of `RotationConfig.scheduled_dates`                                                           |
+| `rotation_mode=NO_ROTATION`                              | `rotation_config=RotationConfig.no_rotation()`, or omit it                                                                 |
 
-`DataCatalogConfig` takes `batch_size`, `max_row_group_size`, and `compression` as typed fields;
+A catalog reads `batch_size`, `max_row_group_size`, and `compression` from its `params`;
 `compression` is a codec name: `uncompressed`, `snappy`, `gzip`, `brotli`, `lz4`, `lz4_raw`, or
-`zstd`. Set these as fields, not `params` keys: `params` carries only options for an external
-catalog backend, and the Parquet catalog rejects any `params` key. `ParquetDataCatalog(compression=...)`
-takes the Parquet codec codes `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` (Brotli), `5` (LZ4),
-and `6` (zstd), and rejects LZO (`3`) and unknown codes. Both `lz4` and code `5` write Parquet
-`LZ4_RAW`; see [compression and row groups](docs/concepts/data/catalog.md#compression-and-row-groups).
+`zstd`. The Parquet catalog rejects LZO, unknown codec names, numeric codes, and zero row counts, and
+names an unknown `params` key. Both `lz4` and `lz4_raw` write Parquet `LZ4_RAW`; see
+[compression and row groups](docs/concepts/data/catalog.md#compression-and-row-groups).
 
 Custom Rust cache database adapters used with live orders must implement the batch
 `index_order_clients` operation. The default trait implementation rejects non-empty claims.
@@ -860,6 +861,27 @@ nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_I
 ```
 
 The command connects to Postgres directly, so it works while nodes are blocked.
+
+### Catalog storage and constructors
+
+The Parquet catalog, the Feather staging files, and the Arrow serialization share one storage rule,
+and the Python constructors take one `params` dict. Existing catalogs and call sites need these
+changes:
+
+- Every catalog row has an `identifier` column, and the data type comes from the storage location.
+  Files no longer carry a type entry or split identity columns. Stored metadata keeps only the price
+  and size precisions and per-field custom entries. Custom data stores its `DataType` metadata in a
+  `custom_data_metadata` column. Staged Feather files reference the same stored map through a
+  metadata hash.
+- Rewrite Parquet catalogs written before this layout with
+  `ParquetDataCatalog.migrate_from_legacy_parquet_path(path, params=None, dry_run=False)`. `params`
+  describes the source catalog and accepts only `storage_options`.
+- `ParquetDataCatalog(base_path, params=None)` replaces the `storage_options`, `batch_size`,
+  `compression`, and `max_row_group_size` arguments. Put each in `params` under the key of the same
+  name. An unknown key or a wrong-typed value fails and names the key.
+- `storage_options` holds the native `object_store` keys of the provider, such as `aws_region` or its
+  short form `region`. A key the provider does not know fails and names the key.
+- `compression` is a codec name such as `"zstd"`, not a numeric code.
 
 ## Compare backtest performance
 

@@ -866,36 +866,9 @@ fn create_s3_store(
 
     let mut builder = object_store::aws::AmazonS3Builder::new().with_bucket_name(&bucket);
 
-    // Apply storage options if provided
-    if let Some(options) = storage_options {
-        for (key, value) in options {
-            match key.as_str() {
-                // Accept legacy storage-option aliases alongside native names.
-                "endpoint_url" | "endpoint" => {
-                    builder = builder.with_endpoint(&value);
-                }
-                "region" => {
-                    builder = builder.with_region(&value);
-                }
-                "access_key_id" | "key" => {
-                    builder = builder.with_access_key_id(&value);
-                }
-                "secret_access_key" | "secret" => {
-                    builder = builder.with_secret_access_key(&value);
-                }
-                "session_token" | "token" => {
-                    builder = builder.with_token(&value);
-                }
-                "allow_http" => {
-                    let allow_http = value.to_lowercase() == "true";
-                    builder = builder.with_allow_http(allow_http);
-                }
-                _ => {
-                    // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown S3 storage option: {key}");
-                }
-            }
-        }
+    // Each option is an `object_store` configuration key under its documented name
+    for (key, value) in storage_options.unwrap_or_default() {
+        builder = builder.with_config(key.parse::<object_store::aws::AmazonS3ConfigKey>()?, value);
     }
 
     let s3_store = builder.build()?;
@@ -913,38 +886,9 @@ fn create_gcs_store(
 
     let mut builder = object_store::gcp::GoogleCloudStorageBuilder::new().with_bucket_name(&bucket);
 
-    // Apply storage options if provided
-    if let Some(options) = storage_options {
-        for (key, value) in options {
-            match key.as_str() {
-                "service_account_path" | "credential_path" => {
-                    builder = builder.with_service_account_path(&value);
-                }
-                "service_account_key" => {
-                    builder = builder.with_service_account_key(&value);
-                }
-                "project_id" => {
-                    // Note: GoogleCloudStorageBuilder doesn't have with_project_id method
-                    // This would need to be handled via environment variables or service account
-                    log::warn!(
-                        "project_id should be set via service account or environment variables"
-                    );
-                }
-                "application_credentials" => {
-                    // Set GOOGLE_APPLICATION_CREDENTIALS env var required by Google auth libraries.
-                    // SAFETY: std::env::set_var is marked unsafe because it mutates global state and
-                    // can break signal-safe code. We only call it during configuration before any
-                    // multi-threaded work starts, so it is considered safe in this context.
-                    unsafe {
-                        std::env::set_var("GOOGLE_APPLICATION_CREDENTIALS", &value);
-                    }
-                }
-                _ => {
-                    // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown GCS storage option: {key}");
-                }
-            }
-        }
+    // Each option is an `object_store` configuration key under its documented name
+    for (key, value) in storage_options.unwrap_or_default() {
+        builder = builder.with_config(key.parse::<object_store::gcp::GoogleConfigKey>()?, value);
     }
 
     let gcs_store = builder.build()?;
@@ -963,10 +907,7 @@ fn create_azure_store(
     let mut builder =
         object_store::azure::MicrosoftAzureBuilder::new().with_container_name(container);
 
-    // Apply storage options if provided
-    if let Some(options) = storage_options {
-        builder = apply_azure_storage_options(builder, options, "Azure");
-    }
+    builder = apply_azure_storage_options(builder, storage_options)?;
 
     let azure_store = builder.build()?;
     Ok((Arc::new(azure_store), path, uri.to_string()))
@@ -998,63 +939,24 @@ fn create_abfs_store(
         .with_account(account)
         .with_container_name(container);
 
-    // Apply storage options if provided (same as Azure store)
-    if let Some(options) = storage_options {
-        builder = apply_azure_storage_options(builder, options, "ABFS");
-    }
+    builder = apply_azure_storage_options(builder, storage_options)?;
 
     let azure_store = builder.build()?;
     Ok((Arc::new(azure_store), path, uri.to_string()))
 }
 
-/// Applies shared Azure storage options to the builder; `store_label` names the URI
-/// scheme ("Azure" or "ABFS") in unknown-option warnings.
+/// Applies the storage options to the builder, each as an `object_store` configuration key under
+/// its documented name.
 #[cfg(feature = "cloud")]
 fn apply_azure_storage_options(
     mut builder: object_store::azure::MicrosoftAzureBuilder,
-    options: AHashMap<String, String>,
-    store_label: &str,
-) -> object_store::azure::MicrosoftAzureBuilder {
-    for (key, value) in options {
-        match key.as_str() {
-            "account_name" => {
-                builder = builder.with_account(&value);
-            }
-            "account_key" => {
-                builder = builder.with_access_key(&value);
-            }
-            "sas_token" => {
-                // Parse SAS token as query string parameters
-                let query_pairs: Vec<(String, String)> = value
-                    .split('&')
-                    .filter_map(|pair| {
-                        let mut parts = pair.split('=');
-                        match (parts.next(), parts.next()) {
-                            (Some(key), Some(val)) => Some((key.to_string(), val.to_string())),
-                            _ => None,
-                        }
-                    })
-                    .collect();
-
-                builder = builder.with_sas_authorization(query_pairs);
-            }
-            "client_id" => {
-                builder = builder.with_client_id(&value);
-            }
-            "client_secret" => {
-                builder = builder.with_client_secret(&value);
-            }
-            "tenant_id" => {
-                builder = builder.with_tenant_id(&value);
-            }
-            _ => {
-                // Ignore unknown options for forward compatibility
-                log::warn!("Unknown {store_label} storage option: {key}");
-            }
-        }
+    options: Option<AHashMap<String, String>>,
+) -> anyhow::Result<object_store::azure::MicrosoftAzureBuilder> {
+    for (key, value) in options.unwrap_or_default() {
+        builder = builder.with_config(key.parse::<object_store::azure::AzureConfigKey>()?, value);
     }
 
-    builder
+    Ok(builder)
 }
 
 /// Helper function to create HTTP object store with options.
@@ -1069,16 +971,11 @@ fn create_http_store(
         .trim_end_matches('/')
         .to_string();
 
-    let builder = object_store::http::HttpBuilder::new().with_url(base_url);
+    let mut builder = object_store::http::HttpBuilder::new().with_url(base_url);
 
-    // Apply storage options if provided
-    if let Some(options) = storage_options {
-        for (key, _value) in options {
-            // HTTP builder has limited configuration options
-            // Most HTTP-specific options would be handled via client options
-            // Ignore unknown options for forward compatibility
-            log::warn!("Unknown HTTP storage option: {key}");
-        }
+    // Each option is an `object_store` client configuration key under its documented name
+    for (key, value) in storage_options.unwrap_or_default() {
+        builder = builder.with_config(key.parse::<object_store::ClientConfigKey>()?, value);
     }
 
     let http_store = builder.build()?;
@@ -1714,24 +1611,69 @@ mod tests {
     #[rstest]
     #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_gcs() {
-        // Test GCS without service account (will use default credentials or fail gracefully)
-        let mut options = AHashMap::new();
-        options.insert("project_id".to_string(), "test-project".to_string());
+        let options = AHashMap::from([(
+            "google_service_account_key".to_string(),
+            r#"{"private_key": "x", "client_email": "a@b.c", "private_key_id": "1"}"#.to_string(),
+        )]);
 
         let result = create_object_store_from_path("gs://test-bucket/path", Some(options));
-        // GCS might fail due to missing credentials, but we're testing the path parsing
-        // The function should at least parse the URI correctly before failing on auth
+
+        // The key is valid, so any failure comes from the credential itself, not the option name
         match result {
             Ok((_, base_path, uri)) => {
                 assert_eq!(base_path, "path");
                 assert_eq!(uri, "gs://test-bucket/path");
             }
-            Err(e) => {
-                // Expected to fail due to missing credentials, but should contain bucket info
-                let error_msg = format!("{e:?}");
-                assert!(error_msg.contains("test-bucket") || error_msg.contains("credential"));
-            }
+            Err(e) => assert!(!format!("{e}").contains("UnknownConfigurationKey"), "{e}"),
         }
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::s3("s3://test-bucket/path", "aws_no_such_key")]
+    #[case::gcs("gs://test-bucket/path", "google_no_such_key")]
+    #[case::azure("az://container/path", "azure_no_such_key")]
+    #[case::abfs(
+        "abfs://container@account.dfs.core.windows.net/path",
+        "azure_no_such_key"
+    )]
+    #[case::http("https://example.com/path", "no_such_key")]
+    fn test_create_object_store_rejects_an_unknown_option_naming_it(
+        #[case] uri: &str,
+        #[case] key: &str,
+    ) {
+        let options = AHashMap::from([(key.to_string(), "value".to_string())]);
+
+        let error = create_object_store_from_path(uri, Some(options))
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert!(error.contains(key), "{error}");
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::s3_documented("aws_region")]
+    #[case::s3_short("region")]
+    fn test_create_object_store_s3_accepts_native_option_names(#[case] region_key: &str) {
+        let options = AHashMap::from([
+            (region_key.to_string(), "us-west-2".to_string()),
+            (
+                "aws_endpoint".to_string(),
+                "https://test.endpoint.com".to_string(),
+            ),
+            ("aws_access_key_id".to_string(), "test_key".to_string()),
+            (
+                "aws_secret_access_key".to_string(),
+                "test_secret".to_string(),
+            ),
+            ("aws_allow_http".to_string(), "true".to_string()),
+        ]);
+
+        let result = create_object_store_from_path("s3://test-bucket/path", Some(options));
+
+        assert!(result.is_ok(), "{:?}", result.err());
     }
 
     #[rstest]

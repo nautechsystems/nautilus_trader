@@ -20,10 +20,10 @@
     reason = "query methods forward DataFusion errors"
 )]
 
+use arrow::datatypes::Schema;
 use nautilus_model::instruments::NautilusInstrumentType;
 use nautilus_serialization::arrow::{
     catalog_identifier_from_metadata, instrument::decode_instrument_any_batch,
-    record_batch_with_identifier_column,
 };
 
 use super::{
@@ -45,10 +45,38 @@ use crate::{
         CatalogDataType, parquet_catalog_data_type_path_prefixes,
         parquet_catalog_data_type_table_stem,
     },
-    common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
+    common::{
+        arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
+        legacy_identifier::batch_with_legacy_identifier,
+        metadata::{batches_with_restored_metadata, metadata_from_stored},
+    },
 };
 
+// Returns the decoder metadata of an instrument file: its stored map with the instrument ID its
+// path names
+fn instrument_file_metadata(schema: &Schema, file_path: &str) -> HashMap<String, String> {
+    metadata_from_stored(
+        schema.metadata().clone(),
+        extract_identifier_from_path(file_path),
+        &CatalogDataType::Data(NautilusDataType::Instrument),
+    )
+}
+
 impl ParquetDataCatalog {
+    pub(crate) fn collect_stored_batches(
+        &mut self,
+        data_type: &CatalogDataType,
+        table_name: &str,
+        file_paths: Vec<String>,
+        query: Option<&str>,
+    ) -> anyhow::Result<Vec<RecordBatch>> {
+        let batches = self
+            .session
+            .collect_parquet_files_batches(table_name, file_paths, query)?;
+
+        batches_with_restored_metadata(batches, data_type)
+    }
+
     /// Queries instruments from the catalog.
     ///
     /// Instruments are stored under v1-compatible concrete instrument type folders:
@@ -166,7 +194,7 @@ impl ParquetDataCatalog {
             })?;
 
             validate_catalog_schema(&builder_schema)?;
-            let metadata = builder_schema.metadata().clone();
+            let metadata = instrument_file_metadata(&builder_schema, &file_path);
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
             let table_name = format!(
@@ -287,7 +315,7 @@ impl ParquetDataCatalog {
             })?;
 
             validate_catalog_schema(&builder_schema)?;
-            let metadata = builder_schema.metadata().clone();
+            let metadata = instrument_file_metadata(&builder_schema, &file_path);
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
             for batch in batches {
@@ -449,7 +477,8 @@ impl ParquetDataCatalog {
 
         for table in tables {
             let query = build_query(&table.name, start, end, where_clause);
-            let batches = self.session.collect_parquet_files_batches(
+            let batches = self.collect_stored_batches(
+                &CatalogDataType::Data(data_type.clone()),
                 &table.name,
                 vec![table.path],
                 Some(&query),
@@ -496,7 +525,8 @@ impl ParquetDataCatalog {
                 vec![table.path],
                 Some(&sql),
             )?;
-            let pages = decode_typed_pages::<T>(stream);
+            let pages =
+                decode_typed_pages::<T>(stream, CatalogDataType::Data(T::catalog_data_type()));
             sources.push(
                 Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
                     pages,
@@ -536,7 +566,8 @@ impl ParquetDataCatalog {
 
         for table in tables {
             let query = build_query(&table.name, start, end, where_clause);
-            record_batches.extend(self.session.collect_parquet_files_batches(
+            record_batches.extend(self.collect_stored_batches(
+                data_type,
                 &table.name,
                 vec![table.path],
                 Some(&query),
@@ -579,7 +610,8 @@ impl ParquetDataCatalog {
         for table in tables {
             let path_identifier = display_identifier(data_type, &table.directory);
             let query = build_query(&table.name, start, end, where_clause);
-            let batches = self.session.collect_parquet_files_batches(
+            let batches = self.collect_stored_batches(
+                &CatalogDataType::Data(data_type.clone()),
                 &table.name,
                 vec![table.path],
                 Some(&query),
@@ -588,7 +620,7 @@ impl ParquetDataCatalog {
             for batch in batches {
                 let identifier =
                     display_batch_identifier(data_type, &batch, path_identifier.as_deref());
-                let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
+                let batch = batch_with_legacy_identifier(batch, identifier.as_deref())?;
                 let metadata = batch.schema().metadata().clone();
                 display_batches.push(catalog_record_batch_to_display(
                     data_type, &metadata, &batch,
@@ -628,7 +660,8 @@ impl ParquetDataCatalog {
                 "{} LIMIT 1",
                 build_query(&table.name, start, end, where_clause)
             );
-            let batches = self.session.collect_parquet_files_batches(
+            let batches = self.collect_stored_batches(
+                data_type,
                 &table.name,
                 vec![table.path],
                 Some(&query),
@@ -791,6 +824,13 @@ impl ParquetDataCatalog {
             decode_metadata.extend(lookup_metadata.clone());
             let identifier = extract_identifier_from_path(&file)
                 .ok_or_else(|| anyhow::anyhow!("Cannot extract identifier from path '{file}'"))?;
+            let decode_metadata = metadata_from_stored(
+                decode_metadata,
+                Some(identifier),
+                &CatalogDataType::Data(NautilusDataType::Custom {
+                    type_name: type_name.to_string(),
+                }),
+            );
             let safe_type_name = make_sql_safe_identifier(type_name);
             let safe_sql_identifier = make_sql_safe_identifier(identifier);
             let safe_filename = extract_sql_safe_filename(&file);
@@ -802,7 +842,10 @@ impl ParquetDataCatalog {
             // Use schemaless registration so DataFusion preserves the parquet file's
             // schema metadata (e.g. `bar_type`) on output batches, since the
             // explicit-schema variant strips per-batch metadata that decoders rely on.
-            let batches = self.session.collect_parquet_files_batches(
+            let batches = self.collect_stored_batches(
+                &CatalogDataType::Data(NautilusDataType::Custom {
+                    type_name: type_name.to_string(),
+                }),
                 &table_name,
                 vec![resolved_path],
                 Some(&sql_query),

@@ -193,9 +193,15 @@ pub fn catalog_raw_schema(data_type: &NautilusDataType) -> Result<Schema, Encodi
             return Err(unsupported_display_type(data_type));
         }
         let metadata = HashMap::from([("type_name".to_string(), type_name.clone())]);
-        return Ok(super::schema_with_identifier_column(
-            &CustomDataDecoder::get_schema(Some(metadata)),
-        ));
+        let schema =
+            super::schema_with_identifier_column(&CustomDataDecoder::get_schema(Some(metadata)));
+        let mut fields = schema.fields().iter().cloned().collect::<Vec<_>>();
+        fields.push(Arc::new(super::json_string_field(
+            super::KEY_CUSTOM_DATA_METADATA,
+            true,
+        )));
+
+        return Ok(Schema::new_with_metadata(fields, schema.metadata().clone()));
     }
 
     builtin_catalog_raw_schema(data_type).ok_or_else(|| unsupported_display_type(data_type))
@@ -1679,6 +1685,14 @@ fn convert_custom(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
                 field.is_nullable(),
             )));
             columns.push(cast(column.as_ref(), &DataType::Utf8)?);
+        } else if super::is_json_string_field(field) {
+            // A file read back and an empty raw schema must give one display schema
+            fields.push(Arc::new(Field::new(
+                field.name(),
+                DataType::Utf8,
+                field.is_nullable(),
+            )));
+            columns.push(Arc::clone(column));
         } else {
             fields.push(Arc::clone(field));
             columns.push(Arc::clone(column));
@@ -2117,11 +2131,14 @@ mod tests {
                     "ts_init",
                     &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
                 ),
-                ("data_type", &DataType::Utf8),
                 ("identifier", &DataType::Utf8),
+                ("custom_data_metadata", &DataType::Utf8),
             ]
         );
-        assert_eq!(raw_schema.fields().last().unwrap().name(), "identifier");
+        assert_eq!(
+            raw_schema.fields().last().unwrap().name(),
+            "custom_data_metadata"
+        );
     }
 
     #[rstest]
@@ -2338,7 +2355,7 @@ mod tests {
         let displayed =
             catalog_record_batch_to_display(&data_type, raw.schema().metadata(), &raw).unwrap();
         let identifier = Arc::clone(displayed.column_by_name(KEY_IDENTIFIER).unwrap());
-        let without_identifier = record_batch_without_identifier_column(displayed).unwrap();
+        let without_identifier = record_batch_without_identifier_column(displayed);
 
         assert_eq!(&identifier, raw.column_by_name(KEY_IDENTIFIER).unwrap());
         assert_eq!(without_identifier, expected);

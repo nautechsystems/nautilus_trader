@@ -31,10 +31,11 @@ from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import EmaCrossConfig
@@ -143,7 +144,7 @@ venue_configs = [
 
 data_configs = [
     BacktestDataConfig(
-        catalog_path=str(CATALOG_PATH),
+        catalog=DataCatalogConfig(path=str(CATALOG_PATH)),
         data_type=NautilusDataType.QuoteTick,
         instrument_id=instrument.id,
         start_time=start,

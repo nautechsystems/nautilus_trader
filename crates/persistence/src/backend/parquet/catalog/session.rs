@@ -23,6 +23,11 @@ use nautilus_core::UnixNanos;
 use nautilus_model::data::HasTsInit;
 use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
 
+use crate::{
+    catalog::types::CatalogDataType,
+    common::metadata::{batch_identifier, metadata_from_stored},
+};
+
 pub(super) type TypedPages<T> = Box<dyn Iterator<Item = anyhow::Result<Vec<T>>> + Send>;
 
 pub(super) struct MergedPages<T> {
@@ -110,19 +115,29 @@ impl<T: HasTsInit> Iterator for MergedPages<T> {
 
 pub(super) fn decode_typed_pages<T>(
     stream: SendableRecordBatchStream,
+    data_type: CatalogDataType,
 ) -> impl Stream<Item = anyhow::Result<Vec<T>>>
 where
     T: DecodeTypedFromRecordBatch,
 {
-    let metadata = stream.schema().metadata().clone();
-    futures::stream::try_unfold((stream, metadata), |(mut stream, metadata)| async move {
-        let Some(batch) = stream.next().await else {
-            return Ok(None);
-        };
+    let stored = stream.schema().metadata().clone();
+    futures::stream::try_unfold(
+        (stream, stored, data_type),
+        |(mut stream, stored, data_type)| async move {
+            let Some(batch) = stream.next().await else {
+                return Ok(None);
+            };
+            let batch = batch?;
+            let metadata = metadata_from_stored(
+                stored.clone(),
+                batch_identifier(&batch).as_deref(),
+                &data_type,
+            );
 
-        let rows = T::decode_typed_batch(&metadata, batch?)?;
-        Ok(Some((rows, (stream, metadata))))
-    })
+            let rows = T::decode_typed_batch(&metadata, batch)?;
+            Ok(Some((rows, (stream, stored, data_type))))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -136,7 +151,7 @@ mod tests {
     };
 
     use datafusion::{error::DataFusionError, physical_plan::stream::RecordBatchStreamAdapter};
-    use nautilus_model::data::{QuoteTick, stubs::quote_audusd};
+    use nautilus_model::data::{NautilusDataType, QuoteTick, stubs::quote_audusd};
     use nautilus_serialization::arrow::{EncodeToRecordBatch, EncodingError};
     use rstest::rstest;
 
@@ -168,7 +183,10 @@ mod tests {
         });
 
         let stream = Box::pin(RecordBatchStreamAdapter::new(schema, inner));
-        let decoded = decode_typed_pages::<QuoteTick>(stream);
+        let decoded = decode_typed_pages::<QuoteTick>(
+            stream,
+            CatalogDataType::Data(NautilusDataType::QuoteTick),
+        );
         let mut items: Vec<_> = futures::executor::block_on_stream(Box::pin(decoded)).collect();
 
         assert_eq!(items.len(), 2);

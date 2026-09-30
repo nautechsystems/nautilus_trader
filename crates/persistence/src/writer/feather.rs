@@ -22,7 +22,7 @@ use std::{
     any::Any,
     borrow::Cow,
     cell::RefCell,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::Debug,
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, BufReader, BufWriter, Seek, Write},
@@ -55,7 +55,7 @@ use nautilus_model::{
         Bar, CustomData, CustomDataTrait, Data, DataBatch, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
         OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
-        encode_custom_to_arrow, get_arrow_schema,
+        get_arrow_schema,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -67,10 +67,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, NautilusInstrumentType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
-use nautilus_serialization::arrow::{
-    EncodeToRecordBatch, KEY_TYPE_NAME, catalog_identifier_from_metadata,
-    record_batch_with_identifier_column, schema_with_identifier_column,
-};
+use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_TYPE_NAME};
 
 use crate::{
     catalog::{
@@ -80,9 +77,12 @@ use crate::{
             record_path_prefix,
         },
     },
-    common::custom::{
-        augment_batch_with_data_type_column, schema_with_data_type_column,
-        validate_custom_catalog_schema,
+    common::{
+        custom::{
+            encode_custom_rows, schema_with_custom_data_metadata_column,
+            schema_with_identifier_column, schema_with_type_name, validate_custom_catalog_schema,
+        },
+        metadata::{metadata_hash, stored_catalog_metadata},
     },
     writer::{
         filter::{WriterRecordFilter, catalog_family},
@@ -139,7 +139,7 @@ struct StagedArrowMetadataRow {
 }
 
 /// An open file and the catalog type it stages; each instrument class stages its own file.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct FileWriterPath {
     path: PathBuf,
     data_type: CatalogDataType,
@@ -216,13 +216,7 @@ fn record_batch_with_delta_staged_metadata(
         .schema()
         .fields()
         .iter()
-        .map(|field| {
-            Arc::new(Field::new(
-                field.name().clone(),
-                field.data_type().clone(),
-                field.is_nullable(),
-            ))
-        })
+        .map(Arc::clone)
         .collect::<Vec<_>>();
 
     fields.push(Arc::new(Field::new(
@@ -252,59 +246,20 @@ fn record_batch_with_delta_staged_metadata(
 
 fn arrow_metadata_row(
     metadata: &HashMap<String, String>,
-    fields: &arrow::datatypes::Fields,
+    identifier: Option<&str>,
+    data_type: &CatalogDataType,
 ) -> anyhow::Result<StagedArrowMetadataRow> {
-    let schema_metadata = metadata
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
-
-    let field_metadata = fields
-        .iter()
-        .filter(|field| !field.metadata().is_empty())
-        .map(|field| {
-            (
-                field.name().clone(),
-                field
-                    .metadata()
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.clone()))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    let metadata_json = serde_json::to_string(&serde_json::json!({
-        "format_version": 1,
-        "schema_metadata": schema_metadata,
-        "field_metadata": field_metadata,
-    }))?;
-    let metadata_id = staged_metadata_id(&canonical_metadata_json(metadata)?);
+    let stored = stored_catalog_metadata(metadata, identifier, data_type);
 
     Ok(StagedArrowMetadataRow {
-        metadata_id,
-        metadata_json,
+        metadata_id: metadata_hash(&stored)?,
+        metadata_json: canonical_metadata_json(&stored)?,
     })
 }
 
-/// Canonical schema-level metadata JSON: keys serialized in sorted order.
-///
-/// The staged metadata id hashes this exact string so readers can verify the schema metadata
-/// independently of its storage location.
-pub(crate) fn canonical_metadata_json(
-    metadata: &HashMap<String, String>,
-) -> anyhow::Result<String> {
-    Ok(serde_json::to_string(
-        &metadata
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>(),
-    )?)
-}
-
-pub(crate) fn staged_metadata_id(metadata_json: &str) -> String {
-    format!("blake3:{}", blake3::hash(metadata_json.as_bytes()).to_hex())
-}
+pub(crate) use nautilus_serialization::arrow::stored_metadata::{
+    canonical_metadata_json, metadata_json_hash as staged_metadata_id,
+};
 
 /// File extension of a sealed Feather stream file.
 pub(crate) const FEATHER_EXTENSION: &str = "feather";
@@ -357,7 +312,6 @@ impl FeatherFile {
         })?;
 
         let writer = StreamWriter::try_new(CountingWriter::new(BufWriter::new(file)), schema)?;
-
         let max_size = match rotation_config {
             RotationConfig::Size { max_size } => Some(*max_size),
             _ => None,
@@ -506,10 +460,9 @@ pub enum RotationConfig {
 /// restore per-row metadata the file schema cannot hold.
 ///
 /// The `write()` method is the single entry point for clients: they supply a data value (of generic type T)
-/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by
-/// `CatalogFamily`, and appends it to that key's open file. Flushing pushes buffered bytes to disk
-/// without starting a new file; a file is sealed and replaced only on rotation, [`Self::seal`], or
-/// [`Self::close`].
+/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by `CatalogFamily`,
+/// and appends it to that key's open file. Flushing pushes buffered bytes to disk without starting
+/// a new file; a file is sealed and replaced only on rotation, [`Self::seal`], or [`Self::close`].
 pub struct FeatherWriter {
     /// Local directory for writing files.
     directory: PathBuf,
@@ -578,14 +531,14 @@ impl FeatherWriter {
         T: EncodeToRecordBatch + CatalogFamily + 'static,
     {
         let metadata = T::metadata(&data);
-        let identifier = catalog_identifier_from_metadata(&metadata);
+        let identifier = data.identifier();
         let data_type = Self::staged_data_type::<T>(&metadata)?;
 
         if !self.should_write_record(&data_type, identifier.as_deref()) {
             return Ok(());
         }
 
-        let path = self.get_writer_path(data_type);
+        let path = self.get_writer_path(data_type.clone());
 
         // Create a new FileWriter if one does not exist.
         if !self.writers.contains_key(&path) {
@@ -594,8 +547,7 @@ impl FeatherWriter {
 
         // Encode the data into a RecordBatch using T's encoding logic.
         let batch = T::encode_batch(&metadata, &[data])?;
-        let metadata_row = arrow_metadata_row(&metadata, batch.schema().fields())?;
-        let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
+        let metadata_row = arrow_metadata_row(&metadata, identifier.as_deref(), &data_type)?;
         let batch =
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
@@ -629,7 +581,7 @@ impl FeatherWriter {
 
         for item in data {
             let metadata = T::metadata(&item);
-            let identifier = catalog_identifier_from_metadata(&metadata);
+            let identifier = item.identifier();
             let data_type = Self::staged_data_type::<T>(&metadata)?;
 
             if !self.should_write_record(&data_type, identifier.as_deref()) {
@@ -650,21 +602,20 @@ impl FeatherWriter {
         let mut pending = PendingIo::default();
 
         for (data_type, group) in groups.into_values() {
-            let path = self.get_writer_path(data_type);
+            let path = self.get_writer_path(data_type.clone());
             let metadata = T::chunk_metadata(&group);
 
             if !self.writers.contains_key(&path) {
                 self.create_writer_with_metadata::<T>(path.clone(), metadata.clone())?;
             }
 
-            let identifier = catalog_identifier_from_metadata(&metadata);
             let batch = T::encode_batch(&metadata, &group)?;
             let metadata_rows = group
                 .iter()
-                .map(T::metadata)
-                .map(|metadata| arrow_metadata_row(&metadata, batch.schema().fields()))
+                .map(|item| {
+                    arrow_metadata_row(&T::metadata(item), item.identifier().as_deref(), &data_type)
+                })
                 .collect::<anyhow::Result<Vec<_>>>()?;
-            let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
             let batch = record_batch_with_delta_staged_metadata(&batch, &metadata_rows)?;
 
             self.stage_batch_write(path, &batch, &mut pending)?;
@@ -897,9 +848,7 @@ impl FeatherWriter {
     where
         T: EncodeToRecordBatch + CatalogFamily + 'static,
     {
-        let schema = Self::schema_with_delta_staging_columns(&schema_with_identifier_column(
-            &T::get_schema(Some(metadata)),
-        ));
+        let schema = Self::schema_with_delta_staging_columns(&T::get_schema(Some(metadata)));
 
         let file = FeatherFile::create(&path.path, &schema, &self.rotation_config)?;
         self.writers.insert(path, file);
@@ -920,10 +869,10 @@ impl FeatherWriter {
             format!("Custom data type \"{type_name}\" is not registered for Arrow encoding")
         })?;
 
-        let schema = schema_with_data_type_column(base_schema.as_ref(), type_name);
-
+        let schema = schema_with_type_name(base_schema.as_ref(), type_name);
         let schema =
-            Self::schema_with_delta_staging_columns(&schema_with_identifier_column(&schema));
+            schema_with_custom_data_metadata_column(&schema_with_identifier_column(&schema));
+        let schema = Self::schema_with_delta_staging_columns(&schema);
 
         let file = FeatherFile::create(&path.path, &schema, &self.rotation_config)
             .map_err(|e| format!("Failed to create Feather file for custom {type_name}: {e}"))?;
@@ -935,42 +884,17 @@ impl FeatherWriter {
     pub(crate) fn encode_custom_to_batch(
         custom: &CustomData,
     ) -> Result<RecordBatch, Box<dyn std::error::Error>> {
-        let type_name = custom.data.type_name();
-        let data_type_json = custom
-            .data_type
-            .to_persistence_json()
-            .map_err(|e| format!("Failed to serialize data_type for persistence: {e}"))?;
-        let dt_meta = custom.data_type.metadata_string_map();
         let items: [Arc<dyn CustomDataTrait>; 1] = [Arc::clone(&custom.data)];
 
-        let batch = encode_custom_to_arrow(type_name, &items)
-            .map_err(|e| format!("Failed to encode custom data: {e}"))?
-            .ok_or_else(|| {
-                format!("Custom data type \"{type_name}\" is not registered for Arrow")
-            })?;
-
-        let batch = augment_batch_with_data_type_column(
-            &batch,
-            &data_type_json,
-            type_name,
-            dt_meta.as_ref(),
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(batch)
+        Ok(encode_custom_rows(
+            custom.data.type_name(),
+            &items,
+            &custom.data_type,
+        )?)
     }
 
     fn schema_with_delta_staging_columns(schema: &Schema) -> Schema {
-        let mut fields = schema
-            .fields()
-            .iter()
-            .map(|field| {
-                Arc::new(Field::new(
-                    field.name().clone(),
-                    field.data_type().clone(),
-                    field.is_nullable(),
-                ))
-            })
-            .collect::<Vec<_>>();
+        let mut fields = schema.fields().iter().map(Arc::clone).collect::<Vec<_>>();
 
         if schema.index_of(NAUTILUS_ARROW_METADATA_ID_COLUMN).is_err() {
             fields.push(Arc::new(Field::new(
@@ -1416,8 +1340,13 @@ impl FeatherWriter {
             self.create_custom_writer(path.clone(), type_name)?;
         }
 
-        let metadata_row = arrow_metadata_row(batch.schema().metadata(), batch.schema().fields())?;
-        batch = record_batch_with_identifier_column(batch, custom.data_type.identifier())?;
+        let metadata_row = arrow_metadata_row(
+            batch.schema().metadata(),
+            identifier.as_deref(),
+            &CatalogDataType::from(NautilusDataType::Custom {
+                type_name: type_name.to_string(),
+            }),
+        )?;
         batch =
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
@@ -1440,7 +1369,8 @@ impl FeatherWriter {
 
     /// Writes an instrument to the appropriate writer.
     ///
-    /// Each instrument class stages its own file, and every row carries its instrument ID.
+    /// Instruments are written to feather files and organized by instrument ID.
+    /// This method supports writing instruments that implement `EncodeToRecordBatch` and `CatalogFamily`.
     pub fn write_instrument(
         &mut self,
         instrument: InstrumentAny,
@@ -1671,6 +1601,31 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns the replay identity of a flushed Feather file, so a rerun does not write it twice.
+pub(crate) fn feather_replay_identity(
+    source_uri: &str,
+    source_path: &str,
+    content_hash: &str,
+    identifiers: Option<&[String]>,
+) -> String {
+    let mut identifiers = identifiers.map(<[String]>::to_vec);
+    if let Some(identifiers) = identifiers.as_mut() {
+        identifiers.sort();
+        identifiers.dedup();
+    }
+
+    let identity = serde_json::json!({
+        "source_uri": source_uri,
+        "source_path": source_path,
+        "content_hash": content_hash,
+        "identifiers": identifiers,
+    });
+    format!(
+        "nautilus-feather:{}",
+        blake3::hash(identity.to_string().as_bytes()).to_hex(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -1681,7 +1636,8 @@ mod tests {
     use nautilus_model::{
         data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
-        identifiers::{InstrumentId, TradeId},
+        events::account::stubs::cash_account_state,
+        identifiers::{AccountId, InstrumentId, TradeId},
         types::{ERROR_PRICE, Price, Quantity},
     };
     use nautilus_serialization::arrow::{
@@ -1715,12 +1671,40 @@ mod tests {
         files
     }
 
+    // The type comes from a `custom/{type_name}` folder, or from the file name, which is
+    // `{type}_{timestamp}`
+    fn feather_file_data_type(path: &Path) -> CatalogDataType {
+        let components = path
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        if let Some(index) = components
+            .iter()
+            .rposition(|component| component == "custom")
+        {
+            return CatalogDataType::from(NautilusDataType::Custom {
+                type_name: components[index + 1].clone(),
+            });
+        }
+
+        let stem = path.file_stem().unwrap().to_string_lossy();
+        let stem = stem.strip_suffix(".feather").unwrap_or(&stem);
+        let type_name = stem
+            .rsplit_once('_')
+            .map_or(stem, |(type_name, _)| type_name);
+
+        crate::catalog::types::catalog_data_type_from_path(type_name).unwrap()
+    }
+
     // Reads a type's file and splits it into batches that each carry their rows' metadata
     fn read_feather_batches(path: &Path) -> Vec<RecordBatch> {
+        let data_type = feather_file_data_type(path);
+
         StreamReader::try_new(File::open(path).unwrap(), None)
             .unwrap()
             .map(Result::unwrap)
-            .flat_map(|batch| restore_staged_record_batches(batch).unwrap())
+            .flat_map(|batch| restore_staged_record_batches(batch, &data_type).unwrap())
             .collect()
     }
 
@@ -1732,6 +1716,140 @@ mod tests {
                 QuoteTick::decode_data_batch(&metadata, batch).unwrap()
             })
             .collect()
+    }
+
+    #[rstest]
+    fn staged_metadata_holds_only_precision_and_hashes_like_the_catalogs() {
+        let temp_dir = TempDir::new().unwrap();
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        let aud = QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.00001"),
+            Price::from("1.00002"),
+            Quantity::from("100"),
+            Quantity::from("200"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let jpy = QuoteTick::new(
+            InstrumentId::from("USD/JPY.SIM"),
+            Price::from("150.25"),
+            Price::from("150.27"),
+            Quantity::from("300"),
+            Quantity::from("400"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+
+        writer.write(aud).unwrap();
+        writer.write(jpy).unwrap();
+        writer.close().unwrap();
+
+        let files = feather_files(temp_dir.path(), "feather");
+        let raw = StreamReader::try_new(File::open(&files[0]).unwrap(), None)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        let staged_rows = raw
+            .iter()
+            .flat_map(|batch| {
+                let text = |name: &str| {
+                    let column = arrow::compute::cast(
+                        batch.column_by_name(name).unwrap(),
+                        &arrow::datatypes::DataType::Utf8,
+                    )
+                    .unwrap();
+                    let column = column
+                        .as_any()
+                        .downcast_ref::<arrow::array::StringArray>()
+                        .unwrap();
+                    (0..batch.num_rows())
+                        .map(|row| column.value(row).to_string())
+                        .collect::<Vec<_>>()
+                };
+                text(NAUTILUS_ARROW_METADATA_ID_COLUMN)
+                    .into_iter()
+                    .zip(text(NAUTILUS_ARROW_METADATA_JSON_COLUMN))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let maps = staged_rows
+            .iter()
+            .map(|(id, json)| {
+                let map: HashMap<String, String> = serde_json::from_str(json).unwrap();
+                (id.clone(), map)
+            })
+            .collect::<Vec<_>>();
+        let decoded = read_feather_batches(&files[0])
+            .into_iter()
+            .flat_map(|batch| {
+                let metadata = batch.schema().metadata().clone();
+                QuoteTick::decode_data_batch(&metadata, batch).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(maps.len(), 2);
+        for (id, map) in &maps {
+            assert_eq!(
+                map.keys()
+                    .map(String::as_str)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                std::collections::BTreeSet::from(["price_precision", "size_precision"])
+            );
+            assert_eq!(id, &crate::common::metadata::metadata_hash(map).unwrap());
+        }
+        let precisions = maps
+            .iter()
+            .map(|(_, map)| map["price_precision"].as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(precisions, std::collections::BTreeSet::from(["2", "5"]));
+        assert_eq!(decoded, vec![Data::from(aud), Data::from(jpy)]);
+    }
+
+    #[rstest]
+    fn record_filter_selects_account_states_by_account_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+        let mut filter = WriterRecordFilter::new();
+        filter.insert(
+            NautilusRecordType::AccountState,
+            Some(vec!["SIM-001".to_string()]),
+        );
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+        )
+        .with_record_filter(Some(filter));
+        let mut selected = cash_account_state();
+        selected.account_id = AccountId::from("SIM-001");
+        let mut skipped = cash_account_state();
+        skipped.account_id = AccountId::from("SIM-002");
+
+        writer.write(selected).unwrap();
+        writer.write(skipped).unwrap();
+        writer.close().unwrap();
+
+        let files = feather_files(temp_dir.path(), "feather");
+        let batches = files
+            .iter()
+            .flat_map(|path| read_feather_batches(path))
+            .collect::<Vec<_>>();
+        let identifiers = identifiers_from_record_batches(&batches).unwrap();
+        let rows = batches.iter().map(RecordBatch::num_rows).sum::<usize>();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(rows, 1);
+        assert_eq!(identifiers, vec!["SIM-001".to_string()]);
     }
 
     fn quote_at(ts: u64) -> QuoteTick {
@@ -1823,7 +1941,6 @@ mod tests {
         use nautilus_common::msgbus::{MStr, publish_quote};
 
         let temp_dir = TempDir::new().unwrap();
-
         let writer = Rc::new(RefCell::new(FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -1860,7 +1977,6 @@ mod tests {
     #[case(true)]
     fn test_message_write_error_reaches_flush_or_close(#[case] close: bool) {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -1970,7 +2086,6 @@ mod tests {
         #[case] expected: &str,
     ) {
         let temp_dir = TempDir::new().unwrap();
-
         let manager = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2150,7 +2265,6 @@ mod tests {
             let path_str = path.path;
             for batch in read_feather_batches(&path_str) {
                 let metadata = batch.schema().metadata().clone();
-
                 if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_quotes.extend(decoded);
@@ -2320,7 +2434,6 @@ mod tests {
     fn flushes_append_to_one_file_per_type_until_close() {
         let temp_dir = TempDir::new().unwrap();
         let shared_time = Arc::new(AtomicU64::new(0));
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::clone(&shared_time)),
@@ -2328,7 +2441,6 @@ mod tests {
             None,
             Some(1_000),
         );
-
         let quotes = (1..=10)
             .map(|minute| {
                 QuoteTick::new(
@@ -2353,7 +2465,6 @@ mod tests {
         let sealed_before_close = feather_files(temp_dir.path(), FEATHER_EXTENSION);
         writer.close().unwrap();
         let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
-
         let recovered = read_feather_batches(&sealed[0])
             .into_iter()
             .flat_map(|batch| {
@@ -2383,7 +2494,6 @@ mod tests {
         #[case] expected_batch_rows: Vec<usize>,
     ) {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2409,7 +2519,6 @@ mod tests {
                 ))
                 .unwrap();
         }
-
         writer.close().unwrap();
         let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
         let batch_rows = StreamReader::try_new(File::open(&sealed[0]).unwrap(), None)
@@ -2424,7 +2533,6 @@ mod tests {
     #[rstest]
     fn drop_seals_open_files() {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -2453,7 +2561,6 @@ mod tests {
     #[rstest]
     fn reserved_paths_skip_files_left_in_the_directory() {
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(5))),
@@ -2923,7 +3030,6 @@ mod tests {
     fn size_rotation_seals_each_full_file_and_opens_the_next_lazily() {
         let temp_dir = TempDir::new().unwrap();
         let shared_clock = Arc::new(AtomicU64::new(0));
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::clone(&shared_clock)),
@@ -2956,7 +3062,6 @@ mod tests {
                     .sum::<usize>()
             })
             .collect::<Vec<_>>();
-
         assert!(writer.writers.is_empty());
         assert_eq!(rows, vec![1, 1]);
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
@@ -2987,7 +3092,6 @@ mod tests {
         .unwrap();
 
         let temp_dir = TempDir::new().unwrap();
-
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
@@ -3018,7 +3122,7 @@ mod tests {
             arrow::custom::CustomDataDecoder, ensure_custom_data_registered,
         };
 
-        use crate::test_data::RustTestCustomData;
+        use crate::common::test_data::RustTestCustomData;
 
         ensure_custom_data_registered::<RustTestCustomData>();
 
@@ -3082,7 +3186,7 @@ mod tests {
         use nautilus_model::data::{CustomData, DataType};
         use nautilus_serialization::ensure_custom_data_registered;
 
-        use crate::test_data::RustTestCustomData;
+        use crate::common::test_data::RustTestCustomData;
 
         ensure_custom_data_registered::<RustTestCustomData>();
         let temp_dir = TempDir::new().unwrap();
@@ -3127,5 +3231,27 @@ mod tests {
             .map(RecordBatch::num_rows)
             .sum::<usize>();
         assert_eq!(rows, 2);
+    }
+
+    #[rstest]
+    fn feather_replay_identity_is_stable_and_ignores_identifier_order() {
+        let identity = |identifiers: Option<&[String]>| {
+            feather_replay_identity(
+                "file:///catalog/backtest/run-1",
+                "quotes/AUDUSD.SIM/part-0.feather",
+                "content-hash",
+                identifiers,
+            )
+        };
+
+        let unordered = ["B".to_string(), "A".to_string(), "A".to_string()];
+        let ordered = ["A".to_string(), "B".to_string()];
+
+        let expected =
+            "nautilus-feather:10a9435c28f7536f26653c3fc808571be89bfe769e06c7307cb4743e273a23fd";
+
+        assert_eq!(identity(Some(&unordered)), expected);
+        assert_eq!(identity(Some(&ordered)), expected);
+        assert_ne!(identity(None), expected);
     }
 }

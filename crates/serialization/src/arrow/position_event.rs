@@ -21,13 +21,15 @@ use nautilus_model::events::{PositionAdjusted, PositionChanged, PositionClosed, 
 use super::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
     KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const POSITION_OPENED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("opening_order_id", false),
@@ -48,7 +50,6 @@ const POSITION_OPENED_FIELDS: &[JsonFieldSpec] = &[
 const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("opening_order_id", false),
@@ -74,7 +75,6 @@ const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
 const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("opening_order_id", false),
@@ -103,7 +103,6 @@ const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
 const POSITION_ADJUSTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("adjustment_type", false),
@@ -125,7 +124,7 @@ macro_rules! impl_position_event_arrow {
     ($type:ty, $type_name:expr, $fields:expr) => {
         impl ArrowSchemaProvider for $type {
             fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
+                schema_for_type_with_identifier($type_name, metadata, $fields)
             }
         }
 
@@ -137,11 +136,14 @@ macro_rules! impl_position_event_arrow {
             where
                 T: std::borrow::Borrow<Self>,
             {
-                encode_batch(
+                encode_batch_with_identifier(
                     $type_name,
                     metadata,
                     data.iter().map(std::borrow::Borrow::borrow),
                     $fields,
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|event| event.instrument_id),
                 )
             }
 
@@ -155,7 +157,13 @@ macro_rules! impl_position_event_arrow {
                 metadata: &HashMap<String, String>,
                 record_batch: RecordBatch,
             ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+                decode_batch_with_metadata_fields(
+                    metadata,
+                    &record_batch,
+                    $fields,
+                    &[KEY_INSTRUMENT_ID],
+                    Some($type_name),
+                )
             }
         }
     };
@@ -297,7 +305,7 @@ mod tests {
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: DurationNanos::new(3_600_000_000_000),
+            duration: DurationNanos::from_hours(1),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),

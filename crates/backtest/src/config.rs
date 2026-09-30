@@ -43,8 +43,6 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::config::CatalogBackendType;
-#[cfg(feature = "streaming")]
 use nautilus_persistence::config::DataCatalogConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -807,18 +805,9 @@ impl BacktestVenueConfig {
 pub struct BacktestDataConfig {
     /// The type of data to query from the catalog.
     data_type: NautilusDataType,
-    /// The path to the data catalog.
-    catalog_path: String,
-    /// Catalog backend used for data loading.
-    #[builder(default)]
+    /// The catalog to query the data from.
     #[cfg(feature = "streaming")]
-    catalog_backend: CatalogBackendType,
-    /// The `fsspec` filesystem protocol for the catalog.
-    catalog_fs_protocol: Option<String>,
-    /// The filesystem storage options for the catalog (e.g. cloud auth credentials).
-    catalog_fs_storage_options: Option<AHashMap<String, String>>,
-    /// Rust-specific storage options for the catalog backend.
-    catalog_fs_rust_storage_options: Option<AHashMap<String, String>>,
+    catalog: DataCatalogConfig,
     /// The instrument ID for the data configuration (single).
     instrument_id: Option<InstrumentId>,
     /// Multiple instrument IDs for the data configuration.
@@ -857,13 +846,6 @@ impl<S: backtest_data_config_builder::IsComplete> BacktestDataConfigBuilder<S> {
 }
 
 impl BacktestDataConfig {
-    /// Returns the configured catalog backend.
-    #[must_use]
-    #[cfg(feature = "streaming")]
-    pub fn catalog_backend(&self) -> CatalogBackendType {
-        self.catalog_backend.clone()
-    }
-
     /// Validates the data configuration, collecting every field violation.
     ///
     /// # Errors
@@ -895,8 +877,9 @@ impl BacktestDataConfig {
             ),
         );
 
-        if self.catalog_path.trim().is_empty() {
-            errors.push(ConfigError::empty_field("catalog_path"));
+        #[cfg(feature = "streaming")]
+        if self.catalog.path().trim().is_empty() {
+            errors.push(ConfigError::empty_field("catalog.path"));
         }
 
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
@@ -928,24 +911,10 @@ impl BacktestDataConfig {
         &self.data_type
     }
 
+    #[cfg(feature = "streaming")]
     #[must_use]
-    pub fn catalog_path(&self) -> &str {
-        &self.catalog_path
-    }
-
-    #[must_use]
-    pub fn catalog_fs_protocol(&self) -> Option<&str> {
-        self.catalog_fs_protocol.as_deref()
-    }
-
-    #[must_use]
-    pub fn catalog_fs_storage_options(&self) -> Option<&AHashMap<String, String>> {
-        self.catalog_fs_storage_options.as_ref()
-    }
-
-    #[must_use]
-    pub fn catalog_fs_rust_storage_options(&self) -> Option<&AHashMap<String, String>> {
-        self.catalog_fs_rust_storage_options.as_ref()
+    pub const fn catalog(&self) -> &DataCatalogConfig {
+        &self.catalog
     }
 
     #[must_use]
@@ -1231,6 +1200,7 @@ mod tests {
         };
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     #[case(NautilusDataType::OrderBookDelta)]
     #[case(NautilusDataType::OrderBookDepth)]
@@ -1246,7 +1216,11 @@ mod tests {
     fn test_data_config_accepts_supported_family(#[case] data_type: NautilusDataType) {
         let config = BacktestDataConfig::builder()
             .data_type(data_type.clone())
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .build()
             .unwrap();
@@ -1254,11 +1228,16 @@ mod tests {
         assert_eq!(config.data_type(), &data_type);
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_data_config_accepts_the_instrument_family() {
         let config = BacktestDataConfig::builder()
             .data_type(NautilusDataType::Instrument)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .build()
             .unwrap();
@@ -1266,12 +1245,17 @@ mod tests {
         assert_eq!(config.data_type(), &NautilusDataType::Instrument);
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
     fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
         let error = BacktestDataConfig::builder()
             .data_type(data_type.clone())
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .build()
             .unwrap_err();
@@ -1428,35 +1412,46 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_minimal_data_config_is_valid() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .build();
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     #[case("")]
     #[case("   ")]
     fn test_empty_catalog_path_rejected(#[case] catalog_path: &str) {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path(catalog_path.to_string())
+            .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .build();
         assert!(
-            matches!(result, Err(ConfigError::EmptyField { field }) if field == "catalog_path")
+            matches!(result, Err(ConfigError::EmptyField { field }) if field == "catalog.path")
         );
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_inverted_time_range_rejected() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .start_time(UnixNanos::from(5_000_000_000u64))
             .end_time(UnixNanos::from(1_000_000_000u64))
@@ -1464,11 +1459,16 @@ mod tests {
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "start_time"));
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_equal_time_range_accepted() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
             .start_time(UnixNanos::from(1_000_000_000u64))
             .end_time(UnixNanos::from(1_000_000_000u64))
@@ -1476,40 +1476,56 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_missing_identifier_rejected() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .build();
         assert!(matches!(result, Err(ConfigError::RequiredOneOf { fields }) if fields.len() == 3));
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_empty_instrument_ids_rejected() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .instrument_ids(vec![])
             .build();
         assert!(matches!(result, Err(ConfigError::RequiredOneOf { .. })));
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_bar_types_satisfies_identifier_requirement() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::Bar)
-            .catalog_path("/tmp/catalog".to_string())
+            .catalog(DataCatalogConfig::new(
+                "/tmp/catalog".to_string(),
+                None,
+                None,
+            ))
             .bar_types(vec!["ETH/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL".to_string()])
             .build();
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_data_config_multiple_violations_collected() {
         let result = BacktestDataConfig::builder()
             .data_type(NautilusDataType::QuoteTick)
-            .catalog_path(String::new())
+            .catalog(DataCatalogConfig::new(String::new(), None, None))
             .start_time(UnixNanos::from(5_000_000_000u64))
             .end_time(UnixNanos::from(1_000_000_000u64))
             .build();

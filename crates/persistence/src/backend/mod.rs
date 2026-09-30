@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an Apache Parquet backend powered by [DataFusion](https://arrow.apache.org/datafusion).
+//! Provides persistence backend implementations powered by [DataFusion](https://arrow.apache.org/datafusion).
 
 use std::sync::Arc;
 
@@ -24,8 +24,6 @@ use crate::{
     common::paths,
     writer::{factory as writer_factory, feather as feather_writer, traits as writer_traits},
 };
-
-pub mod migration;
 pub mod parquet;
 
 /// Returns the persistence-owned catalog-factory registry.
@@ -90,12 +88,7 @@ fn extend_factories<T>(
             }
         }
     }
-
     Ok(registry)
-}
-
-fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
-    parquet::register_catalog_factory(registry);
 }
 
 fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactoryRegistry) {
@@ -122,49 +115,75 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
     );
 }
 
+fn register_builtin_catalog_factories(registry: &mut catalog_factory::CatalogFactoryRegistry) {
+    parquet::register_catalog_factory(registry);
+}
+
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
-
     use super::*;
 
-    fn unused_catalog_factory() -> catalog_factory::CatalogFactory {
-        Arc::new(|_| anyhow::bail!("not invoked"))
-    }
+    fn open_with_param(
+        factory: &str,
+        uri: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> anyhow::Error {
+        let mut params = nautilus_core::Params::new();
+        params.insert(key.to_string(), value);
+        let config = catalog_factory::CatalogConnectConfig::new(uri).with_params(Some(params));
 
-    #[rstest]
-    fn extend_catalog_factories_accepts_external_factory() {
-        let factories =
-            extend_catalog_factories(vec![("ExternalTest".to_string(), unused_catalog_factory())])
-                .unwrap();
-
-        assert_eq!(
-            factories.keys().map(String::as_str).collect::<Vec<_>>(),
-            vec![
-                catalog_factory::PARQUET_CATALOG_FACTORY_NAME,
-                "ExternalTest"
-            ],
-        );
-    }
-
-    #[rstest]
-    #[case::builtin(vec!["Parquet"], "Parquet")]
-    #[case::user(vec!["Duplicate", "Duplicate"], "Duplicate")]
-    fn extend_catalog_factories_rejects_duplicate_names(
-        #[case] names: Vec<&str>,
-        #[case] duplicate: &str,
-    ) {
-        let extra = names
-            .into_iter()
-            .map(|name| (name.to_string(), unused_catalog_factory()));
-
-        let error = extend_catalog_factories(extra)
+        default_catalog_factories().get(factory).unwrap()(&config)
             .err()
-            .expect("duplicate registration should fail");
+            .unwrap()
+    }
+
+    #[rstest::rstest]
+    #[case::parquet_misspelled(
+        catalog_factory::PARQUET_CATALOG_FACTORY_NAME,
+        "no_such_param",
+        serde_json::json!(10),
+        "Unknown Parquet catalog param 'no_such_param'"
+    )]
+    #[case::parquet_wrong_type(
+        catalog_factory::PARQUET_CATALOG_FACTORY_NAME,
+        "batch_size",
+        serde_json::json!("big"),
+        "Invalid Parquet catalog param 'batch_size': expected a non-negative integer"
+    )]
+    #[case::parquet_metadata_options(
+        catalog_factory::PARQUET_CATALOG_FACTORY_NAME,
+        "metadata_options",
+        serde_json::json!({}),
+        "Unknown Parquet catalog param 'metadata_options'"
+    )]
+    fn catalog_factories_reject_params_they_do_not_accept(
+        #[case] factory: &str,
+        #[case] key: &str,
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let directory = tempfile::TempDir::new().unwrap();
+
+        let error = open_with_param(factory, &directory.path().to_string_lossy(), key, value);
+
+        assert!(error.to_string().starts_with(expected), "{error}");
+    }
+
+    #[rstest::rstest]
+    fn catalog_factory_entries_reject_duplicate_user_names() {
+        let factory: catalog_factory::CatalogFactory = Arc::new(|_| anyhow::bail!("not invoked"));
+
+        let error = extend_catalog_factories(vec![
+            ("duplicate".to_string(), Arc::clone(&factory)),
+            ("duplicate".to_string(), factory),
+        ])
+        .err()
+        .expect("duplicate registration should fail");
 
         assert_eq!(
             error.to_string(),
-            format!("Catalog factory already registered: {duplicate}"),
+            "Catalog factory already registered: duplicate",
         );
     }
 }

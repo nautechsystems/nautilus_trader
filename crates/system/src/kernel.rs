@@ -1339,8 +1339,8 @@ mod streaming_tests {
         types::{Price, Quantity},
     };
     use nautilus_persistence::{
-        backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
-        test_data::RustTestCustomData,
+        backend::parquet::catalog::ParquetDataCatalog, common::test_data::RustTestCustomData,
+        config::DataCatalogConfig,
     };
     use nautilus_serialization::ensure_custom_data_registered;
     use rstest::rstest;
@@ -1430,7 +1430,7 @@ mod streaming_tests {
         let directory = tempdir().unwrap();
         let path = directory.path().to_string_lossy().into_owned();
         let mut params = Params::new();
-        params.insert("batch_size".to_string(), serde_json::json!(1024));
+        params.insert("no_such_param".to_string(), serde_json::json!(1024));
 
         let config = KernelConfig {
             catalogs: vec![
@@ -1448,7 +1448,7 @@ mod streaming_tests {
             error.to_string(),
             format!(
                 "Failed to create data catalog from '{path}': Unknown Parquet catalog param \
-                 'batch_size': this catalog takes no params"
+                 'no_such_param', expected one of storage_options, batch_size, compression, max_row_group_size"
             )
         );
     }

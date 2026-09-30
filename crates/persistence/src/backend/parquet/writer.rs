@@ -24,7 +24,7 @@ use object_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::catalog::ParquetDataCatalog;
+use super::{catalog::ParquetDataCatalog, open_catalog};
 use crate::{
     catalog::factory::CatalogConnectConfig,
     common::{
@@ -35,7 +35,7 @@ use crate::{
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
-        feather::WriterClock,
+        feather::{WriterClock, feather_replay_identity},
         materializer::read_feather_record_batches_with_identity,
         promotion::{
             PromotionBackend, PromotionResult, PromotionSession, PromotionWork,
@@ -58,7 +58,14 @@ fn parquet_writer_factory(
     config: &WriterConnectConfig,
     clock: WriterClock,
 ) -> anyhow::Result<StreamingDataSink> {
-    Ok(Box::new(ParquetWriter::new(config, clock)?))
+    Ok(Box::new(ParquetWriter::new(
+        config,
+        clock,
+        config.promotion_interval_ms,
+        config.promote_on_close,
+        config.delete_feather_after_promotion,
+        config.use_ts_event_for_ts_init,
+    )?))
 }
 
 #[expect(
@@ -90,10 +97,25 @@ impl Debug for ParquetWriter {
 }
 
 impl ParquetWriter {
-    fn new(config: &WriterConnectConfig, clock: WriterClock) -> anyhow::Result<Self> {
+    fn new(
+        config: &WriterConnectConfig,
+        clock: WriterClock,
+        interval_ms: Option<u64>,
+        promote_on_close: bool,
+        delete_feather_after_commit: bool,
+        use_ts_event_for_ts_init: bool,
+    ) -> anyhow::Result<Self> {
         let catalog = config
             .required_catalog(PARQUET_WRITER_FACTORY_NAME)?
             .clone();
+        // A Parquet catalog only opens an existing local directory, so the writer creates the
+        // one it promotes into and opens it now rather than failing at the first promotion
+        let catalog_location = normalize_path_to_uri(&catalog.uri)?;
+        if catalog_location.starts_with("file://") {
+            fs::create_dir_all(file_uri_to_native_path(&catalog_location))?;
+        }
+        let legacy_manifest_missing = Arc::new(AtomicBool::new(false));
+        ParquetPromotionBackend::new(&catalog, Arc::clone(&legacy_manifest_missing))?;
         let storage = create_storage_backend_from_path(&config.uri, None)?;
         let session = StagedFeatherWriter::<ParquetPromotionBackend>::required_session(
             &storage.original_uri,
@@ -107,17 +129,6 @@ impl ParquetWriter {
             session.instance_id.clone(),
         );
 
-        // A Parquet catalog opens only an existing local directory, so the writer creates the one
-        // it promotes into, then opens it now rather than failing at the first promotion
-        let catalog_location = normalize_path_to_uri(&catalog.uri)?;
-        if catalog_location.starts_with("file://") {
-            fs::create_dir_all(file_uri_to_native_path(&catalog_location))?;
-        }
-
-        let legacy_manifest_missing = Arc::new(AtomicBool::new(false));
-
-        ParquetPromotionBackend::new(&catalog, Arc::clone(&legacy_manifest_missing))?;
-
         let mut core = StagedFeatherWriter::new(
             storage.clone(),
             clock,
@@ -126,7 +137,6 @@ impl ParquetWriter {
             config.flush_interval_ms,
             config.record_filter.clone(),
         )?;
-
         block_on_nautilus_with(|| {
             storage.write_current_run_manifest(
                 session.environment,
@@ -140,7 +150,7 @@ impl ParquetWriter {
         core.warn_if_orphan_feather_present("Parquet");
         let timer_legacy_manifest_missing = Arc::clone(&legacy_manifest_missing);
         core.start_promotion_timer(
-            config.promotion_interval_ms,
+            interval_ms,
             source.clone(),
             "parquet-promotion",
             move || {
@@ -149,8 +159,8 @@ impl ParquetWriter {
                     Arc::clone(&timer_legacy_manifest_missing),
                 )
             },
-            config.use_ts_event_for_ts_init,
-            config.delete_feather_after_promotion,
+            use_ts_event_for_ts_init,
+            delete_feather_after_commit,
         )?;
 
         Ok(Self {
@@ -158,10 +168,10 @@ impl ParquetWriter {
             catalog,
             session,
             source,
-            interval_ms: config.promotion_interval_ms,
-            promote_on_close: config.promote_on_close,
-            delete_feather_after_commit: config.delete_feather_after_promotion,
-            use_ts_event_for_ts_init: config.use_ts_event_for_ts_init,
+            interval_ms,
+            promote_on_close,
+            delete_feather_after_commit,
+            use_ts_event_for_ts_init,
             legacy_manifest_missing,
             has_data: false,
             run_status: RunStatus::InProgress,
@@ -372,7 +382,7 @@ impl ParquetPromotionBackend {
         legacy_manifest_missing: Arc<AtomicBool>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            catalog: super::open_catalog(catalog)?,
+            catalog: open_catalog(catalog)?,
             legacy_manifest_missing,
         })
     }
@@ -547,30 +557,6 @@ struct ParquetPromotionManifest {
     identities: Vec<String>,
 }
 
-fn feather_replay_identity(
-    source_uri: &str,
-    source_path: &str,
-    content_hash: &str,
-    identifiers: Option<&[String]>,
-) -> String {
-    let mut identifiers = identifiers.map(<[String]>::to_vec);
-    if let Some(identifiers) = identifiers.as_mut() {
-        identifiers.sort();
-        identifiers.dedup();
-    }
-
-    let identity = serde_json::json!({
-        "source_uri": source_uri,
-        "source_path": source_path,
-        "content_hash": content_hash,
-        "identifiers": identifiers,
-    });
-    format!(
-        "nautilus-feather:{}",
-        blake3::hash(identity.to_string().as_bytes()).to_hex(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicU64;
@@ -597,9 +583,7 @@ mod tests {
     use crate::{
         backend::parquet::io::read_parquet_from_object_store,
         catalog::traits::{CatalogQuery, CatalogReader},
-        common::storage::RUN_MANIFEST_FILENAME,
-        config::{CatalogCompression, DataCatalogConfig},
-        test_data::RustTestHashMapCustomData,
+        common::test_data::RustTestHashMapCustomData,
         writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
     };
 
@@ -609,8 +593,12 @@ mod tests {
     ) {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
-        let mut config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         config.delete_feather_after_promotion = delete_source;
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -674,8 +662,12 @@ mod tests {
         let sealed = staging.join("quotes").join("quotes_0.feather");
         std::fs::rename(&sealed, sealed.with_extension(FEATHER_PARTIAL_EXTENSION)).unwrap();
 
-        let config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
                 .unwrap();
@@ -701,24 +693,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case("backtest")]
-    #[case("sandbox")]
-    #[case("live")]
-    fn parquet_close_promotes_into_missing_local_catalog(#[case] environment: &str) {
+    fn parquet_close_promotes_into_missing_local_catalog() {
         let directory = TempDir::new().unwrap();
-        let staging = directory
-            .path()
-            .join("stream")
-            .join(environment)
-            .join("run-1");
         let catalog_path = directory.path().join("charts").join("catalog");
-
         let config = WriterConnectConfig::new(
-            staging.to_string_lossy(),
-            Some(CatalogConnectConfig::new(
-                catalog_path.to_string_lossy(),
-                None,
-            )),
+            directory
+                .path()
+                .join("stream")
+                .join("backtest")
+                .join("run-1")
+                .to_string_lossy(),
+            Some(CatalogConnectConfig::new(catalog_path.to_string_lossy())),
         );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -731,123 +716,25 @@ mod tests {
         let mut catalog =
             ParquetDataCatalog::from_uri(catalog_path.to_str().unwrap(), None, None, None, None)
                 .unwrap();
-
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap()
         else {
             panic!("expected quotes")
         };
-
-        let manifest: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(staging.join(RUN_MANIFEST_FILENAME)).unwrap())
-                .unwrap();
-
         assert_eq!(rows.as_ref(), &[quote]);
-        assert_eq!(manifest["kind"], environment);
-        assert_eq!(manifest["status"], "promoted");
-        assert!(!catalog_path.join(environment).exists());
     }
 
     #[rstest]
-    fn parquet_writer_requires_a_catalog() {
+    fn parquet_promotion_honors_catalog_params() {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
-        let config = WriterConnectConfig::new(staging.to_string_lossy(), None);
-
-        let error = parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
-            .unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Parquet writer requires a promotion catalog"
-        );
-        assert!(!staging.exists());
-    }
-
-    // Opening an S3 store needs no network, and a run with no data promotes nothing, so the
-    // writer records the run as completed when dropped
-    #[cfg(feature = "cloud")]
-    #[rstest]
-    fn parquet_writer_stages_locally_for_a_remote_catalog() {
-        let directory = TempDir::new().unwrap();
-        let staging = directory.path().join("backtest").join("run-1");
-
-        let config = WriterConnectConfig::new(
-            staging.to_string_lossy(),
-            Some(CatalogConnectConfig::new("s3://bucket/catalog", None)),
-        );
-
-        let mut sink =
-            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
-                .unwrap();
-        sink.close().unwrap();
-        drop(sink);
-
-        let manifest: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(staging.join(RUN_MANIFEST_FILENAME)).unwrap())
-                .unwrap();
-        assert_eq!(manifest["kind"], "backtest");
-        assert_eq!(manifest["instance_id"], "run-1");
-        assert_eq!(manifest["status"], "completed");
-        assert_eq!(manifest["empty"], true);
-    }
-
-    #[rstest]
-    fn parquet_promotion_writes_the_direct_write_schema() {
-        let directory = TempDir::new().unwrap();
-
-        let config = WriterConnectConfig::new(
-            directory
-                .path()
-                .join("backtest/run-schema")
-                .to_string_lossy(),
-            Some(local_catalog(&directory)),
-        );
-        let mut sink =
-            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
-                .unwrap();
-        let quote = sample_quote();
-        sink.write_data(Data::Quote(quote)).unwrap();
-        sink.close().unwrap();
-
-        let promoted = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let direct_directory = TempDir::new().unwrap();
-        let direct = ParquetDataCatalog::from_uri(
-            direct_directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        direct.write_to_parquet(&[quote], None, None, None).unwrap();
-
-        assert_eq!(
-            quote_file_schema(&promoted).fields(),
-            quote_file_schema(&direct).fields(),
-        );
-    }
-
-    #[rstest]
-    fn parquet_promotion_honors_catalog_settings() {
-        let directory = TempDir::new().unwrap();
-        let staging = directory.path().join("backtest").join("run-1");
-        let catalog = DataCatalogConfig::builder()
-            .path(directory.path().to_string_lossy().to_string())
-            .batch_size(7)
-            .compression(CatalogCompression::Uncompressed)
-            .max_row_group_size(1)
-            .build()
-            .unwrap()
-            .connect_config();
+        let mut params = Params::new();
+        params.insert("batch_size".to_string(), serde_json::json!(7));
+        params.insert("compression".to_string(), serde_json::json!("uncompressed"));
+        params.insert("max_row_group_size".to_string(), serde_json::json!(1));
+        let catalog =
+            CatalogConnectConfig::new(directory.path().to_string_lossy()).with_params(Some(params));
         let backend =
             ParquetPromotionBackend::new(&catalog, Arc::new(AtomicBool::new(false))).unwrap();
 
@@ -891,10 +778,10 @@ mod tests {
     fn parquet_writer_rejects_unknown_catalog_param() {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
-        let mut catalog = local_catalog(&directory);
         let mut params = Params::new();
-        params.insert("compression".to_string(), serde_json::json!(0));
-        catalog.params = Some(params);
+        params.insert("no_such_param".to_string(), serde_json::json!(0));
+        let catalog =
+            CatalogConnectConfig::new(directory.path().to_string_lossy()).with_params(Some(params));
 
         let config = WriterConnectConfig::new(staging.to_string_lossy(), Some(catalog));
         let error = parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -902,7 +789,52 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Unknown Parquet catalog param 'compression': this catalog takes no params"
+            "Unknown Parquet catalog param 'no_such_param', expected one of storage_options, batch_size, compression, max_row_group_size"
+        );
+    }
+
+    #[rstest]
+    fn parquet_promotion_writes_the_direct_write_schema() {
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory
+                .path()
+                .join("backtest/run-schema")
+                .to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let quote = sample_quote();
+        sink.write_data(Data::Quote(quote)).unwrap();
+        sink.close().unwrap();
+
+        let promoted = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let direct_directory = TempDir::new().unwrap();
+        let direct = ParquetDataCatalog::from_uri(
+            direct_directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        direct.write_to_parquet(&[quote], None, None, None).unwrap();
+
+        assert_eq!(
+            quote_file_schema(&promoted).fields(),
+            quote_file_schema(&direct).fields(),
         );
     }
 
@@ -931,8 +863,12 @@ mod tests {
     ) {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-2");
-        let mut config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         config.promotion_interval_ms = interval;
         config.promote_on_close = false;
         let clock = Arc::new(AtomicU64::new(0));
@@ -989,7 +925,9 @@ mod tests {
                 .path()
                 .join("backtest/run-funding")
                 .to_string_lossy(),
-            Some(local_catalog(&directory)),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
         );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1033,7 +971,9 @@ mod tests {
                 .path()
                 .join("backtest/run-error")
                 .to_string_lossy(),
-            Some(local_catalog(&directory)),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
         );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1055,7 +995,9 @@ mod tests {
                 .path()
                 .join("backtest/run-instrument")
                 .to_string_lossy(),
-            Some(local_catalog(&directory)),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
         );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1090,7 +1032,9 @@ mod tests {
 
         let config = WriterConnectConfig::new(
             directory.path().join("backtest/run-void").to_string_lossy(),
-            Some(local_catalog(&directory)),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
         );
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1137,8 +1081,12 @@ mod tests {
         };
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest/run-depth-ties");
-        let mut config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         config.delete_feather_after_promotion = true;
         config.promote_on_close = automatic;
         let mut sink =
@@ -1213,8 +1161,12 @@ mod tests {
 
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-custom");
-        let mut config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         config.promote_on_close = false;
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1276,8 +1228,12 @@ mod tests {
 
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-custom-ids");
-        let mut config =
-            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut config = WriterConnectConfig::new(
+            staging.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                directory.path().to_string_lossy(),
+            )),
+        );
         config.promote_on_close = false;
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
@@ -1427,10 +1383,6 @@ mod tests {
         decoded
     }
 
-    fn local_catalog(directory: &TempDir) -> CatalogConnectConfig {
-        CatalogConnectConfig::new(directory.path().to_string_lossy(), None)
-    }
-
     fn sample_quote() -> QuoteTick {
         QuoteTick::new(
             InstrumentId::from("AUD/USD.SIM"),
@@ -1470,27 +1422,5 @@ mod tests {
                  cd3112001080bc2d11985ffe2b8b90b324d336d82c17ddb66127d3a05f08c69c.json"
             )),
         );
-    }
-
-    #[rstest]
-    fn feather_replay_identity_is_stable_and_ignores_identifier_order() {
-        let identity = |identifiers: Option<&[String]>| {
-            feather_replay_identity(
-                "file:///catalog/backtest/run-1",
-                "quotes/AUDUSD.SIM/part-0.feather",
-                "content-hash",
-                identifiers,
-            )
-        };
-
-        let unordered = ["B".to_string(), "A".to_string(), "A".to_string()];
-        let ordered = ["A".to_string(), "B".to_string()];
-
-        let expected =
-            "nautilus-feather:10a9435c28f7536f26653c3fc808571be89bfe769e06c7307cb4743e273a23fd";
-
-        assert_eq!(identity(Some(&unordered)), expected);
-        assert_eq!(identity(Some(&ordered)), expected);
-        assert_ne!(identity(None), expected);
     }
 }

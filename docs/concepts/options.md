@@ -162,12 +162,12 @@ the series:
 data = [
     BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig("/path/to/catalog"),
         instrument_ids=option_instrument_ids,
     ),
     BacktestDataConfig(
         data_type=NautilusDataType.OptionGreeks,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig("/path/to/catalog"),
         instrument_ids=option_instrument_ids,
     ),
 ]

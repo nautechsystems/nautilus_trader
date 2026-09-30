@@ -25,6 +25,7 @@ use arrow::{
 };
 use nautilus_core::ClosedInterval;
 use nautilus_serialization::arrow::{StringColumnRef, U32ColumnRef, U64ColumnRef};
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
 use super::{
     CREATED_TS_COLUMN, DATA_TYPE_COLUMN, DATA_VERSION_COLUMN, END_TS_COLUMN, ROW_COUNT_COLUMN,
@@ -37,7 +38,25 @@ use crate::catalog::types::{
 pub const COVERAGE_SCHEMA_VERSION: u32 = 1;
 
 /// What a coverage segment records in the catalog log.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq, FromRepr, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.persistence",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")
+)]
 pub enum CoverageKind {
     Data,
     Empty,

@@ -17,9 +17,21 @@ Parquet provides compressed columnar storage and cross-language access. The cata
 files under one root without requiring a separate database service. A local path or object-store
 URI selects the storage backend.
 
+## Storage rule
+
+Every data table or folder carries an `identifier` column that holds the identity of each row, such as
+an instrument ID, a full bar type, or an account ID. The data type comes from the storage location,
+so one data type has one folder name and files hold no type entry. Instruments are the exception:
+their folder names the class, and the concrete class stays in the stored map.
+
+The metadata stored with a file keeps only what neither the column nor the location gives: the
+price and size precisions, and per-field custom entries. The decoder restores the rest when it
+reads. Custom `DataType` metadata lives in a `custom_data_metadata` column of each row. Staged
+Feather files reference the same stored map through a metadata hash.
+
 ## Initializing
 
-Pass a local path or URI as the first constructor argument:
+Pass a local path or URI as the first constructor argument and optional settings as `params`:
 
 ```python
 from pathlib import Path
@@ -33,7 +45,8 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 ## Filesystem protocols and storage options
 
-The catalog accepts the storage protocols supported by its Rust object-store backend.
+The catalog accepts the storage protocols supported by its Rust
+[`object_store`](https://docs.rs/object_store) backend.
 
 ### Supported filesystem protocols
 
@@ -45,56 +58,62 @@ The catalog accepts the storage protocols supported by its Rust object-store bac
 | Azure Blob Storage   | `az`, `abfs`       | `account_name`, `account_key`, `sas_token`.                               |
 | HTTP or WebDAV       | `http`, `https`    | None.                                                                     |
 
-Pass credentials and other backend settings through `storage_options`:
+Pass credentials and other backend settings through `params["storage_options"]`. The keys are the
+native `object_store` configuration keys of the provider, with or without the provider prefix, such
+as [`AmazonS3ConfigKey`](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html),
+[`GoogleConfigKey`](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html),
+and [`AzureConfigKey`](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html).
+A key the provider does not know fails when the catalog opens and names the key.
 
 ```python
 catalog = ParquetDataCatalog(
     "s3://my-bucket/nautilus-data/",
-    storage_options={
-        "access_key_id": "your-key",
-        "secret_access_key": "your-secret",
-        "region": "us-east-1",
+    params={
+        "storage_options": {
+            "access_key_id": "your-key",
+            "secret_access_key": "your-secret",
+            "region": "us-east-1",
+        },
     },
 )
 
 azure_catalog = ParquetDataCatalog(
     "abfs://container@account.dfs.core.windows.net/nautilus-data/",
-    storage_options={"account_key": "your-account-key"},
+    params={"storage_options": {"account_key": "your-account-key"}},
 )
 ```
 
+### Catalog params
+
+`params` accepts `storage_options`, `batch_size`, `compression`, and `max_row_group_size`; any other
+key fails and is named. The same dict works as `DataCatalogConfig(params=...)`.
+
 ## Compression and row groups
 
-`DataCatalogConfig` sets how a configured catalog reads and writes data files:
+A catalog reads how it reads and writes data files from `params`:
 
-| Field                | Controls                                    | Default          |
+| Key                  | Controls                                    | Default          |
 | -------------------- | ------------------------------------------- | ---------------- |
 | `batch_size`         | Rows per batch the catalog reads and writes | 10,000           |
 | `compression`        | Codec name for written data files           | `zstd` (level 1) |
 | `max_row_group_size` | Maximum rows per written row group          | 131,072          |
 
 ```python
-from nautilus_trader.config import DataCatalogConfig
-
-
-catalog = DataCatalogConfig(path="./catalog", compression="snappy", max_row_group_size=65_536)
+catalog = ParquetDataCatalog(
+    str(CATALOG_PATH),
+    params={"compression": "snappy", "max_row_group_size": 65_536},
+)
 ```
 
 `compression` accepts `uncompressed`, `snappy`, `gzip`, `brotli`, `lz4`, `lz4_raw`, or `zstd`,
-ignoring case. Construction fails for any other name and for a zero `batch_size` or
-`max_row_group_size`. `params` carries only options for an external catalog backend, and the
-Parquet catalog rejects any `params` key.
-
-`ParquetDataCatalog` takes the same settings as `batch_size`, `max_row_group_size`, and a numeric
-`compression` code: `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` (Brotli), `5` (LZ4), or `6`
-(zstd).
+ignoring case. Opening the catalog fails for any other name, a numeric code, or a zero `batch_size`
+or `max_row_group_size`.
 
 :::info
 `lz4` and `lz4_raw` name the same codec: the catalog writes Parquet `LZ4_RAW`. The Parquet format
-deprecates the older Hadoop-framed `LZ4` codec, so the catalog never writes it, and compression code
-`5` writes `LZ4_RAW` even though Parquet numbers `LZ4_RAW` as `7`. Files written earlier with the
-Hadoop-framed codec remain readable. LZO is not supported because the Parquet writer cannot produce
-it, so the name `lzo` and code `3` fail at construction.
+deprecates the older Hadoop-framed `LZ4` codec, so the catalog never writes it. Files written
+earlier with the Hadoop-framed codec remain readable. LZO is not supported because the Parquet
+writer cannot produce it, so the name `lzo` fails when the catalog opens.
 :::
 
 ## Writing data
@@ -191,15 +210,15 @@ trades = catalog.query_trade_ticks(
 
 - `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
   `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
-  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads every instrument class the
-  catalog holds for the selected identifiers.
-- `catalog_path` identifies the catalog root.
+  `OptionGreeks`, `InstrumentClose`, `Instrument`, or `Custom("TypeName")`. `Instrument` loads every
+  instrument class the catalog holds for the selected identifiers.
+- `catalog` is the `DataCatalogConfig` to read from. It carries the catalog root, filesystem
+  protocol, `CatalogBackend`, and backend `params`.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
 - `filter_expr` is an optional DataFusion SQL predicate.
-- `catalog_fs_protocol` prefixes `catalog_path` for remote storage.
-- `catalog_fs_rust_storage_options` supplies the Rust backend options. If it is unset,
-  `BacktestNode` falls back to `catalog_fs_storage_options`.
+- `DataCatalogConfig.fs_protocol` prefixes the catalog path for remote storage.
+- `params["storage_options"]` supplies the storage backend options, such as credentials and region.
 - For bars, `bar_spec` combines with the instrument ID to select an `EXTERNAL` bar type. Explicit
   `bar_types` can select internal, external, or composite bars.
 - `optimize_file_loading` registers whole directories when possible.
@@ -213,10 +232,11 @@ from nautilus_trader.model import BarSpecification
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import PriceType
+from nautilus_trader.persistence import DataCatalogConfig
 
 quote_data = BacktestDataConfig(
     data_type=NautilusDataType.QuoteTick,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig("/path/to/catalog"),
     instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     start_time=1704067200000000000,
     end_time=1704153600000000000,
@@ -224,7 +244,7 @@ quote_data = BacktestDataConfig(
 
 trade_data = BacktestDataConfig(
     data_type=NautilusDataType.TradeTick,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig("/path/to/catalog"),
     instrument_ids=[
         InstrumentId.from_str("BTC/USD.BINANCE"),
         InstrumentId.from_str("ETH/USD.BINANCE"),
@@ -233,7 +253,7 @@ trade_data = BacktestDataConfig(
 
 bar_data = BacktestDataConfig(
     data_type=NautilusDataType.Bar,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig("/path/to/catalog"),
     instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST),
 )
@@ -241,18 +261,32 @@ bar_data = BacktestDataConfig(
 
 This bar config selects `AAPL.NASDAQ-5-MINUTE-LAST-EXTERNAL`.
 
+Instrument definitions load every class the catalog holds:
+
+```python
+instrument_data = BacktestDataConfig(
+    data_type=NautilusDataType.Instrument,
+    catalog=DataCatalogConfig("/path/to/catalog"),
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+)
+```
+
 ### Cloud storage and filtering
 
 ```python
 book_data = BacktestDataConfig(
     data_type=NautilusDataType.OrderBookDelta,
-    catalog_path="my-bucket/nautilus-data",
-    catalog_fs_protocol="s3",
-    catalog_fs_rust_storage_options={
-        "access_key_id": "your-access-key",
-        "secret_access_key": "your-secret-key",
-        "region": "us-east-1",
-    },
+    catalog=DataCatalogConfig(
+        "my-bucket/nautilus-data",
+        fs_protocol="s3",
+        params={
+            "storage_options": {
+                "access_key_id": "your-access-key",
+                "secret_access_key": "your-secret-key",
+                "region": "us-east-1",
+            },
+        },
+    ),
     instrument_id=InstrumentId.from_str("BTC/USD.COINBASE"),
     filter_expr="ts_init >= 1704067200000000000",
 )
@@ -274,11 +308,12 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
+from nautilus_trader.persistence import DataCatalogConfig
 
 data_configs = [
     BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig("/path/to/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     ),
 ]

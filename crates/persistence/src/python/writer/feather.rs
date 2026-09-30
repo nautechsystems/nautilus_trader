@@ -57,8 +57,9 @@ use crate::{
     },
     config::RotationConfig,
     python::{
-        backend::{PyCatalogDataType, catalog_filter_family_from_py, writer_record_filter_from_py},
+        catalog::conversion::PyCatalogDataType,
         config::PyRotationConfig,
+        writer::conversion::{catalog_filter_family_from_py, writer_record_filter_from_py},
     },
     writer::{
         factory::{WriterConnectConfig, replace_existing_writer_data},

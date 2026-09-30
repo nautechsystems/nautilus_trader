@@ -40,8 +40,8 @@ use crate::{
         },
     },
     catalog::types::{
-        CatalogDataType, HasCatalogDataType, parquet_catalog_data_type_path_prefixes,
-        parquet_data_path_prefix,
+        CatalogDataType, HasCatalogDataType, catalog_data_type_from_path,
+        parquet_catalog_data_type_path_prefixes, parquet_data_path_prefix,
     },
     common::custom::group_custom_data_by_type,
 };
@@ -524,6 +524,15 @@ impl ParquetDataCatalog {
 
         // If we can't parse the path, return None for both
         Ok((None, None))
+    }
+
+    /// Returns the catalog type that the files of `directory` store, if its path names one.
+    pub(crate) fn stored_data_type(&self, directory: &str) -> Option<CatalogDataType> {
+        let (data_cls, _) = self
+            .extract_data_cls_and_identifier_from_path(directory)
+            .ok()?;
+
+        catalog_data_type_from_path(&data_cls?).ok()
     }
 
     /// Consolidates data files by splitting them into fixed time periods.

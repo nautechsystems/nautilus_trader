@@ -22,13 +22,15 @@ use nautilus_model::reports::{
 
 use super::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    KEY_ACCOUNT_ID, KEY_INSTRUMENT_ID,
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const ORDER_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", true),
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("order_side", false),
@@ -64,7 +66,6 @@ const ORDER_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
 
 const FILL_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("trade_id", false),
     JsonFieldSpec::utf8("order_side", false),
@@ -81,7 +82,6 @@ const FILL_REPORT_FIELDS: &[JsonFieldSpec] = &[
 
 const POSITION_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_side", false),
     JsonFieldSpec::utf8("quantity", false),
     JsonFieldSpec::utf8("signed_decimal_qty", false),
@@ -94,7 +94,6 @@ const POSITION_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
 
 const EXECUTION_MASS_STATUS_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_id", false),
-    JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("venue", false),
     JsonFieldSpec::utf8("report_id", false),
     JsonFieldSpec::timestamp("ts_init", false),
@@ -113,7 +112,7 @@ macro_rules! impl_report_arrow {
     ($type:ty, $type_name:expr, $fields:expr) => {
         impl ArrowSchemaProvider for $type {
             fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
+                schema_for_type_with_identifier($type_name, metadata, $fields)
             }
         }
 
@@ -125,11 +124,14 @@ macro_rules! impl_report_arrow {
             where
                 T: std::borrow::Borrow<Self>,
             {
-                encode_batch(
+                encode_batch_with_identifier(
                     $type_name,
                     metadata,
                     data.iter().map(std::borrow::Borrow::borrow),
                     $fields,
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|event| event.instrument_id),
                 )
             }
 
@@ -143,7 +145,13 @@ macro_rules! impl_report_arrow {
                 metadata: &HashMap<String, String>,
                 record_batch: RecordBatch,
             ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+                decode_batch_with_metadata_fields(
+                    metadata,
+                    &record_batch,
+                    $fields,
+                    &[KEY_INSTRUMENT_ID],
+                    Some($type_name),
+                )
             }
         }
     };
@@ -163,7 +171,7 @@ impl_report_arrow!(
 
 impl ArrowSchemaProvider for ExecutionMassStatus {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type(
+        schema_for_type_with_identifier(
             "ExecutionMassStatus",
             metadata,
             EXECUTION_MASS_STATUS_FIELDS,
@@ -179,16 +187,25 @@ impl EncodeToRecordBatch for ExecutionMassStatus {
     where
         T: std::borrow::Borrow<Self>,
     {
-        encode_batch(
+        encode_batch_with_identifier(
             "ExecutionMassStatus",
             metadata,
             data.iter().map(std::borrow::Borrow::borrow),
             EXECUTION_MASS_STATUS_FIELDS,
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|status| status.account_id),
         )
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        metadata_for_type("ExecutionMassStatus")
+        let mut metadata = metadata_for_type("ExecutionMassStatus");
+        metadata.insert(KEY_ACCOUNT_ID.to_string(), self.account_id.to_string());
+        metadata
+    }
+
+    fn identifier(&self) -> Option<String> {
+        Some(self.account_id.to_string())
     }
 }
 
@@ -197,10 +214,11 @@ impl DecodeTypedFromRecordBatch for ExecutionMassStatus {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
+        decode_batch_with_metadata_fields(
             metadata,
             &record_batch,
             EXECUTION_MASS_STATUS_FIELDS,
+            &[KEY_ACCOUNT_ID],
             Some("ExecutionMassStatus"),
         )
     }
@@ -210,17 +228,91 @@ impl DecodeTypedFromRecordBatch for ExecutionMassStatus {
 mod tests {
     use std::str::FromStr;
 
+    use arrow::array::Array;
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
-        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
-        reports::{OrderStatusReport, PositionStatusReport},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, Venue, VenueOrderId,
+        },
+        reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
         types::{Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
+    use crate::arrow::KEY_IDENTIFIER;
+
+    #[rstest]
+    fn test_execution_mass_status_stores_account_id_as_identifier() {
+        let status = ExecutionMassStatus::new(
+            ClientId::from("SIM"),
+            AccountId::from("SIM-001"),
+            Venue::from("SIM"),
+            UnixNanos::from(5),
+            None,
+        );
+        let metadata = status.metadata();
+
+        let batch =
+            ExecutionMassStatus::encode_batch(&metadata, std::slice::from_ref(&status)).unwrap();
+        let identifiers = batch
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+        let clients = batch
+            .column_by_name("client_id")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+        let decoded =
+            ExecutionMassStatus::decode_typed_batch(batch.schema().metadata(), batch.clone())
+                .unwrap();
+
+        assert_eq!(identifiers.value(0), "SIM-001");
+        assert_eq!(clients.value(0), "SIM");
+        assert!(batch.column_by_name("account_id").is_none());
+        assert_eq!(decoded[0].account_id, status.account_id);
+        assert_eq!(decoded[0].client_id, status.client_id);
+    }
+
+    #[rstest]
+    fn test_reports_encode_instrument_identifier() {
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            VenueOrderId::from("1"),
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("100"),
+            Quantity::from("25"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+        let metadata = report.metadata();
+
+        let batch =
+            OrderStatusReport::encode_batch(&metadata, std::slice::from_ref(&report)).unwrap();
+        let identifiers = batch
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+
+        assert_eq!(identifiers.len(), 1);
+        assert_eq!(identifiers.value(0), "AUDUSD.SIM");
+        assert!(batch.column_by_name("instrument_id").is_none());
+    }
 
     #[rstest]
     fn test_order_status_report_round_trip() {

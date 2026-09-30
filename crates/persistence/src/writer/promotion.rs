@@ -59,6 +59,7 @@ pub(crate) fn list_session_feather_files(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PromotionSession {
+    /// Writer directory holding the `{environment}/{instance_id}` run session.
     pub(crate) root_uri: String,
     pub(crate) environment: Environment,
     pub(crate) instance_id: String,
@@ -1167,7 +1168,7 @@ mod tests {
             PromotionSession::from_uri(r"\\server\share\live\run-2").expect("valid UNC run path");
 
         // root_uri is platform-dependent here (Windows retains a trailing
-        // separator at the UNC prefix+root floor), so only environment/instance_id are asserted.
+        // separator at the UNC prefix+root floor), so only kind/instance_id are asserted.
         assert_eq!(session.environment, Environment::Live);
         assert_eq!(session.instance_id, "run-2");
     }

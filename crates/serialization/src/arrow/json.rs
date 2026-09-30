@@ -21,8 +21,9 @@ use std::{
 
 use arrow::{
     array::{
-        Array, ArrayRef, BooleanArray, BooleanBuilder, Float64Array, Float64Builder, StringBuilder,
-        StringDictionaryBuilder, TimestampNanosecondArray, UInt64Array, UInt64Builder,
+        Array, ArrayRef, BooleanArray, BooleanBuilder, Float64Array, Float64Builder, StringArray,
+        StringBuilder, StringDictionaryBuilder, TimestampNanosecondArray, UInt64Array,
+        UInt64Builder,
     },
     datatypes::{DataType, Field, Int8Type, Schema},
     error::ArrowError,
@@ -219,6 +220,27 @@ where
     D::IntoIter: ExactSizeIterator,
     I: Display,
 {
+    encode_batch_with_identifier_array(
+        type_name,
+        metadata,
+        data,
+        fields,
+        identifier_array_from_display(identifiers),
+    )
+}
+
+fn encode_batch_with_identifier_array<'a, T, D>(
+    type_name: &'static str,
+    metadata: &HashMap<String, String>,
+    data: D,
+    fields: &[JsonFieldSpec],
+    identifier_array: StringArray,
+) -> Result<RecordBatch, ArrowError>
+where
+    T: Serialize + 'a,
+    D: IntoIterator<Item = &'a T>,
+    D::IntoIter: ExactSizeIterator,
+{
     if let Some(name) = duplicate_field_name(fields) {
         return Err(invalid_argument(format!(
             "Duplicate field specification `{name}`"
@@ -227,7 +249,6 @@ where
 
     let data = data.into_iter();
     let data_len = data.len();
-    let identifier_array = identifier_array_from_display(identifiers);
     if identifier_array.len() != data_len {
         return Err(invalid_argument(format!(
             "identifier values length {} does not match data length {}",

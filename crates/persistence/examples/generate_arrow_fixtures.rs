@@ -22,7 +22,6 @@ use arrow::record_batch::RecordBatch;
 use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick};
 use nautilus_serialization::arrow::{
     DecodeFromRecordBatch, EncodeToRecordBatch, normalize_legacy_fixed_columns,
-    record_batch_without_identifier_column,
 };
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
@@ -158,5 +157,10 @@ where
     let metadata = batch.schema().metadata().clone();
     let values = T::decode_batch(&metadata, batch)?;
     let batch = T::encode_batch(&T::chunk_metadata(&values), &values)?;
-    Ok(record_batch_without_identifier_column(batch)?)
+    let mut batch = batch;
+    // Legacy fixtures predate the identifier column
+    if let Ok(index) = batch.schema().index_of("identifier") {
+        batch.remove_column(index);
+    }
+    Ok(batch)
 }

@@ -60,7 +60,6 @@ pub mod catalog;
 pub mod common;
 pub mod config;
 pub mod errors;
-pub mod test_data;
 pub mod writer;
 
 #[cfg(feature = "python")]

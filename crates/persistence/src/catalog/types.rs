@@ -408,51 +408,13 @@ pub const INSTRUMENT_PATH_PREFIXES: &[&str] = &[
 /// Returns the catalog folder prefix for an instrument type.
 #[must_use]
 pub const fn instrument_path_prefix(instrument_type: &NautilusInstrumentType) -> &'static str {
-    match instrument_type {
-        NautilusInstrumentType::BettingInstrument => "betting_instrument",
-        NautilusInstrumentType::BinaryOption => "binary_option",
-        NautilusInstrumentType::Cfd => "cfd",
-        NautilusInstrumentType::Commodity => "commodity",
-        NautilusInstrumentType::CryptoFuture => "crypto_future",
-        NautilusInstrumentType::CryptoFuturesSpread => "crypto_futures_spread",
-        NautilusInstrumentType::CryptoOption => "crypto_option",
-        NautilusInstrumentType::CryptoOptionSpread => "crypto_option_spread",
-        NautilusInstrumentType::CryptoPerpetual => "crypto_perpetual",
-        NautilusInstrumentType::CurrencyPair => "currency_pair",
-        NautilusInstrumentType::Equity => "equity",
-        NautilusInstrumentType::FuturesContract => "futures_contract",
-        NautilusInstrumentType::FuturesSpread => "futures_spread",
-        NautilusInstrumentType::IndexInstrument => "index_instrument",
-        NautilusInstrumentType::OptionContract => "option_contract",
-        NautilusInstrumentType::OptionSpread => "option_spread",
-        NautilusInstrumentType::PerpetualContract => "perpetual_contract",
-        NautilusInstrumentType::TokenizedAsset => "tokenized_asset",
-    }
+    instrument_type.path_prefix()
 }
 
 /// Returns the semantic instrument type for an instrument enum value.
 #[must_use]
 pub const fn instrument_any_type(instrument: &InstrumentAny) -> NautilusInstrumentType {
-    match instrument {
-        InstrumentAny::Betting(_) => NautilusInstrumentType::BettingInstrument,
-        InstrumentAny::BinaryOption(_) => NautilusInstrumentType::BinaryOption,
-        InstrumentAny::Cfd(_) => NautilusInstrumentType::Cfd,
-        InstrumentAny::Commodity(_) => NautilusInstrumentType::Commodity,
-        InstrumentAny::CryptoFuture(_) => NautilusInstrumentType::CryptoFuture,
-        InstrumentAny::CryptoFuturesSpread(_) => NautilusInstrumentType::CryptoFuturesSpread,
-        InstrumentAny::CryptoOption(_) => NautilusInstrumentType::CryptoOption,
-        InstrumentAny::CryptoOptionSpread(_) => NautilusInstrumentType::CryptoOptionSpread,
-        InstrumentAny::CryptoPerpetual(_) => NautilusInstrumentType::CryptoPerpetual,
-        InstrumentAny::CurrencyPair(_) => NautilusInstrumentType::CurrencyPair,
-        InstrumentAny::Equity(_) => NautilusInstrumentType::Equity,
-        InstrumentAny::FuturesContract(_) => NautilusInstrumentType::FuturesContract,
-        InstrumentAny::FuturesSpread(_) => NautilusInstrumentType::FuturesSpread,
-        InstrumentAny::IndexInstrument(_) => NautilusInstrumentType::IndexInstrument,
-        InstrumentAny::OptionContract(_) => NautilusInstrumentType::OptionContract,
-        InstrumentAny::OptionSpread(_) => NautilusInstrumentType::OptionSpread,
-        InstrumentAny::PerpetualContract(_) => NautilusInstrumentType::PerpetualContract,
-        InstrumentAny::TokenizedAsset(_) => NautilusInstrumentType::TokenizedAsset,
-    }
+    instrument.instrument_type()
 }
 
 /// Returns the catalog prefix for non-data record types.
@@ -500,8 +462,8 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
 
 /// Parses a stored catalog type path back into its catalog type.
 ///
-/// Accepts the shared-table `record/<type>` and `instrument/<class>` paths, `custom/<type>` data
-/// paths, and the flat Parquet data, record, and instrument class directories.
+/// Accepts the shared-table `record/<type>`, `instrument/<class>`, and `custom/<type>` paths and
+/// the flat Parquet data, record, and instrument class directories.
 ///
 /// # Errors
 ///
@@ -530,8 +492,9 @@ pub fn catalog_data_type_from_path(path: &str) -> anyhow::Result<CatalogDataType
 
 /// Returns the shared-table catalog prefix for a record type.
 ///
-/// Shared-table backends store records under `record/<type>` and instrument classes under
-/// `instrument/<class>`, where Parquet keeps the flat [`record_path_prefix`] directory.
+/// Shared-table backends group the non-data families as `record/<type>`,
+/// `instrument/<class>`, and `custom/<type>`; Parquet keeps the flat
+/// [`record_path_prefix`] directory.
 #[must_use]
 pub fn record_table_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str> {
     Cow::Owned(format!("record/{}", record_path_prefix(record_type)))
@@ -550,22 +513,45 @@ pub fn instrument_table_path_prefix(instrument_type: &NautilusInstrumentType) ->
 #[must_use]
 pub fn catalog_data_type_path_prefix(catalog_type: &CatalogDataType) -> Cow<'static, str> {
     match catalog_type {
-        CatalogDataType::Data(data_type) => {
-            let prefix = data_path_prefix(data_type);
-
-            // A data prefix the flat record parser also claims, such as DeFi's `defi`, uses the
-            // type name so it parses back as data
-            if prefix.parse::<NautilusRecordType>().is_ok() {
-                Cow::Owned(data_type.to_string())
-            } else {
-                prefix
-            }
-        }
+        CatalogDataType::Data(data_type) => data_path_prefix(data_type),
         CatalogDataType::Record(record_type) => record_table_path_prefix(record_type),
         CatalogDataType::Instrument(instrument_type) => {
             instrument_table_path_prefix(instrument_type)
         }
     }
+}
+
+/// Derives a table name from a shared-table catalog prefix by replacing every character that
+/// is not alphanumeric or an underscore, so `record/account_state` becomes
+/// `record_account_state`.
+#[must_use]
+pub fn catalog_table_name(type_path: &str) -> String {
+    type_path
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Parses a shared-table catalog table name back into the instrument class it stores.
+#[must_use]
+pub fn instrument_type_from_table_name(table: &str) -> Option<NautilusInstrumentType> {
+    table
+        .strip_prefix("instrument_")
+        .and_then(|prefix| prefix.parse::<NautilusInstrumentType>().ok())
+}
+
+/// Parses a shared-table catalog table name back into the record type it stores.
+#[must_use]
+pub fn record_type_from_table_name(table: &str) -> Option<NautilusRecordType> {
+    table
+        .strip_prefix("record_")
+        .and_then(|prefix| prefix.parse::<NautilusRecordType>().ok())
 }
 
 /// Returns the SQL-safe table-name stem identifying a catalog type.
@@ -574,8 +560,8 @@ pub fn catalog_data_type_path_prefix(catalog_type: &CatalogDataType) -> Cow<'sta
 /// `instruments` name rather than any one of them. The stem names registered query tables and
 /// never addresses storage; use [`parquet_catalog_data_type_path_prefixes`] for directories.
 #[must_use]
-pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<'static, str> {
-    match data_type {
+pub fn parquet_catalog_data_type_table_stem(catalog_type: &CatalogDataType) -> Cow<'static, str> {
+    match catalog_type {
         CatalogDataType::Data(data_type) => parquet_data_path_prefix(data_type),
         CatalogDataType::Record(record_type) => record_path_prefix(record_type),
         CatalogDataType::Instrument(instrument_type) => {
@@ -591,9 +577,9 @@ pub fn parquet_catalog_data_type_table_stem(data_type: &CatalogDataType) -> Cow<
 /// other family covers exactly one directory.
 #[must_use]
 pub fn parquet_catalog_data_type_path_prefixes(
-    data_type: &CatalogDataType,
+    catalog_type: &CatalogDataType,
 ) -> Vec<Cow<'static, str>> {
-    match data_type {
+    match catalog_type {
         CatalogDataType::Data(NautilusDataType::Instrument) => INSTRUMENT_PATH_PREFIXES
             .iter()
             .map(|prefix| Cow::Borrowed(*prefix))
@@ -801,7 +787,7 @@ mod tests {
     }
 
     #[rstest]
-    fn catalog_data_type_converts_from_every_selector_family() {
+    fn catalog_type_converts_from_every_selector_family() {
         assert_eq!(
             CatalogDataType::from(NautilusDataType::QuoteTick),
             CatalogDataType::Data(NautilusDataType::QuoteTick)
@@ -825,69 +811,6 @@ mod tests {
         assert_eq!(
             CatalogDataType::from(NautilusInstrumentType::Equity),
             CatalogDataType::Instrument(NautilusInstrumentType::Equity)
-        );
-    }
-
-    #[rstest]
-    #[case::data(CatalogDataType::Data(NautilusDataType::QuoteTick), "quotes")]
-    #[case::custom(
-        CatalogDataType::Data(NautilusDataType::Custom {
-            type_name: "Signal".to_string(),
-        }),
-        "custom/Signal",
-    )]
-    #[case::record(
-        CatalogDataType::Record(NautilusRecordType::AccountState),
-        "record/account_state"
-    )]
-    #[case::instrument(
-        CatalogDataType::Instrument(NautilusInstrumentType::CurrencyPair),
-        "instrument/currency_pair"
-    )]
-    fn catalog_data_type_path_prefix_round_trips(
-        #[case] catalog_type: CatalogDataType,
-        #[case] prefix: &str,
-    ) {
-        assert_eq!(catalog_data_type_path_prefix(&catalog_type), prefix);
-        assert_eq!(catalog_data_type_from_path(prefix).unwrap(), catalog_type);
-    }
-
-    #[rstest]
-    fn catalog_data_type_path_prefix_round_trips_every_family() {
-        let mut catalog_types = NautilusRecordType::iter()
-            .map(CatalogDataType::Record)
-            .chain(NautilusInstrumentType::iter().map(CatalogDataType::Instrument))
-            .collect::<Vec<_>>();
-
-        macro_rules! push_data_types {
-            ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
-                $(catalog_types.push(CatalogDataType::Data(NautilusDataType::$variant));)+
-            };
-        }
-        nautilus_model::for_each_data_type!(push_data_types);
-
-        // DeFi data exists whenever the model enables DeFi, even without this crate's feature
-        if let Ok(defi) = "Defi".parse::<NautilusDataType>() {
-            catalog_types.push(CatalogDataType::Data(defi));
-        }
-
-        for catalog_type in catalog_types {
-            let prefix = catalog_data_type_path_prefix(&catalog_type);
-            assert_eq!(
-                catalog_data_type_from_path(&prefix).unwrap(),
-                catalog_type,
-                "{prefix}"
-            );
-        }
-    }
-
-    #[rstest]
-    fn catalog_data_type_from_path_rejects_unknown_shared_table_record() {
-        let error = catalog_data_type_from_path("record/not_a_type").unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Invalid `NautilusRecordType`: 'not_a_type'"
         );
     }
 

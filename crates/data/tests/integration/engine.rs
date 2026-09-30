@@ -112,7 +112,7 @@ use nautilus_persistence::backend::parquet::{
     catalog::ParquetDataCatalog, paths::timestamps_to_filename,
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::test_data::RustTestCustomData;
+use nautilus_persistence::common::test_data::RustTestCustomData;
 #[cfg(feature = "streaming")]
 use nautilus_serialization::ensure_custom_data_registered;
 use rstest::*;

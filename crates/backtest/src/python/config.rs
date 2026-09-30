@@ -42,10 +42,7 @@ use nautilus_model::{
     python::data::PyNautilusDataType,
     types::Currency,
 };
-use nautilus_persistence::{
-    config::{DataCatalogConfig, StreamingConfig},
-    python::config::PyCatalogBackend,
-};
+use nautilus_persistence::config::{DataCatalogConfig, StreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::ImportableControllerConfig;
@@ -663,10 +660,7 @@ impl BacktestDataConfig {
     #[new]
     #[pyo3(signature = (
         data_type,
-        catalog_path,
-        catalog_fs_protocol = None,
-        catalog_fs_storage_options = None,
-        catalog_fs_rust_storage_options = None,
+        catalog,
         instrument_id = None,
         instrument_ids = None,
         start_time = None,
@@ -677,7 +671,6 @@ impl BacktestDataConfig {
         bar_spec = None,
         bar_types = None,
         optimize_file_loading = None,
-        catalog_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -685,10 +678,7 @@ impl BacktestDataConfig {
             '_,
             PyAny,
         >,
-        catalog_path: String,
-        catalog_fs_protocol: Option<String>,
-        catalog_fs_storage_options: Option<HashMap<String, String>>,
-        catalog_fs_rust_storage_options: Option<HashMap<String, String>>,
+        catalog: DataCatalogConfig,
         instrument_id: Option<InstrumentId>,
         instrument_ids: Option<Vec<InstrumentId>>,
         #[gen_stub(override_type(
@@ -707,7 +697,6 @@ impl BacktestDataConfig {
         bar_spec: Option<BarSpecification>,
         bar_types: Option<Vec<String>>,
         optimize_file_loading: Option<bool>,
-        catalog_backend: Option<pyo3::PyRef<'_, PyCatalogBackend>>,
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
             .extract::<pyo3::PyRef<'_, PyNautilusDataType>>()
@@ -717,19 +706,7 @@ impl BacktestDataConfig {
         let end_time = timestamp_from_python(end_time)?;
         Self::builder()
             .data_type(data_type)
-            .catalog_path(catalog_path)
-            .catalog_backend(
-                catalog_backend
-                    .map(|backend| backend.inner())
-                    .unwrap_or_default(),
-            )
-            .maybe_catalog_fs_protocol(catalog_fs_protocol)
-            .maybe_catalog_fs_storage_options(
-                catalog_fs_storage_options.map(|m| m.into_iter().collect()),
-            )
-            .maybe_catalog_fs_rust_storage_options(
-                catalog_fs_rust_storage_options.map(|m| m.into_iter().collect()),
-            )
+            .catalog(catalog)
             .maybe_instrument_id(instrument_id)
             .maybe_instrument_ids(instrument_ids)
             .maybe_start_time(start_time)
@@ -744,11 +721,11 @@ impl BacktestDataConfig {
             .map_err(config_error_to_pyvalue_err)
     }
 
-    /// Returns the configured catalog backend.
+    /// Returns the catalog the data is queried from.
     #[getter]
-    #[pyo3(name = "catalog_backend")]
-    fn py_catalog_backend(&self) -> PyCatalogBackend {
-        PyCatalogBackend::new(self.catalog_backend())
+    #[pyo3(name = "catalog")]
+    fn py_catalog(&self) -> DataCatalogConfig {
+        self.catalog().clone()
     }
 
     #[getter]
@@ -758,41 +735,9 @@ impl BacktestDataConfig {
     }
 
     #[getter]
-    #[pyo3(name = "catalog_path")]
-    fn py_catalog_path(&self) -> &str {
-        self.catalog_path()
-    }
-
-    #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> Option<InstrumentId> {
         self.instrument_id()
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_protocol")]
-    fn py_catalog_fs_protocol(&self) -> Option<&str> {
-        self.catalog_fs_protocol()
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_storage_option_keys")]
-    fn py_catalog_fs_storage_option_keys(&self) -> Option<Vec<String>> {
-        self.catalog_fs_storage_options().map(|options| {
-            let mut keys = options.keys().cloned().collect::<Vec<_>>();
-            keys.sort_unstable();
-            keys
-        })
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_rust_storage_option_keys")]
-    fn py_catalog_fs_rust_storage_option_keys(&self) -> Option<Vec<String>> {
-        self.catalog_fs_rust_storage_options().map(|options| {
-            let mut keys = options.keys().cloned().collect::<Vec<_>>();
-            keys.sort_unstable();
-            keys
-        })
     }
 
     #[getter]

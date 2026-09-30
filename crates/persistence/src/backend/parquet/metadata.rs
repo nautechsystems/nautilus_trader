@@ -30,7 +30,11 @@ use crate::{
         traits::CatalogMetadata,
         types::{CatalogDataType, parquet_catalog_data_type_table_stem},
     },
-    common::{datafusion::build_query, metadata::arrow_metadata_to_params},
+    common::{
+        datafusion::build_query,
+        metadata::{arrow_metadata_to_params, metadata_from_stored},
+        paths::extract_identifier_from_path,
+    },
 };
 
 impl ParquetDataCatalog {
@@ -64,11 +68,14 @@ impl ParquetDataCatalog {
                         .await?;
                 Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
             })?;
+            let metadata =
+                metadata_from_stored(metadata, extract_identifier_from_path(file_uri), data_type);
 
             let table_name = format!("{table_prefix}_{index}");
             let query = build_query(&table_name, start, end, where_clause);
             let resolved_path = self.resolve_path_for_datafusion(file_uri);
-            let batches = self.session.collect_parquet_files_batches(
+            let batches = self.collect_stored_batches(
+                data_type,
                 &table_name,
                 vec![resolved_path],
                 Some(&query),

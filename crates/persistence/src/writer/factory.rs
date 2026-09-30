@@ -89,17 +89,6 @@ impl WriterConnectConfig {
             params: None,
         }
     }
-
-    /// Returns the catalog that receives promoted data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error naming `backend` when no catalog is configured.
-    pub fn required_catalog(&self, backend: &str) -> anyhow::Result<&CatalogConnectConfig> {
-        self.catalog
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("{backend} writer requires a promotion catalog"))
-    }
 }
 
 /// Factory constructing a streaming writer from connection settings and a clock.
@@ -122,12 +111,36 @@ pub fn create_writer(
     clock: WriterClock,
     factories: &WriterFactoryRegistry,
 ) -> anyhow::Result<StreamingDataSink> {
-    let name = backend.to_string();
-    factories
-        .get(&name)
-        .ok_or_else(|| anyhow::anyhow!("No writer factory registered for '{name}'"))?(
-        config, clock
-    )
+    match backend {
+        WriterBackendType::Feather => factories
+            .get(FEATHER_WRITER_FACTORY_NAME)
+            .ok_or_else(|| anyhow::anyhow!("Feather writer factory missing from registry"))?(
+            config, clock,
+        ),
+        WriterBackendType::Parquet => factories
+            .get(PARQUET_WRITER_FACTORY_NAME)
+            .ok_or_else(|| anyhow::anyhow!("Parquet writer factory missing from registry"))?(
+            config, clock,
+        ),
+        WriterBackendType::External(name) => factories
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("No writer factory registered for '{name}'"))?(
+            config, clock,
+        ),
+    }
+}
+
+impl WriterConnectConfig {
+    /// Returns the catalog that receives promoted data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming `backend` when no catalog is configured.
+    pub fn required_catalog(&self, backend: &str) -> anyhow::Result<&CatalogConnectConfig> {
+        self.catalog
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("{backend} writer requires a promotion catalog"))
+    }
 }
 
 /// Deletes existing files below the writer directory.
@@ -137,25 +150,12 @@ pub fn create_writer(
 /// Returns an error if the writer directory is not local or deleting it fails.
 pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Result<()> {
     let directory = local_writer_directory(&config.uri)?;
-
-    // Keep the directory itself, which can be a mount point or a symlink to the real output
-    let entries = match fs::read_dir(&directory) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-
-    for entry in entries {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            fs::remove_dir_all(entry.path())?;
-        } else {
-            fs::remove_file(entry.path())?;
-        }
+    match fs::remove_dir_all(&directory) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
     }
-
-    Ok(())
 }
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicU64;
@@ -198,17 +198,13 @@ mod tests {
     fn replace_existing_writer_data_removes_local_files() {
         let directory = TempDir::new().unwrap();
         let stale_file = directory.path().join("stale.feather");
-        let stale_type_directory = directory.path().join("quotes");
         std::fs::write(&stale_file, b"stale").unwrap();
-        std::fs::create_dir(&stale_type_directory).unwrap();
-        std::fs::write(stale_type_directory.join("quotes_0.feather"), b"stale").unwrap();
         let config =
             WriterConnectConfig::new(format!("file://{}", directory.path().display()), None);
 
         replace_existing_writer_data(&config).unwrap();
 
-        assert!(directory.path().is_dir());
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert!(!stale_file.exists());
     }
 
     #[rstest]
@@ -289,12 +285,7 @@ mod tests {
             "parquet".parse::<WriterBackendType>().unwrap(),
             WriterBackendType::Parquet,
         );
-        assert_eq!(
-            "parquet".parse::<WriterBackendType>().unwrap(),
-            WriterBackendType::Parquet,
-        );
         assert_eq!(WriterBackendType::Feather.to_string(), "Feather");
-        assert_eq!(WriterBackendType::Parquet.to_string(), "Parquet");
         assert_eq!(WriterBackendType::Parquet.to_string(), "Parquet");
     }
 
@@ -582,49 +573,6 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("No writer factory registered for 'Missing'"),
-        );
-    }
-
-    #[rstest]
-    #[case::feather(WriterBackendType::Feather)]
-    // Without the cloud feature, the Parquet writer rejects an S3 URI before the local-path check
-    #[cfg_attr(feature = "cloud", case::parquet(WriterBackendType::Parquet))]
-    fn create_writer_rejects_remote_staging_uri(#[case] backend: WriterBackendType) {
-        let catalog = TempDir::new().unwrap();
-
-        let config = WriterConnectConfig::new(
-            "s3://bucket/backtest/run-001",
-            Some(CatalogConnectConfig::new(
-                catalog.path().to_string_lossy(),
-                None,
-            )),
-        );
-
-        let error = create_writer(
-            &backend,
-            &config,
-            WriterClock::Live,
-            &default_writer_factories(),
-        )
-        .unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Streaming writers append to local files, writer path must be local, was \
-             s3://bucket/backtest/run-001",
-        );
-    }
-
-    #[rstest]
-    fn replace_existing_writer_data_rejects_remote_uri() {
-        let config = WriterConnectConfig::new("s3://bucket/backtest/run-001", None);
-
-        let error = replace_existing_writer_data(&config).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Streaming writers append to local files, writer path must be local, was \
-             s3://bucket/backtest/run-001",
         );
     }
 

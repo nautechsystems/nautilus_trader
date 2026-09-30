@@ -15,81 +15,74 @@
 
 //! Custom data persistence: shared conversion and orchestration.
 //!
-//! Centralizes the logic for appending the `data_type` column and metadata to Arrow batches
-//! (Parquet/Feather), and custom-data write preparation, path construction, and decode logic
+//! Centralizes the logic for the custom-data columns of Arrow batches (Parquet/Feather), and
+//! custom-data write preparation, path construction, and decode logic
 //! so the catalog delegates here instead of inlining custom-specific branching.
 
 use std::{
     collections::{BTreeMap, HashMap},
-    hash::BuildHasher,
     sync::Arc,
 };
 
 use datafusion::arrow::{
-    array::{Array, StringArray},
+    array::{Array as _, StringArray},
+    compute::cast,
     datatypes::{DataType as ArrowDataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
-    Bar, CustomData, CustomDataTrait, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
-    TradeTick, close::InstrumentClose, encode_custom_to_arrow, get_arrow_schema,
+    Bar, CustomData, CustomDataTrait, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
+    InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
+    OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+    get_arrow_schema,
 };
 use nautilus_serialization::arrow::{
-    DecodeDataFromRecordBatch, custom::CustomDataDecoder, record_batch_with_identifier_column,
-    timestamp_data_type,
+    DecodeDataFromRecordBatch, KEY_CUSTOM_DATA_METADATA, KEY_IDENTIFIER, KEY_TYPE_NAME,
+    StringColumnRef, custom::CustomDataDecoder, json_string_field, timestamp_data_type,
 };
 
 use crate::{
     catalog::types::data_type_from_data_path_prefix, common::paths::urisafe_instrument_id,
 };
 
-/// Builds a schema that adds the `data_type` column and `type_name` metadata to a base schema.
-/// Used when creating a Feather buffer for custom data (single type per writer).
+/// Returns `schema` with the `type_name` metadata entry of a custom type.
 #[must_use]
-pub fn schema_with_data_type_column(base_schema: &Schema, type_name: &str) -> Schema {
-    let mut fields: Vec<_> = base_schema.fields().iter().cloned().collect();
-    fields.push(Arc::new(Field::new("data_type", ArrowDataType::Utf8, true)));
-    let mut meta = base_schema.metadata().clone();
-    meta.insert("type_name".to_string(), type_name.to_string());
-    Schema::new_with_metadata(fields, meta)
+pub(crate) fn schema_with_type_name(base_schema: &Schema, type_name: &str) -> Schema {
+    let mut metadata = base_schema.metadata().clone();
+    metadata.insert(KEY_TYPE_NAME.to_string(), type_name.to_string());
+
+    Schema::new_with_metadata(base_schema.fields().clone(), metadata)
 }
 
-/// Appends a `data_type` column (JSON string per row) and `type_name` + optional metadata to the
-/// batch schema. Used by both the Parquet catalog and Feather writer for catalog-compatible output.
-///
-/// # Errors
-///
-/// Returns an error if the new `RecordBatch` cannot be created.
-pub fn augment_batch_with_data_type_column<S: BuildHasher>(
-    batch: &RecordBatch,
-    data_type_json: &str,
-    type_name: &str,
-    dt_meta: Option<&HashMap<String, String, S>>,
-) -> anyhow::Result<RecordBatch> {
-    let num_rows = batch.num_rows();
-    let data_type_array: Arc<dyn Array> =
-        Arc::new(StringArray::from(vec![data_type_json; num_rows]));
-    let schema = batch.schema();
-    let mut fields: Vec<_> = schema.fields().iter().cloned().collect();
+/// Returns `schema` with the nullable `identifier` column appended, the column every custom
+/// producer adds because a registered Arrow encoding carries no identity.
+#[must_use]
+pub(crate) fn schema_with_identifier_column(schema: &Schema) -> Schema {
+    let mut fields = schema.fields().iter().cloned().collect::<Vec<_>>();
     fields.push(Arc::new(Field::new(
-        "data_type",
+        KEY_IDENTIFIER,
         ArrowDataType::Utf8,
-        false,
+        true,
     )));
-    let mut meta = schema.metadata().clone();
-    meta.insert("type_name".to_string(), type_name.to_string());
 
-    if let Some(m) = dt_meta {
-        meta.extend(m.iter().map(|(key, value)| (key.clone(), value.clone())));
-    }
+    Schema::new_with_metadata(fields, schema.metadata().clone())
+}
 
-    let new_schema = Arc::new(Schema::new_with_metadata(fields, meta));
+fn append_identifier_column(
+    batch: &RecordBatch,
+    identifier: Option<&str>,
+) -> anyhow::Result<RecordBatch> {
+    let schema = schema_with_identifier_column(batch.schema().as_ref());
     let mut columns = batch.columns().to_vec();
-    columns.push(data_type_array);
-    RecordBatch::try_new(new_schema, columns)
-        .map_err(|e| anyhow::anyhow!("Failed to merge custom data type metadata: {e}"))
+    columns.push(Arc::new(StringArray::from(vec![
+        identifier.map(
+            ToString::to_string
+        );
+        batch.num_rows()
+    ])));
+
+    Ok(RecordBatch::try_new(Arc::new(schema), columns)?)
 }
 
 /// Returns path components for custom data: `["data", "custom", type_name, identifier]`.
@@ -110,6 +103,113 @@ pub fn custom_data_path_components(type_name: &str, identifier: Option<&str>) ->
     }
 
     components
+}
+
+/// Encodes custom data rows into the catalog batch shape every producer writes.
+///
+/// Appends the `identifier` column and the `custom_data_metadata` column (the `DataType`
+/// metadata as JSON, NULL when absent) to the registered Arrow encoding, and sets the `type_name`
+/// metadata entry.
+///
+/// # Errors
+///
+/// Returns an error if the type is not registered for Arrow encoding, encoding fails, or the
+/// `DataType` cannot be serialized.
+pub fn encode_custom_rows(
+    type_name: &str,
+    items: &[Arc<dyn CustomDataTrait>],
+    data_type: &DataType,
+) -> anyhow::Result<RecordBatch> {
+    let batch = encode_custom_to_arrow(type_name, items)
+        .map_err(|e| anyhow::anyhow!("Failed to encode custom data to Arrow: {e}"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Custom data type \"{type_name}\" is not registered for Arrow encoding; \
+                 call register_custom_data_class or ensure_custom_data_registered before writing"
+            )
+        })?;
+    let batch = RecordBatch::try_new(
+        Arc::new(schema_with_type_name(batch.schema().as_ref(), type_name)),
+        batch.columns().to_vec(),
+    )?;
+    let batch = append_identifier_column(&batch, data_type.identifier())?;
+
+    append_custom_data_metadata_column(&batch, data_type)
+}
+
+/// Replaces the `data_type` JSON column of a batch written before `custom_data_metadata` existed
+/// with the `custom_data_metadata` column, so migrated files match a fresh write.
+///
+/// A batch that already has `custom_data_metadata`, or no `data_type` column, is returned
+/// unchanged.
+///
+/// # Errors
+///
+/// Returns an error if the stored `DataType` cannot be parsed or the batch cannot be rebuilt.
+pub(crate) fn upgrade_legacy_custom_batch(batch: RecordBatch) -> anyhow::Result<RecordBatch> {
+    const LEGACY_COLUMN: &str = "data_type";
+
+    let schema = batch.schema();
+    let Ok(legacy_index) = schema.index_of(LEGACY_COLUMN) else {
+        return Ok(batch);
+    };
+
+    if schema.index_of(KEY_CUSTOM_DATA_METADATA).is_ok() {
+        return Ok(batch);
+    }
+    let data_type = if batch.num_rows() == 0 || batch.column(legacy_index).is_null(0) {
+        None
+    } else {
+        let json = StringColumnRef::try_from_array(batch.column(legacy_index).as_ref())
+            .ok_or_else(|| anyhow::anyhow!("data_type column must be a string column"))?
+            .value(0)
+            .to_string();
+
+        Some(DataType::from_persistence_json(&json)?)
+    };
+    let mut fields = schema.fields().iter().cloned().collect::<Vec<_>>();
+    let mut columns = batch.columns().to_vec();
+    fields.remove(legacy_index);
+    columns.remove(legacy_index);
+    let stripped = RecordBatch::try_new(
+        Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone())),
+        columns,
+    )?;
+
+    match data_type {
+        Some(data_type) => append_custom_data_metadata_column(&stripped, &data_type),
+        None => append_custom_data_metadata_column(&stripped, &DataType::new("", None, None)),
+    }
+}
+
+/// Returns `schema` with the nullable `custom_data_metadata` JSON column appended.
+#[must_use]
+pub fn schema_with_custom_data_metadata_column(schema: &Schema) -> Schema {
+    let mut fields: Vec<_> = schema.fields().iter().cloned().collect();
+    fields.push(Arc::new(json_string_field(KEY_CUSTOM_DATA_METADATA, true)));
+
+    Schema::new_with_metadata(fields, schema.metadata().clone())
+}
+
+fn append_custom_data_metadata_column(
+    batch: &RecordBatch,
+    data_type: &DataType,
+) -> anyhow::Result<RecordBatch> {
+    let metadata_json = data_type
+        .metadata()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("Failed to serialize DataType metadata: {e}"))?;
+
+    let schema = schema_with_custom_data_metadata_column(batch.schema().as_ref());
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(StringArray::from(vec![
+        metadata_json.as_deref();
+        batch.num_rows()
+    ])));
+
+    RecordBatch::try_new(Arc::new(schema), columns)
+        .map_err(|e| anyhow::anyhow!("Failed to append custom data metadata column: {e}"))
 }
 
 /// Groups custom data by full persistence identity.
@@ -152,11 +252,6 @@ pub fn prepare_custom_data_batch(
     let type_name = first_custom.data.type_name();
     let identifier = first_custom.data_type.identifier().map(String::from);
     let metadata_str = first_custom.data_type.metadata_str();
-    let dt_meta = first_custom.data_type.metadata_string_map();
-    let data_type_json = first_custom
-        .data_type
-        .to_persistence_json()
-        .map_err(|e| anyhow::anyhow!("Failed to serialize data_type for persistence: {e}"))?;
 
     let mut start_ts = first_custom.data.ts_init();
     let mut end_ts = start_ts;
@@ -180,18 +275,7 @@ pub fn prepare_custom_data_batch(
         validate_custom_catalog_schema(type_name, &schema)?;
     }
 
-    let batch = encode_custom_to_arrow(type_name, &items)
-        .map_err(|e| anyhow::anyhow!("Failed to encode custom data to Arrow: {e}"))?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Custom data type \"{type_name}\" is not registered for Arrow encoding; \
-                 call register_custom_data_class or ensure_custom_data_registered before writing"
-            )
-        })?;
-
-    let batch =
-        augment_batch_with_data_type_column(&batch, &data_type_json, type_name, dt_meta.as_ref())?;
-    let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
+    let batch = encode_custom_rows(type_name, &items, &first_custom.data_type)?;
 
     Ok((batch, type_name.to_string(), identifier, start_ts, end_ts))
 }
@@ -302,6 +386,57 @@ pub fn decode_batch_to_data(
     )
 }
 
+/// Splits a batch into runs of consecutive rows that share one identifier and one
+/// `custom_data_metadata` value, so each run decodes under its own `DataType`.
+///
+/// A batch without the metadata column, or with fewer than two rows, is returned whole.
+///
+/// # Errors
+///
+/// Returns an error if the identifier or metadata column cannot be read as strings.
+pub(crate) fn split_batch_by_custom_data_type(
+    batch: RecordBatch,
+) -> anyhow::Result<Vec<RecordBatch>> {
+    let schema = batch.schema();
+    let Ok(metadata_index) = schema.index_of(KEY_CUSTOM_DATA_METADATA) else {
+        return Ok(vec![batch]);
+    };
+
+    if batch.num_rows() < 2 {
+        return Ok(vec![batch]);
+    }
+    let key_indices = [Some(metadata_index), schema.index_of(KEY_IDENTIFIER).ok()];
+    let mut columns = Vec::new();
+
+    for index in key_indices.into_iter().flatten() {
+        let column = cast(batch.column(index), &ArrowDataType::Utf8)?;
+        let column = column
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or_else(|| anyhow::anyhow!("custom data key column is not a string column"))?
+            .clone();
+        columns.push(column);
+    }
+    let key = |row: usize| {
+        columns
+            .iter()
+            .map(|column| (!column.is_null(row)).then(|| column.value(row)))
+            .collect::<Vec<_>>()
+    };
+    let mut runs = Vec::new();
+    let mut start = 0;
+
+    for row in 1..batch.num_rows() {
+        if key(row) != key(start) {
+            runs.push(batch.slice(start, row - start));
+            start = row;
+        }
+    }
+    runs.push(batch.slice(start, batch.num_rows() - start));
+
+    Ok(runs)
+}
+
 /// Decodes multiple `RecordBatches` (e.g. from custom data files) into a single `Vec<Data>`.
 /// Optionally replaces `ts_init` column with `ts_event` before decoding each batch.
 ///
@@ -312,6 +447,13 @@ pub fn decode_custom_batches_to_data(
     batches: Vec<RecordBatch>,
     use_ts_event_for_ts_init: bool,
 ) -> anyhow::Result<Vec<Data>> {
+    let batches = batches
+        .into_iter()
+        .map(split_batch_by_custom_data_type)
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     let Some(first_batch) = batches.first() else {
         return Ok(Vec::new());
     };
@@ -350,6 +492,7 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use datafusion::arrow::{
+        array::{Array as _, StringArray},
         datatypes::{DataType as ArrowDataType, Field, Schema},
         record_batch::RecordBatch,
     };
@@ -360,16 +503,17 @@ mod tests {
         types::{Price, Quantity},
     };
     use nautilus_serialization::{
-        arrow::{EncodeToRecordBatch, timestamp_data_type},
+        arrow::{EncodeToRecordBatch, KEY_CUSTOM_DATA_METADATA, timestamp_data_type},
         ensure_custom_data_registered,
     };
     use rstest::rstest;
 
     use super::{
         custom_data_path_components, decode_batch_to_data, decode_custom_batches_to_data,
-        group_custom_data_by_type, prepare_custom_data_batch, validate_custom_catalog_schema,
+        group_custom_data_by_type, prepare_custom_data_batch, split_batch_by_custom_data_type,
+        validate_custom_catalog_schema,
     };
-    use crate::test_data::RustTestCustomData;
+    use crate::{common::test_data::RustTestCustomData, writer::feather::FeatherWriter};
 
     #[rstest]
     fn test_validate_custom_catalog_schema_accepts_catalog_timestamps() {
@@ -534,6 +678,161 @@ mod tests {
         let (_, _, _, start, end) = prepare_custom_data_batch(&refs).unwrap();
 
         assert_eq!((start, end), (UnixNanos::from(11), UnixNanos::from(31)));
+    }
+
+    #[rstest]
+    fn custom_producers_return_identical_batches_with_typed_metadata_column() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let mut metadata = Params::new();
+        metadata.insert("source".to_string(), serde_json::json!("reuters"));
+        metadata.insert("max_items".to_string(), serde_json::json!(10));
+        let custom = test_custom("AAPL.XNAS", 5, 7, Some(metadata));
+
+        let (prepared, _, _, _, _) = prepare_custom_data_batch(&[&custom]).unwrap();
+        let staged = FeatherWriter::encode_custom_to_batch(&custom).unwrap();
+        let metadata_column = prepared
+            .column_by_name(KEY_CUSTOM_DATA_METADATA)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let metadata_value: serde_json::Value =
+            serde_json::from_str(metadata_column.value(0)).unwrap();
+
+        assert_eq!(prepared, staged);
+        assert_eq!(
+            metadata_value,
+            serde_json::json!({"source": "reuters", "max_items": 10})
+        );
+        assert!(metadata_value["max_items"].is_u64());
+    }
+
+    #[rstest]
+    fn custom_batch_metadata_column_is_null_without_datatype_metadata() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let custom = test_custom("AAPL.XNAS", 5, 7, None);
+
+        let (batch, _, _, _, _) = prepare_custom_data_batch(&[&custom]).unwrap();
+
+        assert_eq!(
+            batch
+                .column_by_name(KEY_CUSTOM_DATA_METADATA)
+                .unwrap()
+                .null_count(),
+            1
+        );
+    }
+
+    #[rstest]
+    fn custom_data_type_round_trips_from_identifier_and_metadata_columns() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let mut metadata = Params::new();
+        metadata.insert("source".to_string(), serde_json::json!("reuters"));
+        metadata.insert("max_items".to_string(), serde_json::json!(10));
+        let custom = test_custom("AAPL.XNAS", 5, 7, Some(metadata));
+        let (batch, _, _, _, _) = prepare_custom_data_batch(&[&custom]).unwrap();
+
+        let decoded = decode_custom_batches_to_data(vec![batch], false).unwrap();
+
+        let Data::Custom(decoded) = &decoded[0] else {
+            panic!("expected custom data");
+        };
+        assert_eq!(decoded.data_type, custom.data_type);
+        assert!(decoded.data_type.metadata().unwrap()["max_items"].is_u64());
+    }
+
+    #[rstest]
+    fn custom_data_with_two_metadata_values_under_one_identifier_decodes_separately() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let reuters = Params::from_index_map(
+            [("source".to_string(), serde_json::json!("reuters"))]
+                .into_iter()
+                .collect(),
+        );
+        let bloomberg = Params::from_index_map(
+            [("source".to_string(), serde_json::json!("bloomberg"))]
+                .into_iter()
+                .collect(),
+        );
+        let first = test_custom("AAPL.XNAS", 5, 7, Some(reuters));
+        let second = test_custom("AAPL.XNAS", 6, 8, Some(bloomberg));
+        let batches = [&first, &second]
+            .into_iter()
+            .map(|custom| {
+                let (batch, _, _, _, _) = prepare_custom_data_batch(&[custom]).unwrap();
+                batch
+            })
+            .collect::<Vec<_>>();
+
+        let decoded = decode_custom_batches_to_data(batches, false).unwrap();
+
+        let data_types = decoded
+            .iter()
+            .map(|data| match data {
+                Data::Custom(custom) => custom.data_type.clone(),
+                _ => panic!("expected custom data"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(data_types, vec![first.data_type, second.data_type]);
+    }
+
+    #[rstest]
+    fn one_batch_holding_two_metadata_values_decodes_each_row_under_its_own_data_type() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let metadata = |source: &str| {
+            Params::from_index_map(
+                [("source".to_string(), serde_json::json!(source))]
+                    .into_iter()
+                    .collect(),
+            )
+        };
+        let rows = [
+            test_custom("AAPL.XNAS", 5, 7, Some(metadata("reuters"))),
+            test_custom("AAPL.XNAS", 6, 8, Some(metadata("reuters"))),
+            test_custom("AAPL.XNAS", 7, 9, Some(metadata("bloomberg"))),
+            test_custom("MSFT.XNAS", 8, 10, Some(metadata("bloomberg"))),
+        ];
+        let batches = rows
+            .iter()
+            .map(|custom| prepare_custom_data_batch(&[custom]).unwrap().0)
+            .collect::<Vec<_>>();
+        let schema = batches[0].schema();
+        let merged = arrow::compute::concat_batches(&schema, &batches).unwrap();
+
+        let runs = split_batch_by_custom_data_type(merged.clone()).unwrap();
+        let decoded = decode_custom_batches_to_data(vec![merged], false).unwrap();
+
+        assert_eq!(
+            runs.iter().map(RecordBatch::num_rows).collect::<Vec<_>>(),
+            vec![2, 1, 1]
+        );
+        assert_eq!(
+            decoded
+                .iter()
+                .map(|data| match data {
+                    Data::Custom(custom) => custom.data_type.clone(),
+                    _ => panic!("expected custom data"),
+                })
+                .collect::<Vec<_>>(),
+            rows.iter()
+                .map(|custom| custom.data_type.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[rstest]
+    fn custom_data_type_without_metadata_decodes_with_null_metadata_column() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+        let custom = test_custom("AAPL.XNAS", 5, 7, None);
+        let (batch, _, _, _, _) = prepare_custom_data_batch(&[&custom]).unwrap();
+
+        let decoded = decode_custom_batches_to_data(vec![batch], false).unwrap();
+
+        let Data::Custom(decoded) = &decoded[0] else {
+            panic!("expected custom data");
+        };
+        assert_eq!(decoded.data_type, custom.data_type);
+        assert_eq!(decoded.data_type.metadata(), None);
     }
 
     #[rstest]

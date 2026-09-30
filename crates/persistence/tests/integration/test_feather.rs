@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Links the workspace core from one shared library to collapse the binary's link time.
 use std::{
     fs::{self, File},
     sync::{Arc, atomic::AtomicU64},
 };
 
 use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_common::enums::Environment;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -29,7 +31,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::parquet::catalog::ParquetDataCatalog,
+    backend::parquet::feather_session::read_feather_run,
     writer::feather::{FeatherWriter, RotationConfig, WriterClock},
 };
 use rstest::rstest;
@@ -344,7 +346,7 @@ fn book_add(instrument_id: InstrumentId, price: Price, size: Quantity, ts: u64) 
     )
 }
 
-// Writes into the backtest run folder `read_run` reads back
+// Writes into the run folder `read_run` reads back
 fn run_writer(root: &std::path::Path) -> FeatherWriter {
     FeatherWriter::new(
         root.join("backtest").join("run-001"),
@@ -356,10 +358,25 @@ fn run_writer(root: &std::path::Path) -> FeatherWriter {
 }
 
 fn read_run(root: &std::path::Path) -> Vec<Data> {
-    ParquetDataCatalog::new(root, None, None, None, None)
-        .read_backtest("run-001")
-        .unwrap()
+    read_feather_run(
+        root.to_str().unwrap(),
+        Environment::Backtest,
+        "run-001",
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
 }
+
+// Regression test for the all-sentinel fallback: a batch containing only
+// BookAction::Clear rows has no real precision to derive, so file metadata
+// legitimately carries price_precision=0, size_precision=0.
+
+// Regression test for the mixed-instrument routing in write_batch. When a
+// batch contains deltas for multiple instruments, each instrument's rows
+// must land in its own file with its own precision metadata.
 
 fn collect_feather_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();

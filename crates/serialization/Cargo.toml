@@ -32,7 +32,12 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-arrow = ["dep:arrow", "dep:nautilus-macros", "nautilus-model/arrow"]
+arrow = [
+  "dep:arrow",
+  "dep:blake3",
+  "dep:nautilus-macros",
+  "nautilus-model/arrow",
+]
 arrow-display = ["arrow"]
 capnp = ["dep:capnp", "dep:capnpc", "dep:walkdir"]
 sbe = []
@@ -77,6 +82,7 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 
 arrow = { workspace = true, optional = true }
+blake3 = { workspace = true, optional = true }
 capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

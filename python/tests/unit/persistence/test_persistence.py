@@ -810,12 +810,15 @@ def test_streaming_writer_rejects_unknown_catalog_param(tmp_path: Path) -> None:
         StreamingWriter(
             str(tmp_path / "stream" / "backtest" / "run-1"),
             Clock.new_test(),
-            catalog=DataCatalogConfig(path=str(tmp_path / "catalog"), params={"batch_size": 1024}),
+            catalog=DataCatalogConfig(
+                path=str(tmp_path / "catalog"),
+                params={"no_such_param": 1024},
+            ),
         )
 
     assert str(exc_info.value) == (
-        "Failed to create writer: Unknown Parquet catalog param 'batch_size': "
-        "this catalog takes no params"
+        "Failed to create writer: Unknown Parquet catalog param 'no_such_param', "
+        "expected one of storage_options, batch_size, compression, max_row_group_size"
     )
 
 

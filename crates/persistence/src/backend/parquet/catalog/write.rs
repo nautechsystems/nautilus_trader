@@ -20,20 +20,18 @@
     reason = "catalog write functions validate catalog-controlled batches and forward storage errors"
 )]
 
-use nautilus_serialization::arrow::catalog_identifier_from_metadata;
-
 use super::{
     BTreeMap, CustomData, Data, DataBatch, EncodeToRecordBatch, HasCatalogDataType, HasTsInit,
     Instrument, InstrumentAny, NautilusDataType, NautilusRecordType, ObjectPath, ObjectStoreExt,
     Params, ParquetDataCatalog, PathBuf, RecordBatch, Serialize, UnixNanos,
     WRITE_SKIP_DISJOINT_CHECK, are_intervals_disjoint, instrument_any_type, instrument_path_prefix,
-    parquet_data_path_prefix, prepare_custom_data_batch, record_batch_without_identifier_column,
-    record_path_prefix, timestamps_to_filename, to_snake_case, write_batches_to_object_store,
-    write_catalog_batch,
+    parquet_data_path_prefix, prepare_custom_data_batch, record_path_prefix,
+    timestamps_to_filename, to_snake_case, write_batches_to_object_store, write_catalog_batch,
 };
 use crate::{
     backend::parquet::{io::write_batches_to_object_store_create, paths::catalog_filename},
-    common::metadata::record_batch_ts_init_range,
+    catalog::types::CatalogDataType,
+    common::metadata::{batches_with_stored_metadata, record_batch_ts_init_range},
 };
 
 impl ParquetDataCatalog {
@@ -100,7 +98,7 @@ impl ParquetDataCatalog {
         let mut groups: BTreeMap<Option<String>, Vec<T>> = BTreeMap::new();
 
         for item in data {
-            let identifier = catalog_identifier_from_metadata(&item.metadata());
+            let identifier = item.identifier();
             groups.entry(identifier).or_default().push(item.clone());
         }
 
@@ -130,32 +128,21 @@ impl ParquetDataCatalog {
         let (start_ts, end_ts) = record_batch_ts_init_range(batches)?;
         let record_prefix = record_path_prefix(record_type);
         let directory = self.make_path(record_prefix.as_ref(), identifier)?;
-        let filename = timestamps_to_filename(UnixNanos::from(start_ts), UnixNanos::from(end_ts));
-        let path = PathBuf::from(directory.clone()).join(&filename);
-        let object_path = self.to_object_path(&path.to_string_lossy())?;
         let skip_disjoint_check = params.get_bool(WRITE_SKIP_DISJOINT_CHECK).unwrap_or(false);
+        let batches =
+            batches_with_stored_metadata(batches, &CatalogDataType::Record(*record_type))?;
 
-        if !skip_disjoint_check {
-            let current_intervals = self.get_directory_intervals(&directory)?;
-            let mut intervals = current_intervals.clone();
-            intervals.push((start_ts, end_ts));
-            anyhow::ensure!(
-                are_intervals_disjoint(&intervals),
-                "Writing file {filename} interval ({start_ts}, {end_ts}) would create non-disjoint intervals. Existing intervals: {current_intervals:?}",
-            );
-        }
-
-        self.execute_async(|| async {
-            write_batches_to_object_store(
-                batches,
-                self.object_store.clone(),
-                &object_path,
-                Some(self.compression),
-                Some(self.max_row_group_size),
-                None,
-            )
-            .await
-        })
+        self.write_parquet_file_checked(
+            &directory,
+            UnixNanos::from(start_ts),
+            UnixNanos::from(end_ts),
+            &batches,
+            skip_disjoint_check,
+            "Record file",
+            None,
+            None,
+        )
+        .map(|_| ())
     }
 
     /// Writes typed data to a Parquet file in the catalog.
@@ -323,7 +310,7 @@ impl ParquetDataCatalog {
         let (batch, type_name, identifier, start_ts, end_ts) = prepare_custom_data_batch(data)?;
         let start_ts = start.unwrap_or(start_ts);
         let end_ts = end.unwrap_or(end_ts);
-        let batches = vec![record_batch_without_identifier_column(batch)?];
+        let batches = vec![batch];
 
         let directory = self.make_path_custom_data(&type_name, identifier.as_deref())?;
         self.write_parquet_file_checked(
@@ -485,6 +472,12 @@ impl ParquetDataCatalog {
                 path.display(),
             );
         }
+
+        let batches = match self.stored_data_type(directory) {
+            Some(data_type) => batches_with_stored_metadata(batches, &data_type)?,
+            None => batches.to_vec(),
+        };
+        let batches = batches.as_slice();
 
         self.execute_async(|| async {
             if replay_identity.is_none() {
@@ -692,7 +685,6 @@ impl ParquetDataCatalog {
 
         for chunk in data.chunks(self.batch_size) {
             let record_batch = T::encode_batch(&metadata, chunk)?;
-            let record_batch = record_batch_without_identifier_column(record_batch)?;
             batches.push(record_batch);
         }
 
@@ -739,7 +731,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::ParquetDataCatalog;
-    use crate::common::datafusion::DataBackendSession;
+    use crate::{
+        catalog::types::CatalogDataType,
+        common::{
+            datafusion::DataBackendSession,
+            metadata::{batch_identifier, metadata_from_stored},
+        },
+    };
 
     #[rstest]
     fn depth_write_shares_file_metadata_across_chunks(stub_depth10: OrderBookDepth) {
@@ -764,12 +762,17 @@ mod tests {
             File::open(directory.path().join(path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
+        let stored = builder.schema().metadata().clone();
         let batches = builder
             .build()
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
+        let metadata = metadata_from_stored(
+            stored,
+            batch_identifier(&batches[0]).as_deref(),
+            &CatalogDataType::Data(NautilusDataType::OrderBookDepth),
+        );
         let decoded = batches
             .iter()
             .cloned()
@@ -814,13 +817,21 @@ mod tests {
             File::open(directory.path().join(&path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
-        let decoded = builder
+        let stored = builder.schema().metadata().clone();
+        let batches = builder
             .build()
             .unwrap()
-            .map(|batch| OrderBookDelta::decode_batch(&metadata, batch.unwrap()).unwrap())
-            .collect::<Vec<_>>()
-            .concat();
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let metadata = metadata_from_stored(
+            stored,
+            batch_identifier(&batches[0]).as_deref(),
+            &CatalogDataType::Data(NautilusDataType::OrderBookDelta),
+        );
+        let decoded = batches
+            .into_iter()
+            .flat_map(|batch| OrderBookDelta::decode_batch(&metadata, batch).unwrap())
+            .collect::<Vec<_>>();
 
         assert!(directory.path().join(path).exists());
         assert_eq!(metadata[KEY_PRICE_PRECISION], "2");

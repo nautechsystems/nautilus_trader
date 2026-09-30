@@ -28,15 +28,17 @@ pub const SCHEMA_VERSION_COLUMN: &str = "_nautilus_schema_version";
 pub const METADATA_ID_COLUMN: &str = "_nautilus_metadata_id";
 pub const METADATA_JSON_COLUMN: &str = "_nautilus_metadata_json";
 pub const FORMAT_VERSION_COLUMN: &str = "_nautilus_format_version";
-pub const CLUSTER_KEY_COLUMN: &str = "_nautilus_cluster_key";
 
+pub mod catalog_params;
 pub mod conversion;
 pub mod coverage;
 pub mod custom;
 pub mod datafusion;
 pub mod paths;
 pub mod storage;
+pub mod test_data;
 
 pub(crate) mod arrow;
 pub(crate) mod backend_name;
+pub(crate) mod legacy_identifier;
 pub(crate) mod metadata;

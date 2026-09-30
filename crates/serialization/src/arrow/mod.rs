@@ -35,6 +35,7 @@ pub mod position_event;
 pub mod quote;
 pub mod report;
 pub mod snapshot;
+pub mod stored_metadata;
 pub mod trade;
 
 #[cfg(feature = "arrow-display")]
@@ -96,6 +97,9 @@ pub use self::legacy::{
 };
 
 // Define metadata key constants constants
+pub const KEY_ACCOUNT_ID: &str = "account_id";
+/// Name of the nullable JSON column that holds a custom `DataType`'s metadata.
+pub const KEY_CUSTOM_DATA_METADATA: &str = "custom_data_metadata";
 pub const KEY_BAR_TYPE: &str = "bar_type";
 pub const KEY_IDENTIFIER: &str = "identifier";
 pub const KEY_INSTRUMENT_ID: &str = "instrument_id";
@@ -971,12 +975,20 @@ where
     fn matches_chunk_metadata(&self, metadata: &HashMap<String, String>) -> bool {
         self.metadata() == *metadata
     }
+
+    /// Returns the catalog identifier of this value: the key its rows are stored, grouped, and
+    /// filtered under.
+    ///
+    /// The default is the bar type or instrument ID from [`Self::metadata`], which covers market
+    /// data. Types keyed by something else override it.
+    fn identifier(&self) -> Option<String> {
+        catalog_identifier_from_metadata(&self.metadata())
+    }
 }
 
 /// Returns the catalog row identifier from Arrow schema metadata.
 ///
 /// Bars use `bar_type`; all other built-in catalog types use `instrument_id`.
-/// Custom data can pass an explicit identifier to [`record_batch_with_identifier_column`].
 #[must_use]
 pub fn catalog_identifier_from_metadata(metadata: &HashMap<String, String>) -> Option<String> {
     metadata
@@ -987,7 +999,7 @@ pub fn catalog_identifier_from_metadata(metadata: &HashMap<String, String>) -> O
 
 /// Builds a schema with the catalog `identifier` column appended if absent.
 #[must_use]
-pub fn schema_with_identifier_column(schema: &Schema) -> Schema {
+pub(crate) fn schema_with_identifier_column(schema: &Schema) -> Schema {
     if schema.index_of(KEY_IDENTIFIER).is_ok() {
         return schema.clone();
     }
@@ -999,8 +1011,9 @@ pub fn schema_with_identifier_column(schema: &Schema) -> Schema {
 }
 
 /// Builds a schema without the catalog `identifier` column.
+#[cfg(test)]
 #[must_use]
-pub fn schema_without_identifier_column(schema: &Schema) -> Schema {
+pub(crate) fn schema_without_identifier_column(schema: &Schema) -> Schema {
     let Ok(identifier_index) = schema.index_of(KEY_IDENTIFIER) else {
         return schema.clone();
     };
@@ -1015,29 +1028,13 @@ pub fn schema_without_identifier_column(schema: &Schema) -> Schema {
     Schema::new_with_metadata(fields, schema.metadata().clone())
 }
 
-/// Adds the catalog `identifier` column used by table-oriented catalog storage.
-///
-/// The column is nullable so custom data without a `DataType.identifier()` can
-/// still be stored in the same type table.
-///
-/// # Errors
-///
-/// Returns an [`ArrowError`] if the record batch cannot be rebuilt.
-pub fn record_batch_with_identifier_column(
-    batch: RecordBatch,
-    identifier: Option<&str>,
-) -> Result<RecordBatch, ArrowError> {
-    let identifier_values = vec![identifier.map(ToString::to_string); batch.num_rows()];
-    record_batch_with_identifier_values(batch, identifier_values)
-}
-
 /// Adds the catalog `identifier` column with one identifier value per row.
 ///
 /// # Errors
 ///
 /// Returns an [`ArrowError`] if the number of identifier values differs from
 /// the record batch row count or the record batch cannot be rebuilt.
-pub fn record_batch_with_identifier_values(
+pub(crate) fn record_batch_with_identifier_values(
     batch: RecordBatch,
     identifier_values: Vec<Option<String>>,
 ) -> Result<RecordBatch, ArrowError> {
@@ -1077,20 +1074,14 @@ pub fn identifier_array_from_display<T: Display>(
     builder.finish()
 }
 
-/// Drops the catalog `identifier` column when writing legacy per-identifier formats.
-///
-/// # Errors
-///
-/// Returns an [`ArrowError`] if the record batch cannot be rebuilt.
-pub fn record_batch_without_identifier_column(
-    mut batch: RecordBatch,
-) -> Result<RecordBatch, ArrowError> {
-    let Ok(identifier_index) = batch.schema().index_of(KEY_IDENTIFIER) else {
-        return Ok(batch);
-    };
+/// Drops the catalog `identifier` column.
+#[cfg(test)]
+pub(crate) fn record_batch_without_identifier_column(mut batch: RecordBatch) -> RecordBatch {
+    if let Ok(identifier_index) = batch.schema().index_of(KEY_IDENTIFIER) {
+        batch.remove_column(identifier_index);
+    }
 
-    batch.remove_column(identifier_index);
-    Ok(batch)
+    batch
 }
 
 /// Decodes data types from Apache Arrow RecordBatch format.
@@ -1422,16 +1413,6 @@ pub enum BinaryColumnRef<'a> {
 }
 
 impl BinaryColumnRef<'_> {
-    /// Returns whether the row contains a null value.
-    #[inline]
-    #[must_use]
-    pub fn is_null(&self, i: usize) -> bool {
-        match self {
-            Self::Binary(arr) => arr.is_null(i),
-            Self::BinaryView(arr) => arr.is_null(i),
-        }
-    }
-
     /// Returns the bytes at row `i`.
     #[inline]
     #[must_use]

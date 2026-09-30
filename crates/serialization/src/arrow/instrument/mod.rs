@@ -45,6 +45,7 @@ use nautilus_model::{
 use crate::arrow::{
     ArrowSchemaProvider, Data, DecodeDataFromRecordBatch, DecodeFromRecordBatch,
     EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_TYPE_NAME,
+    record_batch_with_identifier_values, schema_with_identifier_column,
 };
 
 pub mod betting;
@@ -150,7 +151,7 @@ impl ArrowSchemaProvider for InstrumentAny {
             .and_then(|m| m.get(KEY_TYPE_NAME))
             .map_or("CurrencyPair", |s| s.as_str());
 
-        match instrument_type {
+        let schema = match instrument_type {
             "BettingInstrument" => BettingInstrument::get_schema(metadata),
             "BinaryOption" => BinaryOption::get_schema(metadata),
             "Cfd" => Cfd::get_schema(metadata),
@@ -173,7 +174,9 @@ impl ArrowSchemaProvider for InstrumentAny {
                 // Fallback to CurrencyPair schema if type is unknown
                 CurrencyPair::get_schema(metadata)
             }
-        }
+        };
+
+        schema_with_identifier_column(&schema)
     }
 }
 
@@ -227,7 +230,7 @@ impl EncodeToRecordBatch for InstrumentAny {
         }
 
         let (type_name, instruments) = by_type.iter().next().unwrap();
-        match type_name.as_str() {
+        let batch = match type_name.as_str() {
             "Cfd" => {
                 let cfds: Vec<_> = instruments
                     .iter()
@@ -483,7 +486,14 @@ impl EncodeToRecordBatch for InstrumentAny {
             _ => Err(ArrowError::InvalidArgumentError(format!(
                 "Instrument type {type_name} serialization not yet implemented"
             ))),
-        }
+        }?;
+
+        let identifiers = data
+            .iter()
+            .map(|instrument| Some(instrument.borrow().id().to_string()))
+            .collect();
+
+        record_batch_with_identifier_values(batch, identifiers)
     }
 
     fn metadata(&self) -> HashMap<String, String> {
@@ -737,7 +747,7 @@ mod tests {
         #[case] expected_precision: u8,
     ) {
         let currency = decode_currency(code, "currency", "test.currency", 0).unwrap();
-        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.code, code);
         assert_eq!(currency.currency_type, expected_type);
         assert_eq!(currency.precision, expected_precision);
     }
@@ -751,7 +761,7 @@ mod tests {
         );
 
         let currency = decode_currency(code, "base_currency", "test.base_currency", 0).unwrap();
-        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.code, code);
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 0);

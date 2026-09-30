@@ -6815,6 +6815,7 @@ version = "0.65.0"
 dependencies = [
  "anyhow",
  "arrow 59.3.0",
+ "blake3",
  "capnp 0.27.2",
  "capnpc",
  "codspeed-criterion-compat",

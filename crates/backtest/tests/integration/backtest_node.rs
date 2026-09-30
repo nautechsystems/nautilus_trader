@@ -44,6 +44,7 @@ use nautilus_model::{
 };
 use nautilus_persistence::{
     backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+    config::DataCatalogConfig,
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
@@ -185,7 +186,7 @@ fn binance_venue_config() -> BacktestVenueConfig {
 fn data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {
     BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap()
@@ -494,7 +495,11 @@ fn test_build_respects_raise_exception(#[case] raise_exception: bool) {
     let temp_dir = TempDir::new().unwrap();
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(temp_dir.path().to_str().unwrap().to_string())
+        .catalog(DataCatalogConfig::new(
+            temp_dir.path().to_str().unwrap().to_string(),
+            None,
+            None,
+        ))
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()
         .unwrap();
@@ -623,7 +628,11 @@ fn test_data_config_rejects_inverted_time_range(crypto_perpetual_ethusdt: Crypto
 
     let result = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(5_000_000_000u64))
         .end_time(UnixNanos::from(1_000_000_000u64))
@@ -707,7 +716,7 @@ fn test_run_oneshot_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) 
 
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -735,7 +744,7 @@ fn test_run_oneshot_loads_funding_rates_from_catalog(crypto_perpetual_ethusdt: C
 
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::FundingRateUpdate)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1017,7 +1026,11 @@ fn test_data_config_query_identifiers_simple() {
     let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1033,7 +1046,11 @@ fn test_data_config_query_identifiers_bar_with_spec() {
 
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .bar_spec(bar_spec)
         .build()
@@ -1047,7 +1064,11 @@ fn test_data_config_query_identifiers_bar_with_spec() {
 fn test_data_config_query_identifiers_explicit_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec![
             "ETH/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL".to_string(),
             "BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL".to_string(),
@@ -1065,7 +1086,11 @@ fn test_data_config_query_identifiers_explicit_bar_types() {
 fn test_data_config_query_identifiers_multiple_instruments() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_ids(vec![
             InstrumentId::from("ETH/USDT.BINANCE"),
             InstrumentId::from("BTC/USDT.BINANCE"),
@@ -1081,7 +1106,11 @@ fn test_data_config_query_identifiers_multiple_instruments() {
 fn test_data_config_requires_identifier() {
     let result = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .build();
 
     assert!(result.is_err());
@@ -1093,7 +1122,11 @@ fn test_data_config_get_instrument_ids_from_single() {
     let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1108,7 +1141,11 @@ fn test_data_config_get_instrument_ids_from_multiple() {
     let id2 = InstrumentId::from("BTC/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_ids(vec![id1, id2])
         .build()
         .unwrap();
@@ -1257,13 +1294,13 @@ fn test_multiple_data_configs_mixed_types(crypto_perpetual_ethusdt: CryptoPerpet
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
     let trade_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::TradeTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1291,13 +1328,13 @@ fn test_run_streaming_multiple_data_configs(crypto_perpetual_ethusdt: CryptoPerp
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
     let trade_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::TradeTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1366,7 +1403,11 @@ fn test_multiple_run_configs_rejected() {
 fn test_get_instrument_ids_from_composite_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec![
             "ETH/USDT.BINANCE-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL".to_string(),
         ])
@@ -1382,7 +1423,11 @@ fn test_get_instrument_ids_from_composite_bar_types() {
 fn test_get_instrument_ids_rejects_invalid_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec!["not-a-valid-bar-type".to_string()])
         .build()
         .unwrap();
@@ -1403,7 +1448,7 @@ fn test_data_config_time_bounds_intersect_with_run_bounds(
     // Data config restricts to [5s, 15s]
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(base_ts + 5_000_000_000))
         .end_time(UnixNanos::from(base_ts + 15_000_000_000))
@@ -1436,7 +1481,7 @@ fn test_empty_catalog_data_handled_gracefully(crypto_perpetual_ethusdt: CryptoPe
     // Query time range with no data (far in the future)
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(999_000_000_000u64))
         .end_time(UnixNanos::from(999_999_000_000u64))
@@ -1505,7 +1550,11 @@ fn test_l2_venue_with_book_data_accepted(#[case] data_type: NautilusDataType) {
 
     let book_data = BacktestDataConfig::builder()
         .data_type(data_type)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()
         .unwrap();
@@ -1570,13 +1619,13 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
         .unwrap();
     let book_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();

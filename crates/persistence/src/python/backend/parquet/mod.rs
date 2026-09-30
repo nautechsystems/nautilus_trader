@@ -16,3 +16,5 @@
 //! Python bindings for Parquet persistence.
 
 pub mod catalog;
+
+pub(crate) mod migration;

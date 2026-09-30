@@ -17,14 +17,14 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Instrument, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
-    commodity::Commodity, crypto_future::CryptoFuture, crypto_futures_spread::CryptoFuturesSpread,
-    crypto_option::CryptoOption, crypto_option_spread::CryptoOptionSpread,
-    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-    futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    index_instrument::IndexInstrument, option_contract::OptionContract,
-    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
-    tokenized_asset::TokenizedAsset,
+    Instrument, NautilusInstrumentType, betting::BettingInstrument, binary_option::BinaryOption,
+    cfd::Cfd, commodity::Commodity, crypto_future::CryptoFuture,
+    crypto_futures_spread::CryptoFuturesSpread, crypto_option::CryptoOption,
+    crypto_option_spread::CryptoOptionSpread, crypto_perpetual::CryptoPerpetual,
+    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+    futures_spread::FuturesSpread, index_instrument::IndexInstrument,
+    option_contract::OptionContract, option_spread::OptionSpread,
+    perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
 };
 use crate::types::{Price, Quantity};
 
@@ -52,6 +52,31 @@ pub enum InstrumentAny {
 }
 
 impl InstrumentAny {
+    /// Returns the instrument class of this value.
+    #[must_use]
+    pub const fn instrument_type(&self) -> NautilusInstrumentType {
+        match self {
+            Self::Betting(_) => NautilusInstrumentType::BettingInstrument,
+            Self::BinaryOption(_) => NautilusInstrumentType::BinaryOption,
+            Self::Cfd(_) => NautilusInstrumentType::Cfd,
+            Self::Commodity(_) => NautilusInstrumentType::Commodity,
+            Self::CryptoFuture(_) => NautilusInstrumentType::CryptoFuture,
+            Self::CryptoFuturesSpread(_) => NautilusInstrumentType::CryptoFuturesSpread,
+            Self::CryptoOption(_) => NautilusInstrumentType::CryptoOption,
+            Self::CryptoOptionSpread(_) => NautilusInstrumentType::CryptoOptionSpread,
+            Self::CryptoPerpetual(_) => NautilusInstrumentType::CryptoPerpetual,
+            Self::CurrencyPair(_) => NautilusInstrumentType::CurrencyPair,
+            Self::Equity(_) => NautilusInstrumentType::Equity,
+            Self::FuturesContract(_) => NautilusInstrumentType::FuturesContract,
+            Self::FuturesSpread(_) => NautilusInstrumentType::FuturesSpread,
+            Self::IndexInstrument(_) => NautilusInstrumentType::IndexInstrument,
+            Self::OptionContract(_) => NautilusInstrumentType::OptionContract,
+            Self::OptionSpread(_) => NautilusInstrumentType::OptionSpread,
+            Self::PerpetualContract(_) => NautilusInstrumentType::PerpetualContract,
+            Self::TokenizedAsset(_) => NautilusInstrumentType::TokenizedAsset,
+        }
+    }
+
     #[must_use]
     pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
         self.calculate_base_quantity(quantity, last_px)

@@ -126,7 +126,7 @@ venue = BacktestVenueConfig(
 )
 data = BacktestDataConfig(
     data_type=NautilusDataType.QuoteTick,
-    catalog_path="/data/catalog",
+    catalog=DataCatalogConfig(path="/data/catalog"),
     instrument_id=instrument_id,
 )
 config = BacktestRunConfig(

@@ -813,6 +813,33 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
     }
 }
 
+impl NautilusInstrumentType {
+    /// Returns the snake case name the catalogs use for this class in folder and table names.
+    #[must_use]
+    pub const fn path_prefix(self) -> &'static str {
+        match self {
+            Self::BettingInstrument => "betting_instrument",
+            Self::BinaryOption => "binary_option",
+            Self::Cfd => "cfd",
+            Self::Commodity => "commodity",
+            Self::CryptoFuture => "crypto_future",
+            Self::CryptoFuturesSpread => "crypto_futures_spread",
+            Self::CryptoOption => "crypto_option",
+            Self::CryptoOptionSpread => "crypto_option_spread",
+            Self::CryptoPerpetual => "crypto_perpetual",
+            Self::CurrencyPair => "currency_pair",
+            Self::Equity => "equity",
+            Self::FuturesContract => "futures_contract",
+            Self::FuturesSpread => "futures_spread",
+            Self::IndexInstrument => "index_instrument",
+            Self::OptionContract => "option_contract",
+            Self::OptionSpread => "option_spread",
+            Self::PerpetualContract => "perpetual_contract",
+            Self::TokenizedAsset => "tokenized_asset",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::correctness::{CorrectnessResultExt, FAILED};

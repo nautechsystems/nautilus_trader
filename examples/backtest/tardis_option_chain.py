@@ -59,6 +59,7 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrikeRange  # type: ignore[attr-defined]
 from nautilus_trader.model import TimeInForce  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import ParquetDataCatalog  # type: ignore[attr-defined]
 from nautilus_trader.trading import Strategy
 
@@ -333,12 +334,12 @@ def main() -> None:
     data = [
         BacktestDataConfig(
             data_type=NautilusDataType.QuoteTick,
-            catalog_path=str(args.catalog_path),
+            catalog=DataCatalogConfig(path=str(args.catalog_path)),
             instrument_ids=selection.instrument_ids,
         ),
         BacktestDataConfig(
             data_type=NautilusDataType.OptionGreeks,
-            catalog_path=str(args.catalog_path),
+            catalog=DataCatalogConfig(path=str(args.catalog_path)),
             instrument_ids=selection.instrument_ids,
         ),
     ]

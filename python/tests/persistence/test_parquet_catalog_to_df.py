@@ -781,8 +781,8 @@ def test_query_catalog_dataframe_custom_data(
         "flag",
         "ts_event",
         "ts_init",
-        "data_type",
         "identifier",
+        "custom_data_metadata",
     ]
     assert _columns(df) == expected_columns
     assert _height(df) == 1
@@ -791,7 +791,7 @@ def test_query_catalog_dataframe_custom_data(
     assert bool(_value(df, "flag")) is True
     assert _timestamp_ns(df, "ts_event") == 1
     assert _timestamp_ns(df, "ts_init") == 2
-    assert json.loads(_value(df, "data_type"))["type_name"] == "RustTestCustomData"
+    assert json.loads(_value(df, "custom_data_metadata")) == {"venue": "TEST"}
     assert _value(df, "identifier") == str(instrument_id)
 
 
@@ -831,8 +831,8 @@ def test_query_catalog_dataframe_custom_data_with_price_map(
         "prices",
         "ts_event",
         "ts_init",
-        "data_type",
         "identifier",
+        "custom_data_metadata",
     ]
     assert _columns(df) == expected_columns
     assert _height(df) == 1
@@ -840,5 +840,5 @@ def test_query_catalog_dataframe_custom_data_with_price_map(
     assert set(json.loads(_value(df, "prices"))) == {"AUD/USD.SIM", "BTCUSDT.BINANCE"}
     assert _timestamp_ns(df, "ts_event") == 10
     assert _timestamp_ns(df, "ts_init") == 20
-    assert json.loads(_value(df, "data_type"))["type_name"] == "RustTestPriceMapCustomData"
+    assert json.loads(_value(df, "custom_data_metadata")) == {"source": "unit-test"}
     assert _value(df, "identifier") is None

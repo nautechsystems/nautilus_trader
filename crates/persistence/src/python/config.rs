@@ -19,8 +19,8 @@ use std::str::FromStr;
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{
-    DurationNanos, UnixNanos, from_pydict,
-    python::{enums::parse_enum, params::params_to_pydict, to_pytype_err, to_pyvalue_err},
+    DurationNanos, Params, UnixNanos, from_pydict,
+    python::{params::params_to_pydict, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
@@ -35,10 +35,11 @@ use pyo3::{
     Bound, Py, PyAny, PyRef, PyResult, PyTypeInfo, Python,
     types::{PyAnyMethods, PyDict, PyType},
 };
+use serde_json::Value;
 
 use crate::config::{
-    CatalogBackendType, CatalogCompression, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig,
-    RotationConfig, RotationMode, StreamingConfig, StreamingRecordFilterConfig,
+    CatalogBackendType, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig, RotationConfig, RotationMode,
+    STORAGE_OPTIONS_PARAM, StreamingConfig, StreamingRecordFilterConfig,
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -503,11 +504,7 @@ impl StreamingConfig {
 impl DataCatalogConfig {
     /// Configuration for a catalog available to request-time historical data loading.
     #[new]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the PyO3 constructor mirrors the public Python configuration signature"
-    )]
-    #[pyo3(signature = (path, fs_protocol = None, catalog_backend = None, params = None, name = None, read_only = false, fs_rust_storage_options = None, batch_size = None, compression = None, max_row_group_size = None))]
+    #[pyo3(signature = (path, fs_protocol = None, catalog_backend = None, params = None, name = None, read_only = false))]
     fn py_new(
         path: String,
         fs_protocol: Option<String>,
@@ -515,36 +512,18 @@ impl DataCatalogConfig {
         params: Option<Py<PyDict>>,
         name: Option<String>,
         read_only: bool,
-        fs_rust_storage_options: Option<std::collections::HashMap<String, String>>,
-        batch_size: Option<usize>,
-        compression: Option<&str>,
-        max_row_group_size: Option<usize>,
     ) -> pyo3::PyResult<Self> {
         let catalog_backend = catalog_backend.map(|backend| backend.inner());
-        let compression = compression
-            .map(|compression| parse_enum::<CatalogCompression>(compression, "compression"))
-            .transpose()?;
 
         let params = Python::attach(|py| match params {
             Some(params) => from_pydict(py, &params),
             None => Ok(None),
         })?;
 
-        Self::builder()
-            .path(path)
-            .maybe_name(name)
-            .maybe_fs_protocol(fs_protocol)
-            .maybe_catalog_backend(catalog_backend)
-            .maybe_batch_size(batch_size)
-            .maybe_compression(compression)
-            .maybe_max_row_group_size(max_row_group_size)
-            .maybe_params(params)
-            .maybe_fs_rust_storage_options(
-                fs_rust_storage_options.map(|options| options.into_iter().collect()),
-            )
-            .read_only(read_only)
-            .build()
-            .map_err(config_error_to_pyvalue_err)
+        Ok(Self::new(path, fs_protocol, catalog_backend)
+            .with_params(params)
+            .with_name(name)
+            .with_read_only(read_only))
     }
 
     /// Returns the path to the data catalog.
@@ -582,49 +561,32 @@ impl DataCatalogConfig {
         PyCatalogBackend::new(self.catalog_backend().clone())
     }
 
-    /// Returns the number of rows per batch the catalog reads and writes.
-    #[getter]
-    #[pyo3(name = "batch_size")]
-    fn py_batch_size(&self) -> Option<usize> {
-        self.batch_size()
-    }
-
-    /// Returns the compression codec of written data files.
-    #[getter]
-    #[pyo3(name = "compression")]
-    fn py_compression(&self) -> Option<String> {
-        self.compression()
-            .map(|compression| compression.to_string())
-    }
-
-    /// Returns the maximum number of rows per written row group.
-    #[getter]
-    #[pyo3(name = "max_row_group_size")]
-    fn py_max_row_group_size(&self) -> Option<usize> {
-        self.max_row_group_size()
-    }
-
     /// Returns backend-specific catalog parameters.
     #[getter]
     #[pyo3(name = "params")]
     fn py_params(&self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
         self.params()
-            .map(|params| params_to_pydict(py, params))
+            .map(|params| params_to_pydict(py, &redact_storage_option_values(params)))
             .transpose()
-    }
-
-    #[getter]
-    fn fs_rust_storage_option_keys(&self) -> Option<Vec<String>> {
-        self.fs_rust_storage_options().map(|options| {
-            let mut keys = options.keys().cloned().collect::<Vec<_>>();
-            keys.sort();
-            keys
-        })
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+}
+
+fn redact_storage_option_values(params: &Params) -> Params {
+    let mut redacted = params.clone();
+
+    if let Some(Value::Object(options)) = params.get(STORAGE_OPTIONS_PARAM) {
+        let masked = options
+            .keys()
+            .map(|key| (key.clone(), Value::String("***".to_string())))
+            .collect();
+        redacted.insert(STORAGE_OPTIONS_PARAM.to_string(), Value::Object(masked));
+    }
+
+    redacted
 }
 
 #[derive(Default)]
@@ -745,4 +707,30 @@ fn py_record_filters_from_any(
     }
 
     Ok((!filters.is_empty()).then_some(filters))
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn redact_storage_option_values_masks_every_value_and_keeps_other_params() {
+        let mut params = Params::new();
+        params.insert(
+            STORAGE_OPTIONS_PARAM.to_string(),
+            json!({"access_key_id": "AKIA", "region": "eu-west-1"}),
+        );
+        params.insert("batch_size".to_string(), json!(1024));
+
+        let redacted = redact_storage_option_values(&params);
+
+        assert_eq!(
+            redacted.get(STORAGE_OPTIONS_PARAM),
+            Some(&json!({"access_key_id": "***", "region": "***"}))
+        );
+        assert_eq!(redacted.get("batch_size"), Some(&json!(1024)));
+    }
 }

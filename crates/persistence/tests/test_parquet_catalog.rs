@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod common;
+
 use std::{collections::HashMap, fmt::Display, fs, io::Write, str::FromStr, sync::Arc};
 
 use nautilus_common::{enums::Environment, live::get_runtime};
@@ -37,18 +39,22 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::parquet::{
-        catalog::ParquetDataCatalog,
-        delete::DeleteOperationKind,
-        paths::{timestamps_to_filename, urisafe_instrument_id},
+    backend::{
+        default_catalog_factories,
+        parquet::{
+            catalog::ParquetDataCatalog,
+            delete::DeleteOperationKind,
+            paths::{timestamps_to_filename, urisafe_instrument_id},
+        },
     },
     catalog::{
+        factory::{CatalogConnectConfig, PARQUET_CATALOG_FACTORY_NAME},
         traits::{
             CatalogInstrumentQuery, CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter,
         },
         types::{CatalogAsOf, CatalogDataType},
     },
-    test_data::{
+    common::test_data::{
         MacroYieldCurveData, RustTestBytesCustomData, RustTestCustomData,
         RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
@@ -56,19 +62,50 @@ use nautilus_persistence::{
 use nautilus_serialization::{
     arrow::{
         DecodeTypedFromRecordBatch, EncodeToRecordBatch, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
-        display::instrument::encode_instruments, timestamp_array, timestamp_data_type,
+        timestamp_array, timestamp_data_type,
     },
     ensure_custom_data_registered,
 };
 use nautilus_testkit::common::get_test_data_file_path;
 use object_store::local::LocalFileSystem;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::{
+    arrow::arrow_reader::ParquetRecordBatchReaderBuilder,
+    basic::{Compression, ZstdLevel},
+};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::json;
 use tempfile::TempDir;
 
 const DEPTH10_LEN: usize = 10;
+
+/// Snapshots every file under a catalog directory as sorted (relative path, bytes) pairs.
+fn snapshot_catalog_files(temp_dir: &TempDir) -> Vec<(String, Vec<u8>)> {
+    fn visit(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect();
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, root, out);
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((relative, fs::read(&path).unwrap()));
+            }
+        }
+    }
+
+    let mut snapshot = Vec::new();
+    visit(temp_dir.path(), temp_dir.path(), &mut snapshot);
+    snapshot
+}
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
@@ -149,34 +186,6 @@ fn ensure_test_custom_data_registered() {
         ensure_custom_data_registered::<RustTestParamsCustomData>();
         ensure_custom_data_registered::<RustTestPriceMapCustomData>();
     });
-}
-
-/// Snapshots every file under a catalog directory as sorted (relative path, bytes) pairs.
-fn snapshot_catalog_files(temp_dir: &TempDir) -> Vec<(String, Vec<u8>)> {
-    fn visit(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
-        let mut entries: Vec<_> = fs::read_dir(dir)
-            .unwrap()
-            .map(|entry| entry.unwrap())
-            .collect();
-        entries.sort_by_key(|entry| entry.path());
-        for entry in entries {
-            let path = entry.path();
-            if path.is_dir() {
-                visit(&path, root, out);
-            } else {
-                let relative = path
-                    .strip_prefix(root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push((relative, fs::read(&path).unwrap()));
-            }
-        }
-    }
-
-    let mut snapshot = Vec::new();
-    visit(temp_dir.path(), temp_dir.path(), &mut snapshot);
-    snapshot
 }
 
 fn audusd_sim_id() -> InstrumentId {
@@ -1564,6 +1573,244 @@ fn test_rust_write_quote_ticks() {
     assert_eq!(loaded, quote_ticks);
 }
 
+fn parquet_file_schema_metadata(root: &std::path::Path) -> Vec<HashMap<String, String>> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut found = Vec::new();
+
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "parquet") {
+                let builder =
+                    ParquetRecordBatchReaderBuilder::try_new(fs::File::open(path).unwrap())
+                        .unwrap();
+                found.push(builder.schema().metadata().clone());
+            }
+        }
+    }
+    found
+}
+
+#[rstest]
+fn test_parquet_files_store_only_precision_metadata_for_market_data() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let quote_ticks = vec![create_quote_tick(1), create_quote_tick(2)];
+    catalog
+        .write_to_parquet(&quote_ticks, None, None, None)
+        .unwrap();
+    let bars = vec![create_bar(3)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let mut stored = parquet_file_schema_metadata(temp_dir.path());
+    stored.sort_by_key(|metadata| metadata["price_precision"].clone());
+
+    assert_eq!(stored.len(), 2);
+    for metadata in &stored {
+        assert!(!metadata.contains_key("type_name"));
+        assert!(!metadata.contains_key("instrument_id"));
+        assert!(!metadata.contains_key("bar_type"));
+    }
+    assert_eq!(
+        stored
+            .iter()
+            .map(|metadata| {
+                let mut entries = metadata
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<Vec<_>>();
+                entries.sort();
+                entries
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            vec![
+                ("price_precision".to_string(), "1".to_string()),
+                ("size_precision".to_string(), "0".to_string()),
+            ],
+            vec![
+                ("price_precision".to_string(), "5".to_string()),
+                ("size_precision".to_string(), "0".to_string()),
+            ],
+        ]
+    );
+    assert_eq!(
+        catalog
+            .quote_ticks(Some(vec!["ETH/USDT.BINANCE".to_string()]), None, None)
+            .unwrap(),
+        quote_ticks
+    );
+}
+
+// Rewrites every Parquet file of `root` into the pre-identifier shape: no identifier column and
+// the full encoder metadata, including `type_name` and `instrument_id`, in the file schema
+fn rewrite_files_as_legacy(root: &std::path::Path, quotes: &[QuoteTick]) {
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "parquet") {
+                let mut batch =
+                    QuoteTick::encode_batch(&QuoteTick::chunk_metadata(quotes), quotes).unwrap();
+                let identifier = batch.schema().index_of("identifier").unwrap();
+                batch.remove_column(identifier);
+                let file = fs::File::create(&path).unwrap();
+                let mut writer =
+                    parquet::arrow::ArrowWriter::try_new(file, batch.schema(), None).unwrap();
+                writer.write(&batch).unwrap();
+                writer.close().unwrap();
+            }
+        }
+    }
+}
+
+#[rstest]
+fn test_migrating_a_legacy_file_without_identifier_matches_a_fresh_write() {
+    let quotes = vec![create_quote_tick(1), create_quote_tick(2)];
+    let (source_dir, source) = create_temp_catalog();
+    source.write_to_parquet(&quotes, None, None, None).unwrap();
+    rewrite_files_as_legacy(source_dir.path(), &quotes);
+    let (target_dir, target) = create_temp_catalog();
+    let (fresh_dir, fresh) = create_temp_catalog();
+    fresh.write_to_parquet(&quotes, None, None, None).unwrap();
+
+    let report = target.migrate_from_legacy_parquet_catalog(&source).unwrap();
+
+    assert_eq!(report.migrated_files, 1);
+    assert_eq!(
+        parquet_file_schema_metadata(target_dir.path()),
+        parquet_file_schema_metadata(fresh_dir.path())
+    );
+    assert_eq!(
+        parquet_identifier_columns(target_dir.path()),
+        parquet_identifier_columns(fresh_dir.path())
+    );
+    let mut target = ParquetDataCatalog::new(target_dir.path(), None, None, None, None);
+    assert_eq!(
+        target
+            .quote_ticks(Some(vec!["ETH/USDT.BINANCE".to_string()]), None, None)
+            .unwrap(),
+        quotes
+    );
+}
+
+fn parquet_identifier_columns(root: &std::path::Path) -> Vec<Vec<Option<String>>> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut columns = Vec::new();
+
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "parquet") {
+                let reader =
+                    ParquetRecordBatchReaderBuilder::try_new(fs::File::open(path).unwrap())
+                        .unwrap()
+                        .build()
+                        .unwrap();
+                let mut identifiers = Vec::new();
+
+                for batch in reader {
+                    let batch = batch.unwrap();
+                    let column = batch
+                        .column_by_name("identifier")
+                        .expect("parquet file has an identifier column")
+                        .as_any()
+                        .downcast_ref::<arrow::array::StringArray>()
+                        .unwrap()
+                        .clone();
+                    identifiers.extend(column.iter().map(|value| value.map(str::to_string)));
+                }
+
+                columns.push(identifiers);
+            }
+        }
+    }
+
+    columns
+}
+
+#[rstest]
+fn test_parquet_files_store_identifier_column_for_quotes() {
+    let (temp_dir, catalog) = create_temp_catalog();
+    let mut quotes = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 3);
+    quotes.extend(create_quote_ticks_for_instrument("EUR/USD.SIM", 10_000, 2));
+    let data = quotes.into_iter().map(Data::from).collect::<Vec<_>>();
+    catalog.write_data_enum(&data, None, None, None).unwrap();
+
+    let mut columns = parquet_identifier_columns(temp_dir.path());
+    columns.sort();
+
+    assert_eq!(
+        columns,
+        vec![
+            vec![Some("AUD/USD.SIM".to_string()); 3],
+            vec![Some("EUR/USD.SIM".to_string()); 2],
+        ]
+    );
+}
+
+#[rstest]
+fn test_parquet_files_store_identifier_column_for_instruments() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let currency_pair = InstrumentAny::CurrencyPair(audusd_sim());
+    let crypto_perpetual = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    CatalogWriter::write_instruments(
+        &mut catalog,
+        &[currency_pair.clone(), crypto_perpetual.clone()],
+    )
+    .unwrap();
+
+    let mut columns = parquet_identifier_columns(temp_dir.path());
+    columns.sort();
+
+    assert_eq!(
+        columns,
+        vec![
+            vec![Some(currency_pair.id().to_string())],
+            vec![Some(crypto_perpetual.id().to_string())],
+        ]
+    );
+}
+
+#[rstest]
+fn test_parquet_files_store_identifier_column_for_custom_data() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, catalog) = create_temp_catalog();
+    let data_type = DataType::new(
+        "RustTestBytesCustomData",
+        None,
+        Some("RUST.TEST".to_string()),
+    );
+    let custom_data = (1..=2)
+        .map(|ts| {
+            CustomData::new(
+                Arc::new(RustTestBytesCustomData {
+                    value: vec![ts as u8],
+                    ts_event: UnixNanos::from(ts),
+                    ts_init: UnixNanos::from(ts),
+                }),
+                data_type.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let columns = parquet_identifier_columns(temp_dir.path());
+
+    assert_eq!(columns, vec![vec![Some("RUST.TEST".to_string()); 2]]);
+}
+
 #[rstest]
 fn test_rust_write_trade_ticks() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
@@ -2001,31 +2248,25 @@ fn test_rust_write_empty_order_book_depths() {
 #[rstest]
 fn test_rust_write_and_read_account_state() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let mut info = Params::new();
-    info.insert("total_wallet_balance".to_string(), json!("1000.00000001"));
-    info.insert("can_trade".to_string(), json!(true));
-    let account_states = vec![
-        AccountState::new(
-            AccountId::from("SIM-001"),
-            AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::from("1000.00 USD"),
-                Money::from("200.00 USD"),
-                Money::from("800.00 USD"),
-            )],
-            vec![MarginBalance::new(
-                Money::from("150.00 USD"),
-                Money::from("75.00 USD"),
-                Some(ethusdt_binance_id()),
-            )],
-            true,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            Some(Currency::USD()),
-        )
-        .with_info(Some(info)),
-    ];
+    let account_states = vec![AccountState::new(
+        AccountId::from("SIM-001"),
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000.00 USD"),
+            Money::from("200.00 USD"),
+            Money::from("800.00 USD"),
+        )],
+        vec![MarginBalance::new(
+            Money::from("150.00 USD"),
+            Money::from("75.00 USD"),
+            Some(ethusdt_binance_id()),
+        )],
+        true,
+        UUID4::new(),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        Some(Currency::USD()),
+    )];
     let metadata = account_states[0].metadata();
     let batch = AccountState::encode_batch(&metadata, &account_states).unwrap();
 
@@ -2046,10 +2287,7 @@ fn test_rust_write_and_read_account_state() {
     )
     .unwrap()
     .into_iter()
-    .flat_map(|batch| {
-        let schema = batch.schema();
-        AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
-    })
+    .flat_map(|batch| AccountState::decode_typed_batch(&metadata, batch).unwrap())
     .collect();
 
     assert_eq!(
@@ -2591,7 +2829,15 @@ fn test_prepare_consolidation_queries_empty_intervals() {
     let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            None,
+            None,
+            true,
+        )
         .unwrap();
 
     // Should have no queries for empty intervals
@@ -2633,7 +2879,15 @@ fn test_prepare_consolidation_queries_filtered_intervals() {
     let end = Some(UnixNanos::from(6000));
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, start, end, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            start,
+            end,
+            true,
+        )
         .unwrap();
 
     // Should have no queries since no intervals overlap with the time range
@@ -2641,7 +2895,7 @@ fn test_prepare_consolidation_queries_filtered_intervals() {
 }
 
 #[rstest]
-fn test_generic_query_quotes() {
+fn test_generic_query_typed_data_quotes() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     // Create test data
     let quotes = vec![create_quote_tick(1000), create_quote_tick(2000)];
@@ -2667,7 +2921,7 @@ fn test_generic_query_quotes() {
 }
 
 #[rstest]
-fn test_generic_query_bars() {
+fn test_generic_query_typed_data_bars() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     // Create test data
@@ -2771,6 +3025,68 @@ fn test_write_data_enum_groups_mixed_bar_types() {
 }
 
 #[rstest]
+fn test_write_data_enum_writes_one_file_per_instrument_at_its_own_precision() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let coarse = QuoteTick::new(
+        InstrumentId::from("COARSE.SIM"),
+        Price::from("1.25"),
+        Price::from("1.50"),
+        Quantity::from("10"),
+        Quantity::from("20"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let fine = QuoteTick::new(
+        InstrumentId::from("FINE.SIM"),
+        Price::from("1.23456"),
+        Price::from("1.23457"),
+        Quantity::from("1.5"),
+        Quantity::from("2.5"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    let data = vec![Data::Quote(coarse), Data::Quote(fine)];
+
+    catalog.write_data_enum(&data, None, None, None).unwrap();
+
+    let mut stored = parquet_file_schema_metadata(temp_dir.path())
+        .into_iter()
+        .map(|metadata| {
+            let mut entries = metadata.into_iter().collect::<Vec<_>>();
+            entries.sort();
+            entries
+        })
+        .collect::<Vec<_>>();
+    stored.sort();
+
+    assert_eq!(
+        stored,
+        vec![
+            vec![
+                ("price_precision".to_string(), "2".to_string()),
+                ("size_precision".to_string(), "0".to_string()),
+            ],
+            vec![
+                ("price_precision".to_string(), "5".to_string()),
+                ("size_precision".to_string(), "1".to_string()),
+            ],
+        ]
+    );
+    assert_eq!(
+        catalog
+            .quote_ticks(Some(vec!["COARSE.SIM".to_string()]), None, None)
+            .unwrap(),
+        vec![coarse]
+    );
+    assert_eq!(
+        catalog
+            .quote_ticks(Some(vec!["FINE.SIM".to_string()]), None, None)
+            .unwrap(),
+        vec![fine]
+    );
+}
+
+#[rstest]
 fn test_write_to_parquet_rejects_mixed_bar_types() {
     let (_temp_dir, catalog) = create_temp_catalog();
     let mixed = vec![create_bar(1_000), create_index_bar(2_000)];
@@ -2784,7 +3100,7 @@ fn test_write_to_parquet_rejects_mixed_bar_types() {
 }
 
 #[rstest]
-fn test_generic_query_empty_result() {
+fn test_generic_query_typed_data_empty_result() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     // query with no matching data
@@ -2802,7 +3118,7 @@ fn test_generic_query_empty_result() {
 }
 
 #[rstest]
-fn test_generic_query_with_where_clause() {
+fn test_generic_query_typed_data_with_where_clause() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     // Create test data
@@ -3224,49 +3540,33 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test path with instrument ID
-    let path_with_id = format!("{}/data/quotes/BTCUSD", base_dir.to_string_lossy());
+    let path_with_id = format!("{}/data/quote_tick/BTCUSD", base_dir.to_string_lossy());
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_with_id)
         .unwrap();
-    assert_eq!(data_cls, Some("quotes".to_string()));
+    assert_eq!(data_cls, Some("quote_tick".to_string()));
     assert_eq!(identifier, Some("BTCUSD".to_string()));
 
     // Test path without instrument ID
-    let path_without_id = format!("{}/data/trades", base_dir.to_string_lossy());
+    let path_without_id = format!("{}/data/trade_tick", base_dir.to_string_lossy());
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_without_id)
         .unwrap();
-    assert_eq!(data_cls, Some("trades".to_string()));
+    assert_eq!(data_cls, Some("trade_tick".to_string()));
     assert_eq!(identifier, None);
 
     // Test custom data path with identifier
     let path_custom_with_id = format!(
-        "{}/data/custom/RustTestCustomData/RUST.TEST",
+        "{}/data/custom_rust_test_custom_data/RUST.TEST",
         base_dir.to_string_lossy()
     );
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_custom_with_id)
         .unwrap();
-    assert_eq!(data_cls, Some("custom/RustTestCustomData".to_string()));
+    assert_eq!(data_cls, Some("custom_rust_test_custom_data".to_string()));
     assert_eq!(identifier, Some("RUST.TEST".to_string()));
 
-    // Test custom data path with identifier subdirs
-    let path_custom_subdirs = format!("{}/data/custom/MyType/foo/bar", base_dir.to_string_lossy());
-    let (data_cls, identifier) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_custom_subdirs)
-        .unwrap();
-    assert_eq!(data_cls, Some("custom/MyType".to_string()));
-    assert_eq!(identifier, Some("foo/bar".to_string()));
-
     // Test custom data path without identifier
-    let path_custom_no_id = format!("{}/data/custom/MyType", base_dir.to_string_lossy());
-    let (data_cls, identifier) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_custom_no_id)
-        .unwrap();
-    assert_eq!(data_cls, Some("custom/MyType".to_string()));
-    assert_eq!(identifier, None);
-
-    // Test legacy custom data directory without identifier
     let path_custom_no_id = format!("{}/data/custom_my_type", base_dir.to_string_lossy());
     let (data_cls, identifier) = catalog
         .extract_data_cls_and_identifier_from_path(&path_custom_no_id)
@@ -3281,6 +3581,45 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
         .unwrap();
     assert_eq!(data_cls, None);
     assert_eq!(identifier, None);
+}
+
+/// Ensures custom data path built by `make_path_custom_data` (via custom module) matches
+/// the format expected by `extract_data_cls_and_identifier_from_path`.
+#[rstest]
+fn test_make_path_custom_data_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base_dir = tmp.path().join("catalog");
+    std::fs::create_dir_all(&base_dir).unwrap();
+
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+
+    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
+    assert!(path_no_id.contains("data/custom/MyCustomType"));
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_no_id)
+        .unwrap();
+    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
+    assert_eq!(identifier, None);
+
+    let path_with_id = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
+        .unwrap();
+    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
+    let (data_cls2, identifier2) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_id)
+        .unwrap();
+    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
+
+    let path_with_slashes = catalog
+        .make_path_custom_data("RustTestCustomData", Some("foo//bar"))
+        .unwrap();
+    assert!(path_with_slashes.contains("data/custom/RustTestCustomData/foobar"));
+    let (data_cls3, identifier3) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_slashes)
+        .unwrap();
+    assert_eq!(data_cls3.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier3.as_deref(), Some("foobar"));
 }
 
 #[rstest]
@@ -3328,7 +3667,6 @@ fn test_delete_data_range_on_custom_type_path() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     let instrument_id = InstrumentId::from("RUST.DELETE");
     let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
-
     for (value, ts) in [(1.0, 10_u64), (2.0, 20_u64), (3.0, 30_u64)] {
         let item = RustTestCustomData {
             instrument_id,
@@ -3388,45 +3726,6 @@ fn test_delete_data_range_on_custom_type_path() {
         .collect();
 
     assert_eq!(values, vec![1.0, 3.0]);
-}
-
-/// Ensures custom data path built by `make_path_custom_data` (via custom module) matches
-/// the format expected by `extract_data_cls_and_identifier_from_path`.
-#[rstest]
-fn test_make_path_custom_data_roundtrip() {
-    let tmp = tempfile::tempdir().unwrap();
-    let base_dir = tmp.path().join("catalog");
-    std::fs::create_dir_all(&base_dir).unwrap();
-
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
-
-    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
-    assert!(path_no_id.contains("data/custom/MyCustomType"));
-    let (data_cls, identifier) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_no_id)
-        .unwrap();
-    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
-    assert_eq!(identifier, None);
-
-    let path_with_id = catalog
-        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
-        .unwrap();
-    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
-    let (data_cls2, identifier2) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_with_id)
-        .unwrap();
-    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
-    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
-
-    let path_with_slashes = catalog
-        .make_path_custom_data("RustTestCustomData", Some("foo//bar"))
-        .unwrap();
-    assert!(path_with_slashes.contains("data/custom/RustTestCustomData/foobar"));
-    let (data_cls3, identifier3) = catalog
-        .extract_data_cls_and_identifier_from_path(&path_with_slashes)
-        .unwrap();
-    assert_eq!(data_cls3.as_deref(), Some("custom/RustTestCustomData"));
-    assert_eq!(identifier3.as_deref(), Some("foobar"));
 }
 
 #[rstest]
@@ -3508,7 +3807,15 @@ fn test_prepare_consolidation_queries_basic_moved() {
     let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
-        .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
+        .prepare_consolidation_queries(
+            "quote_tick",
+            None,
+            &intervals,
+            period_nanos,
+            None,
+            None,
+            true,
+        )
         .unwrap();
 
     // Should have at least one query for the period
@@ -3539,7 +3846,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
 
     let queries = catalog
         .prepare_consolidation_queries(
-            "quotes",
+            "quote_tick",
             Some("EURUSD"),
             &intervals,
             period_nanos,
@@ -4297,7 +4604,7 @@ fn test_prepare_delete_operations_basic() {
 
     let operations = catalog
         .prepare_delete_operations(
-            "quotes",
+            "quote_tick",
             Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(2000)),
@@ -4328,7 +4635,7 @@ fn test_prepare_delete_operations_no_intersection() {
 
     let operations = catalog
         .prepare_delete_operations(
-            "quotes",
+            "quote_tick",
             Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(5000)),
@@ -4450,16 +4757,16 @@ fn test_make_local_path() {
     use nautilus_persistence::backend::parquet::catalog::make_local_path;
 
     // Test basic path construction
-    let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+    let path = make_local_path("/base", &["data", "quote_tick", "EURUSD"]);
     let expected = PathBuf::from("/base")
         .join("data")
-        .join("quotes")
+        .join("quote_tick")
         .join("EURUSD");
     assert_eq!(path, expected);
 
     // Test empty base path
-    let path = make_local_path("", &["data", "quotes"]);
-    let expected = PathBuf::from("data").join("quotes");
+    let path = make_local_path("", &["data", "quote_tick"]);
+    let expected = PathBuf::from("data").join("quote_tick");
     assert_eq!(path, expected);
 
     // Test single component
@@ -4484,24 +4791,24 @@ fn test_make_object_store_path() {
     use nautilus_persistence::backend::parquet::catalog::make_object_store_path;
 
     // Test basic path construction
-    let path = make_object_store_path("base", ["data", "quotes", "EURUSD"]);
-    assert_eq!(path, "base/data/quotes/EURUSD");
+    let path = make_object_store_path("base", ["data", "quote_tick", "EURUSD"]);
+    assert_eq!(path, "base/data/quote_tick/EURUSD");
 
     // Test empty base path
-    let path = make_object_store_path("", ["data", "quotes"]);
-    assert_eq!(path, "data/quotes");
+    let path = make_object_store_path("", ["data", "quote_tick"]);
+    assert_eq!(path, "data/quote_tick");
 
     // Test with trailing slashes in base
-    let path = make_object_store_path("base/", ["data", "quotes"]);
-    assert_eq!(path, "base/data/quotes");
+    let path = make_object_store_path("base/", ["data", "quote_tick"]);
+    assert_eq!(path, "base/data/quote_tick");
 
     // Test with leading slashes in components
     let path = make_object_store_path("base", ["/data", "/quotes"]);
     assert_eq!(path, "base/data/quotes");
 
     // Test with backslashes (Windows-style)
-    let path = make_object_store_path("base\\", ["data\\", "quotes"]);
-    assert_eq!(path, "base/data/quotes");
+    let path = make_object_store_path("base\\", ["data\\", "quote_tick"]);
+    assert_eq!(path, "base/data/quote_tick");
 }
 
 #[rstest]
@@ -4511,16 +4818,16 @@ fn test_make_object_store_path_accepts_owned_components() {
     // Test with owned strings
     let components = vec![
         "data".to_string(),
-        "quotes".to_string(),
+        "quote_tick".to_string(),
         "EURUSD".to_string(),
     ];
     let path = make_object_store_path("base", components);
-    assert_eq!(path, "base/data/quotes/EURUSD");
+    assert_eq!(path, "base/data/quote_tick/EURUSD");
 
     // Test empty base path
-    let components = vec!["data".to_string(), "quotes".to_string()];
+    let components = vec!["data".to_string(), "quote_tick".to_string()];
     let path = make_object_store_path("", components);
-    assert_eq!(path, "data/quotes");
+    assert_eq!(path, "data/quote_tick");
 }
 
 #[rstest]
@@ -4530,9 +4837,9 @@ fn test_local_to_object_store_path() {
     use nautilus_persistence::backend::parquet::catalog::local_to_object_store_path;
 
     // Test Unix-style path
-    let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+    let local_path = PathBuf::from("data").join("quote_tick").join("EURUSD");
     let object_path = local_to_object_store_path(&local_path);
-    assert_eq!(object_path, "data/quotes/EURUSD");
+    assert_eq!(object_path, "data/quote_tick/EURUSD");
 
     // Test with backslashes (simulating Windows)
     let path_str = "data\\quotes\\EURUSD";
@@ -4547,20 +4854,20 @@ fn test_extract_path_components() {
     use nautilus_persistence::backend::parquet::catalog::extract_path_components;
 
     // Test Unix-style path
-    let components = extract_path_components("data/quotes/EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data/quote_tick/EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test Windows-style path
-    let components = extract_path_components("data\\quotes\\EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data\\quote_tick\\EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test mixed separators
-    let components = extract_path_components("data/quotes\\EURUSD");
-    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+    let components = extract_path_components("data/quote_tick\\EURUSD");
+    assert_eq!(components, vec!["data", "quote_tick", "EURUSD"]);
 
     // Test with leading/trailing separators
-    let components = extract_path_components("/data/quotes/");
-    assert_eq!(components, vec!["data", "quotes"]);
+    let components = extract_path_components("/data/quote_tick/");
+    assert_eq!(components, vec!["data", "quote_tick"]);
 
     // Test empty path
     let components = extract_path_components("");
@@ -4572,12 +4879,12 @@ fn test_extract_identifier_from_path() {
     use nautilus_persistence::backend::parquet::catalog::extract_identifier_from_path;
 
     // Test typical parquet file path
-    let identifier = extract_identifier_from_path("data/quotes/EURUSD/file.parquet");
+    let identifier = extract_identifier_from_path("data/quote_tick/EURUSD/file.parquet");
     assert_eq!(identifier, Some("EURUSD"));
 
     // Test bar file path
     let identifier =
-        extract_identifier_from_path("data/bars/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
+        extract_identifier_from_path("data/bar/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
     assert_eq!(identifier, Some("BTCUSD-1-MINUTE-LAST-EXTERNAL"));
 
     // Test path with fewer components
@@ -4632,7 +4939,7 @@ fn test_extract_sql_safe_filename() {
 
     // Test actual timestamp range filename format
     let filename = extract_sql_safe_filename(
-        "data/quotes/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+        "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
     );
     assert_eq!(
         filename,
@@ -4737,109 +5044,6 @@ fn test_rust_custom_data_binary_roundtrip() {
             .expect("Expected RustTestBytesCustomData");
         assert_eq!(actual, expected);
     }
-}
-
-#[rstest]
-fn test_custom_data_query_fails_fast_on_legacy_schema_files() {
-    use arrow::{
-        array::{Float64Array, UInt64Array},
-        datatypes::{DataType as ArrowDataType, Field, Schema},
-        record_batch::RecordBatch,
-    };
-    use parquet::arrow::arrow_writer::ArrowWriter;
-
-    ensure_test_custom_data_registered();
-    let (temp_dir, mut catalog) = create_temp_catalog();
-
-    // A genuine v1 file: UInt64 timestamps, no schema metadata
-    let legacy_dir = temp_dir
-        .path()
-        .join("data/custom/RustTestCustomData/RUST.LEGACY");
-    fs::create_dir_all(&legacy_dir).unwrap();
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("value", ArrowDataType::Float64, false),
-        Field::new("ts_event", ArrowDataType::UInt64, false),
-        Field::new("ts_init", ArrowDataType::UInt64, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        Arc::clone(&schema),
-        vec![
-            Arc::new(Float64Array::from(vec![1.25])),
-            Arc::new(UInt64Array::from(vec![11])),
-            Arc::new(UInt64Array::from(vec![13])),
-        ],
-    )
-    .unwrap();
-    let file = legacy_dir.join("11-13-0.parquet");
-    let mut writer = ArrowWriter::try_new(fs::File::create(&file).unwrap(), schema, None).unwrap();
-    writer.write(&batch).unwrap();
-    writer.close().unwrap();
-
-    let error = catalog
-        .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
-        .unwrap_err();
-    assert!(error.to_string().contains("migrate-parquet"), "{error}",);
-}
-
-#[rstest]
-fn test_custom_data_query_ignores_legacy_snake_case_layout() {
-    ensure_test_custom_data_registered();
-    let (temp_dir, mut catalog) = create_temp_catalog();
-    let instrument_id = InstrumentId::from("RUST.LEGACY");
-    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
-
-    let item = RustTestCustomData {
-        instrument_id,
-        value: 1.25,
-        flag: true,
-        ts_event: UnixNanos::from(10),
-        ts_init: UnixNanos::from(11),
-    };
-
-    catalog
-        .write_custom_data_batch(
-            vec![CustomData::new(Arc::new(item), data_type)],
-            None,
-            None,
-            Some(false),
-        )
-        .unwrap();
-
-    let canonical_dir = temp_dir
-        .path()
-        .join("data/custom/RustTestCustomData/RUST.LEGACY");
-    let file_name = fs::read_dir(&canonical_dir)
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .file_name();
-    let legacy_dir = temp_dir
-        .path()
-        .join("data/custom_rust_test_custom_data/RUST.LEGACY");
-    fs::create_dir_all(&legacy_dir).unwrap();
-    fs::rename(canonical_dir.join(&file_name), legacy_dir.join(&file_name)).unwrap();
-
-    // Legacy layouts are read only by `migrate-parquet`
-    let rows = catalog
-        .query_custom_data_dynamic("RustTestCustomData", None, None, None, None, None, true)
-        .unwrap();
-
-    let files = catalog
-        .query_files(
-            &NautilusDataType::Custom {
-                type_name: "RustTestCustomData".to_string(),
-            }
-            .into(),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-    assert!(rows.is_empty());
-    assert!(files.is_empty());
 }
 
 #[rstest]
@@ -5596,7 +5800,7 @@ fn test_macro_yield_curve_data_roundtrip() {
 }
 
 #[rstest]
-fn test_query_repeated_calls() {
+fn test_query_typed_data_repeated_calls() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     let quotes = vec![create_quote_tick(1000), create_quote_tick(2000)];
     catalog.write_to_parquet(&quotes, None, None, None).unwrap();
@@ -5771,6 +5975,7 @@ fn test_query_last_timestamp() {
 fn test_list_data_types() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
+    // Initially should be empty or have no data types
     let empty = catalog.list_data_types().unwrap();
 
     let bars = vec![create_bar(1000)];
@@ -5781,90 +5986,6 @@ fn test_list_data_types() {
     assert_eq!(
         data_types,
         vec![CatalogDataType::from(NautilusDataType::Bar)]
-    );
-}
-
-#[rstest]
-fn test_list_data_types_expands_custom_types_and_skips_unknown_directories() {
-    ensure_test_custom_data_registered();
-    let (temp_dir, catalog) = create_temp_catalog();
-    let instrument_id = InstrumentId::from("RUST.LIST");
-    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
-
-    let item = RustTestCustomData {
-        instrument_id,
-        value: 1.25,
-        flag: true,
-        ts_event: UnixNanos::from(10),
-        ts_init: UnixNanos::from(11),
-    };
-
-    catalog
-        .write_to_parquet(&[create_bar(1000)], None, None, None)
-        .unwrap();
-    catalog
-        .write_custom_data_batch(
-            vec![CustomData::new(Arc::new(item), data_type)],
-            None,
-            None,
-            Some(false),
-        )
-        .unwrap();
-    fs::create_dir_all(temp_dir.path().join("data/not_a_type")).unwrap();
-
-    let data_types = catalog.list_data_types().unwrap();
-
-    assert_eq!(
-        data_types,
-        vec![
-            CatalogDataType::from(NautilusDataType::Bar),
-            CatalogDataType::from(NautilusDataType::Custom {
-                type_name: "RustTestCustomData".to_string(),
-            }),
-        ]
-    );
-}
-
-#[rstest]
-fn test_list_data_types_maps_record_and_instrument_directories() {
-    let (_temp_dir, mut catalog) = create_temp_catalog();
-    let account_states = vec![AccountState::new(
-        AccountId::from("SIM-001"),
-        AccountType::Margin,
-        vec![AccountBalance::new(
-            Money::from("1000.00 USD"),
-            Money::from("200.00 USD"),
-            Money::from("800.00 USD"),
-        )],
-        vec![],
-        true,
-        UUID4::new(),
-        UnixNanos::from(1),
-        UnixNanos::from(2),
-        Some(Currency::USD()),
-    )];
-    let batch = AccountState::encode_batch(&account_states[0].metadata(), &account_states).unwrap();
-    let mut params = Params::new();
-    params.insert("identifier".to_string(), json!("SIM-001"));
-    CatalogWriter::write_records(
-        &mut catalog,
-        NautilusRecordType::AccountState,
-        &[batch],
-        Some(params),
-    )
-    .unwrap();
-    catalog
-        .write_instruments(vec![InstrumentAny::CurrencyPair(audusd_sim())])
-        .unwrap();
-
-    let data_types = catalog.list_data_types().unwrap();
-
-    assert_eq!(
-        data_types,
-        vec![
-            CatalogDataType::Record(NautilusRecordType::AccountState),
-            CatalogDataType::Instrument(NautilusInstrumentType::CurrencyPair),
-        ]
     );
 }
 
@@ -6367,7 +6488,7 @@ fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
         vec![
             Arc::new(UInt64Array::from(vec![100])),
             Arc::new(UInt64Array::from(vec![100])),
-            Arc::new(StringArray::from(vec!["bars"])),
+            Arc::new(StringArray::from(vec!["bar"])),
         ],
     )
     .unwrap();
@@ -6572,21 +6693,44 @@ fn test_data_catalog_instruments_applies_where_clause() {
 }
 
 #[rstest]
-#[case::class_order(1_000, 2_000)]
-#[case::reverse_class_order(2_000, 1_000)]
-fn test_instrument_family_coverage_spans_every_class(
-    #[case] currency_pair_ts: u64,
-    #[case] equity_ts: u64,
-) {
+fn test_instrument_query_narrows_to_one_class() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let currency_pair = InstrumentAny::CurrencyPair(audusd_sim());
+    let equity = InstrumentAny::Equity(equity_aapl());
+    catalog
+        .write_instruments(vec![currency_pair, equity.clone()])
+        .unwrap();
+
+    let narrowed = CatalogReader::instruments(
+        &mut catalog,
+        &CatalogInstrumentQuery::new().with_instrument_type(Some(NautilusInstrumentType::Equity)),
+    )
+    .unwrap();
+    let every_class =
+        CatalogReader::instruments(&mut catalog, &CatalogInstrumentQuery::default()).unwrap();
+
+    assert_eq!(
+        narrowed
+            .iter()
+            .map(|instrument| Instrument::id(instrument).to_string())
+            .collect::<Vec<_>>(),
+        vec![Instrument::id(&equity).to_string()],
+    );
+    assert_eq!(every_class.len(), 2);
+}
+
+#[rstest]
+fn test_instrument_family_coverage_spans_every_class() {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
-    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
-    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
     let mut equity = equity_aapl();
-    equity.ts_event = UnixNanos::from(equity_ts);
-    equity.ts_init = UnixNanos::from(equity_ts);
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
 
     catalog
         .write_instruments(vec![
@@ -6604,13 +6748,13 @@ fn test_instrument_family_coverage_spans_every_class(
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), None)
             .unwrap(),
-        vec![(currency_pair_ts, currency_pair_ts)]
+        vec![(1_000, 1_000)]
     );
     assert_eq!(
         catalog
             .get_intervals(&NautilusInstrumentType::Equity.into(), None)
             .unwrap(),
-        vec![(equity_ts, equity_ts)]
+        vec![(2_000, 2_000)]
     );
 
     assert_eq!(
@@ -6754,14 +6898,14 @@ fn test_list_instruments_aggregate_reports_shared_identifier_once() {
     "AccountState"
 )]
 fn test_consolidate_data_by_period_rejects_non_data_selectors(
-    #[case] data_type: CatalogDataType,
+    #[case] catalog_type: CatalogDataType,
     #[case] display: &str,
 ) {
     let temp_dir = TempDir::new().unwrap();
     let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let error = catalog
-        .consolidate_data_by_period(&data_type, None, None, None, None, None)
+        .consolidate_data_by_period(&catalog_type, None, None, None, None, None)
         .unwrap_err();
 
     assert_eq!(
@@ -6774,19 +6918,14 @@ fn test_consolidate_data_by_period_rejects_non_data_selectors(
 }
 
 #[rstest]
-#[case::both_adjacent(2_000, 3_000)]
-#[case::later_class_adjacent(1_000, 1_000)]
-fn test_extend_file_name_extends_every_class_holding_the_identifier(
-    #[case] currency_pair_ts: u64,
-    #[case] currency_pair_end: u64,
-) {
+fn test_extend_file_name_extends_every_class_holding_the_identifier() {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     let mut currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
-    currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
-    currency_pair.ts_init = UnixNanos::from(currency_pair_ts);
+    currency_pair.ts_event = UnixNanos::from(2_000);
+    currency_pair.ts_init = UnixNanos::from(2_000);
     let mut equity = equity_aapl();
     equity.id = shared_id;
     equity.ts_event = UnixNanos::from(2_000);
@@ -6812,7 +6951,7 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier(
         catalog
             .get_intervals(&NautilusInstrumentType::CurrencyPair.into(), Some(&id_str))
             .unwrap(),
-        vec![(currency_pair_ts, currency_pair_end)]
+        vec![(2_000, 3_000)]
     );
     assert_eq!(
         catalog
@@ -6834,76 +6973,6 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier(
         "Cannot extend file name for Instrument: no instrument class holds MISSING.SIM; \
          name the class with a NautilusInstrumentType"
     );
-}
-
-#[rstest]
-#[case::all(None, &[0, 1])]
-#[case::currency_pair(Some(NautilusInstrumentType::CurrencyPair), &[0])]
-#[case::equity(Some(NautilusInstrumentType::Equity), &[1])]
-fn test_instrument_family_class_filter_applies_to_catalog_readers(
-    #[case] instrument_type: Option<NautilusInstrumentType>,
-    #[case] expected_indices: &[usize],
-) {
-    let (_temp_dir, mut catalog) = create_temp_catalog();
-    let mut currency_pair = audusd_sim();
-    currency_pair.ts_event = UnixNanos::from(1_000);
-    currency_pair.ts_init = UnixNanos::from(1_000);
-    let mut equity = equity_aapl();
-    equity.ts_event = UnixNanos::from(2_000);
-    equity.ts_init = UnixNanos::from(2_000);
-    let instruments = vec![
-        InstrumentAny::CurrencyPair(currency_pair),
-        InstrumentAny::Equity(equity),
-    ];
-    catalog.write_instruments(instruments.clone()).unwrap();
-    let expected = expected_indices
-        .iter()
-        .map(|&index| instruments[index].clone())
-        .collect::<Vec<_>>();
-    let mut expected_ids = expected
-        .iter()
-        .map(|instrument| instrument.id().to_string())
-        .collect::<Vec<_>>();
-    expected_ids.sort();
-    let mut expected_metadata = Vec::new();
-
-    for &index in expected_indices {
-        let class = [
-            NautilusInstrumentType::CurrencyPair,
-            NautilusInstrumentType::Equity,
-        ][index];
-        expected_metadata.extend(
-            catalog
-                .query_metadata(&class.into(), None, None, None, None)
-                .unwrap(),
-        );
-    }
-
-    let query =
-        CatalogQuery::new(NautilusDataType::Instrument).with_instrument_type(instrument_type);
-
-    let loaded = CatalogReader::instruments(
-        &mut catalog,
-        &CatalogInstrumentQuery::new().with_instrument_type(instrument_type),
-    )
-    .unwrap();
-    let batch = CatalogReader::query_batch(&mut catalog, &query).unwrap();
-    let identifiers = CatalogReader::query_identifiers(&mut catalog, &query).unwrap();
-    let display = CatalogReader::query_display_record_batches(&mut catalog, &query).unwrap();
-    let metadata = CatalogReader::query_metadata(&mut catalog, &query).unwrap();
-
-    assert_eq!(loaded, expected);
-    assert_eq!(
-        batch.to_data_vec_for_compat(),
-        expected
-            .iter()
-            .cloned()
-            .map(|instrument| Data::Instrument(Box::new(instrument)))
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(identifiers, expected_ids);
-    assert_eq!(display, vec![encode_instruments(&expected).unwrap()]);
-    assert_eq!(metadata, expected_metadata);
 }
 
 #[rstest]
@@ -7183,7 +7252,7 @@ fn typed_session_reports_decode_failure_instead_of_exhaustion() {
 
     let error = session.next_batch().unwrap_err();
 
-    assert_eq!(error.to_string(), "Missing metadata key: `instrument_id`");
+    assert_eq!(error.to_string(), "Missing metadata key: `price_precision`");
     assert!(session.next_batch().unwrap().is_none());
 }
 
@@ -8400,4 +8469,52 @@ fn test_filter_files_matches_query_files_for_bar_identifiers(
 
     assert_eq!(filtered.len(), expected);
     assert_eq!(queried.len(), expected);
+}
+
+#[rstest]
+#[case::zstd("zstd", Compression::ZSTD(ZstdLevel::default()))]
+#[case::snappy_any_case("Snappy", Compression::SNAPPY)]
+#[case::uncompressed("uncompressed", Compression::UNCOMPRESSED)]
+fn compression_param_sets_the_codec_of_written_files(
+    #[case] name: &str,
+    #[case] expected: Compression,
+) {
+    let temp = TempDir::new().unwrap();
+    let mut params = Params::new();
+    params.insert("compression".to_string(), json!(name));
+    let config = CatalogConnectConfig::new(temp.path().to_string_lossy()).with_params(Some(params));
+    let mut catalog = default_catalog_factories()
+        .get(PARQUET_CATALOG_FACTORY_NAME)
+        .unwrap()(&config)
+    .unwrap();
+
+    catalog
+        .write_data(&[Data::Quote(create_quote_tick(10))], None, None, None)
+        .unwrap();
+    let codecs = common::parquet_codecs(temp.path());
+
+    assert_eq!(codecs.len(), 1);
+    assert!(
+        codecs[0].1.iter().all(|codec| *codec == expected),
+        "{codecs:?}"
+    );
+}
+
+#[rstest]
+fn compression_param_rejects_a_numeric_code() {
+    let temp = TempDir::new().unwrap();
+    let mut params = Params::new();
+    params.insert("compression".to_string(), json!(6));
+    let config = CatalogConnectConfig::new(temp.path().to_string_lossy()).with_params(Some(params));
+
+    let error = default_catalog_factories()
+        .get(PARQUET_CATALOG_FACTORY_NAME)
+        .unwrap()(&config)
+    .err()
+    .unwrap();
+
+    assert_eq!(
+        error.to_string(),
+        "Invalid Parquet catalog param 'compression': expected a string"
+    );
 }

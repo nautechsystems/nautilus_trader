@@ -49,7 +49,9 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+};
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -289,12 +291,12 @@ fn main() -> anyhow::Result<()> {
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_ids(instrument_ids.clone())
         .build()?;
     let greeks_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OptionGreeks)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_ids(instrument_ids)
         .build()?;
 

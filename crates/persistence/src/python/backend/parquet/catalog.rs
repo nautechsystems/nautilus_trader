@@ -18,8 +18,6 @@
     reason = "PyO3 catalog wrapper mirrors Python API dispatch surface"
 )]
 
-use std::collections::HashMap;
-
 use nautilus_common::enums::Environment;
 use nautilus_core::{
     UnixNanos,
@@ -51,16 +49,29 @@ use pyo3::{
 };
 
 use crate::{
-    backend::{migration::build_catalog_migration_plan, parquet::catalog::ParquetDataCatalog},
+    backend::parquet::{
+        catalog::ParquetDataCatalog, feather_session::read_feather_run,
+        open_catalog as open_parquet_catalog,
+    },
     catalog::{
+        factory::CatalogConnectConfig,
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
         types::{HasCatalogDataType, parquet_catalog_data_type_path_prefixes},
     },
-    config::CatalogCompression,
-    python::backend::{
-        PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
-        arrow_record_batches_from_pybytes, catalog_metadata_to_pydict, catalog_record_type_from_py,
-        nautilus_data_type_from_py, to_pyio_err, write_record_params_from_py,
+    python::{
+        backend::parquet::migration::parquet_migration_dry_run,
+        catalog::conversion::{
+            PyCatalogDataType, catalog_metadata_to_pydict, catalog_record_type_from_py,
+            nautilus_data_type_from_py, write_record_params_from_py,
+        },
+        common::{
+            arrow::{
+                arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
+                arrow_record_batches_from_pybytes,
+            },
+            conversion::catalog_params_from_py,
+            to_pyio_err,
+        },
     },
 };
 
@@ -133,69 +144,41 @@ pub struct PyParquetDataCatalog {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyParquetDataCatalog {
-    /// Create a new `ParquetCatalog` with the given base path and optional parameters.
+    /// Create a new `ParquetCatalog` with the given base path and optional `params`.
     ///
-    /// # Parameters
-    ///
-    /// - `base_path`: The base path for the catalog
-    /// - `storage_options`: Optional storage configuration for cloud backends
-    /// - `batch_size`: Optional batch size for processing (default: 10,000)
-    /// - `compression`: Optional compression code (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 4=BROTLI, 5=`LZ4_RAW`, 6=ZSTD)
-    /// - `max_row_group_size`: Optional maximum row group size (default: 131,072)
+    /// `params` takes the same keys as `DataCatalogConfig(params=...)` for a Parquet catalog:
+    /// `storage_options`, `batch_size`, `compression` (a codec name such as `"zstd"`), and
+    /// `max_row_group_size`.
     ///
     /// # Errors
     ///
-    /// Returns an error if `compression` is not one of the listed codes, or the underlying
+    /// Returns an error if a param key is unknown or mistyped, or the underlying
     /// [`ParquetDataCatalog`] cannot be created.
     #[new]
-    #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
-    pub fn py_new(
-        base_path: &str,
-        storage_options: Option<HashMap<String, String>>,
-        batch_size: Option<usize>,
-        compression: Option<u8>,
-        max_row_group_size: Option<usize>,
-    ) -> PyResult<Self> {
-        let compression = compression
-            .map(catalog_compression_from_code)
-            .transpose()?
-            .map(parquet::basic::Compression::from);
-
-        // Convert HashMap to AHashMap for internal use
-        let storage_options = storage_options.map(|m| m.into_iter().collect());
-
-        let inner = ParquetDataCatalog::from_uri(
-            base_path,
-            storage_options,
-            batch_size,
-            compression,
-            max_row_group_size,
-        )
-        .map_err(|e| PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")))?;
+    #[pyo3(signature = (base_path, params=None))]
+    pub fn py_new(py: Python<'_>, base_path: &str, params: Option<Py<PyDict>>) -> PyResult<Self> {
+        let config =
+            CatalogConnectConfig::new(base_path).with_params(catalog_params_from_py(py, params)?);
+        let inner = open_parquet_catalog(&config)
+            .map_err(|e| PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")))?;
 
         Ok(Self { inner })
     }
 
     /// Rewrites a legacy Parquet catalog into this current Parquet catalog.
-    #[pyo3(signature = (parquet_path, storage_options=None, dry_run=false))]
+    #[pyo3(signature = (parquet_path, params=None, dry_run=false))]
     pub fn migrate_from_legacy_parquet_path(
         mut slf: PyRefMut<'_, Self>,
         parquet_path: &str,
-        storage_options: Option<HashMap<String, String>>,
+        params: Option<Py<PyDict>>,
         dry_run: bool,
     ) -> PyResult<usize> {
-        let storage_options = storage_options.map(|m| m.into_iter().collect());
-        let source = ParquetDataCatalog::from_uri(parquet_path, storage_options, None, None, None)
-            .map_err(to_pyio_err)?;
         let py = slf.py();
+        let config = CatalogConnectConfig::new(parquet_path)
+            .with_params(catalog_params_from_py(py, params)?);
+        let source = open_parquet_catalog(&config).map_err(to_pyio_err)?;
         if dry_run {
-            return py
-                .detach(|| {
-                    let plan = build_catalog_migration_plan(&source)?;
-                    plan.ensure_ready()?;
-                    Ok::<usize, anyhow::Error>(0)
-                })
-                .map_err(to_pyio_err);
+            return parquet_migration_dry_run(py, &source);
         }
 
         let inner = &mut slf.inner;
@@ -1014,13 +997,12 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Py<PyDict>> {
-        let data_type = nautilus_data_type_from_py(data_type)?;
-
+        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
         let metadata = py
             .detach(|| {
                 CatalogReader::query_metadata(
                     &mut self.inner,
-                    &CatalogQuery::new(data_type)
+                    &CatalogQuery::new(catalog_data_type)
                         .with_identifiers(identifiers)
                         .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
                         .with_where_clause(where_clause.map(str::to_string)),
@@ -1055,9 +1037,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyBytes>> {
-        let data_type = nautilus_data_type_from_py(data_type)?;
+        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(data_type.clone())
+        let query = CatalogQuery::new(catalog_data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1069,12 +1051,12 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
 
-        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pybytes(py, &schema, &batches)
     }
@@ -1103,9 +1085,9 @@ impl PyParquetDataCatalog {
         display: bool,
         as_of: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        let data_type = nautilus_data_type_from_py(data_type)?;
+        let catalog_data_type = nautilus_data_type_from_py(data_type)?;
         reject_parquet_as_of(as_of)?;
-        let query = CatalogQuery::new(data_type.clone())
+        let query = CatalogQuery::new(catalog_data_type.clone())
             .with_identifiers(identifiers)
             .with_range(start.map(UnixNanos::from), end.map(UnixNanos::from))
             .with_where_clause(where_clause.map(str::to_string));
@@ -1117,12 +1099,12 @@ impl PyParquetDataCatalog {
                 } else {
                     let data = CatalogReader::query_batch(&mut self.inner, &query)?
                         .to_data_vec_for_compat();
-                    crate::common::arrow::data_to_arrow_batches(&data_type, data)
+                    crate::common::arrow::data_to_arrow_batches(&catalog_data_type, data)
                 }
             })
             .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
 
-        let schema = arrow_ipc_data_schema(&data_type, &batches, display)?;
+        let schema = arrow_ipc_data_schema(&catalog_data_type, &batches, display)?;
         let batches = arrow_ipc_batches(&schema, batches)?;
         arrow_record_batches_to_pyarrow_stream(py, &schema, batches)
     }
@@ -1814,7 +1796,7 @@ impl PyParquetDataCatalog {
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
     /// - `data_type`: The stored family to convert (data type or record type).
-    /// - `environment`: The environment of the run, which names the folder holding its feather files (default: `Environment.BACKTEST`)
+    /// - `environment`: The environment the run executed in (default: `Environment.BACKTEST`)
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
     ///
@@ -1826,18 +1808,14 @@ impl PyParquetDataCatalog {
     ///
     /// ```python
     /// # Convert backtest stream data to parquet
-    /// catalog.convert_stream_to_data(
-    ///     "instance-123",
-    ///     NautilusDataType.QuoteTick,
-    ///     environment=Environment.BACKTEST
-    /// )
+    /// catalog.convert_stream_to_data("instance-123", NautilusDataType.QuoteTick)
     ///
     /// # Convert live run data with identifier filtering
     /// catalog.convert_stream_to_data(
     ///     "instance-456",
     ///     NautilusDataType.TradeTick,
     ///     environment=Environment.LIVE,
-    ///     identifiers=["EUR/USD.SIM"]
+    ///     identifiers=["EUR/USD.SIM"],
     /// )
     /// ```
     #[pyo3(signature = (instance_id, data_type, environment=Environment::Backtest, identifiers=None, use_ts_event_for_ts_init=false))]
@@ -1881,7 +1859,6 @@ impl PyParquetDataCatalog {
         let NautilusDataType::Custom { type_name } = nautilus_data_type_from_py(data_type)? else {
             return Err(to_pytype_err("data_type must be a custom NautilusDataType"));
         };
-
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -1914,40 +1891,55 @@ impl PyParquetDataCatalog {
     }
 }
 
-// Codes follow the Parquet format codec numbering, except that 5 writes LZ4_RAW rather than the
-// deprecated Hadoop-framed LZ4; LZO (3) is excluded because the writer cannot produce it
-fn catalog_compression_from_code(code: u8) -> PyResult<CatalogCompression> {
-    match code {
-        0 => Ok(CatalogCompression::Uncompressed),
-        1 => Ok(CatalogCompression::Snappy),
-        2 => Ok(CatalogCompression::Gzip),
-        4 => Ok(CatalogCompression::Brotli),
-        5 => Ok(CatalogCompression::Lz4),
-        6 => Ok(CatalogCompression::Zstd),
-        _ => Err(to_pyvalue_err(format!(
-            "Invalid compression code {code}, expected one of 0 (UNCOMPRESSED), 1 (SNAPPY), \
-             2 (GZIP), 4 (BROTLI), 5 (LZ4_RAW), or 6 (ZSTD)"
-        ))),
-    }
-}
+/// Reads the sealed Feather files a streaming writer produced for one run, without a catalog.
+///
+/// `writer_path` is the local streaming writer root (`StreamingConfig.writer_path`). The run's
+/// files live under `{writer_path}/{environment}/{instance_id}`.
+///
+/// `data_types` limits the read to those stream families, `identifiers` to the records whose
+/// identifier (instrument ID, bar type, or custom data identifier) contains one of them, and
+/// `start`/`end` to the inclusive `ts_init` range. Every data type is read for every matching
+/// identifier. Records without an identifier pass the identifier filter. Open
+/// `.feather.partial` files are not read.
+/// The result is sorted by `ts_init`.
+///
+/// # Errors
+///
+/// Returns an error if `writer_path` is not local, a requested data type is not a readable stream
+/// family, or listing, reading, or decoding a Feather file fails.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.persistence")]
+#[pyo3(name = "read_feather_run")]
+#[pyo3(signature = (writer_path, instance_id, environment=Environment::Backtest, data_types=None, identifiers=None, start=None, end=None))]
+#[expect(clippy::needless_pass_by_value)]
+pub fn py_read_feather_run(
+    py: Python<'_>,
+    writer_path: &str,
+    instance_id: &str,
+    environment: Environment,
+    data_types: Option<Vec<PyCatalogDataType>>,
+    identifiers: Option<Vec<String>>,
+    start: Option<u64>,
+    end: Option<u64>,
+) -> PyResult<Vec<Py<PyAny>>> {
+    let data_types = data_types.map(|data_types| {
+        data_types
+            .into_iter()
+            .map(PyCatalogDataType::into_inner)
+            .collect::<Vec<_>>()
+    });
+    let data = read_feather_run(
+        writer_path,
+        environment,
+        instance_id,
+        data_types.as_deref(),
+        identifiers.as_deref(),
+        start.map(UnixNanos::from),
+        end.map(UnixNanos::from),
+    )
+    .map_err(|e| PyIOError::new_err(format!("Failed to read Feather run: {e}")))?;
 
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    #[case::uncompressed(0, CatalogCompression::Uncompressed)]
-    #[case::snappy(1, CatalogCompression::Snappy)]
-    #[case::gzip(2, CatalogCompression::Gzip)]
-    #[case::brotli(4, CatalogCompression::Brotli)]
-    #[case::lz4(5, CatalogCompression::Lz4)]
-    #[case::zstd(6, CatalogCompression::Zstd)]
-    fn catalog_compression_from_code_maps_parquet_codes(
-        #[case] code: u8,
-        #[case] expected: CatalogCompression,
-    ) {
-        assert_eq!(catalog_compression_from_code(code).unwrap(), expected);
-    }
+    data.into_iter()
+        .map(|item| data_to_pyobject(py, item))
+        .collect()
 }

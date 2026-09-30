@@ -21,13 +21,15 @@ use nautilus_model::events::{OrderSnapshot, PositionSnapshot};
 use super::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
     KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("position_id", true),
@@ -75,7 +77,6 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
 const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("position_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("opening_order_id", false),
@@ -112,7 +113,7 @@ macro_rules! impl_snapshot_arrow {
     ($type:ty, $type_name:expr, $fields:expr) => {
         impl ArrowSchemaProvider for $type {
             fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
+                schema_for_type_with_identifier($type_name, metadata, $fields)
             }
         }
 
@@ -124,11 +125,14 @@ macro_rules! impl_snapshot_arrow {
             where
                 T: std::borrow::Borrow<Self>,
             {
-                encode_batch(
+                encode_batch_with_identifier(
                     $type_name,
                     metadata,
                     data.iter().map(std::borrow::Borrow::borrow),
                     $fields,
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|event| event.instrument_id),
                 )
             }
 
@@ -142,7 +146,13 @@ macro_rules! impl_snapshot_arrow {
                 metadata: &HashMap<String, String>,
                 record_batch: RecordBatch,
             ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+                decode_batch_with_metadata_fields(
+                    metadata,
+                    &record_batch,
+                    $fields,
+                    &[KEY_INSTRUMENT_ID],
+                    Some($type_name),
+                )
             }
         }
     };
@@ -159,7 +169,7 @@ impl_snapshot_arrow!(
 mod tests {
     use std::str::FromStr;
 
-    use arrow::datatypes::DataType;
+    use arrow::{array::Array, datatypes::DataType};
     use nautilus_core::{DurationNanos, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderType, PositionSide, TrailingOffsetType},
@@ -172,6 +182,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::arrow::{KEY_IDENTIFIER, json::encode_batch};
 
     #[rstest]
     fn test_order_snapshot_round_trip_preserves_decimal_precision() {
@@ -251,6 +262,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_snapshots_encode_instrument_identifier() {
+        let snapshot = make_position_snapshot();
+        let metadata = snapshot.metadata();
+
+        let batch =
+            PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
+        let identifiers = batch
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+
+        assert_eq!(identifiers.len(), 1);
+        assert_eq!(identifiers.value(0), snapshot.instrument_id.to_string());
+        assert!(batch.column_by_name("instrument_id").is_none());
+    }
+
+    #[rstest]
     fn test_order_snapshot_rejects_float64_avg_px_column() {
         // Converting a float into an exact price would lose precision silently
         let snapshot = make_order_snapshot(Some(dec!(1.07)), Some(dec!(0.07)));
@@ -295,7 +325,7 @@ mod tests {
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
             commissions: vec![Money::new(2.0, Currency::USD())],
-            duration_ns: Some(DurationNanos::new(3_600_000_000_000)),
+            duration_ns: Some(DurationNanos::from_hours(1)),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),

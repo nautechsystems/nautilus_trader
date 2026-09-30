@@ -10,6 +10,9 @@ from nautilus_trader import model
 __all__ = [
     "BarDataWrangler",
     "CatalogBackend",
+    "CatalogCommit",
+    "CatalogCoverageRow",
+    "CoverageKind",
     "DataCatalogConfig",
     "MacroYieldCurveData",
     "OrderBookDeltaDataWrangler",
@@ -18,6 +21,7 @@ __all__ = [
     "QuoteTickDataWrangler",
     "RotationConfig",
     "RotationMode",
+    "RunStatus",
     "RustTestCustomData",
     "RustTestFixedCustomData",
     "RustTestParamsCustomData",
@@ -27,6 +31,7 @@ __all__ = [
     "StreamingFeatherWriter",
     "StreamingWriter",
     "TradeTickDataWrangler",
+    "read_feather_run",
 ]
 
 @typing.final
@@ -41,6 +46,44 @@ class BarDataWrangler:
     def process_record_batch_bytes(self, data: bytes) -> list[model.Bar]: ...
 
 @typing.final
+class CatalogCommit:
+    @property
+    def version(self) -> int: ...
+    @property
+    def timestamp(self) -> int: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def operation(self) -> str: ...
+
+@typing.final
+class CatalogCoverageRow:
+    @property
+    def table_path(self) -> str: ...
+    @property
+    def data_type(
+        self,
+    ) -> model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType: ...
+    @property
+    def identifier(self) -> str | None: ...
+    @property
+    def start_ts(self) -> int: ...
+    @property
+    def end_ts(self) -> int: ...
+    @property
+    def status(self) -> CoverageKind: ...
+    @property
+    def row_count(self) -> int: ...
+    @property
+    def data_version(self) -> int | None: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def created_ts(self) -> int: ...
+    @property
+    def schema_version(self) -> int: ...
+
+@typing.final
 class DataCatalogConfig:
     @property
     def path(self) -> str: ...
@@ -53,15 +96,7 @@ class DataCatalogConfig:
     @property
     def catalog_backend(self) -> CatalogBackend: ...
     @property
-    def batch_size(self) -> int | None: ...
-    @property
-    def compression(self) -> str | None: ...
-    @property
-    def max_row_group_size(self) -> int | None: ...
-    @property
     def params(self) -> dict | None: ...
-    @property
-    def fs_rust_storage_option_keys(self) -> list[str] | None: ...
     def __new__(
         cls,
         path: str,
@@ -70,10 +105,6 @@ class DataCatalogConfig:
         params: dict | None = None,
         name: str | None = None,
         read_only: bool = ...,
-        fs_rust_storage_options: typing.Mapping[str, str] | None = None,
-        batch_size: int | None = None,
-        compression: str | None = None,
-        max_row_group_size: int | None = None,
     ) -> DataCatalogConfig: ...
 
 @typing.final
@@ -144,19 +175,9 @@ class CatalogBackend:
 
 @typing.final
 class ParquetDataCatalog:
-    def __init__(
-        self,
-        base_path: str,
-        storage_options: typing.Mapping[str, str] | None = None,
-        batch_size: int | None = None,
-        compression: int | None = None,
-        max_row_group_size: int | None = None,
-    ) -> None: ...
+    def __init__(self, base_path: str, params: dict | None = None) -> None: ...
     def migrate_from_legacy_parquet_path(
-        self,
-        parquet_path: str,
-        storage_options: typing.Mapping[str, str] | None = None,
-        dry_run: bool = False,
+        self, parquet_path: str, params: dict | None = None, dry_run: bool = False
     ) -> int: ...
     def write_quote_ticks(
         self,
@@ -833,6 +854,23 @@ class TradeTickDataWrangler:
     def process_record_batch_bytes(self, data: bytes) -> list[model.TradeTick]: ...
 
 @typing.final
+class CoverageKind(enum.Enum):
+    DATA = ...
+    EMPTY = ...
+    DELETED = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @classmethod
+    def variants(cls) -> model.EnumIterator: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> CoverageKind: ...
+
+@typing.final
 class RotationMode(enum.Enum):
     SIZE = ...
     INTERVAL = ...
@@ -849,3 +887,34 @@ class RotationMode(enum.Enum):
     def variants(cls) -> model.EnumIterator: ...
     @classmethod
     def from_str(cls, data: typing.Any) -> RotationMode: ...
+
+@typing.final
+class RunStatus(enum.Enum):
+    IN_PROGRESS = ...
+    COMPLETED = ...
+    PROMOTED = ...
+    FAILED = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @classmethod
+    def variants(cls) -> model.EnumIterator: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> RunStatus: ...
+
+def read_feather_run(
+    writer_path: str,
+    instance_id: str,
+    environment: common.Environment = common.Environment.BACKTEST,
+    data_types: typing.Sequence[
+        model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType
+    ]
+    | None = None,
+    identifiers: typing.Sequence[str] | None = None,
+    start: int | None = None,
+    end: int | None = None,
+) -> list[typing.Any]: ...

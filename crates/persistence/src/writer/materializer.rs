@@ -15,11 +15,7 @@
 
 //! Arrow-only transforms for Feather stream files promoted into durable catalog files.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Cursor,
-    sync::Arc,
-};
+use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use arrow::{
     array::{Array, ArrayRef, StringArray, UInt64Array},
@@ -31,12 +27,20 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{data::BarType, enums::AggregationSource};
-use nautilus_serialization::arrow::U64ColumnRef;
+use nautilus_serialization::arrow::{KEY_IDENTIFIER, U64ColumnRef};
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 
-use crate::writer::feather::{
-    NAUTILUS_ARROW_METADATA_ID_COLUMN, NAUTILUS_ARROW_METADATA_JSON_COLUMN,
-    canonical_metadata_json, staged_metadata_array, staged_metadata_data_type, staged_metadata_id,
+use crate::{
+    catalog::types::CatalogDataType,
+    common::metadata::{
+        derivable_metadata_key, location_type_name, metadata_hash, restored_metadata,
+        stored_catalog_metadata,
+    },
+    writer::feather::{
+        NAUTILUS_ARROW_METADATA_ID_COLUMN, NAUTILUS_ARROW_METADATA_JSON_COLUMN,
+        canonical_metadata_json, staged_metadata_array, staged_metadata_data_type,
+        staged_metadata_id,
+    },
 };
 
 /// Decoded Feather contents and the storage identity observed by the same read.
@@ -81,7 +85,7 @@ pub(crate) async fn read_feather_record_batches_with_hash(
     Ok((result.batches, result.content_hash))
 }
 
-/// Reads a Feather IPC stream with the version metadata returned by the same object read.
+/// Reads a Feather IPC stream with the content hash of the same object read.
 ///
 /// # Errors
 ///
@@ -113,14 +117,21 @@ pub(crate) async fn read_feather_record_batches_with_identity(
 
 /// Restores the original Arrow schema metadata embedded in a staged Feather batch.
 ///
-/// A single staging batch can contain rows from several input schemas. The metadata columns
-/// identify contiguous schema runs, so restoring them can produce more than one record batch.
+/// A staged row stores the slimmed metadata map that the catalogs persist, so the full metadata is
+/// rebuilt from the map, the row's `identifier`, and the type name that `data_type`'s location
+/// implies. A single staging batch can contain rows from several metadata maps or identifiers, so
+/// restoring can produce more than one record batch, one per contiguous run.
 ///
 /// # Errors
 ///
 /// Returns an error if the staging metadata columns are incomplete, malformed, or inconsistent.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one match arm for each staged custom and record layout"
+)]
 pub(crate) fn restore_staged_record_batches(
     batch: RecordBatch,
+    data_type: &CatalogDataType,
 ) -> anyhow::Result<Vec<RecordBatch>> {
     let schema = batch.schema();
 
@@ -147,6 +158,25 @@ pub(crate) fn restore_staged_record_batches(
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| anyhow::anyhow!("Feather metadata JSON column is not UTF-8"))?;
+    let identifiers = schema
+        .index_of(KEY_IDENTIFIER)
+        .ok()
+        .map(|index| cast(batch.column(index), &DataType::Utf8))
+        .transpose()?;
+    let identifiers = identifiers
+        .as_ref()
+        .map(|array| {
+            array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow::anyhow!("Feather identifier column is not UTF-8"))
+        })
+        .transpose()?;
+    let identifier_at = |row: usize| {
+        identifiers
+            .filter(|array| !array.is_null(row))
+            .map(|array| array.value(row))
+    };
     let mut restored = Vec::new();
     let mut run_start = 0;
 
@@ -157,24 +187,36 @@ pub(crate) fn restore_staged_record_batches(
         );
         let id = ids.value(run_start);
         let json = metadata_json.value(run_start);
+        let identifier = identifier_at(run_start);
         let mut run_end = run_start + 1;
         while run_end < batch.num_rows()
             && !ids.is_null(run_end)
             && !metadata_json.is_null(run_end)
             && ids.value(run_end) == id
             && metadata_json.value(run_end) == json
+            && identifier_at(run_end) == identifier
         {
             run_end += 1;
         }
 
         let (metadata, field_metadata) = staged_arrow_metadata(json)?;
-        // Current staged files hash the canonical schema metadata; files staged before
-        // that change hash the raw staged JSON string instead.
+        // Current staged files hash the canonical stored map; files staged before that change
+        // hash the canonical full schema metadata or the raw staged wrapper JSON instead.
         anyhow::ensure!(
-            id == staged_metadata_id(&canonical_metadata_json(&metadata)?)
-                || id == staged_metadata_id(json),
+            id == metadata_hash(&metadata)? || id == staged_metadata_id(json),
             "Feather staged metadata hash does not match its JSON"
         );
+        let metadata = match field_metadata {
+            // Files staged before slimmed maps carry the full metadata already
+            Some(_) => metadata,
+            None => restored_metadata(
+                metadata,
+                derivable_metadata_key(data_type),
+                identifier,
+                location_type_name(data_type).as_deref(),
+            ),
+        };
+        let field_metadata = field_metadata.unwrap_or_default();
         let slice = batch.slice(run_start, run_end - run_start);
 
         let fields = slice
@@ -210,10 +252,16 @@ pub(crate) fn restore_staged_record_batches(
 
 type StagedFieldMetadata = HashMap<String, HashMap<String, String>>;
 
+// Returns the staged map and, for files staged with the older wrapper format, its field metadata
 fn staged_arrow_metadata(
     metadata_json: &str,
-) -> anyhow::Result<(HashMap<String, String>, StagedFieldMetadata)> {
+) -> anyhow::Result<(HashMap<String, String>, Option<StagedFieldMetadata>)> {
     let value = serde_json::from_str::<serde_json::Value>(metadata_json)?;
+
+    if value.get("format_version").is_none() {
+        return Ok((serde_json::from_value(value)?, None));
+    }
+
     anyhow::ensure!(
         value
             .get("format_version")
@@ -233,7 +281,7 @@ fn staged_arrow_metadata(
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Staged Arrow metadata has no field_metadata"))?,
     )?;
-    Ok((schema_metadata, field_metadata))
+    Ok((schema_metadata, Some(field_metadata)))
 }
 
 /// Applies table-level stream conversion transforms without decoding rows into Nautilus data values.
@@ -334,6 +382,7 @@ fn external_bar_type(value: &str) -> String {
 pub(crate) fn coalesce_stream_conversion_batches(
     batches: &[RecordBatch],
     options: StreamConversionOptions,
+    data_type: &CatalogDataType,
 ) -> anyhow::Result<Option<RecordBatch>> {
     let has_staged_metadata = batches.iter().any(|batch| {
         batch
@@ -344,14 +393,14 @@ pub(crate) fn coalesce_stream_conversion_batches(
 
     let mut restored = Vec::new();
     for batch in batches {
-        restored.extend(restore_staged_record_batches(batch.clone())?);
+        restored.extend(restore_staged_record_batches(batch.clone(), data_type)?);
     }
 
     let mut batches = apply_stream_conversion_transforms(&restored, options)?;
     if has_staged_metadata {
         batches = batches
             .iter()
-            .map(stage_restored_metadata)
+            .map(|batch| stage_restored_metadata(batch, data_type))
             .collect::<anyhow::Result<Vec<_>>>()?;
     }
 
@@ -399,49 +448,34 @@ pub(crate) fn coalesce_stream_conversion_batches(
     Ok(Some(batch))
 }
 
-fn stage_restored_metadata(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
-    let schema_metadata = batch
-        .schema()
-        .metadata()
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+// Restored batches split on identifier, so a batch carries one identifier when it has any
+fn uniform_identifier(batch: &RecordBatch) -> Option<String> {
+    let index = batch.schema().index_of(KEY_IDENTIFIER).ok()?;
+    let column = batch.column(index).as_any().downcast_ref::<StringArray>()?;
+    let first = (!column.is_null(0)).then(|| column.value(0))?;
 
-    let field_metadata = batch
-        .schema()
-        .fields()
-        .iter()
-        .filter(|field| !field.metadata().is_empty())
-        .map(|field| {
-            (
-                field.name().clone(),
-                field
-                    .metadata()
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.clone()))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    (1..column.len())
+        .all(|row| !column.is_null(row) && column.value(row) == first)
+        .then(|| first.to_string())
+}
 
-    let metadata_json = serde_json::to_string(&serde_json::json!({
-        "format_version": 1,
-        "schema_metadata": schema_metadata,
-        "field_metadata": field_metadata,
-    }))?;
-    let metadata_id = staged_metadata_id(&canonical_metadata_json(batch.schema().metadata())?);
+fn stage_restored_metadata(
+    batch: &RecordBatch,
+    data_type: &CatalogDataType,
+) -> anyhow::Result<RecordBatch> {
+    let stored = stored_catalog_metadata(
+        batch.schema().metadata(),
+        uniform_identifier(batch).as_deref(),
+        data_type,
+    );
+    let metadata_id = metadata_hash(&stored)?;
+    let metadata_json = canonical_metadata_json(&stored)?;
 
     let mut fields = batch
         .schema()
         .fields()
         .iter()
-        .map(|field| {
-            Arc::new(Field::new(
-                field.name().clone(),
-                field.data_type().clone(),
-                field.is_nullable(),
-            ))
-        })
+        .map(Arc::clone)
         .collect::<Vec<_>>();
 
     fields.push(Arc::new(Field::new(
@@ -533,27 +567,38 @@ mod tests {
         array::{ArrayRef, Int32Array},
         datatypes::{DataType, Field},
     };
+    use nautilus_model::data::NautilusDataType;
     use rstest::rstest;
 
     use super::*;
 
+    fn example_data_type() -> CatalogDataType {
+        CatalogDataType::from(NautilusDataType::Custom {
+            type_name: "Example".to_string(),
+        })
+    }
+
     #[rstest]
-    fn staged_arrow_metadata_reads_versioned_format_and_rejects_unversioned() {
-        let current = r#"{
+    fn staged_arrow_metadata_reads_wrapper_and_plain_formats_and_rejects_other_versions() {
+        let wrapper = r#"{
             "format_version": 1,
             "schema_metadata": {"type_name": "Example"},
             "field_metadata": {"payload": {"ARROW:extension:name": "arrow.json"}}
         }"#;
-        let unversioned = r#"{"type_name":"Example"}"#;
+        let plain = r#"{"price_precision":"5"}"#;
+        let future = r#"{"format_version": 2, "schema_metadata": {}, "field_metadata": {}}"#;
 
-        let (current_schema, current_fields) = staged_arrow_metadata(current).unwrap();
-        let error = staged_arrow_metadata(unversioned).unwrap_err();
+        let (wrapper_schema, wrapper_fields) = staged_arrow_metadata(wrapper).unwrap();
+        let (plain_schema, plain_fields) = staged_arrow_metadata(plain).unwrap();
+        let error = staged_arrow_metadata(future).unwrap_err();
 
-        assert_eq!(current_schema["type_name"], "Example");
+        assert_eq!(wrapper_schema["type_name"], "Example");
         assert_eq!(
-            current_fields["payload"]["ARROW:extension:name"],
+            wrapper_fields.unwrap()["payload"]["ARROW:extension:name"],
             "arrow.json"
         );
+        assert_eq!(plain_schema["price_precision"], "5");
+        assert!(plain_fields.is_none());
         assert_eq!(
             error.to_string(),
             "Unsupported staged Arrow metadata format version"
@@ -586,11 +631,16 @@ mod tests {
         )
         .expect("batch");
 
-        let coalesced =
-            coalesce_stream_conversion_batches(&[batch], StreamConversionOptions::default())
-                .expect("coalesce")
-                .expect("restored batch");
-        let restored = restore_staged_record_batches(coalesced).expect("restore metadata");
+        let data_type = example_data_type();
+        let coalesced = coalesce_stream_conversion_batches(
+            &[batch],
+            StreamConversionOptions::default(),
+            &data_type,
+        )
+        .expect("coalesce")
+        .expect("restored batch");
+        let restored =
+            restore_staged_record_batches(coalesced, &data_type).expect("restore metadata");
 
         assert_eq!(restored.len(), 1);
         assert_eq!(restored[0].num_columns(), 2);
@@ -642,11 +692,15 @@ mod tests {
         )
         .expect("batch");
 
-        let coalesced =
-            coalesce_stream_conversion_batches(&[batch], StreamConversionOptions::default())
-                .expect("coalesce")
-                .expect("batch");
-        let restored = restore_staged_record_batches(coalesced).expect("restore runs");
+        let data_type = CatalogDataType::from(NautilusDataType::QuoteTick);
+        let coalesced = coalesce_stream_conversion_batches(
+            &[batch],
+            StreamConversionOptions::default(),
+            &data_type,
+        )
+        .expect("coalesce")
+        .expect("batch");
+        let restored = restore_staged_record_batches(coalesced, &data_type).expect("restore runs");
 
         assert_eq!(restored.len(), 2);
         assert_eq!(
@@ -752,7 +806,7 @@ mod tests {
     }
 
     #[rstest]
-    fn stage_restored_metadata_hashes_canonical_schema_metadata() {
+    fn stage_restored_metadata_hashes_the_slimmed_stored_map() {
         let metadata = HashMap::from([("type_name".to_string(), "Example".to_string())]);
 
         let schema = Arc::new(Schema::new_with_metadata(
@@ -765,7 +819,8 @@ mod tests {
         )
         .expect("batch");
 
-        let staged = stage_restored_metadata(&batch).expect("staged");
+        let data_type = example_data_type();
+        let staged = stage_restored_metadata(&batch, &data_type).expect("staged");
         let ids = cast(
             staged
                 .column_by_name(NAUTILUS_ARROW_METADATA_ID_COLUMN)
@@ -778,11 +833,8 @@ mod tests {
             .downcast_ref::<StringArray>()
             .expect("Utf8 id column");
 
-        assert_eq!(
-            ids.value(0),
-            staged_metadata_id(r#"{"type_name":"Example"}"#)
-        );
-        let restored = restore_staged_record_batches(staged).expect("restore");
+        assert_eq!(ids.value(0), staged_metadata_id("{}"));
+        let restored = restore_staged_record_batches(staged, &data_type).expect("restore");
         assert_eq!(restored.len(), 1);
         assert_eq!(
             restored[0].schema().metadata().get("type_name"),
@@ -835,6 +887,7 @@ mod tests {
                 use_ts_event_for_ts_init: false,
                 convert_bar_type_to_external: false,
             },
+            &CatalogDataType::from(NautilusDataType::QuoteTick),
         )
         .expect("conversion")
         .expect("batch");

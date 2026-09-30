@@ -154,6 +154,7 @@ use nautilus_backtest::config::{
     BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType,
 };
 use nautilus_model::enums::{AccountType, BookType, OmsType};
+use nautilus_persistence::config::DataCatalogConfig;
 
 let venue_config = BacktestVenueConfig::builder()
     .name("SIM")
@@ -165,7 +166,7 @@ let venue_config = BacktestVenueConfig::builder()
 
 let data_config = BacktestDataConfig::builder()
     .data_type(NautilusDataType::QuoteTick)
-    .catalog_path(catalog_path)
+    .catalog(DataCatalogConfig::new(catalog_path, None, None))
     .instrument_id(instrument_id)
     .build()?;
 

@@ -48,7 +48,7 @@ const COMMAND_QUEUE_CAPACITY: usize = 10;
 ///
 /// Each open session holds its backend query state until it is drained or closed, so the count is
 /// bounded to turn a caller that never closes sessions into an error instead of an unbounded leak.
-const MAX_OPEN_SESSIONS: usize = 64;
+pub(crate) const MAX_OPEN_SESSIONS: usize = 64;
 
 #[derive(Debug)]
 pub struct CatalogWriteJob {
@@ -1182,12 +1182,10 @@ mod tests {
     #[case(true)]
     fn session_close_and_shutdown_wait_for_inflight_backend(#[case] shutdown: bool) {
         let query_thread = Arc::new(Mutex::new(None));
-
         let worker = CatalogWorker::start(Box::new(StubCatalog {
             fail: false,
             query_thread: Arc::clone(&query_thread),
         }));
-
         let session = worker.open_session(stub_query(), Some(1)).unwrap();
         let backend_gate = query_thread.lock().unwrap();
         let (query_tx, query_rx) = mpsc::channel();
@@ -1199,26 +1197,17 @@ mod tests {
                 }),
             )
             .unwrap();
-
-        let (started_tx, started_rx) = mpsc::channel();
         let (closed_tx, closed_rx) = mpsc::channel();
 
-        // Close reports before the worker drops, so the drop's join cannot mask a close that
-        // returns early
         let control = thread::spawn(move || {
-            started_tx.send(()).unwrap();
-
-            if shutdown {
-                drop(worker);
-                closed_tx.send(None).unwrap();
+            let closed = if shutdown {
+                None
             } else {
-                closed_tx
-                    .send(Some(worker.close_session(session).unwrap()))
-                    .unwrap();
-            }
+                Some(worker.close_session(session).unwrap())
+            };
+            drop(worker);
+            closed_tx.send(closed).unwrap();
         });
-
-        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let blocked = closed_rx.recv_timeout(Duration::from_millis(25));
         drop(backend_gate);
         let rows = query_rx

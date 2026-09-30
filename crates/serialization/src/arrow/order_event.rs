@@ -25,13 +25,15 @@ use nautilus_model::events::{
 use super::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
     KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("order_side", false),
     JsonFieldSpec::utf8("order_type", false),
@@ -70,7 +72,6 @@ const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_DENIED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
@@ -81,7 +82,6 @@ const ORDER_DENIED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_EMULATED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::timestamp("ts_event", false),
@@ -91,7 +91,6 @@ const ORDER_EMULATED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_SUBMITTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("event_id", false),
@@ -102,7 +101,6 @@ const ORDER_SUBMITTED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_ACCEPTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
@@ -115,7 +113,6 @@ const ORDER_ACCEPTED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("reason", false),
@@ -129,7 +126,6 @@ const ORDER_REJECTED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
@@ -142,7 +138,6 @@ const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_CANCELED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::timestamp("ts_event", false),
@@ -155,7 +150,6 @@ const ORDER_CANCELED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_CANCEL_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
@@ -169,7 +163,6 @@ const ORDER_CANCEL_REJECTED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_EXPIRED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::timestamp("ts_event", false),
@@ -182,7 +175,6 @@ const ORDER_EXPIRED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_TRIGGERED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::timestamp("ts_event", false),
@@ -195,7 +187,6 @@ const ORDER_TRIGGERED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_PENDING_UPDATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
@@ -208,7 +199,6 @@ const ORDER_PENDING_UPDATE_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_RELEASED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("released_price", false),
     JsonFieldSpec::utf8("event_id", false),
@@ -219,7 +209,6 @@ const ORDER_RELEASED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_MODIFY_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
@@ -233,7 +222,6 @@ const ORDER_MODIFY_REJECTED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_UPDATED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -251,7 +239,6 @@ const ORDER_UPDATED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_FILLED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
@@ -274,7 +261,6 @@ const ORDER_FILLED_FIELDS: &[JsonFieldSpec] = &[
 const ORDER_FILL_VOIDED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
     JsonFieldSpec::utf8("strategy_id", false),
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
@@ -308,7 +294,7 @@ macro_rules! impl_order_event_arrow {
     ($type:ty, $type_name:expr, $fields:expr) => {
         impl ArrowSchemaProvider for $type {
             fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
+                schema_for_type_with_identifier($type_name, metadata, $fields)
             }
         }
 
@@ -320,11 +306,14 @@ macro_rules! impl_order_event_arrow {
             where
                 T: std::borrow::Borrow<Self>,
             {
-                encode_batch(
+                encode_batch_with_identifier(
                     $type_name,
                     metadata,
                     data.iter().map(std::borrow::Borrow::borrow),
                     $fields,
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|event| event.instrument_id),
                 )
             }
 
@@ -338,7 +327,13 @@ macro_rules! impl_order_event_arrow {
                 metadata: &HashMap<String, String>,
                 record_batch: RecordBatch,
             ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+                decode_batch_with_metadata_fields(
+                    metadata,
+                    &record_batch,
+                    $fields,
+                    &[KEY_INSTRUMENT_ID],
+                    Some($type_name),
+                )
             }
         }
     };
@@ -386,6 +381,7 @@ impl_order_event_arrow!(OrderFillVoided, "OrderFillVoided", ORDER_FILL_VOIDED_FI
 mod tests {
     use std::str::FromStr;
 
+    use arrow::array::Array;
     use indexmap::IndexMap;
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -407,6 +403,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::arrow::KEY_IDENTIFIER;
 
     #[rstest]
     fn test_order_initialized_round_trip(order_initialized_buy_limit: OrderInitialized) {
@@ -422,6 +419,31 @@ mod tests {
             OrderInitialized::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
+    }
+
+    #[rstest]
+    fn test_order_filled_encodes_instrument_identifier(order_filled: OrderFilled) {
+        let event = order_filled;
+        let metadata = event.metadata();
+
+        let batch = OrderFilled::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
+        let identifiers = batch
+            .column_by_name(KEY_IDENTIFIER)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+
+        assert_eq!(
+            OrderFilled::get_schema(None)
+                .field_with_name(KEY_IDENTIFIER)
+                .unwrap()
+                .data_type(),
+            &arrow::datatypes::DataType::Utf8
+        );
+        assert_eq!(identifiers.len(), 1);
+        assert_eq!(identifiers.value(0), event.instrument_id.to_string());
+        assert!(batch.column_by_name("instrument_id").is_none());
     }
 
     #[rstest]

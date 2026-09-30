@@ -25,4 +25,5 @@ pub mod traits;
 pub(crate) mod materializer;
 pub(crate) mod promotion;
 pub(crate) mod staged;
+
 pub use promotion::PromotionResult;

@@ -17,15 +17,11 @@
 
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::Params;
-use serde_json::Value;
 
 use crate::{
-    catalog::traits::DataCatalog,
-    common::paths::file_protocol_uri,
-    config::{CatalogBackendType, CatalogCompression},
+    catalog::traits::DataCatalog, common::paths::file_protocol_uri, config::CatalogBackendType,
 };
 
 /// Conventional name of the Parquet catalog factory registration.
@@ -36,31 +32,25 @@ pub const PARQUET_CATALOG_FACTORY_NAME: &str = "Parquet";
 pub struct CatalogConnectConfig {
     /// Resolved URI for the catalog backend (e.g. `file:///tmp/cat`, `s3://bucket/cat`).
     pub uri: String,
-    /// Optional storage-backend options (credentials, region, ...) passed to `object_store`.
-    pub storage_options: Option<AHashMap<String, String>>,
-    /// The number of rows per batch the catalog reads and writes.
-    pub batch_size: Option<usize>,
-    /// The compression codec of written data files.
-    pub compression: Option<CatalogCompression>,
-    /// The maximum number of rows per written row group.
-    pub max_row_group_size: Option<usize>,
-    /// Backend-specific catalog parameters, which a factory validates with
-    /// [`validate_catalog_params`].
+    /// Backend-specific catalog parameters, including the `storage_options` of the object store.
     pub params: Option<Params>,
 }
 
 impl CatalogConnectConfig {
     /// Creates a new [`CatalogConnectConfig`].
     #[must_use]
-    pub fn new(uri: impl Into<String>, storage_options: Option<AHashMap<String, String>>) -> Self {
+    pub fn new(uri: impl Into<String>) -> Self {
         Self {
             uri: uri.into(),
-            storage_options,
-            batch_size: None,
-            compression: None,
-            max_row_group_size: None,
             params: None,
         }
+    }
+
+    /// Returns a copy with the backend-specific catalog parameters set.
+    #[must_use]
+    pub fn with_params(mut self, params: Option<Params>) -> Self {
+        self.params = params;
+        self
     }
 
     /// Builds a [`CatalogConnectConfig`] from `path` + optional `fs_protocol`.
@@ -68,11 +58,7 @@ impl CatalogConnectConfig {
     /// A `file` protocol with a Windows drive path becomes `file:///C:/...`.
     /// A path that already contains `://` is left unchanged.
     #[must_use]
-    pub fn from_path_and_protocol(
-        path: &str,
-        fs_protocol: Option<&str>,
-        storage_options: Option<AHashMap<String, String>>,
-    ) -> Self {
+    pub fn from_path_and_protocol(path: &str, fs_protocol: Option<&str>) -> Self {
         let uri = match fs_protocol {
             _ if path.contains("://") => path.to_string(),
             Some("file") => file_protocol_uri(path),
@@ -80,7 +66,7 @@ impl CatalogConnectConfig {
             None => path.to_string(),
         };
 
-        Self::new(uri, storage_options)
+        Self::new(uri)
     }
 }
 
@@ -109,102 +95,23 @@ pub fn create_catalog(
         .ok_or_else(|| anyhow::anyhow!("No catalog factory registered for '{name}'"))?(config)
 }
 
-/// The JSON type a catalog param holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatalogParamKind {
-    /// An object of named values.
-    Object,
-    /// A non-negative integer.
-    Count,
-    /// A string.
-    Text,
-    /// An array.
-    List,
-}
-
-impl CatalogParamKind {
-    fn accepts(self, value: &Value) -> bool {
-        match self {
-            Self::Object => value.is_object(),
-            Self::Count => value.is_u64(),
-            Self::Text => value.is_string(),
-            Self::List => value.is_array(),
-        }
-    }
-
-    const fn expected(self) -> &'static str {
-        match self {
-            Self::Object => "an object",
-            Self::Count => "a non-negative integer",
-            Self::Text => "a string",
-            Self::List => "a list",
-        }
-    }
-}
-
-/// Checks that `params` holds only the `accepted` keys, each with its declared kind.
-///
-/// A catalog factory calls this with the keys it reads. A `null` value satisfies any declared
-/// kind, but an undeclared key fails whatever its value.
-///
-/// # Errors
-///
-/// Returns an error naming the catalog and the key if a key is not accepted or its value has the
-/// wrong kind.
-pub fn validate_catalog_params(
-    catalog: &str,
-    params: Option<&Params>,
-    accepted: &[(&str, CatalogParamKind)],
-) -> anyhow::Result<()> {
-    let Some(params) = params else {
-        return Ok(());
-    };
-
-    for (key, value) in params {
-        let Some((_, kind)) = accepted.iter().find(|(name, _)| name == key) else {
-            if accepted.is_empty() {
-                anyhow::bail!(
-                    "Unknown {catalog} catalog param '{key}': this catalog takes no params"
-                );
-            }
-
-            let names = accepted
-                .iter()
-                .map(|(name, _)| *name)
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow::bail!("Unknown {catalog} catalog param '{key}', expected one of {names}");
-        };
-
-        anyhow::ensure!(
-            value.is_null() || kind.accepts(value),
-            "Invalid {catalog} catalog param '{key}': expected {}",
-            kind.expected()
-        );
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use serde_json::json;
 
     use super::*;
 
     #[rstest]
     fn from_path_and_protocol_joins_scheme() {
-        let cfg = CatalogConnectConfig::from_path_and_protocol("bucket/cat", Some("s3"), None);
+        let cfg = CatalogConnectConfig::from_path_and_protocol("bucket/cat", Some("s3"));
         assert_eq!(cfg.uri, "s3://bucket/cat");
 
-        let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", None, None);
+        let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", None);
         assert_eq!(cfg.uri, "/tmp/cat");
 
         let cfg = CatalogConnectConfig::from_path_and_protocol(
             "postgres://user:pass@localhost/catalog",
             Some("file"),
-            None,
         );
         assert_eq!(cfg.uri, "postgres://user:pass@localhost/catalog");
     }
@@ -217,29 +124,26 @@ mod tests {
         #[case] path: &str,
         #[case] expected: &str,
     ) {
-        let cfg = CatalogConnectConfig::from_path_and_protocol(path, Some("file"), None);
+        let cfg = CatalogConnectConfig::from_path_and_protocol(path, Some("file"));
         assert_eq!(cfg.uri, expected);
     }
 
     #[rstest]
     fn from_path_and_protocol_keeps_non_drive_file_joins() {
-        let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", Some("file"), None);
+        let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", Some("file"));
         assert_eq!(cfg.uri, "file:///tmp/cat");
 
-        let cfg = CatalogConnectConfig::from_path_and_protocol("data/cat", Some("file"), None);
+        let cfg = CatalogConnectConfig::from_path_and_protocol("data/cat", Some("file"));
         assert_eq!(cfg.uri, "file://data/cat");
 
-        let cfg = CatalogConnectConfig::from_path_and_protocol(
-            r"\\server\share\catalog",
-            Some("file"),
-            None,
-        );
+        let cfg =
+            CatalogConnectConfig::from_path_and_protocol(r"\\server\share\catalog", Some("file"));
         assert_eq!(cfg.uri, r"file://\\server\share\catalog");
     }
 
     #[rstest]
     fn create_catalog_rejects_unregistered_backend() {
-        let config = CatalogConnectConfig::new("/tmp/catalog", None);
+        let config = CatalogConnectConfig::new("/tmp/catalog");
 
         let error = create_catalog(
             &CatalogBackendType::External("Missing".to_string()),
@@ -251,94 +155,6 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "No catalog factory registered for 'Missing'"
-        );
-    }
-
-    const ACCEPTED: &[(&str, CatalogParamKind)] = &[
-        ("options", CatalogParamKind::Object),
-        ("rows", CatalogParamKind::Count),
-        ("codec", CatalogParamKind::Text),
-        ("rules", CatalogParamKind::List),
-    ];
-
-    fn params(entries: &[(&str, Value)]) -> Params {
-        let mut params = Params::new();
-
-        for (key, value) in entries {
-            params.insert((*key).to_string(), value.clone());
-        }
-
-        params
-    }
-
-    #[rstest]
-    #[case::absent(None)]
-    #[case::every_kind(Some(params(&[
-        ("options", json!({"region": "eu-west-1"})),
-        ("rows", json!(1024)),
-        ("codec", json!("zstd")),
-        ("rules", json!([])),
-    ])))]
-    #[case::null_counts_as_absent(Some(params(&[("rows", Value::Null)])))]
-    fn validate_catalog_params_accepts_declared_keys(#[case] params: Option<Params>) {
-        assert!(validate_catalog_params("Test", params.as_ref(), ACCEPTED).is_ok());
-    }
-
-    #[rstest]
-    #[case::unknown(
-        "no_such_param",
-        json!(1),
-        "Unknown Test catalog param 'no_such_param', expected one of options, rows, codec, rules"
-    )]
-    #[case::unknown_null(
-        "no_such_param",
-        Value::Null,
-        "Unknown Test catalog param 'no_such_param', expected one of options, rows, codec, rules"
-    )]
-    #[case::text_for_count(
-        "rows",
-        json!("big"),
-        "Invalid Test catalog param 'rows': expected a non-negative integer"
-    )]
-    #[case::negative_count(
-        "rows",
-        json!(-1),
-        "Invalid Test catalog param 'rows': expected a non-negative integer"
-    )]
-    #[case::text_for_object(
-        "options",
-        json!("region=eu-west-1"),
-        "Invalid Test catalog param 'options': expected an object"
-    )]
-    #[case::count_for_text(
-        "codec",
-        json!(6),
-        "Invalid Test catalog param 'codec': expected a string"
-    )]
-    #[case::object_for_list(
-        "rules",
-        json!({}),
-        "Invalid Test catalog param 'rules': expected a list"
-    )]
-    fn validate_catalog_params_rejects_unknown_or_mistyped_key(
-        #[case] key: &str,
-        #[case] value: Value,
-        #[case] expected: &str,
-    ) {
-        let error =
-            validate_catalog_params("Test", Some(&params(&[(key, value)])), ACCEPTED).unwrap_err();
-
-        assert_eq!(error.to_string(), expected);
-    }
-
-    #[rstest]
-    fn validate_catalog_params_rejects_every_key_when_none_accepted() {
-        let error =
-            validate_catalog_params("Test", Some(&params(&[("rows", json!(1))])), &[]).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Unknown Test catalog param 'rows': this catalog takes no params"
         );
     }
 }

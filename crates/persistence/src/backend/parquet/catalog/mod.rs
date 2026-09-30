@@ -96,7 +96,6 @@ use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
     EncodeToRecordBatch, catalog_display::catalog_record_batch_to_display,
     custom::CustomDataDecoder, display::instrument::encode_instruments,
-    record_batch_without_identifier_column,
 };
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use serde::Serialize;

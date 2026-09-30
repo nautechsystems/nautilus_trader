@@ -32,13 +32,16 @@ use arrow::{
     datatypes::{DataType as ArrowDataType, Schema},
     record_batch::RecordBatch,
 };
+use nautilus_core::Params;
 use nautilus_model::data::{
     ArrowDecoder, ArrowEncoder, CustomData, CustomDataTrait, Data, DataType,
     decode_custom_from_arrow, ensure_arrow_registered, ensure_custom_data_json_registered,
     get_arrow_schema, validate_custom_arrow_schema,
 };
 
-use super::{ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch};
+use super::{
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, KEY_CUSTOM_DATA_METADATA,
+};
 
 /// Trait for custom data types that support Arrow schema and record batch encoding.
 /// Used as a type bound by the `#[arrow_custom_data]` macro; catalog encoding goes through
@@ -286,14 +289,7 @@ impl ArrowSchemaProvider for CustomDataDecoder {
             && let Some(schema) = get_arrow_schema(type_name)
         {
             let schema = (*schema).clone();
-            let mut fields = schema.fields().iter().cloned().collect::<Vec<_>>();
-            if schema.field_with_name("data_type").is_err() {
-                fields.push(Arc::new(arrow::datatypes::Field::new(
-                    "data_type",
-                    arrow::datatypes::DataType::Utf8,
-                    false,
-                )));
-            }
+            let fields = schema.fields().iter().cloned().collect::<Vec<_>>();
             let mut merged_metadata = schema.metadata().clone();
             merged_metadata.extend(metadata);
             return arrow::datatypes::Schema::new_with_metadata(fields, merged_metadata);
@@ -308,60 +304,76 @@ impl ArrowSchemaProvider for CustomDataDecoder {
     }
 }
 
-/// Strips the data_type column from a record batch and returns the parsed DataType.
-/// Returns (batch, None) if there is no data_type column.
-fn strip_data_type_column(
+/// Strips the custom `DataType` columns from a record batch and returns the rebuilt `DataType`.
+///
+/// The `DataType` comes from the `identifier` and `custom_data_metadata` columns and the batch's
+/// `type_name` metadata. Returns `None` when the batch has no `custom_data_metadata` column.
+fn split_custom_data_type_columns(
     batch: &RecordBatch,
 ) -> Result<(RecordBatch, Option<DataType>), super::EncodingError> {
     use super::extract_column_string;
 
-    let Some(data_type_col_idx) = batch
-        .schema()
-        .fields()
-        .iter()
-        .position(|f| f.name() == "data_type")
-    else {
+    let schema = batch.schema();
+    let Ok(metadata_index) = schema.index_of(KEY_CUSTOM_DATA_METADATA) else {
         return Ok((batch.clone(), None));
     };
 
-    if batch.num_rows() == 0 {
-        return Ok((batch.clone(), None));
+    let parse_error = |e: String| super::EncodingError::ParseError("custom_data", e);
+    let cols = batch.columns();
+    let mut data_type = None;
+
+    if batch.num_rows() > 0 {
+        let index = metadata_index;
+        {
+            let type_name = schema
+                .metadata()
+                .get(super::KEY_TYPE_NAME)
+                .ok_or(super::EncodingError::MissingMetadata(super::KEY_TYPE_NAME))?;
+            let metadata = if cols[index].is_null(0) {
+                None
+            } else {
+                let json = extract_column_string(cols, KEY_CUSTOM_DATA_METADATA, index)
+                    .map_err(|e| parse_error(format!("{KEY_CUSTOM_DATA_METADATA} column: {e}")))?
+                    .value(0)
+                    .to_string();
+                let params: Params = serde_json::from_str(&json)
+                    .map_err(|e| parse_error(format!("{KEY_CUSTOM_DATA_METADATA}: {e}")))?;
+                (!params.is_empty()).then_some(params)
+            };
+            let identifier = match schema.index_of(super::KEY_IDENTIFIER) {
+                Ok(index) if !cols[index].is_null(0) => Some(
+                    extract_column_string(cols, super::KEY_IDENTIFIER, index)
+                        .map_err(|e| parse_error(format!("identifier column: {e}")))?
+                        .value(0)
+                        .to_string(),
+                ),
+                _ => None,
+            };
+            data_type = Some(
+                DataType::try_new(type_name, metadata, identifier)
+                    .map_err(|e| parse_error(e.to_string()))?,
+            );
+        }
     }
 
-    let cols = batch.columns();
-    let data_type = if cols[data_type_col_idx].is_null(0) {
-        None
-    } else {
-        let string_col =
-            extract_column_string(cols, "data_type", data_type_col_idx).map_err(|e| {
-                super::EncodingError::ParseError("custom_data", format!("data_type column: {e}"))
-            })?;
-        let first_value = string_col.value(0);
-        Some(
-            DataType::from_persistence_json(first_value)
-                .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?,
-        )
-    };
-
-    let new_fields: Vec<_> = batch
-        .schema()
+    let keep = |i: &usize| *i != metadata_index;
+    let new_fields: Vec<_> = schema
         .fields()
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != data_type_col_idx)
+        .filter(|(i, _)| keep(i))
         .map(|(_, f)| Arc::clone(f))
         .collect();
-    let new_columns: Vec<Arc<dyn arrow::array::Array>> = batch
-        .columns()
+    let new_columns: Vec<Arc<dyn arrow::array::Array>> = cols
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != data_type_col_idx)
+        .filter(|(i, _)| keep(i))
         .map(|(_, c)| Arc::clone(c))
         .collect();
     let new_schema =
-        arrow::datatypes::Schema::new_with_metadata(new_fields, batch.schema().metadata().clone());
+        arrow::datatypes::Schema::new_with_metadata(new_fields, schema.metadata().clone());
     let stripped_batch = RecordBatch::try_new(Arc::new(new_schema), new_columns)
-        .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?;
+        .map_err(|e| parse_error(e.to_string()))?;
 
     Ok((stripped_batch, data_type))
 }
@@ -382,7 +394,7 @@ impl CustomDataDecoder {
             .cloned()
             .unwrap_or_else(|| "Unknown".to_string());
 
-        let (batch_to_decode, restored_data_type) = strip_data_type_column(record_batch)?;
+        let (batch_to_decode, restored_data_type) = split_custom_data_type_columns(record_batch)?;
         validate_required_list_values(&batch_to_decode)?;
 
         if batch_to_decode.num_rows() == 0 {

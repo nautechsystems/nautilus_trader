@@ -44,19 +44,11 @@ class AccountAdjustmentOutcome:
 @typing.final
 class BacktestDataConfig:
     @property
-    def catalog_backend(self) -> persistence.CatalogBackend: ...
+    def catalog(self) -> persistence.DataCatalogConfig: ...
     @property
     def data_type(self) -> model.NautilusDataType: ...
     @property
-    def catalog_path(self) -> str: ...
-    @property
     def instrument_id(self) -> model.InstrumentId | None: ...
-    @property
-    def catalog_fs_protocol(self) -> str | None: ...
-    @property
-    def catalog_fs_storage_option_keys(self) -> list[str] | None: ...
-    @property
-    def catalog_fs_rust_storage_option_keys(self) -> list[str] | None: ...
     @property
     def instrument_ids(self) -> list[model.InstrumentId] | None: ...
     @property
@@ -78,10 +70,7 @@ class BacktestDataConfig:
     def __new__(
         cls,
         data_type: model.NautilusDataType,
-        catalog_path: str,
-        catalog_fs_protocol: str | None = None,
-        catalog_fs_storage_options: typing.Mapping[str, str] | None = None,
-        catalog_fs_rust_storage_options: typing.Mapping[str, str] | None = None,
+        catalog: persistence.DataCatalogConfig,
         instrument_id: model.InstrumentId | None = None,
         instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         start_time: int | str | datetime.datetime | pd.Timestamp | None = None,
@@ -92,7 +81,6 @@ class BacktestDataConfig:
         bar_spec: model.BarSpecification | None = None,
         bar_types: typing.Sequence[str] | None = None,
         optimize_file_loading: bool | None = None,
-        catalog_backend: persistence.CatalogBackend | None = None,
     ) -> BacktestDataConfig: ...
 
 @typing.final

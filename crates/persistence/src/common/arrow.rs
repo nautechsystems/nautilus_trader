@@ -39,12 +39,12 @@ use nautilus_model::{
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
-    catalog_display::catalog_display_schema, is_nautilus_legacy_schema,
-    schema_with_identifier_column, timestamp_data_type,
+    catalog_display::catalog_display_schema, is_nautilus_legacy_schema, timestamp_data_type,
 };
 
 #[cfg(feature = "python")]
 use super::custom::{group_custom_data_by_type, prepare_custom_data_batch};
+use super::legacy_identifier::schema_with_legacy_identifier;
 
 pub(crate) fn validate_catalog_schema(schema: &Schema) -> anyhow::Result<()> {
     let legacy_timestamps = ["ts_event", "ts_init"].iter().any(|name| {
@@ -112,7 +112,7 @@ pub(crate) fn data_to_arrow_batches(
 
 #[cfg(feature = "python")]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct BatchIdentity {
+pub(crate) struct BatchIdentity {
     identifier: String,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
@@ -134,7 +134,7 @@ impl BatchIdentity {
 }
 
 #[cfg(feature = "python")]
-trait CatalogBatchIdentity {
+pub(crate) trait CatalogBatchIdentity {
     fn batch_identity(&self) -> BatchIdentity;
 }
 
@@ -242,7 +242,7 @@ impl_batch_identity!(
 // Groups order lexically and retain input order within each group. Precision is part of the key,
 // so one identifier can produce separate batches after a precision change.
 #[cfg(feature = "python")]
-fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
+pub(crate) fn encode_grouped_batches<T>(values: &[T]) -> anyhow::Result<Vec<RecordBatch>>
 where
     T: CatalogBatchIdentity + EncodeToRecordBatch,
 {
@@ -368,7 +368,7 @@ where
 pub(crate) fn empty_display_batch_with_identifier(
     data_type: &NautilusDataType,
 ) -> anyhow::Result<RecordBatch> {
-    let schema = schema_with_identifier_column(&catalog_display_schema(data_type)?);
+    let schema = schema_with_legacy_identifier(&catalog_display_schema(data_type)?);
     Ok(RecordBatch::new_empty(Arc::new(schema)))
 }
 
@@ -376,6 +376,7 @@ pub(crate) fn empty_display_batch_with_identifier(
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
+        data::{Data, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
@@ -384,7 +385,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::*;
+    use super::data_to_arrow_batches;
 
     fn quote(instrument_id: &str, price: &str, ts: u64) -> Data {
         Data::Quote(QuoteTick::new(
@@ -452,7 +453,6 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
-
         let second = QuoteTick::new(
             InstrumentId::from("PRECISION-B.TEST"),
             Price::from("10.12345"),
@@ -462,7 +462,6 @@ mod tests {
             UnixNanos::from(2),
             UnixNanos::from(2),
         );
-
         let third = QuoteTick::new(
             InstrumentId::from("PRECISION-A.TEST"),
             Price::from("2.23"),
@@ -480,9 +479,8 @@ mod tests {
         .unwrap();
         let identifiers = batches
             .iter()
-            .map(|batch| batch.schema().metadata()[KEY_INSTRUMENT_ID].clone())
+            .map(|batch| batch.schema().metadata()["instrument_id"].clone())
             .collect::<Vec<_>>();
-
         let decoded = batches
             .into_iter()
             .flat_map(|batch| {

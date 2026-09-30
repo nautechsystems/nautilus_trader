@@ -23,6 +23,15 @@ use nautilus_model::{
 
 use crate::catalog::types::CatalogDataType;
 
+/// Returns the family a writer stages `data_type` under; every instrument class is one family.
+#[must_use]
+pub fn catalog_family(data_type: &CatalogDataType) -> CatalogDataType {
+    match data_type {
+        CatalogDataType::Instrument(_) => CatalogDataType::Data(NautilusDataType::Instrument),
+        other => other.clone(),
+    }
+}
+
 /// Typed record-family filter shared by streaming writer backends.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WriterRecordFilter {
@@ -86,7 +95,6 @@ impl WriterRecordFilter {
             CatalogDataType::Instrument(instrument_type) => Some(instrument_type),
             _ => None,
         };
-
         let family = catalog_family(data_type);
 
         let Some(identifiers) = self.entries.get(&family) else {
@@ -107,15 +115,6 @@ impl WriterRecordFilter {
                 identifier.is_some_and(|identifier| identifiers.contains(identifier))
             }
         }
-    }
-}
-
-/// Returns the family a writer stages `data_type` under; every instrument class is one family.
-#[must_use]
-pub(crate) fn catalog_family(data_type: &CatalogDataType) -> CatalogDataType {
-    match data_type {
-        CatalogDataType::Instrument(_) => CatalogDataType::Data(NautilusDataType::Instrument),
-        other => other.clone(),
     }
 }
 

@@ -916,14 +916,14 @@ impl ParquetDataCatalog {
         Ok(list_result)
     }
 
-    /// Lists the data, record, and instrument types stored in the catalog.
+    /// Lists all data types available in the catalog.
     ///
-    /// Each `data/<type>` directory maps to its catalog type, and each `data/custom/<type_name>`
-    /// directory to a custom data type. Unrecognized directories are skipped with a warning.
+    /// This method returns the names of all data type directories in the catalog.
+    /// Data types correspond to different kinds of market data (e.g., "quotes", "trades", "bars").
     ///
     /// # Returns
     ///
-    /// Returns the catalog types, or an error if the operation fails.
+    /// Returns a vector of data type names, or an error if the operation fails.
     ///
     /// # Errors
     ///
@@ -961,7 +961,6 @@ impl ParquetDataCatalog {
                         type_name,
                     }));
                 }
-
                 continue;
             }
 

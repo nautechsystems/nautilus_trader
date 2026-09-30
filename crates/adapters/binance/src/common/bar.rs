@@ -313,6 +313,80 @@ mod tests {
 
     #[cfg(feature = "arrow")]
     #[rstest]
+    fn test_binance_bar_staged_catalog_round_trip() {
+        use std::sync::Arc;
+
+        use nautilus_model::data::{CustomData as CatalogCustomData, Data, DataType};
+        use nautilus_persistence::{
+            backend::{default_writer_factories, parquet::catalog::ParquetDataCatalog},
+            catalog::factory::CatalogConnectConfig,
+            writer::{
+                factory::{WriterBackendType, WriterConnectConfig, create_writer},
+                feather::WriterClock,
+            },
+        };
+        use nautilus_serialization::ensure_custom_data_registered;
+        use tempfile::TempDir;
+
+        ensure_custom_data_registered::<BinanceBar>();
+        let temp_dir = TempDir::new().unwrap();
+        let catalog_directory = temp_dir.path().join("catalog");
+        std::fs::create_dir_all(&catalog_directory).unwrap();
+        let session = temp_dir
+            .path()
+            .join("staging")
+            .join("backtest")
+            .join("binance-bar");
+        let bar = stub_binance_bar();
+        let bar_type_str = bar.bar_type.to_string();
+        let data_type = DataType::new("BinanceBar", None, Some(bar_type_str.clone()));
+        let config = WriterConnectConfig::new(
+            session.to_string_lossy(),
+            Some(CatalogConnectConfig::new(
+                catalog_directory.to_string_lossy(),
+            )),
+        );
+
+        let mut writer = create_writer(
+            &WriterBackendType::Parquet,
+            &config,
+            WriterClock::Live,
+            &default_writer_factories(),
+        )
+        .unwrap();
+        writer
+            .write_data(Data::Custom(CatalogCustomData::new(
+                Arc::new(bar.clone()),
+                data_type,
+            )))
+            .unwrap();
+        writer.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(&catalog_directory, None, None, None, None);
+        let rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceBar",
+                Some(&[bar_type_str]),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let Data::Custom(custom) = &rows[0] else {
+            panic!("Expected Data::Custom, was {:?}", rows[0]);
+        };
+        assert_eq!(
+            custom.data.as_any().downcast_ref::<BinanceBar>().unwrap(),
+            &bar
+        );
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
     fn test_binance_bar_catalog_round_trip() {
         use std::sync::Arc;
 

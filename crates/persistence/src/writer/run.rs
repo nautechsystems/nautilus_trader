@@ -10,6 +10,7 @@
 //! Shared staged-writer session and run-state types.
 
 use nautilus_common::enums::Environment;
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
 use crate::common::storage::StorageBackend;
 
@@ -35,7 +36,26 @@ impl FeatherSessionSource {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// The lifecycle state of a streamed run.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq, FromRepr, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.persistence",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")
+)]
 pub enum RunStatus {
     InProgress,
     Completed,

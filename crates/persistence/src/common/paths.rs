@@ -197,7 +197,7 @@ pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
 ///
 /// Returns an error if `path` is not a local path or `file://` URI, or if a relative path cannot
 /// be resolved against the current directory.
-pub(crate) fn local_writer_directory(path: &str) -> anyhow::Result<PathBuf> {
+pub fn local_writer_directory(path: &str) -> anyhow::Result<PathBuf> {
     let uri = normalize_path_to_uri(path)?;
     anyhow::ensure!(
         uri.starts_with("file://"),
@@ -379,7 +379,7 @@ fn session_type_index(
     components
         .windows(2)
         .position(|window| window[0] == directory && window[1] == instance_id)
-        .and_then(|environment_index| environment_index.checked_add(2))
+        .and_then(|kind_index| kind_index.checked_add(2))
         .filter(|type_index| *type_index < components.len())
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -567,28 +567,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Environment::Backtest, "backtest")]
-    #[case(Environment::Sandbox, "sandbox")]
-    #[case(Environment::Live, "live")]
-    fn environment_directory_round_trips(
-        #[case] environment: Environment,
-        #[case] directory: &str,
-    ) {
-        assert_eq!(environment_directory(environment), directory);
-        assert_eq!(environment_from_directory(directory), Some(environment));
-    }
-
-    #[rstest]
-    #[case("BACKTEST")]
-    #[case("data")]
-    #[case("")]
-    fn environment_from_directory_rejects_other_folders(#[case] directory: &str) {
-        assert_eq!(environment_from_directory(directory), None);
-    }
-
-    #[rstest]
     fn session_feather_paths_recover_type_and_identifier() {
-        // Feather sessions are written under {environment}/{run_id}/{type}/{identifier?}/file.feather
+        // Feather sessions are written under {kind}/{run_id}/{type}/{identifier?}/file.feather
         // (no `data/` segment: that prefix only appears under the Delta catalog target
         // layout, not under writer staging paths).
         let path = "backtest/run-1/quotes/EURUSD.SIM/0001.feather";
@@ -642,11 +622,6 @@ mod tests {
         Some("custom")
     )]
     #[case::type_without_identifier("backtest/run-1/quotes/0001.feather", "quotes", None)]
-    #[case::instrument_class_folder(
-        "backtest/run-1/instruments/currency_pair/instruments_1.feather",
-        "instruments",
-        None
-    )]
     fn session_feather_paths_recover_type_and_identifier_from_layouts(
         #[case] path: &str,
         #[case] expected_type: &str,

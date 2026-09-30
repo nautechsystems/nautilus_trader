@@ -64,7 +64,7 @@ mod serial_tests {
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
-    use nautilus_persistence::test_data::RustTestCustomData;
+    use nautilus_persistence::common::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
     use rstest::rstest;
     use rust_decimal::Decimal;

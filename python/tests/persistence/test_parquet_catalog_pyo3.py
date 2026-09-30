@@ -24,6 +24,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from tests.persistence.legacy_parquet import legacy_table_from_staged_feather
 from tests.providers import TestInstrumentProvider
 from tests.stubs import TestDataProviderPyo3
 
@@ -59,13 +60,6 @@ def _catalog(tmp_path: Path, backend: str) -> Any:
 
 def _read_arrow_bytes(data: bytes) -> pa.Table:
     return pa.ipc.open_stream(pa.py_buffer(data)).read_all()
-
-
-def _legacy_table(staged: pa.Table) -> pa.Table:
-    # Legacy files carry the schema metadata a staged file keeps per row
-    [metadata_json] = set(staged.column("nautilus_metadata_json").to_pylist())
-    table = staged.drop_columns(["identifier", "nautilus_metadata_id", "nautilus_metadata_json"])
-    return table.replace_schema_metadata(json.loads(metadata_json)["schema_metadata"])
 
 
 def _record_batch_bytes(batch: pa.RecordBatch) -> bytes:
@@ -114,21 +108,23 @@ def test_catalog_missing_directory_error(tmp_path: Path, file_uri: bool) -> None
 
 
 @pytest.mark.parametrize(
-    ("code", "expected"),
+    ("name", "expected"),
     [
-        (0, "UNCOMPRESSED"),
-        (1, "SNAPPY"),
-        (2, "GZIP"),
-        (4, "BROTLI"),
-        (5, "LZ4"),
-        (6, "ZSTD"),
+        ("uncompressed", "UNCOMPRESSED"),
+        ("snappy", "SNAPPY"),
+        ("gzip", "GZIP"),
+        ("brotli", "BROTLI"),
+        # pyarrow names Parquet LZ4_RAW "LZ4"
+        ("lz4", "LZ4"),
+        ("lz4_raw", "LZ4"),
+        ("ZSTD", "ZSTD"),
     ],
 )
-def test_catalog_writes_with_compression_code(tmp_path: Path, code: int, expected: str) -> None:
+def test_catalog_writes_with_compression_name(tmp_path: Path, name: str, expected: str) -> None:
     """
-    Verify each supported compression code reaches the written Parquet file.
+    Verify each supported codec name reaches the written Parquet file.
     """
-    catalog = ParquetDataCatalog(str(tmp_path), compression=code)
+    catalog = ParquetDataCatalog(str(tmp_path), params={"compression": name})
 
     catalog.write_quote_ticks([TestDataProviderPyo3.quote_tick()])
 
@@ -136,20 +132,6 @@ def test_catalog_writes_with_compression_code(tmp_path: Path, code: int, expecte
     row_group = pq.ParquetFile(file_path).metadata.row_group(0)
     compressions = {row_group.column(index).compression for index in range(row_group.num_columns)}
     assert compressions == {expected}
-
-
-@pytest.mark.parametrize("code", [3, 7, 255])
-def test_catalog_rejects_unsupported_compression_code(tmp_path: Path, code: int) -> None:
-    """
-    Reject the LZO code and unknown codes when the catalog is constructed.
-    """
-    with pytest.raises(ValueError, match="Invalid compression code") as exc_info:
-        ParquetDataCatalog(str(tmp_path), compression=code)
-
-    assert str(exc_info.value) == (
-        f"Invalid compression code {code}, expected one of 0 (UNCOMPRESSED), 1 (SNAPPY), "
-        "2 (GZIP), 4 (BROTLI), 5 (LZ4_RAW), or 6 (ZSTD)"
-    )
 
 
 def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> None:
@@ -191,7 +173,7 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
         [feather_path] = staging.rglob("*.feather")
         directory = source_path / "data" / type_name
         directory.mkdir(parents=True)
-        table = _legacy_table(_read_arrow_bytes(feather_path.read_bytes()))
+        table = legacy_table_from_staged_feather(feather_path)
         pq.write_table(table, directory / "python.parquet")
 
     target = ParquetDataCatalog(str(target_path))
@@ -355,7 +337,6 @@ def test_empty_record_query_uses_canonical_schema(
 
     assert table.num_rows == 0
     assert table.column_names == [
-        "account_id",
         "account_type",
         "base_currency",
         "balances",
@@ -365,6 +346,7 @@ def test_empty_record_query_uses_canonical_schema(
         "ts_event",
         "ts_init",
         "info",
+        "identifier",
     ]
 
 
@@ -645,3 +627,29 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
 
     assert quote_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp
     assert custom_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp + 1
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({"no_such_param": 10}, "catalog param 'no_such_param'"),
+        ({"batch_size": "big"}, "catalog param 'batch_size': expected a non-negative integer"),
+        ({"compression": 6}, "catalog param 'compression': expected a string"),
+        ({"compression": "lzo"}, "unknown compression `lzo`"),
+        ({"batch_size": 0}, "catalog param 'batch_size': must be a positive number of rows"),
+        (
+            {"max_row_group_size": 0},
+            "catalog param 'max_row_group_size': must be a positive number of rows",
+        ),
+    ],
+)
+def test_catalog_params_reject_unknown_keys_and_wrong_types(
+    tmp_path: Path,
+    params: dict[str, Any],
+    message: str,
+) -> None:
+    """
+    Reject a catalog param that is unknown or has the wrong type, naming the key.
+    """
+    with pytest.raises(OSError, match=message):
+        ParquetDataCatalog(str(tmp_path), params=params)
