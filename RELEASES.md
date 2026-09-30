@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Rust `new_generic_spread_id` and `parse_generic_spread_id_legs` identifier functions (#5041), thanks @faysou
 - Added Python `new_generic_spread_id` and `generic_spread_id_to_list` (#5041), thanks @faysou
+- Added strategy trigger price modification for trailing stop orders (#5041), thanks @faysou
 - Added Architect AX account margins and locked USD balance from `/risk-snapshot`
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
