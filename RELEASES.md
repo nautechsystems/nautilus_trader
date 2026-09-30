@@ -185,6 +185,7 @@ Released on TBD (UTC).
 - Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
+- Fixed `OrderEmulator` panic releasing a trailing stop limit before its limit price is calculated
 - Fixed custom fill books falling back to historical liquidity or exceeding their available quantity
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed oversized futures delivery in simulated physical option settlement, thanks for reporting @zakkvald

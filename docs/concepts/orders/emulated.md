@@ -53,7 +53,8 @@ An emulated order progresses through these stages:
 1. A `Strategy` submits it through `submit_order`.
 1. The `RiskEngine` applies pre-trade checks and may deny it.
 1. The `OrderEmulator` holds and monitors it locally.
-1. A matching market update transforms it into a `MARKET` or `LIMIT` order and releases it.
+1. A matching market update transforms it into a `MARKET` or `LIMIT` order and releases it once
+   the required prices are available.
 1. The `RiskEngine` checks the released order again before venue submission.
 
 :::note
@@ -100,6 +101,15 @@ The released type depends on the original emulated order type:
 | `LIMIT_IF_TOUCHED`       | ✓           | `LIMIT`       |
 | `TRAILING_STOP_MARKET`   | ✓           | `MARKET`      |
 | `TRAILING_STOP_LIMIT`    | ✓           | `LIMIT`       |
+
+:::warning
+An emulated `TRAILING_STOP_LIMIT` submitted without a limit price gets one from the trailing
+calculation. If the order triggers before that calculation succeeds, the emulator logs a warning and
+keeps the order emulated. Once a market update lets the calculation produce a limit price, the next
+matching update releases the order. For example, the `LAST_OR_BID_ASK` trigger type needs a last
+trade price. A `BID_ASK` emulation trigger subscribes the emulator to quotes only, so the order
+stays held until trade data reaches the cache, such as from a strategy's trade subscription.
+:::
 
 ## Querying
 
