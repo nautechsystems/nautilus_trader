@@ -107,10 +107,12 @@ impl HullMovingAverage {
         Self::new_checked(period, price_type).expect(FAILED)
     }
 
-    pub(crate) fn new_checked(
-        period: usize,
-        price_type: Option<PriceType>,
-    ) -> anyhow::Result<Self> {
+    /// Creates a new [`HullMovingAverage`] instance with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds `MAX_PERIOD`.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         check_predicate_true(
             period <= MAX_PERIOD,
             &format!("window periods cannot exceed {MAX_PERIOD}"),
@@ -122,9 +124,8 @@ impl HullMovingAverage {
         )?;
 
         let half = usize::max(1, period / 2);
-        // Standard Hull convention: the smoothing length is sqrt(period) rounded
-        // to the nearest integer, not truncated
-        let root = usize::max(1, (period as f64).sqrt().round() as usize);
+        // Hull and TradingView truncate sqrt(period) for the smoothing length
+        let root = usize::max(1, (period as f64).sqrt() as usize);
 
         let pt = price_type.unwrap_or(PriceType::Last);
 
@@ -205,7 +206,7 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut indicator_hma_10: HullMovingAverage) {
-        // Composite warmup for period 10 is 10 + round(sqrt(10)) - 1 = 12 inputs
+        // Composite warmup for period 10 is 10 + floor(sqrt(10)) - 1 = 12 inputs
         for i in 1..=11 {
             indicator_hma_10.update_raw(f64::from(i));
             assert!(!indicator_hma_10.initialized);
@@ -375,12 +376,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(2)]
-    #[case(17)]
-    #[case(128)]
-    fn initialized_boundary(#[case] period: usize) {
+    #[case(2, 2)]
+    #[case(14, 16)]
+    #[case(17, 20)]
+    #[case(21, 24)]
+    #[case(128, 138)]
+    fn initialized_boundary(#[case] period: usize, #[case] warmup: usize) {
         let mut hma = HullMovingAverage::new(period, None);
-        let warmup = period + usize::max(1, (period as f64).sqrt().round() as usize) - 1;
 
         for i in 0..(warmup - 1) {
             hma.update_raw(i as f64);

@@ -18,7 +18,7 @@ use std::fmt::{Debug, Display};
 use nautilus_model::data::Bar;
 
 use super::kc::KeltnerChannel;
-use crate::{average::MovingAverageType, indicator::Indicator};
+use crate::{average::MovingAverageType, indicator::Indicator, support::is_valid_hlc};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -117,6 +117,10 @@ impl KeltnerPosition {
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
+        if !is_valid_hlc(high, low, close) {
+            return;
+        }
+
         self.kc.update_raw(high, low, close);
 
         // Initialization logic
@@ -205,6 +209,31 @@ mod tests {
         assert_eq!(kp_10.kc.upper, 0.0);
         assert_eq!(kp_10.kc.middle, 0.0);
         assert_eq!(kp_10.kc.lower, 0.0);
+    }
+
+    #[rstest]
+    #[case(1.0, 2.0, 2.0)]
+    #[case(2.0, 1.0, 2.5)]
+    #[case(2.0, 1.0, f64::NAN)]
+    fn test_rejected_candle_leaves_state_unchanged(
+        #[case] high: f64,
+        #[case] low: f64,
+        #[case] close: f64,
+    ) {
+        let mut kp = KeltnerPosition::new(
+            1,
+            2.0,
+            Some(MovingAverageType::Simple),
+            Some(MovingAverageType::Simple),
+            None,
+            None,
+        );
+        kp.update_raw(2.0, 1.0, 1.5);
+        kp.update_raw(high, low, close);
+
+        assert!(kp.initialized());
+        assert_eq!(kp.kc.middle, 1.5);
+        assert_eq!(kp.value, 0.0);
     }
 
     #[rstest]

@@ -23,7 +23,7 @@ use nautilus_model::{
 
 use crate::{
     indicator::{Indicator, MovingAverage},
-    support::{MAX_PERIOD, ScaledSum, blend},
+    support::MAX_PERIOD,
 };
 
 /// Wilder moving average.
@@ -45,7 +45,7 @@ pub struct WilderMovingAverage {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
-    seed_sum: ScaledSum,
+    seed_sum: f64,
 }
 
 impl Display for WilderMovingAverage {
@@ -84,7 +84,7 @@ impl Indicator for WilderMovingAverage {
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
-        self.seed_sum.reset();
+        self.seed_sum = 0.0;
     }
 }
 
@@ -121,7 +121,7 @@ impl WilderMovingAverage {
             count: 0,
             initialized: false,
             has_inputs: false,
-            seed_sum: ScaledSum::new(),
+            seed_sum: 0.0,
         })
     }
 }
@@ -143,23 +143,18 @@ impl MovingAverage for WilderMovingAverage {
         self.has_inputs = true;
         self.count += 1;
         if self.count < self.period {
-            self.seed_sum.add(price);
+            self.seed_sum += price;
             return;
         }
 
         if self.count == self.period {
-            self.seed_sum.add(price);
-            self.value = self.seed_sum.mean(self.period);
+            self.seed_sum += price;
+            self.value = self.seed_sum / self.period as f64;
             self.initialized = true;
             return;
         }
 
-        let next = (self.value * (self.period as f64 - 1.0) + price) / self.period as f64;
-        self.value = if next.is_finite() {
-            next
-        } else {
-            blend(self.value, price, self.alpha)
-        };
+        self.value = (self.value * (self.period as f64 - 1.0) + price) / self.period as f64;
     }
 }
 

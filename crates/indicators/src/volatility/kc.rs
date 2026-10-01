@@ -21,7 +21,7 @@ use nautilus_model::data::Bar;
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
-    support::MAX_PERIOD,
+    support::{MAX_PERIOD, typical_price},
     volatility::atr::AverageTrueRange,
 };
 
@@ -163,22 +163,12 @@ impl KeltnerChannel {
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        let sum = high + low + close;
-        let typical_price = if sum.is_finite() {
-            sum / 3.0
-        } else {
-            high / 3.0 + low / 3.0 + close / 3.0
-        };
-
-        if !typical_price.is_finite() {
-            return;
-        }
         let count = self.atr.count;
         self.atr.update_raw(high, low, close);
         if self.atr.count == count {
             return;
         }
-        self.ma.update_raw(typical_price);
+        self.ma.update_raw(typical_price(high, low, close));
         self.has_inputs = true;
 
         if !self.ma.initialized() || !self.atr.initialized {

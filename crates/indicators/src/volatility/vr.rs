@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::FAILED;
-use nautilus_model::data::Bar;
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{indicator::Indicator, support::MAX_PERIOD};
 
@@ -62,6 +62,12 @@ impl Indicator for VolatilityRatio {
     fn initialized(&self) -> bool {
         self.initialized
     }
+
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.high).into(), (&bar.low).into(), (&bar.close).into());
@@ -163,7 +169,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::vr_10;
+    use crate::stubs::{stub_quote, stub_trade, vr_10};
 
     const BARS: [(f64, f64, f64); 5] = [
         (10.0, 8.0, 9.0),
@@ -270,5 +276,18 @@ mod tests {
 
         feed(&mut indicator, 4);
         assert_eq!(indicator.value, 1.5);
+    }
+
+    #[rstest]
+    fn test_quote_and_trade_are_ignored(stub_quote: QuoteTick, stub_trade: TradeTick) {
+        let mut indicator = VolatilityRatio::new(2);
+
+        let result = indicator.handle_quote(&stub_quote);
+        indicator.handle_trade(&stub_trade);
+
+        assert!(result.is_ok());
+        assert!(!indicator.has_inputs());
+        assert_eq!(indicator.count, 0);
+        assert_eq!(indicator.value, 0.0);
     }
 }

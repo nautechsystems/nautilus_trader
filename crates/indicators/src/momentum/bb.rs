@@ -24,10 +24,10 @@ use nautilus_model::{
     enums::PriceType,
 };
 
+pub use crate::support::MAX_PERIOD;
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
-    support::MAX_PERIOD,
 };
 
 /// Bollinger bands around a moving average.

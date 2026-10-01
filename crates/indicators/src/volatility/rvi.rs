@@ -177,7 +177,7 @@ impl RelativeVolatilityIndex {
             return;
         }
 
-        let std_dev = self.moments.std_dev(self.period, self.prices.iter());
+        let std_dev = self.moments.std_dev(self.period);
         self.pos_ma.update_raw(if close > self.previous_close {
             std_dev
         } else {

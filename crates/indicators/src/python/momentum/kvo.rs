@@ -29,8 +29,8 @@ impl KlingerVolumeOscillator {
     /// difference over the per-bar "volume force".
     ///
     /// ```text
-    /// dm_t   = high_t + low_t + close_t                 (the daily measurement)
-    /// trend  = sign(dm_t - dm_{t-1}), carried over when equal
+    /// dm_t   = high_t - low_t                           (the daily measurement)
+    /// trend  = sign(hlc_t - hlc_{t-1}), carried over when equal, with hlc = high + low + close
     /// cm_t   = cm_{t-1} + dm_t        while the trend holds
     /// cm_t   = dm_{t-1} + dm_t        when the trend flips
     /// vf_t   = volume_t * |2 * (dm_t / cm_t - 1)| * trend * 100

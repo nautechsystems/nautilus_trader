@@ -117,10 +117,12 @@ impl ZScore {
         Self::new_checked(period, price_type).expect(FAILED)
     }
 
-    pub(crate) fn new_checked(
-        period: usize,
-        price_type: Option<PriceType>,
-    ) -> anyhow::Result<Self> {
+    /// Creates a new [`ZScore`] instance with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds `MAX_PERIOD`.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         anyhow::ensure!(period <= MAX_PERIOD, "period cannot exceed {MAX_PERIOD}");
         anyhow::ensure!(period > 0, "ZScore: period must be > 0 (received {period})");
         Ok(Self {
@@ -160,7 +162,7 @@ impl ZScore {
             return;
         }
         self.mean = self.moments.mean(self.period);
-        self.std = self.moments.std_dev(self.period, self.window.iter());
+        self.std = self.moments.std_dev(self.period);
         // A window with no dispersion: the price is exactly its own mean.
         self.value = if self.std == 0.0 {
             0.0

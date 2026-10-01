@@ -20,6 +20,7 @@ use nautilus_model::data::Bar;
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::is_valid_hlc,
     volatility::atr::AverageTrueRange,
 };
 
@@ -107,6 +108,10 @@ impl Pressure {
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {
+        if !is_valid_hlc(high, low, close) || !volume.is_finite() || volume < 0.0 {
+            return;
+        }
+
         self.atr.update_raw(high, low, close);
         self.average_volume.update_raw(volume);
 
@@ -266,6 +271,28 @@ mod tests {
             pressure.update_raw(1.3, 1.0, 1.1, 100.0);
         }
         assert!(pressure.initialized());
+    }
+
+    #[rstest]
+    #[case(1.0, 1.5, 1.2, 100.0)]
+    #[case(1.5, 1.0, 1.6, 100.0)]
+    #[case(1.5, 1.0, f64::NAN, 100.0)]
+    #[case(1.5, 1.0, 1.2, -1.0)]
+    #[case(1.5, 1.0, 1.2, f64::INFINITY)]
+    fn test_rejected_input_leaves_state_unchanged(
+        #[case] high: f64,
+        #[case] low: f64,
+        #[case] close: f64,
+        #[case] volume: f64,
+    ) {
+        let mut pressure = Pressure::new(1, Some(MovingAverageType::Simple), Some(0.5));
+        pressure.update_raw(1.5, 1.0, 1.2, 100.0);
+        pressure.update_raw(high, low, close, volume);
+
+        assert_eq!(pressure.atr.count, 1);
+        assert_eq!(pressure.average_volume.count(), 1);
+        assert!((pressure.value + 0.2).abs() < 1e-6);
+        assert!((pressure.value_cumulative + 0.2).abs() < 1e-6);
     }
 
     #[rstest]

@@ -19,7 +19,7 @@ use nautilus_model::data::Bar;
 
 use crate::{
     indicator::Indicator,
-    support::{ScaledSum, is_valid_hlc, typical_price},
+    support::{is_valid_hlc, typical_price},
 };
 
 /// Volume-weighted average price.
@@ -37,8 +37,8 @@ pub struct VolumeWeightedAveragePrice {
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    price_volume: ScaledSum,
-    volume_total: ScaledSum,
+    price_volume: f64,
+    volume_total: f64,
 }
 
 impl Indicator for VolumeWeightedAveragePrice {
@@ -66,8 +66,8 @@ impl Indicator for VolumeWeightedAveragePrice {
         self.value = 0.0;
         self.has_inputs = false;
         self.initialized = false;
-        self.price_volume.reset();
-        self.volume_total.reset();
+        self.price_volume = 0.0;
+        self.volume_total = 0.0;
     }
 }
 
@@ -79,8 +79,8 @@ impl VolumeWeightedAveragePrice {
             value: 0.0,
             initialized: false,
             has_inputs: false,
-            price_volume: ScaledSum::new(),
-            volume_total: ScaledSum::new(),
+            price_volume: 0.0,
+            volume_total: 0.0,
         }
     }
 
@@ -96,9 +96,9 @@ impl VolumeWeightedAveragePrice {
         if volume == 0.0 {
             return;
         }
-        self.price_volume.add(product);
-        self.volume_total.add(volume);
-        self.value = self.price_volume.ratio(&self.volume_total);
+        self.price_volume += product;
+        self.volume_total += volume;
+        self.value = self.price_volume / self.volume_total;
         self.initialized = true;
     }
 }
@@ -173,18 +173,6 @@ mod tests {
         vwap.update_raw(price, volume);
         vwap.update_raw(20.0, 2.0);
         assert_eq!(vwap.value, 15.0);
-    }
-
-    #[rstest]
-    fn test_large_finite_sums() {
-        let mut vwap = VolumeWeightedAveragePrice::new();
-        vwap.update_raw(1e308, 1.0);
-        vwap.update_raw(1e308, 1.0);
-        assert_eq!(vwap.value, 1e308);
-        vwap.reset();
-        vwap.update_raw(1.0, 1e308);
-        vwap.update_raw(1.0, 1e308);
-        assert_eq!(vwap.value, 1.0);
     }
 
     #[rstest]

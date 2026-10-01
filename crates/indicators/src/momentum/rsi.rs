@@ -24,7 +24,7 @@ use nautilus_model::{
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
-    support::{MAX_PERIOD, percentage_gain},
+    support::MAX_PERIOD,
 };
 
 /// An indicator which calculates a relative strength index (RSI) across a rolling window.
@@ -155,13 +155,7 @@ impl RelativeStrengthIndex {
         self.value = if total == 0.0 {
             50.0
         } else {
-            let value = self.rsi_max * average_gain / total;
-            let value = if total.is_finite() && value.is_finite() {
-                value
-            } else {
-                percentage_gain(average_gain, average_loss)
-            };
-            value.clamp(0.0, self.rsi_max)
+            self.rsi_max * (average_gain / total)
         };
         self.initialized = true;
     }

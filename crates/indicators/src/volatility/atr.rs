@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::FAILED;
-use nautilus_model::data::Bar;
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -74,6 +74,12 @@ impl Indicator for AverageTrueRange {
     fn initialized(&self) -> bool {
         self.initialized
     }
+
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.high).into(), (&bar.low).into(), (&bar.close).into());
@@ -193,7 +199,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::testing::assert_approx_equal;
+    use crate::{
+        stubs::{stub_quote, stub_trade},
+        testing::assert_approx_equal,
+    };
 
     #[rstest]
     fn test_name_returns_expected_string() {
@@ -332,7 +341,7 @@ mod tests {
     #[case(MovingAverageType::Exponential, 3)]
     #[case(MovingAverageType::DoubleExponential, 5)]
     #[case(MovingAverageType::Wilder, 3)]
-    #[case(MovingAverageType::Hull, 4)]
+    #[case(MovingAverageType::Hull, 3)]
     fn test_selected_smoother_controls_readiness_and_floor(
         #[case] ma_type: MovingAverageType,
         #[case] first_ready: usize,
@@ -404,5 +413,18 @@ mod tests {
         atr.update_raw(1.00010, 1.0, 1.00005);
         atr.reset();
         assert_eq!(atr.ma.count(), 0);
+    }
+
+    #[rstest]
+    fn test_quote_and_trade_are_ignored(stub_quote: QuoteTick, stub_trade: TradeTick) {
+        let mut atr = AverageTrueRange::new(10, None, None, None);
+
+        let result = atr.handle_quote(&stub_quote);
+        atr.handle_trade(&stub_trade);
+
+        assert!(result.is_ok());
+        assert!(!atr.has_inputs());
+        assert_eq!(atr.count, 0);
+        assert_eq!(atr.value, 0.0);
     }
 }

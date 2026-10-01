@@ -147,17 +147,9 @@ impl ChandeMomentumOscillator {
         self.value = if total == 0.0 {
             0.0
         } else {
-            let value = 100.0 * (gain - loss) / total;
-            if total.is_finite() && value.is_finite() {
-                value
-            } else if total.is_finite() {
-                100.0 * (gain / total - loss / total)
-            } else {
-                let scale = gain.abs().max(loss.abs());
-                let gain = gain / scale;
-                let loss = loss / scale;
-                100.0 * ((gain - loss) / (gain + loss))
-            }
+            // Divide before scaling, so a zero gain average gives exactly -100
+            // rather than a value just outside the oscillator's range
+            100.0 * ((gain - loss) / total)
         };
         self.initialized = true;
     }
@@ -315,5 +307,20 @@ mod tests {
         }
         assert!(cmo.initialized);
         assert!(cmo.value <= 100.0 && cmo.value >= -100.0);
+    }
+
+    #[rstest]
+    #[case(0.0, 0.123, 100.0)]
+    #[case(0.123, 0.0, -100.0)]
+    fn test_one_sided_window_is_exact(
+        #[case] first: f64,
+        #[case] second: f64,
+        #[case] expected: f64,
+    ) {
+        let mut cmo = ChandeMomentumOscillator::new(1, Some(MovingAverageType::Simple));
+        cmo.update_raw(first);
+        cmo.update_raw(second);
+
+        assert_eq!(cmo.value, expected);
     }
 }

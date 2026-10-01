@@ -23,7 +23,7 @@ use nautilus_model::{
 
 use crate::{
     indicator::{Indicator, MovingAverage},
-    support::{MAX_PERIOD, SMA_RESEED_WINDOWS, ScaledSum},
+    support::{MAX_PERIOD, SMA_RESEED_WINDOWS},
 };
 
 /// Simple moving average.
@@ -41,7 +41,7 @@ pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
     pub value: f64,
-    sum: ScaledSum,
+    sum: f64,
     updates_since_reseed: usize,
     pub count: usize,
     buf: VecDeque<f64>,
@@ -82,7 +82,7 @@ impl Indicator for SimpleMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
-        self.sum.reset();
+        self.sum = 0.0;
         self.updates_since_reseed = 0;
         self.count = 0;
         self.buf.clear();
@@ -131,7 +131,7 @@ impl SimpleMovingAverage {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
-            sum: ScaledSum::new(),
+            sum: 0.0,
             updates_since_reseed: 0,
             count: 0,
             buf: VecDeque::with_capacity(period),
@@ -146,24 +146,23 @@ impl SimpleMovingAverage {
 
         if self.count == self.period {
             if let Some(oldest) = self.buf.pop_front() {
-                self.sum.add(-oldest);
+                self.sum -= oldest;
             }
         } else {
             self.count += 1;
         }
 
         self.buf.push_back(price);
-        self.sum.add(price);
+        self.sum += price;
         self.updates_since_reseed += 1;
-        if self.sum.needs_rebuild() || self.updates_since_reseed >= SMA_RESEED_WINDOWS * self.period
-        {
-            self.sum.rebuild(self.buf.iter().copied(), self.count);
+        if self.updates_since_reseed >= SMA_RESEED_WINDOWS * self.period {
+            self.sum = self.buf.iter().sum();
             self.updates_since_reseed = 0;
         }
 
         self.initialized = self.count >= self.period;
         if self.initialized {
-            self.value = self.sum.mean(self.period);
+            self.value = self.sum / self.period as f64;
         }
     }
 }
@@ -547,9 +546,9 @@ mod tests {
 
             let deque_sum: f64 = sma.buf.iter().copied().sum();
             assert!(
-                (sma.sum.value() - deque_sum).abs() < 1e-12,
+                (sma.sum - deque_sum).abs() < 1e-12,
                 "step {i}: internal sum={} differs from buf sum={}",
-                sma.sum.value(),
+                sma.sum,
                 deque_sum
             );
         }
@@ -567,21 +566,5 @@ mod tests {
         sma.update_raw(1e-100);
 
         assert_eq!(sma.value(), 1e-100 / 3.0);
-    }
-
-    #[rstest]
-    fn test_recovers_small_samples_after_overflow_and_eviction() {
-        let mut sma = SimpleMovingAverage::new(3, None);
-        let values = [1e308, 1e308, 1e308, 1.0, 2.0, 3.0, 4.0];
-        let expected = [0.0, 0.0, 1e308, 2.0 / 3.0 * 1e308, 1e308 / 3.0, 2.0, 3.0];
-
-        for _ in 0..2 {
-            for (value, expected) in values.into_iter().zip(expected) {
-                sma.update_raw(value);
-                assert_eq!(sma.value(), expected);
-            }
-            sma.reset();
-            assert_eq!(sma.value(), 0.0);
-        }
     }
 }

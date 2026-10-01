@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use super::sum::ScaledSum;
-
 #[derive(Debug, Clone)]
 pub(crate) struct ShiftedMoments {
     offset: f64,
@@ -56,25 +54,9 @@ impl ShiftedMoments {
         self.offset + self.sum / n as f64
     }
 
-    pub(crate) fn std_dev<'a>(
-        &self,
-        n: usize,
-        values: impl Iterator<Item = &'a f64> + Clone,
-    ) -> f64 {
+    pub(crate) fn std_dev(&self, n: usize) -> f64 {
         let mean = self.sum / n as f64;
-        let variance = self.sum_sq / n as f64 - mean * mean;
-        if variance.is_finite() {
-            return variance.max(0.0).sqrt();
-        }
-        let scale = values.clone().copied().map(f64::abs).fold(0.0, f64::max);
-        if scale == 0.0 {
-            return 0.0;
-        }
-        let normalized_mean = values.clone().map(|value| value / scale).sum::<f64>() / n as f64;
-        let squares = values
-            .map(|value| (value / scale - normalized_mean).powi(2))
-            .sum::<f64>();
-        (squares / n as f64).sqrt() * scale
+        (self.sum_sq / n as f64 - mean * mean).max(0.0).sqrt()
     }
 
     pub(crate) const fn needs_reseed(&self, period: usize) -> bool {
@@ -92,7 +74,7 @@ impl ShiftedMoments {
             self.reset();
             return;
         }
-        self.offset = values.clone().copied().sum::<ScaledSum>().mean(count);
+        self.offset = values.clone().sum::<f64>() / count as f64;
         self.seeded = true;
         self.sum = 0.0;
         self.sum_sq = 0.0;
@@ -132,20 +114,20 @@ mod tests {
         assert!(moments.needs_reseed(3));
         moments.reseed(&window);
         assert_eq!(moments.mean(3), 1.0e12 + 3.0);
-        assert_eq!(moments.std_dev(3, window.iter()), (8.0_f64 / 3.0).sqrt());
+        assert_eq!(moments.std_dev(3), (8.0_f64 / 3.0).sqrt());
 
         moments.evict(window.pop_front().unwrap());
         window.push_back(1.0e12 + 7.0);
         moments.push(1.0e12 + 7.0);
         moments.reseed(&window);
         assert_eq!(moments.mean(3), 1.0e12 + 5.0);
-        assert_eq!(moments.std_dev(3, window.iter()), (8.0_f64 / 3.0).sqrt());
+        assert_eq!(moments.std_dev(3), (8.0_f64 / 3.0).sqrt());
         assert!(!moments.needs_reseed(1));
 
         moments.reset();
         moments.push(-7.0);
         assert_eq!(moments.mean(1), -7.0);
-        assert_eq!(moments.std_dev(1, [-7.0].iter()), 0.0);
+        assert_eq!(moments.std_dev(1), 0.0);
         moments.reseed(&VecDeque::new());
         assert!(!moments.needs_reseed(1));
         moments.push(11.0);
@@ -182,7 +164,7 @@ mod tests {
                 .map(|x| (x - anchor - mean).powi(2))
                 .sum::<f64>();
             let population = (squared / period as f64).sqrt();
-            assert!((moments.std_dev(period, window.iter()) - population).abs() <= 1.0e-6);
+            assert!((moments.std_dev(period) - population).abs() <= 1.0e-6);
         }
     }
 }

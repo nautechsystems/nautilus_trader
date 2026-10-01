@@ -211,14 +211,13 @@ impl MovingAverage for AdaptiveMovingAverage {
         self.count += 1;
         self.has_inputs = true;
         self.efficiency_ratio.update_raw(value);
-        let Some(prior) = self.prior_value else {
-            self.prior_value = Some(value);
-            return;
-        };
 
         if self.count <= self.period_efficiency_ratio {
+            // Kaufman seeds the first output from the previous price
+            self.prior_value = Some(value);
             return;
         }
+        let prior = self.prior_value.unwrap_or(value);
 
         let smoothing = self
             .efficiency_ratio
@@ -241,6 +240,7 @@ mod tests {
         average::ama::AdaptiveMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -307,6 +307,15 @@ mod tests {
         }
         indicator_ama_10.update_raw(11.0);
         assert!(indicator_ama_10.initialized());
+    }
+
+    #[rstest]
+    fn test_first_value_seeds_from_previous_input(mut indicator_ama_10: AdaptiveMovingAverage) {
+        // Inputs 1..=11 give ER = 1, so sc = (2/3)^2 and the first value is 10 + 4/9
+        for value in 1..=11 {
+            indicator_ama_10.update_raw(f64::from(value));
+        }
+        assert_approx_equal(indicator_ama_10.value, 10.0 + 4.0 / 9.0);
     }
 
     #[rstest]

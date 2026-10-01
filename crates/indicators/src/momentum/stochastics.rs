@@ -28,6 +28,9 @@ use crate::{
     support::{MAX_PERIOD, is_valid_hlc},
 };
 
+// A flat window (HH == LL) emits this neutral value for both %K and %D
+const FLAT_WINDOW_VALUE: f64 = 50.0;
+
 /// Method for calculating %D in the Stochastics indicator.
 ///
 /// The %D line is the smoothed version of %K and can provide trading signals.
@@ -341,11 +344,9 @@ impl Stochastics {
             self.h_sub_l.push_back(k_max_high - k_min_low);
         }
 
-        // Calculate raw %K; a flat window (HH == LL) emits the neutral 50 by
-        // the standard convention instead of holding a stale value
         #[expect(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
         let raw_k = if k_max_high == k_min_low {
-            50.0
+            FLAT_WINDOW_VALUE
         } else {
             100.0 * ((close - k_min_low) / (k_max_high - k_min_low))
         };
@@ -375,7 +376,7 @@ impl Stochastics {
                 // Deques already updated above
                 let sum_h_sub_l: f64 = self.h_sub_l.iter().sum();
                 if sum_h_sub_l == 0.0 {
-                    0.0
+                    FLAT_WINDOW_VALUE
                 } else {
                     100.0 * (self.c_sub_1.iter().sum::<f64>() / sum_h_sub_l)
                 }
@@ -883,5 +884,24 @@ mod tests {
         // Should not panic, values should be 0 or previous
         assert!(stoch.value_k.is_finite());
         assert!(stoch.value_d.is_finite());
+    }
+
+    #[rstest]
+    fn test_ratio_flat_window_emits_neutral_k_and_d() {
+        let mut stoch = Stochastics::new_with_params(
+            5,
+            3,
+            1,
+            MovingAverageType::Simple,
+            StochasticsDMethod::Ratio,
+        );
+
+        for _ in 0..5 {
+            stoch.update_raw(100.0, 100.0, 100.0);
+        }
+
+        assert!(stoch.initialized());
+        assert_eq!(stoch.value_k, 50.0);
+        assert_eq!(stoch.value_d, 50.0);
     }
 }

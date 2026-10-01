@@ -24,10 +24,8 @@ use nautilus_model::{
     enums::PriceType,
 };
 
-use crate::{
-    indicator::Indicator,
-    support::{MAX_PERIOD, is_valid_high_low},
-};
+pub use crate::support::MAX_PERIOD;
+use crate::{indicator::Indicator, support::is_valid_high_low};
 
 /// The Aroon Oscillator calculates the Aroon Up and Aroon Down indicators to
 /// determine if an instrument is trending, and the strength of the trend.

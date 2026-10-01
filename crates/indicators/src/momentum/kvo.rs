@@ -28,8 +28,8 @@ use crate::{
 /// difference over the per-bar "volume force".
 ///
 /// ```text
-/// dm_t   = high_t + low_t + close_t                 (the daily measurement)
-/// trend  = sign(dm_t - dm_{t-1}), carried over when equal
+/// dm_t   = high_t - low_t                           (the daily measurement)
+/// trend  = sign(hlc_t - hlc_{t-1}), carried over when equal, with hlc = high + low + close
 /// cm_t   = cm_{t-1} + dm_t        while the trend holds
 /// cm_t   = dm_{t-1} + dm_t        when the trend flips
 /// vf_t   = volume_t * |2 * (dm_t / cm_t - 1)| * trend * 100
@@ -57,7 +57,8 @@ pub struct KlingerVolumeOscillator {
     has_inputs: bool,
     fast_ma: Box<dyn MovingAverage + Send + 'static>,
     slow_ma: Box<dyn MovingAverage + Send + 'static>,
-    previous_dm: Option<f64>,
+    previous_hlc: Option<f64>,
+    previous_dm: f64,
     trend: i8,
     cm: f64,
 }
@@ -100,7 +101,8 @@ impl Indicator for KlingerVolumeOscillator {
     fn reset(&mut self) {
         self.fast_ma.reset();
         self.slow_ma.reset();
-        self.previous_dm = None;
+        self.previous_hlc = None;
+        self.previous_dm = 0.0;
         self.trend = 0;
         self.cm = 0.0;
         self.value = 0.0;
@@ -147,7 +149,8 @@ impl KlingerVolumeOscillator {
             value: 0.0,
             fast_ma: MovingAverageFactory::create(ma_type, fast_period),
             slow_ma: MovingAverageFactory::create(ma_type, slow_period),
-            previous_dm: None,
+            previous_hlc: None,
+            previous_dm: 0.0,
             trend: 0,
             cm: 0.0,
             has_inputs: false,
@@ -161,17 +164,19 @@ impl KlingerVolumeOscillator {
         }
 
         self.has_inputs = true;
-        let dm = high + low + close;
+        let hlc = high + low + close;
+        let dm = high - low;
 
-        let Some(previous_dm) = self.previous_dm else {
-            // The first bar only establishes the previous daily measurement
-            self.previous_dm = Some(dm);
+        let Some(previous_hlc) = self.previous_hlc else {
+            // The first bar only establishes the previous trend sum and daily measurement
+            self.previous_hlc = Some(hlc);
+            self.previous_dm = dm;
             return;
         };
 
-        let new_trend: i8 = if dm > previous_dm {
+        let new_trend: i8 = if hlc > previous_hlc {
             1
-        } else if dm < previous_dm {
+        } else if hlc < previous_hlc {
             -1
         } else {
             self.trend
@@ -182,18 +187,19 @@ impl KlingerVolumeOscillator {
         if new_trend == self.trend && self.trend != 0 {
             self.cm += dm;
         } else {
-            self.cm = previous_dm + dm;
+            self.cm = self.previous_dm + dm;
         }
         self.trend = new_trend;
 
         let volume_force = if self.cm == 0.0 {
-            // Pathological all-zero OHLC stretch: no force to register
+            // Zero-range bars since the last trend flip: no force to register
             0.0
         } else {
             volume * (2.0 * (dm / self.cm - 1.0)).abs() * f64::from(new_trend) * 100.0
         };
 
-        self.previous_dm = Some(dm);
+        self.previous_hlc = Some(hlc);
+        self.previous_dm = dm;
 
         self.fast_ma.update_raw(volume_force);
         self.slow_ma.update_raw(volume_force);
@@ -247,23 +253,29 @@ mod tests {
 
     #[rstest]
     fn test_volume_force_matches_reference(mut kvo_34: KlingerVolumeOscillator) {
-        // Bars strictly rising: trend is +1 from bar 2 onward.
-        // dm_i = h + l + c = 3 * i for i in 1..=5, volume 10.
-        // Bar 2: cm = dm1 + dm2 = 9, vf = 10 * |2 * (6/9 - 1)| * 100 = 666.66..
-        // Bar 3: cm = 9 + 9 = 18, vf = 10 * |2 * (9/18 - 1)| * 100 = 1000
-        // Bar 4: cm = 18 + 12 = 30, vf = 10 * |2 * (12/30 - 1)| * 100 = 1200
-        // Bar 5: cm = 30 + 15 = 45, vf = 10 * |2 * (15/45 - 1)| * 100 = 1333.33..
-        // SMA(3) - SMA(4) of [666.66.., 1000, 1200, 1333.33..]:
-        //   fast = (1000 + 1200 + 1333.33..) / 3 = 1177.77..
-        //   slow = (666.66.. + 1000 + 1200 + 1333.33..) / 4 = 1050
-        for i in 1..=5_u32 {
-            let base = f64::from(i);
-            kvo_34.update_raw(base, base, base, 10.0);
+        // (high, low, close) with hlc = high + low + close and dm = high - low:
+        // hlc = [5, 10, 11, 18, 13], dm = [1, 2, 1, 3, 2], volume 10.
+        // Bar 2: trend +1, cm = 1 + 2 = 3, vf = 10 * |2 * (2/3 - 1)| * 100 = 2000/3
+        // Bar 3: trend +1, cm = 3 + 1 = 4, vf = 10 * |2 * (1/4 - 1)| * 100 = 1500
+        // Bar 4: trend +1, cm = 4 + 3 = 7, vf = 10 * |2 * (3/7 - 1)| * 100 = 8000/7
+        // Bar 5: trend -1, cm = 3 + 2 = 5, vf = -10 * |2 * (2/5 - 1)| * 100 = -1200
+        let bars = [
+            (2.0, 1.0, 2.0),
+            (4.0, 2.0, 4.0),
+            (4.0, 3.0, 4.0),
+            (7.0, 4.0, 7.0),
+            (5.0, 3.0, 5.0),
+        ];
+
+        for (high, low, close) in bars {
+            kvo_34.update_raw(high, low, close, 10.0);
         }
         assert!(kvo_34.initialized());
-        let expected = (1000.0 + 1200.0 + 4000.0 / 3.0) / 3.0
-            - (600.0 / 0.9 + 1000.0 + 1200.0 + 4000.0 / 3.0) / 4.0;
+        let expected = (1500.0 + 8000.0 / 7.0 - 1200.0) / 3.0
+            - (2000.0 / 3.0 + 1500.0 + 8000.0 / 7.0 - 1200.0) / 4.0;
         assert!((kvo_34.value - expected).abs() < 1e-9);
+        assert_eq!(kvo_34.trend, -1);
+        assert_eq!(kvo_34.cm, 5.0);
     }
 
     #[rstest]
@@ -289,6 +301,7 @@ mod tests {
         assert_eq!(kvo_34.value, 0.0);
         assert_eq!(kvo_34.trend, 0);
         assert_eq!(kvo_34.cm, 0.0);
-        assert!(kvo_34.previous_dm.is_none());
+        assert!(kvo_34.previous_hlc.is_none());
+        assert_eq!(kvo_34.previous_dm, 0.0);
     }
 }

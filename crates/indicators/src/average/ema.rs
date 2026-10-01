@@ -23,7 +23,7 @@ use nautilus_model::{
 
 use crate::{
     indicator::{Indicator, MovingAverage},
-    support::{MAX_PERIOD, ScaledSum, blend},
+    support::MAX_PERIOD,
 };
 
 /// Exponential moving average.
@@ -45,7 +45,7 @@ pub struct ExponentialMovingAverage {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
-    seed_sum: ScaledSum,
+    seed_sum: f64,
 }
 
 impl Display for ExponentialMovingAverage {
@@ -85,7 +85,7 @@ impl Indicator for ExponentialMovingAverage {
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
-        self.seed_sum.reset();
+        self.seed_sum = 0.0;
     }
 }
 
@@ -122,7 +122,7 @@ impl ExponentialMovingAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-            seed_sum: ScaledSum::new(),
+            seed_sum: 0.0,
         })
     }
 }
@@ -144,23 +144,18 @@ impl MovingAverage for ExponentialMovingAverage {
         self.has_inputs = true;
         self.count += 1;
         if self.count < self.period {
-            self.seed_sum.add(value);
+            self.seed_sum += value;
             return;
         }
 
         if self.count == self.period {
-            self.seed_sum.add(value);
-            self.value = self.seed_sum.mean(self.period);
+            self.seed_sum += value;
+            self.value = self.seed_sum / self.period as f64;
             self.initialized = true;
             return;
         }
 
-        let next = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
-        self.value = if next.is_finite() {
-            next
-        } else {
-            blend(self.value, value, self.alpha)
-        };
+        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
     }
 }
 

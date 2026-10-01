@@ -23,7 +23,7 @@ use nautilus_model::{
 
 use crate::{
     indicator::{Indicator, MovingAverage},
-    support::{MAX_PERIOD, mean_weighted},
+    support::MAX_PERIOD,
 };
 
 /// An indicator which calculates a weighted moving average across a rolling window.
@@ -155,19 +155,7 @@ impl WeightedMovingAverage {
             sum += input * weight;
             weight_sum += weight;
         }
-        let value = sum / weight_sum;
-
-        if value.is_finite() {
-            return value;
-        }
-
-        mean_weighted(
-            self.inputs
-                .iter()
-                .rev()
-                .copied()
-                .zip(weights_slice.iter().rev().copied()),
-        )
+        sum / weight_sum
     }
 }
 
