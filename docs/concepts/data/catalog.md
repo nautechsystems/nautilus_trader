@@ -63,6 +63,40 @@ azure_catalog = ParquetDataCatalog(
 )
 ```
 
+## Compression and row groups
+
+`DataCatalogConfig` sets how a configured catalog reads and writes data files:
+
+| Field                | Controls                                    | Default          |
+| -------------------- | ------------------------------------------- | ---------------- |
+| `batch_size`         | Rows per batch the catalog reads and writes | 10,000           |
+| `compression`        | Codec name for written data files           | `zstd` (level 1) |
+| `max_row_group_size` | Maximum rows per written row group          | 131,072          |
+
+```python
+from nautilus_trader.config import DataCatalogConfig
+
+
+catalog = DataCatalogConfig(path="./catalog", compression="snappy", max_row_group_size=65_536)
+```
+
+`compression` accepts `uncompressed`, `snappy`, `gzip`, `brotli`, `lz4`, `lz4_raw`, or `zstd`,
+ignoring case. Construction fails for any other name and for a zero `batch_size` or
+`max_row_group_size`. `params` carries only options for an external catalog backend, and the
+Parquet catalog rejects any `params` key.
+
+`ParquetDataCatalog` takes the same settings as `batch_size`, `max_row_group_size`, and a numeric
+`compression` code: `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` (Brotli), `5` (LZ4), or `6`
+(zstd).
+
+:::info
+`lz4` and `lz4_raw` name the same codec: the catalog writes Parquet `LZ4_RAW`. The Parquet format
+deprecates the older Hadoop-framed `LZ4` codec, so the catalog never writes it, and compression code
+`5` writes `LZ4_RAW` even though Parquet numbers `LZ4_RAW` as `7`. Files written earlier with the
+Hadoop-framed codec remain readable. LZO is not supported because the Parquet writer cannot produce
+it, so the name `lzo` and code `3` fail at construction.
+:::
+
 ## Writing data
 
 Use the writer for the concrete data type. Instrument definitions and custom data have separate
@@ -344,19 +378,24 @@ renames files, so overlap points to an earlier rename, a manual move, or a concu
 the file contents are still disjoint, recover the directory with a filename reset:
 
 1. Stop all writers to the catalog.
-1. Back up the affected directory.
-1. Inspect the actual `ts_init` range of each file and confirm the content ranges are disjoint.
-1. On a copy of the directory, map each file to its content-derived name and confirm no
-   two files share a destination and no destination equals another file's current name. Then run
-   `reset_data_file_names(...)` for the affected path and confirm each renamed file matches its
-   content range. For custom data types, use `reset_all_file_names()` instead, which
-   covers every leaf directory including custom layouts.
-1. Replace the damaged directory with the repaired copy, then write a later disjoint interval to
+1. Back up the affected directory. The reset renames files one at a time, so an I/O failure
+   partway through can leave some files renamed. On object stores that rename by copying then
+   deleting, a failure can also leave a file under both names.
+1. Run `reset_data_file_names(...)` for the affected path. For custom data types, use
+   `reset_all_file_names()` instead, which covers every leaf directory including custom layouts.
+1. If the reset reports that a new name is held by another file, rename that file to an unused
+   interval name outside the data range, then run the reset again. Repeat until it succeeds.
+1. Confirm each renamed file matches its content range, then write a later disjoint interval to
    confirm the directory accepts writes again.
 
+The reset processes one directory at a time. Before renaming any file in a directory, it reads
+each file's `ts_init` range. It fails when the content ranges overlap or when a file's new name is
+the current name of another file, and it then leaves every file name in that directory unchanged.
+Directories reset before the failing one keep their new names.
+
 Use filename reset only for filename-only damage. When file contents overlap, resetting names
-cannot reconcile the data; rebuild the affected range from source through a separately validated
-process instead.
+cannot reconcile the data, so the reset fails; rebuild the affected range from source through a
+separately validated process instead.
 
 ### Consolidate catalog
 
@@ -376,7 +415,7 @@ catalog.consolidate_catalog(
 
 catalog.consolidate_data(
     NautilusDataType.QuoteTick,
-    instrument_id="EUR/USD.SIM",
+    identifier="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
 )
@@ -463,12 +502,12 @@ outside the range.
 
 ## Feather streaming and conversion
 
-The runtime can stage records in Feather and promote them into the Parquet catalog with
-`StreamingConfig(writer_backend="Parquet", ...)`. Staged records become available to catalog queries
-after promotion succeeds. A staging flush and a catalog commit are separate steps.
+The runtime can stage records in local Feather files and promote them into a catalog with
+`StreamingConfig(writer_path=..., catalog=DataCatalogConfig(...))`. Staged records become available
+to catalog queries after promotion succeeds. A staging flush and a catalog commit are separate steps.
 
-Parquet defaults to promotion on close, no interval-based promotion, and retention of committed
-Feather sources. A positive `parquet_commit_interval_ms` uses live wall-clock scheduling or checks
+Streaming defaults to promotion on close, no interval-based promotion, and retention of committed
+Feather sources. A positive `promotion_interval_ms` uses live wall-clock scheduling or checks
 against the supplied backtest clock during writes and flushes. See
 [stream data into a Parquet catalog](../../how_to/stream_parquet_catalog.md) for defaults, configuration,
 query visibility, and recovery.

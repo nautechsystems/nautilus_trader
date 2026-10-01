@@ -255,8 +255,7 @@ impl Display for Pool {
             "Pool(instrument_id={}, dex={}, fee={}, address={})",
             self.instrument_id,
             self.dex.name,
-            self.fee
-                .map_or("None".to_string(), |fee| format!("fee={fee}, ")),
+            self.fee.map_or("None".to_string(), |fee| fee.to_string()),
             self.address
         )
     }
@@ -357,6 +356,11 @@ mod tests {
         assert_eq!(
             pool.to_full_spec_string(),
             "WETH/USDT-3000.Ethereum:UniswapV3"
+        );
+        assert_eq!(
+            pool.to_string(),
+            "Pool(instrument_id=0x11b815efB8f581194ae79006d24E0d814B7697F6.Ethereum:UniswapV3, \
+             dex=UniswapV3, fee=3000, address=0x11b815efB8f581194ae79006d24E0d814B7697F6)"
         );
     }
 

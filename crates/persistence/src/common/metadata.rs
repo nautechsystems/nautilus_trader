@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Shared catalog metadata conversion.
+
 use std::collections::HashMap;
 
 use arrow::record_batch::RecordBatch;
@@ -66,17 +68,17 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{ArrayRef, UInt64Array},
-        datatypes::{DataType, Field, Schema},
+        array::{ArrayRef, TimestampNanosecondArray, UInt64Array},
+        datatypes::{DataType, Field, Schema, TimeUnit},
     };
     use rstest::rstest;
 
     use super::*;
 
-    fn ts_init_batch(values: Vec<u64>) -> RecordBatch {
-        let field = Field::new("ts_init", DataType::UInt64, false);
+    fn ts_init_batch(values: impl Into<UInt64Array>) -> RecordBatch {
+        let field = Field::new("ts_init", DataType::UInt64, true);
         let schema = Arc::new(Schema::new(vec![field]));
-        let column: ArrayRef = Arc::new(UInt64Array::from(values));
+        let column: ArrayRef = Arc::new(values.into());
         RecordBatch::try_new(schema, vec![column]).unwrap()
     }
 
@@ -91,11 +93,36 @@ mod tests {
 
     #[rstest]
     fn record_batch_ts_init_range_rejects_batches_without_rows() {
-        let error = record_batch_ts_init_range(&[ts_init_batch(Vec::new())]).unwrap_err();
+        let error = record_batch_ts_init_range(&[ts_init_batch(Vec::<u64>::new())]).unwrap_err();
 
         assert_eq!(
             error.to_string(),
             "Record batches contain no non-null ts_init values"
         );
+    }
+
+    #[rstest]
+    fn record_batch_ts_init_range_rejects_nulls() {
+        let batches = [ts_init_batch(vec![Some(20), None, Some(10)])];
+
+        let error = record_batch_ts_init_range(&batches).unwrap_err();
+
+        assert_eq!(error.to_string(), "ts_init column contains null values");
+    }
+
+    #[rstest]
+    fn record_batch_ts_init_range_reads_utc_nanoseconds() {
+        let field = Field::new(
+            "ts_init",
+            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+            false,
+        );
+        let column: ArrayRef =
+            Arc::new(TimestampNanosecondArray::from(vec![20, 10]).with_timezone("UTC"));
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(vec![field])), vec![column]).unwrap();
+
+        let range = record_batch_ts_init_range(&[batch]).unwrap();
+
+        assert_eq!(range, (10, 20));
     }
 }

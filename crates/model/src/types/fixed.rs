@@ -212,6 +212,23 @@ pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
     Ok(())
 }
 
+/// Checks that a value with the given `precision` can be converted to `f64`.
+///
+/// # Errors
+///
+/// Returns an error if `precision` exceeds [`MAX_FLOAT_PRECISION`].
+pub fn check_float_precision(precision: u8) -> CorrectnessResult<()> {
+    if precision > MAX_FLOAT_PRECISION {
+        return Err(CorrectnessError::PredicateViolation {
+            message: format!(
+                "Fixed-point precision {precision} exceeds maximum float precision {MAX_FLOAT_PRECISION}"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 /// Returns `true` when two precisions encode their `raw` values at the same scale.
 ///
 /// The effective scale for a given precision is `max(precision, FIXED_PRECISION)`:
@@ -1400,6 +1417,33 @@ mod tests {
         let precision = WEI_PRECISION + 1;
         let result = check_fixed_precision(precision);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_check_float_precision_matches_supported_range() {
+        for precision in 0..=u8::MAX {
+            let expected = if precision <= MAX_FLOAT_PRECISION {
+                Ok(())
+            } else {
+                Err(CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Fixed-point precision {precision} exceeds maximum float precision 16"
+                    ),
+                })
+            };
+
+            assert_eq!(check_float_precision(precision), expected);
+        }
+    }
+
+    #[rstest]
+    fn test_check_float_precision_error_display() {
+        let error = check_float_precision(18).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Fixed-point precision 18 exceeds maximum float precision 16"
+        );
     }
 
     #[cfg(not(feature = "defi"))]

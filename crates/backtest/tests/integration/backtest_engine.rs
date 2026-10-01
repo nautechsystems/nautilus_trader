@@ -1076,7 +1076,13 @@ fn create_engine() -> BacktestEngine {
 }
 
 fn create_engine_with_fee_model(fee_model: FeeModelHandle) -> BacktestEngine {
-    let config = BacktestEngineConfig::default();
+    create_engine_with_config(BacktestEngineConfig::default(), fee_model)
+}
+
+fn create_engine_with_config(
+    config: BacktestEngineConfig,
+    fee_model: FeeModelHandle,
+) -> BacktestEngine {
     let mut engine = BacktestEngine::new(config).unwrap();
     let venue_config = SimulatedVenueConfig::builder()
         .venue(Venue::from("BINANCE"))
@@ -7258,7 +7264,7 @@ fn test_end_returns_streaming_write_error() {
         instance_id: Some(instance_id),
         streaming: Some(StreamingConfig::new(
             catalog_path.clone(),
-            "file".to_string(),
+            None,
             1_000,
             false,
             RotationConfig::NoRotation,
@@ -7292,4 +7298,40 @@ fn test_end_returns_streaming_write_error() {
              is 16"
         ),
     );
+}
+
+mod serial_tests {
+    use super::*;
+
+    #[rstest]
+    fn test_reset_run_with_shutdown_on_error_replays_data(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let config = BacktestEngineConfig {
+            shutdown_on_error: true,
+            ..Default::default()
+        };
+
+        let fee_model = FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into();
+        let mut engine = create_engine_with_config(config, fee_model);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+        let quotes = vec![
+            quote(instrument_id, "2500.00", "2500.50", 5_000_000_000),
+            quote(instrument_id, "2501.00", "2501.50", 6_000_000_000),
+            quote(instrument_id, "2502.00", "2502.50", 7_000_000_000),
+        ];
+        engine.add_data(quotes, None, true, true).unwrap();
+        engine.run(None, None, None, false).unwrap();
+        let first_iterations = engine.get_result().iterations;
+        engine.reset().unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+        let second_iterations = engine.get_result().iterations;
+
+        assert_eq!(first_iterations, 3);
+        assert_eq!(second_iterations, 3);
+        assert!(!engine.kernel().is_shutdown_requested());
+    }
 }

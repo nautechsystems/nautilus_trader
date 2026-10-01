@@ -29,6 +29,7 @@ use nautilus_model::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
         OrderBookDepth, QuoteTick, TradeTick,
     },
+    identifiers::InstrumentId,
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
@@ -1231,6 +1232,8 @@ pub enum NautilusWsMessage {
     Deltas(OrderBookDeltas),
     /// Parsed order book depth-10 snapshot.
     Depth(Box<OrderBookDepth>),
+    /// An order book frame that failed to parse, leaving the instrument's book out of sync.
+    BookInvalid(InstrumentId),
     /// Parsed candle/bar.
     Candle(Bar),
     /// Mark price update.

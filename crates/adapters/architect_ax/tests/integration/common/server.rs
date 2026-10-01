@@ -68,6 +68,12 @@ pub(crate) struct TestServerState {
     pub subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
     pub fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
+    // When set, L2 and L3 subscribes are acknowledged without a book snapshot
+    pub withhold_book: Arc<AtomicBool>,
+    // When set, L2 and L3 snapshots carry `st: false`, which the adapter cannot convert
+    pub invalid_book: Arc<AtomicBool>,
+    // When set, an unsubscribe is answered with an L2 frame sent before the venue processed it
+    pub trailing_book: Arc<AtomicBool>,
     pub authenticated: Arc<AtomicBool>,
     pub disconnect_trigger: Arc<AtomicBool>,
     pub ping_count: Arc<AtomicUsize>,
@@ -110,6 +116,9 @@ impl Default for TestServerState {
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            withhold_book: Arc::new(AtomicBool::new(false)),
+            invalid_book: Arc::new(AtomicBool::new(false)),
+            trailing_book: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -305,21 +314,13 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
 
-                        if level != "TRADES" {
-                            let book_msg = match level {
-                                "LEVEL_1" => load_test_data("ws_md_book_l1.json"),
-                                "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
-                                "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
-                                _ => load_test_data("ws_md_book_l1.json"),
-                            };
-
-                            if socket
+                        if let Some(book_msg) = book_message(&state, level)
+                            && socket
                                 .send(Message::Text(book_msg.to_string().into()))
                                 .await
                                 .is_err()
-                            {
-                                break;
-                            }
+                        {
+                            break;
                         }
 
                         if level == "TRADES" || include_trades {
@@ -346,6 +347,17 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         {
                             let mut events = state.subscription_events.lock().await;
                             events.retain(|(t, _)| !t.starts_with(symbol));
+                        }
+
+                        if state.trailing_book.load(Ordering::Relaxed)
+                            && socket
+                                .send(Message::Text(
+                                    load_test_data("ws_md_book_l2.json").to_string().into(),
+                                ))
+                                .await
+                                .is_err()
+                        {
+                            break;
                         }
 
                         let ack = json!({
@@ -456,6 +468,27 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
+}
+
+// Returns the book frame a subscribe at `level` delivers, honoring the withhold and invalid knobs
+fn book_message(state: &TestServerState, level: &str) -> Option<serde_json::Value> {
+    let is_book = matches!(level, "LEVEL_2" | "LEVEL_3");
+
+    if level == "TRADES" || (is_book && state.withhold_book.load(Ordering::Relaxed)) {
+        return None;
+    }
+
+    let mut book_msg = match level {
+        "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
+        "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
+        _ => load_test_data("ws_md_book_l1.json"),
+    };
+
+    if is_book && state.invalid_book.load(Ordering::Relaxed) {
+        book_msg["st"] = json!(false);
+    }
+
+    Some(book_msg)
 }
 
 async fn handle_orders_websocket(

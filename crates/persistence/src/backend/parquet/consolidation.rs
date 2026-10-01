@@ -846,13 +846,13 @@ impl ParquetDataCatalog {
         let mut file_start_ns: Option<u64> = None; // Track contiguity across periods
 
         for query_info in queries_to_execute {
-            // Query data for this period using query_typed_data
+            // Query data for this period
             let instrument_ids = identifier.map(|id| vec![id.to_string()]);
 
             // Use optimize_file_loading=false to match Python behavior:
             // During consolidation, we want to read only the specific files being consolidated,
             // not the entire directory. This ensures precise file control during consolidation.
-            let period_data = self.query_typed_data::<T>(
+            let period_data = self.query::<T>(
                 instrument_ids,
                 Some(UnixNanos::from(query_info.query_start)),
                 Some(UnixNanos::from(query_info.query_end)),

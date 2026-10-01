@@ -16,7 +16,7 @@
 use nautilus_model::{orderbook::OrderBook, types::Quantity};
 use pyo3::prelude::*;
 
-use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator};
+use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator, python::float_precision};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -62,18 +62,36 @@ impl BookImbalanceRatio {
     }
 
     #[pyo3(name = "handle_book")]
-    fn py_handle_book(&mut self, book: &OrderBook) {
+    fn py_handle_book(&mut self, book: &OrderBook) -> PyResult<()> {
+        check_sizes(book.best_bid_size(), book.best_ask_size())?;
         self.handle_book(book);
+        Ok(())
     }
 
     #[pyo3(name = "update")]
     #[pyo3(signature = (best_bid=None, best_ask=None))]
-    fn py_update(&mut self, best_bid: Option<Quantity>, best_ask: Option<Quantity>) {
+    fn py_update(
+        &mut self,
+        best_bid: Option<Quantity>,
+        best_ask: Option<Quantity>,
+    ) -> PyResult<()> {
+        check_sizes(best_bid, best_ask)?;
         self.update(best_bid, best_ask);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
+}
+
+fn check_sizes(best_bid: Option<Quantity>, best_ask: Option<Quantity>) -> PyResult<()> {
+    // The ratio only converts sizes once both sides are present
+    if let (Some(best_bid), Some(best_ask)) = (best_bid, best_ask) {
+        float_precision::check(best_bid.precision)?;
+        float_precision::check(best_ask.precision)?;
+    }
+
+    Ok(())
 }

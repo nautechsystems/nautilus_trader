@@ -37,7 +37,7 @@ mod tests;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    cmp::Reverse,
+    cmp::{Ordering, Reverse},
     fmt::{Debug, Display},
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
@@ -89,7 +89,11 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderError, OrderList},
     position::Position,
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION, check_fixed_precision},
+        price::PriceRaw,
+    },
 };
 pub use position::CacheSnapshotRef;
 use position::PositionSnapshotFrame;
@@ -2398,7 +2402,10 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the `bar` to the cache.
+    /// Adds the `bar` to the cache, keeping the per-`bar_type` series newest-first.
+    ///
+    /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+    /// `ts_event` replaces the front bar for time bars.
     ///
     /// # Errors
     ///
@@ -2416,11 +2423,11 @@ impl Cache {
             .bars
             .entry(bar.bar_type)
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
-        bars.push_front(bar);
+        insert_bar(bars, bar);
         Ok(())
     }
 
-    /// Adds the `bars` to the cache.
+    /// Adds the `bars` to the cache, each following [`Cache::add_bar`].
     ///
     /// # Errors
     ///
@@ -2445,8 +2452,33 @@ impl Cache {
             .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
 
         for bar in bars {
-            bars_deque.push_front(*bar);
+            insert_bar(bars_deque, *bar);
         }
+        Ok(())
+    }
+
+    /// Adds the historical `bar` at its ordered position in the series.
+    ///
+    /// Request-generated bars are added this way, since the cache is their only
+    /// delivery path: bars older than the front are kept rather than skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the bar to the backing database fails.
+    pub fn add_bar_historical(&mut self, bar: Bar) -> anyhow::Result<()> {
+        log::debug!("Adding historical `Bar` {}", bar.bar_type);
+
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_bar(&bar)?;
+        }
+
+        let bars = self
+            .bars
+            .entry(bar.bar_type)
+            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
+        insert_bar_historical(bars, bar);
         Ok(())
     }
 
@@ -5676,10 +5708,11 @@ impl Cache {
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
     ///
-    /// # Panics
-    ///
-    /// Panics if `price_type` is [`PriceType::Mid`] and the quote price precision is already at
-    /// the maximum fixed precision.
+    /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
+    /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
+    /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
+    /// limit or raw range rules out `p + 1`, and when `p` is the maximum float precision (16),
+    /// so a midpoint of a float-convertible quote stays float-convertible.
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -5692,13 +5725,50 @@ impl Cache {
                 .get(instrument_id)
                 .and_then(|quotes| quotes.front().map(|quote| quote.ask_price)),
             PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
-                quotes.front().map(|quote| {
-                    let mid = (quote.ask_price.as_decimal() + quote.bid_price.as_decimal())
-                        / Decimal::TWO;
+                let quote = quotes.front()?;
+                let bid = quote.bid_price;
+                let ask = quote.ask_price;
+                if bid.is_undefined() || bid.is_error() || ask.is_undefined() || ask.is_error() {
+                    return None;
+                }
 
-                    Price::from_decimal_dp(mid, quote.bid_price.precision + 1)
-                        .expect("Invalid mid price for Cache::price")
-                })
+                // Also rejects `ERROR_PRICE`, whose precision is 255
+                let precision = bid.precision;
+                check_fixed_precision(precision).ok()?;
+
+                #[allow(
+                    clippy::useless_conversion,
+                    reason = "i128::from is a widening conversion when PriceRaw is i64"
+                )]
+                let (mut bid_raw, mut ask_raw) = (i128::from(bid.raw()), i128::from(ask.raw()));
+
+                if precision < FIXED_PRECISION {
+                    let factor = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
+                    bid_raw = (bid_raw / factor) * factor;
+                    ask_raw = (ask_raw / factor) * factor;
+                }
+                let sum = bid_raw.checked_add(ask_raw)?;
+
+                if precision < FIXED_PRECISION {
+                    let raw = PriceRaw::try_from(sum / 2).ok()?;
+                    return Price::from_raw_checked(raw, precision + 1).ok();
+                }
+
+                if precision != MAX_FLOAT_PRECISION
+                    && let Some(price) = sum
+                        .checked_mul(5)
+                        .and_then(|raw| PriceRaw::try_from(raw).ok())
+                        .and_then(|raw| Price::from_raw_checked(raw, precision + 1).ok())
+                {
+                    return Some(price);
+                }
+
+                let mut raw = sum / 2;
+                if sum % 2 != 0 && raw % 2 != 0 {
+                    raw += sum.signum();
+                }
+                let raw = PriceRaw::try_from(raw).ok()?;
+                Price::from_raw_checked(raw, precision).ok()
             }),
             PriceType::Last => self
                 .trades
@@ -6604,4 +6674,46 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
+}
+
+/// Inserts `bar` into the newest-first bars deque for a `bar_type`.
+///
+/// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+/// `ts_event` replaces the front bar for time bars.
+fn insert_bar(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
+    match bars.front() {
+        None => bars.push_front(bar),
+        Some(front) => match bar.ts_event.cmp(&front.ts_event) {
+            Ordering::Greater => bars.push_front(bar),
+            Ordering::Equal => {
+                if bar.bar_type.spec().is_time_aggregated() {
+                    bars.replace_front(bar);
+                } else {
+                    bars.push_front(bar);
+                }
+            }
+            Ordering::Less => log::debug!(
+                "Skipping bar {bar} with `ts_event` older than last bar `ts_event` {}",
+                front.ts_event,
+            ),
+        },
+    }
+}
+
+/// Inserts `bar` at its ordered position in the newest-first bars deque.
+///
+/// Bars older than the front are kept; a time bar replaces the cached bar
+/// with an equal `ts_event`.
+fn insert_bar_historical(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
+    let index = bars.partition_point(|cached| cached.ts_event > bar.ts_event);
+
+    if bar.bar_type.spec().is_time_aggregated()
+        && bars
+            .get(index)
+            .is_some_and(|cached| cached.ts_event == bar.ts_event)
+    {
+        bars.replace(index, bar);
+    } else {
+        bars.insert(index, bar);
+    }
 }

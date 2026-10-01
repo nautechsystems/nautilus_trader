@@ -147,7 +147,7 @@ pub fn parse_ws_order_book_deltas(
             instrument.id(),
             BookAction::Add,
             order,
-            RecordFlag::F_LAST as u8,
+            RecordFlag::F_SNAPSHOT as u8,
             0, // sequence
             ts_event,
             ts_init,
@@ -170,13 +170,18 @@ pub fn parse_ws_order_book_deltas(
             instrument.id(),
             BookAction::Add,
             order,
-            RecordFlag::F_LAST as u8,
+            RecordFlag::F_SNAPSHOT as u8,
             0, // sequence
             ts_event,
             ts_init,
         );
 
         deltas.push(delta);
+    }
+
+    // One event group, so consumers never observe a partially rebuilt book
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(OrderBookDeltas::new(instrument.id(), deltas))
@@ -952,18 +957,46 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 3); // clear + bid + ask
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
 
         let bid_delta = &deltas.deltas[1];
         assert_eq!(bid_delta.action, BookAction::Add);
         assert_eq!(bid_delta.order.side, OrderSide::Buy.into());
-        assert!(bid_delta.order.size.is_positive());
+        assert_eq!(bid_delta.order.price.as_decimal(), dec!(50000.0));
+        assert_eq!(bid_delta.order.size.as_decimal(), dec!(1.0));
         assert_eq!(bid_delta.order.order_id, 0);
+        assert_eq!(bid_delta.flags, RecordFlag::F_SNAPSHOT as u8);
 
         let ask_delta = &deltas.deltas[2];
         assert_eq!(ask_delta.action, BookAction::Add);
         assert_eq!(ask_delta.order.side, OrderSide::Sell.into());
-        assert!(ask_delta.order.size.is_positive());
+        assert_eq!(ask_delta.order.price.as_decimal(), dec!(50001.0));
+        assert_eq!(ask_delta.order.size.as_decimal(), dec!(2.0));
         assert_eq!(ask_delta.order.order_id, 0);
+        assert_eq!(
+            ask_delta.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_book_deltas_empty_book_is_lone_clear() {
+        let instrument = create_test_instrument();
+
+        let book = WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [vec![], vec![]],
+            time: 1_704_470_400_000,
+        };
+
+        let deltas = parse_ws_order_book_deltas(&book, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 
     #[rstest]

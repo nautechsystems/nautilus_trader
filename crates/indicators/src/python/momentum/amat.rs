@@ -19,6 +19,7 @@ use pyo3::prelude::*;
 
 use crate::{
     average::MovingAverageType, indicator::Indicator, momentum::amat::ArcherMovingAveragesTrends,
+    python::float_precision,
 };
 
 #[pymethods]
@@ -109,8 +110,10 @@ impl ArcherMovingAveragesTrends {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

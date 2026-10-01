@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Native Parquet I/O compatibility exports.
+//! Order book synchronization and recovery for Betfair.
+//!
+//! - [`sync`] owns per-market image tracking and recovery state transitions.
+//! - [`recovery`] owns subscription and recovery tasks, using the shared retry runner.
+//!
+//! The data client routes market changes through the tracker and starts recovery when needed.
+//! Recovery tasks use the tracker to claim ownership; incoming market images complete recovery
+//! through the same tracker. Outcome types come from [`nautilus_live::book`]. Betfair images whole
+//! markets on one market subscription per connection, so the tracker keeps one book per market and
+//! a replacement resubscribes every subscribed market.
 
-pub use crate::backend::parquet::io::*;
+pub(crate) mod recovery;
+pub(crate) mod sync;
+
+pub(crate) use nautilus_live::book::BookSequenceOutcome;

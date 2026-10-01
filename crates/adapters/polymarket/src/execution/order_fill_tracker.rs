@@ -34,10 +34,15 @@ use ustr::Ustr;
 use super::settlement::SettlementRegistry;
 use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
 
-/// Cumulative fill state for a single order.
+/// Cumulative fill state for a single venue order.
+///
+/// A modified order continues on a replacement venue order, so `prior_qty` holds the order
+/// quantity carried by earlier venue orders, and the order quantity is `prior_qty` plus
+/// `submitted_qty`.
 #[derive(Debug, Clone, Copy)]
 struct OrderFillState {
     submitted_qty: Quantity,
+    prior_qty: Quantity,
     cumulative_filled: Quantity,
     order_side: OrderSide,
 }
@@ -99,10 +104,11 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
+        prior_qty: Quantity,
         filled_qty: Quantity,
         order_side: OrderSide,
     ) {
-        let mut state = new_order_state(submitted_qty, order_side);
+        let mut state = new_order_state(submitted_qty, prior_qty, order_side);
         state.cumulative_filled = filled_qty;
         self.inner.lock().orders.insert(venue_order_id, state);
     }
@@ -196,13 +202,14 @@ impl OrderFillTrackerMap {
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
         submitted_qty: Quantity,
+        prior_qty: Quantity,
         order_side: OrderSide,
     ) -> Vec<BufferedFill> {
         let mut guard = self.inner.lock();
         guard
             .orders
             .entry(venue_order_id)
-            .or_insert_with(|| new_order_state(submitted_qty, order_side));
+            .or_insert_with(|| new_order_state(submitted_qty, prior_qty, order_side));
         take_and_prepare_fills(&mut guard, venue_order_id, client_order_id)
     }
 
@@ -221,10 +228,15 @@ impl OrderFillTrackerMap {
         if !guard.pending_fills.contains_key(&venue_order_id) {
             return None;
         }
-        guard
-            .orders
-            .entry(venue_order_id)
-            .or_insert_with(|| new_order_state(submitted_qty, order_side));
+
+        guard.orders.entry(venue_order_id).or_insert_with(|| {
+            new_order_state(
+                submitted_qty,
+                Quantity::zero(submitted_qty.precision),
+                order_side,
+            )
+        });
+
         Some(take_and_prepare_fills(
             &mut guard,
             venue_order_id,
@@ -280,51 +292,17 @@ impl OrderFillTrackerMap {
         reverse_fill_in(&mut self.inner.lock().orders, venue_order_id, quantity);
     }
 
-    /// Snap each report's `last_qty` against the registered submitted quantity
-    /// for its `venue_order_id`. Reports for orders the tracker does not know
-    /// about (e.g. orders from another session) pass through unchanged.
-    ///
-    /// Commission is intentionally not recomputed: it tracks the venue charge
-    /// from the on-chain fill, which is independent of our local snap.
-    pub(crate) fn snap_fill_reports(&self, reports: &mut [FillReport]) {
-        let guard = self.inner.lock();
-
-        for report in reports {
-            report.last_qty =
-                snap_fill_qty_in(&guard.orders, &report.venue_order_id, report.last_qty);
-        }
-    }
-
-    /// Snap a single fill qty DOWN to `submitted_qty` when the venue reports
-    /// dust overfill (within `DUST_SNAP_THRESHOLD_DEC`).
-    ///
-    /// Overfill snapping is required because the engine rejects fills past
-    /// `submitted_qty`. Underfill is intentionally left alone here: a single
-    /// partial fill that happens to land near submitted_qty might still be
-    /// followed by additional matches, or the order might end up canceled
-    /// with the dust remaining as legitimate leaves. Terminal quantity
-    /// normalization handles the CLOB cent-tick truncation
-    /// case after all associated trades confirm.
-    ///
-    /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
-    pub(crate) fn snap_fill_qty(
-        &self,
-        venue_order_id: &VenueOrderId,
-        fill_qty: Quantity,
-    ) -> Quantity {
-        let guard = self.inner.lock();
-        snap_fill_qty_in(&guard.orders, venue_order_id, fill_qty)
-    }
-
     /// Raise the registered quantity to the cumulative BUY fills when they exceed it, returning
-    /// the new quantity to emit via `OrderUpdated` (or `None` when no raise is needed).
+    /// the new order quantity to emit via `OrderUpdated` (or `None` when no raise is needed).
+    /// The order quantity includes the quantity carried by earlier venue orders of a modified
+    /// order.
     ///
     /// A Polymarket BUY is bounded by the USDC it spends (`makerAmount`), so a marketable fill
-    /// below the limit price returns more shares than the nominal quantity. The engine rejects a
-    /// fill past the order quantity, so the quantity is raised to the actual fill before the
-    /// `OrderFilled` applies. SELL orders are share-denominated and never overfill, so they always
-    /// return `None`. Dust overfills are handled earlier by `snap_fill_qty`, so only a gross
-    /// overfill reaches here.
+    /// below the limit price returns more shares than the nominal quantity, and market BUY quote
+    /// conversion can leave a few microshares of overfill. The engine rejects a fill past the
+    /// order quantity, so the quantity is raised to the actual fill before the `OrderFilled`
+    /// applies, and the fill keeps the venue quantity. SELL orders are share-denominated and never
+    /// overfill, so they always return `None`.
     ///
     /// Raising `submitted_qty` to exactly the cumulative fill makes the following `OrderFilled`
     /// reach `Filled`. That is correct because an overfill only ever occurs on a marketable taker
@@ -339,7 +317,8 @@ impl OrderFillTrackerMap {
         buy_overfill_bump_in(&mut guard.orders, venue_order_id)
     }
 
-    /// Returns the venue-filled quantity when a terminal order has sub-cent-share leaves.
+    /// Returns the order quantity at the venue-filled quantity when a terminal order has
+    /// sub-cent-share leaves.
     ///
     /// The returned quantity is used for an order-only reconciliation update. It is not a fill and
     /// must not change positions, balances, or commissions. The entry is removed on normalization
@@ -356,12 +335,12 @@ impl OrderFillTrackerMap {
         let leaves = s.submitted_qty.as_decimal() - s.cumulative_filled.as_decimal();
 
         if leaves > Decimal::ZERO && leaves < DUST_SNAP_THRESHOLD_DEC {
-            let filled_qty = s.cumulative_filled;
+            let filled_qty = s.prior_qty + s.cumulative_filled;
 
             log::debug!(
                 "Normalizing terminal order {venue_order_id} quantity from {} to {filled_qty} \
                  (non-economic leaves={leaves})",
-                s.submitted_qty,
+                s.prior_qty + s.submitted_qty,
             );
             guard.orders.remove(venue_order_id);
             Some(filled_qty)
@@ -399,9 +378,14 @@ impl OrderFillTrackerMap {
     }
 }
 
-fn new_order_state(submitted_qty: Quantity, order_side: OrderSide) -> OrderFillState {
+fn new_order_state(
+    submitted_qty: Quantity,
+    prior_qty: Quantity,
+    order_side: OrderSide,
+) -> OrderFillState {
     OrderFillState {
         submitted_qty,
+        prior_qty,
         cumulative_filled: Quantity::zero(submitted_qty.precision),
         order_side,
     }
@@ -418,14 +402,14 @@ fn buy_overfill_bump_in(
 
     if state.cumulative_filled > state.submitted_qty {
         state.submitted_qty = state.cumulative_filled;
-        Some(state.cumulative_filled)
+        Some(state.prior_qty + state.cumulative_filled)
     } else {
         None
     }
 }
 
-/// Drains the buffered fills for `venue_order_id`, stamping the client order ID and snapping and
-/// recording each one. The caller must hold the lock and have registered the order first.
+/// Drains the buffered fills for `venue_order_id`, stamping the client order ID and recording
+/// each one. The caller must hold the lock and have registered the order first.
 fn take_and_prepare_fills(
     inner: &mut TrackerInner,
     venue_order_id: VenueOrderId,
@@ -438,8 +422,6 @@ fn take_and_prepare_fills(
         .into_iter()
         .map(|mut buffered| {
             buffered.report.client_order_id = client_order_id;
-            buffered.report.last_qty =
-                snap_fill_qty_in(&inner.orders, &venue_order_id, buffered.report.last_qty);
             record_fill_in(&mut inner.orders, &venue_order_id, buffered.report.last_qty);
             buffered
         })
@@ -470,10 +452,14 @@ impl OrderFillTrackerMap {
         _size_precision: u8,
         _price_precision: u8,
     ) {
-        self.inner
-            .lock()
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        self.inner.lock().orders.insert(
+            venue_order_id,
+            new_order_state(
+                submitted_qty,
+                Quantity::zero(submitted_qty.precision),
+                order_side,
+            ),
+        );
     }
 
     /// Returns the registered submitted quantity for an order, if tracked.
@@ -563,28 +549,6 @@ fn reverse_fill_in(
     }
 }
 
-fn snap_fill_qty_in(
-    orders: &AHashMap<VenueOrderId, OrderFillState>,
-    venue_order_id: &VenueOrderId,
-    fill_qty: Quantity,
-) -> Quantity {
-    match orders.get(venue_order_id) {
-        Some(s) => {
-            let diff = s.submitted_qty.as_decimal() - fill_qty.as_decimal();
-            if diff < Decimal::ZERO && diff.abs() < DUST_SNAP_THRESHOLD_DEC {
-                log::debug!(
-                    "Snapping overfill {fill_qty} -> {} (dust={diff})",
-                    s.submitted_qty,
-                );
-                s.submitted_qty
-            } else {
-                fill_qty
-            }
-        }
-        None => fill_qty,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::{UUID4, UnixNanos};
@@ -594,7 +558,6 @@ mod tests {
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
-    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -610,6 +573,7 @@ mod tests {
             venue_order_id,
             None,
             Quantity::from("100"),
+            Quantity::zero(Quantity::from("100").precision),
             OrderSide::Buy,
         );
         tracker.record_fill(&venue_order_id, Quantity::from("25"));
@@ -617,6 +581,7 @@ mod tests {
             venue_order_id,
             None,
             Quantity::from("100"),
+            Quantity::zero(Quantity::from("100").precision),
             OrderSide::Buy,
         );
         assert!(drained.is_empty());
@@ -720,6 +685,7 @@ mod tests {
             venue_order_id,
             Some(ClientOrderId::from("O-FAILED-BEFORE-DRAIN")),
             Quantity::new(10.0, 6),
+            Quantity::zero(Quantity::new(10.0, 6).precision),
             OrderSide::Buy,
         );
         let buffered = &drained[0];
@@ -763,146 +729,6 @@ mod tests {
             tracker.get_cumulative_filled(&venue_order_id),
             Some(Quantity::zero(6))
         );
-    }
-
-    // snap_fill_qty is overfill-only. Underfill is preserved so partial fills
-    // followed by cancel keep their venue-reported size; terminal quantity
-    // normalization handles CLOB cent-tick truncation without a synthetic fill.
-    #[rstest]
-    // Underfill within the dust band: NOT snapped. The fill is recorded
-    // as-is; terminal normalization later lowers the order quantity.
-    #[case::underfill_dust_preserved(23.696681, 23.690000, 23.690000)]
-    #[case::underfill_near_band_preserved(100.000000, 99.990100, 99.990100)]
-    // Underfill at exactly the band: NOT snapped.
-    #[case::underfill_at_band(100.000000, 99.990000, 99.990000)]
-    // Underfill above the band: NOT snapped (real partial leaves).
-    #[case::underfill_above_band(100.000000, 99.980000, 99.980000)]
-    // Underfill far past band: NOT snapped.
-    #[case::large_underfill(100.000000, 50.000000, 50.000000)]
-    // Overfill within the band: V2 market BUY where the SDK truncates the
-    // registered base qty to USDC scale but the on-chain fill comes back at
-    // full precision. Observed production drift is 4-66 ulps. Snap DOWN so
-    // the engine does not reject as overfill.
-    #[case::overfill_dust(714.285710, 714.285714, 714.285710)]
-    // Overfill near the band (0.0099 < 0.01): still snaps.
-    #[case::overfill_near_band(100.000000, 100.009900, 100.000000)]
-    // Overfill at exactly the band must NOT snap (exclusive boundary).
-    #[case::overfill_at_band(100.000000, 100.010000, 100.010000)]
-    // Overfill above the band: leave fill alone, surfaces as engine-side
-    // error since this is no longer dust.
-    #[case::overfill_above_band(100.000000, 100.020000, 100.020000)]
-    // Overfill far past band: leave fill alone.
-    #[case::large_overfill(100.000000, 150.000000, 150.000000)]
-    // Exact match: no-op (returns the fill qty, which equals submitted).
-    #[case::exact(100.000000, 100.000000, 100.000000)]
-    fn test_snap_fill_qty(#[case] submitted: f64, #[case] fill: f64, #[case] expected: f64) {
-        let tracker = OrderFillTrackerMap::new();
-        let venue_order_id = VenueOrderId::from("order-1");
-        tracker.register(
-            venue_order_id,
-            Quantity::new(submitted, 6),
-            OrderSide::Buy,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-
-        let snapped = tracker.snap_fill_qty(&venue_order_id, Quantity::new(fill, 6));
-        assert_eq!(snapped, Quantity::new(expected, 6));
-    }
-
-    // The band is in absolute share units; it does not scale with
-    // size_precision. CLOB cent-tick truncation and V2 USDC-scale truncation
-    // are both fixed in absolute share terms, so the threshold is too.
-    // snap_fill_qty is overfill-only, so underfill cases pass through.
-    #[rstest]
-    #[case::underfill_within_band_preserved(100.000, 99.995, 99.995)]
-    #[case::underfill_above_band(100.000, 95.000, 95.000)]
-    #[case::overfill_within_band(100.000, 100.005, 100.000)]
-    #[case::overfill_above_band(100.000, 100.050, 100.050)]
-    fn test_snap_fill_qty_at_lower_precision(
-        #[case] submitted: f64,
-        #[case] fill: f64,
-        #[case] expected: f64,
-    ) {
-        let tracker = OrderFillTrackerMap::new();
-        let venue_order_id = VenueOrderId::from("order-1");
-        tracker.register(
-            venue_order_id,
-            Quantity::new(submitted, 3),
-            OrderSide::Buy,
-            InstrumentId::from("TEST.POLYMARKET"),
-            3,
-            2,
-        );
-
-        let snapped = tracker.snap_fill_qty(&venue_order_id, Quantity::new(fill, 3));
-        assert_eq!(snapped, Quantity::new(expected, 3));
-    }
-
-    #[rstest]
-    fn test_snap_fill_qty_unregistered_order() {
-        let tracker = OrderFillTrackerMap::new();
-        let venue_order_id = VenueOrderId::from("unknown");
-        let fill_qty = Quantity::new(50.0, 6);
-        let result = tracker.snap_fill_qty(&venue_order_id, fill_qty);
-        assert_eq!(result, fill_qty);
-    }
-
-    // Verifies `snap_fill_reports`, used by REST callers (`generate_fill_reports`,
-    // `generate_mass_status`) snaps each report's `last_qty` and leaves
-    // unregistered reports alone. Commission is intentionally untouched.
-    #[rstest]
-    fn test_snap_fill_reports_snaps_each_in_place() {
-        use nautilus_model::{
-            enums::LiquiditySide, identifiers::TradeId, reports::FillReport, types::Money,
-        };
-
-        let tracker = OrderFillTrackerMap::new();
-        let known_id = VenueOrderId::from("known");
-        let unknown_id = VenueOrderId::from("unknown");
-        tracker.register(
-            known_id,
-            Quantity::new(714.285710, 6),
-            OrderSide::Buy,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-
-        let make_report =
-            |venue_order_id: VenueOrderId, last_qty: f64, commission: Decimal| FillReport {
-                account_id: AccountId::from("POLY-001"),
-                instrument_id: InstrumentId::from("TEST.POLYMARKET"),
-                venue_order_id,
-                trade_id: TradeId::from("trade"),
-                order_side: OrderSide::Buy,
-                last_qty: Quantity::new(last_qty, 6),
-                last_px: Price::new(0.55, 2),
-                commission: Money::from_decimal(commission, pusd()).unwrap(),
-                liquidity_side: LiquiditySide::Taker,
-                avg_px: None,
-                report_id: UUID4::new(),
-                ts_event: UnixNanos::default(),
-                ts_init: UnixNanos::default(),
-                client_order_id: None,
-                venue_position_id: None,
-            };
-
-        // Known order: 4-ulp overfill, within band, last_qty must snap down.
-        // Unknown order: tracker has no entry, reports pass through unchanged.
-        let mut reports = vec![
-            make_report(known_id, 714.285714, dec!(1.234)),
-            make_report(unknown_id, 999.0, dec!(5.678)),
-        ];
-
-        tracker.snap_fill_reports(&mut reports);
-
-        assert_eq!(reports[0].last_qty, Quantity::new(714.285710, 6));
-        // Commission untouched even though qty was snapped: it tracks venue truth.
-        assert_eq!(reports[0].commission.as_decimal(), dec!(1.234));
-        assert_eq!(reports[1].last_qty, Quantity::new(999.0, 6));
-        assert_eq!(reports[1].commission.as_decimal(), dec!(5.678));
     }
 
     #[rstest]
@@ -1233,19 +1059,148 @@ mod tests {
         );
     }
 
-    // A dust overfill is snapped DOWN by snap_fill_qty before recording, so it never reaches
-    // buy_overfill_bump as a raise: the two mechanisms do not double-handle the same fill.
+    // A replacement venue order carries only the leaves of a modified order, so the order-level
+    // quantities it returns add the quantity carried by earlier venue orders.
     #[rstest]
-    fn test_buy_overfill_bump_ignores_dust_snapped_fill() {
+    fn test_replacement_order_returns_order_level_qty() {
+        let tracker = OrderFillTrackerMap::new();
+        let overfilled = VenueOrderId::from("replacement-overfill");
+        let underfilled = VenueOrderId::from("replacement-underfill");
+        for venue_order_id in [overfilled, underfilled] {
+            tracker.register_and_take_pending_fills(
+                venue_order_id,
+                None,
+                Quantity::from("15.000000"),
+                Quantity::from("5.000000"),
+                OrderSide::Buy,
+            );
+        }
+
+        tracker.record_fill(&overfilled, Quantity::from("15.000058"));
+        tracker.record_fill(&underfilled, Quantity::from("14.995000"));
+
+        let bumped = tracker.buy_overfill_bump(&overfilled);
+        let normalized = tracker.check_terminal_quantity_normalization(&underfilled);
+
+        assert_eq!(bumped, Some(Quantity::from("20.000058")));
+        assert_eq!(
+            tracker.submitted_qty(&overfilled),
+            Some(Quantity::from("15.000058"))
+        );
+        assert_eq!(normalized, Some(Quantity::from("19.995000")));
+    }
+
+    // Market BUY quote conversion leaves microshares of overfill, which raise the quantity
+    // like any other BUY overfill so the fill keeps the venue quantity.
+    #[rstest]
+    fn test_buy_overfill_bump_raises_to_dust_overfill() {
         let tracker = OrderFillTrackerMap::new();
         let vid = VenueOrderId::from("order-1");
-        register_buy(&tracker, vid, 100.0);
+        tracker.register(
+            vid,
+            Quantity::from("714.285710"),
+            OrderSide::Buy,
+            InstrumentId::from("TEST.POLYMARKET"),
+            6,
+            2,
+        );
 
-        let raw = Quantity::new(100.005, 6);
-        let snapped = tracker.snap_fill_qty(&vid, raw);
-        assert_eq!(snapped, Quantity::new(100.0, 6));
+        tracker.record_fill(&vid, Quantity::from("714.285714"));
 
-        tracker.record_fill(&vid, snapped);
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
+        assert_eq!(
+            tracker.buy_overfill_bump(&vid),
+            Some(Quantity::from("714.285714"))
+        );
+        assert_eq!(
+            tracker.submitted_qty(&vid),
+            Some(Quantity::from("714.285714"))
+        );
+        assert!(tracker.is_fully_filled(&vid));
+    }
+
+    #[rstest]
+    fn test_drained_buy_dust_overfill_keeps_venue_qty_and_bumps() {
+        use std::cell::Cell;
+
+        use nautilus_model::{
+            enums::OrderType,
+            identifiers::{StrategyId, TraderId},
+        };
+
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("order-buffered-overfill");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+
+        let report = FillReport {
+            account_id: AccountId::from("POLY-001"),
+            instrument_id,
+            venue_order_id,
+            trade_id: TradeId::from("trade-buffered-overfill"),
+            order_side: OrderSide::Buy,
+            last_qty: Quantity::from("714.285714"),
+            last_px: Price::from("0.014"),
+            commission: Money::zero(pusd()),
+            liquidity_side: LiquiditySide::Taker,
+            avg_px: None,
+            report_id: UUID4::new(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+            client_order_id: None,
+            venue_position_id: None,
+        };
+
+        tracker.buffer_fill_for_test(venue_order_id, report.clone());
+
+        let drained = tracker.register_and_take_pending_fills(
+            venue_order_id,
+            Some(ClientOrderId::from("O-BUFFERED-OVERFILL")),
+            Quantity::from("714.285710"),
+            Quantity::zero(Quantity::from("714.285710").precision),
+            OrderSide::Buy,
+        );
+
+        let fill = OrderFilled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            ClientOrderId::from("O-BUFFERED-OVERFILL"),
+            venue_order_id,
+            report.account_id,
+            report.trade_id,
+            report.order_side,
+            OrderType::Market,
+            drained[0].report.last_qty,
+            report.last_px,
+            pusd(),
+            report.liquidity_side,
+            UUID4::new(),
+            report.ts_event,
+            report.ts_init,
+            false,
+            None,
+            Some(report.commission),
+            None,
+        );
+        let emitted_qty = Cell::new(None);
+        let emitted = tracker.emit_buffered_fill(
+            fill,
+            || true,
+            |filled, new_qty| emitted_qty.set(Some((filled.last_qty, new_qty))),
+        );
+
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].report.last_qty, Quantity::from("714.285714"));
+        assert!(emitted);
+        assert_eq!(
+            emitted_qty.get(),
+            Some((
+                Quantity::from("714.285714"),
+                Some(Quantity::from("714.285714"))
+            ))
+        );
+        assert_eq!(
+            tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::from("714.285714"))
+        );
     }
 }

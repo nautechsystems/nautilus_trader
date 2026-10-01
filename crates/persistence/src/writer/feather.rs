@@ -24,8 +24,8 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
-    fs::{self, File, OpenOptions},
-    io::{self, BufWriter, Write},
+    fs::{self, File, OpenOptions, TryLockError},
+    io::{self, BufReader, BufWriter, Seek, Write},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -40,7 +40,7 @@ use datafusion::arrow::{
     compute::concat_batches,
     datatypes::{DataType, Field, Int32Type, Schema, SchemaRef},
     error::ArrowError,
-    ipc::writer::StreamWriter,
+    ipc::{reader::StreamReader, writer::StreamWriter},
     record_batch::RecordBatch,
 };
 use jiff::{
@@ -315,7 +315,9 @@ pub(crate) const FEATHER_PARTIAL_EXTENSION: &str = "feather.partial";
 /// An open local Feather file that appends Arrow IPC stream batches.
 ///
 /// Batches go to `{name}.feather.partial`, which is renamed to `{name}.feather` when the file is
-/// sealed, so readers listing `.feather` files only see complete streams. Written rows are
+/// sealed, so readers listing `.feather` files only see complete streams. The file stays
+/// exclusively locked until it is sealed, so [`recover_partial_feather_files`] can tell an open
+/// file from one its writer abandoned. Written rows are
 /// buffered and appended as one record batch on flush, on seal, when the buffer reaches
 /// [`DEFAULT_DATA_BATCH_CHUNK_SIZE`] rows, or when size rotation may be due, because each IPC
 /// batch carries a message header that outweighs a single row.
@@ -345,6 +347,15 @@ impl FeatherFile {
             .write(true)
             .create_new(true)
             .open(&partial_path)?;
+
+        // Recovery can briefly lock a new, empty file before its writer does, so wait it out
+        file.lock().map_err(|e| {
+            format!(
+                "Failed to lock Feather file {}: {e}",
+                partial_path.display()
+            )
+        })?;
+
         let writer = StreamWriter::try_new(CountingWriter::new(BufWriter::new(file)), schema)?;
 
         let max_size = match rotation_config {
@@ -423,7 +434,8 @@ impl FeatherFile {
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?;
         file.sync_all()?;
-        drop(file);
+
+        // Renaming before the file closes keeps it locked until it is sealed
         fs::rename(&self.partial_path, &self.path)?;
         Ok(())
     }
@@ -484,21 +496,6 @@ pub enum RotationConfig {
     },
     /// No automatic rotation.
     NoRotation,
-}
-
-impl RotationConfig {
-    /// Creates scheduled rotation using UTC.
-    ///
-    /// This keeps timezone ownership in writer backend when callers expose
-    /// only a time-of-day schedule without a timezone field.
-    #[must_use]
-    pub const fn scheduled_utc(interval_ns: u64, rotation_time: UnixNanos) -> Self {
-        Self::ScheduledDates {
-            interval_ns,
-            rotation_time,
-            rotation_timezone: jiff::tz::TimeZone::UTC,
-        }
-    }
 }
 
 /// Streams encoded data into one local Feather file per data or record type, and per class for
@@ -842,26 +839,38 @@ impl FeatherWriter {
         UnixNanos::from(u64::try_from(next_rotation.as_nanosecond()).unwrap_or(0))
     }
 
-    // Seals the open file at `path`; the next write for its key opens a new file
+    // Seals the open file at `path`; the next write for its key opens a new file. A failed seal
+    // leaves the stream unfinished, so the file is recovered to its complete batches instead.
     fn seal_file(&mut self, path: &FileWriterPath) -> Result<(), Box<dyn std::error::Error>> {
         self.next_rotation_times.remove(path);
-        match self.writers.remove(path) {
-            Some(file) => file.seal(),
-            None => Ok(()),
-        }
+
+        let Some(file) = self.writers.remove(path) else {
+            return Ok(());
+        };
+
+        let partial_path = file.partial_path.clone();
+        file.seal()
+            .inspect_err(|_| recover_released_feather_file(&partial_path))
     }
 
-    // A failed append can leave a partial IPC message, so the file stays `.feather.partial`
-    // rather than being sealed as a complete stream; the next write for its key opens a new file.
+    // A failed append can leave a partial IPC message, so the file is recovered to its complete
+    // batches rather than sealed as written; the next write for its key opens a new file.
     fn abandon_file(&mut self, path: &FileWriterPath) {
         self.next_rotation_times.remove(path);
 
-        if self.writers.remove(path).is_some() {
-            log::error!(
-                "Abandoned Feather file {} after a failed write",
-                path.path.display()
-            );
-        }
+        let Some(file) = self.writers.remove(path) else {
+            return;
+        };
+
+        let partial_path = file.partial_path.clone();
+        drop(file);
+
+        log::error!(
+            "Abandoned Feather file {} after a failed write",
+            path.path.display()
+        );
+
+        recover_released_feather_file(&partial_path);
     }
 
     /// Creates (and inserts) a new `FileWriter` for type T.
@@ -1525,12 +1534,150 @@ impl StreamingSink for Rc<RefCell<FeatherWriter>> {
     }
 }
 
+/// Seals every abandoned `.feather.partial` file under `directory`.
+///
+/// A writer locks each file until it seals it, so a file that recovery can lock was left by a
+/// writer that crashed, was killed, or released it after a failed write or seal. Recovery keeps the
+/// complete record batches, drops any bytes after them with a warning, and renames the file to
+/// `.feather`. It removes a file with no complete record batch and leaves an empty one, which a new
+/// writer may not have locked yet. A read error other than a write cut short leaves the file for a
+/// later pass. Failures are logged per file, so callers still read the sealed files.
+pub(crate) fn recover_partial_feather_files(directory: &Path) {
+    let suffix = format!(".{FEATHER_PARTIAL_EXTENSION}");
+    let mut directories = vec![directory.to_path_buf()];
+
+    while let Some(directory) = directories.pop() {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                log::warn!(
+                    "Failed to list {} for partial Feather files: {e}",
+                    directory.display()
+                );
+                continue;
+            }
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+                directories.push(path);
+            } else if path.to_string_lossy().ends_with(&suffix)
+                && let Err(e) = recover_partial_feather_file(&path)
+            {
+                log::warn!("Failed to recover Feather file {}: {e}", path.display());
+            }
+        }
+    }
+}
+
+// Recovers a file its writer released after a failure, so its complete batches stay promotable
+fn recover_released_feather_file(partial_path: &Path) {
+    if let Err(e) = recover_partial_feather_file(partial_path) {
+        log::error!(
+            "Failed to recover Feather file {}: {e}",
+            partial_path.display()
+        );
+    }
+}
+
+fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
+    let file = match OpenOptions::new().read(true).write(true).open(partial_path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => return Ok(()),
+        Err(TryLockError::Error(e)) => return Err(e.into()),
+    }
+
+    let len = file.metadata()?.len();
+
+    // A writer renames its file before unlocking it, and a new file stays empty until its writer
+    // locks it, so recovery leaves a missing or empty file alone
+    if !partial_path.try_exists()? || len == 0 {
+        return Ok(());
+    }
+
+    let mut batches = 0;
+    let mut complete_len = 0;
+    let mut tail_error = None;
+
+    match StreamReader::try_new(BufReader::new(&file), None) {
+        Ok(mut reader) => loop {
+            match reader.next() {
+                Some(Ok(_)) => {
+                    batches += 1;
+                    complete_len = reader.get_mut().stream_position()?;
+                }
+                Some(Err(e)) => {
+                    tail_error = Some(e);
+                    break;
+                }
+                None => break,
+            }
+        },
+        Err(e) => tail_error = Some(e),
+    }
+
+    // Only a write cut short ends the stream inside a message; any other read error could hide
+    // complete batches after it, so the file waits for a later pass
+    if let Some(e) = tail_error.take_if(|e| {
+        !matches!(e, ArrowError::IoError(_, source) if source.kind() == io::ErrorKind::UnexpectedEof)
+    }) {
+        return Err(e.into());
+    }
+
+    let cause = tail_error.map_or_else(String::new, |e| format!(": {e}"));
+
+    if batches == 0 {
+        fs::remove_file(partial_path)?;
+
+        log::warn!(
+            "Removed Feather file {} with no complete record batch{cause}",
+            partial_path.display()
+        );
+        return Ok(());
+    }
+
+    let dropped = len.saturating_sub(complete_len);
+
+    // Arrow C++ rejects trailing bytes that form no message, and EOF at a message boundary ends a
+    // valid stream, so the file ends at its last complete batch
+    if dropped > 0 {
+        file.set_len(complete_len)?;
+    }
+
+    file.sync_all()?;
+
+    let sealed_path = partial_path.with_extension("");
+    fs::rename(partial_path, &sealed_path)?;
+
+    let tail = if dropped == 0 {
+        String::new()
+    } else {
+        format!(", dropped {dropped} trailing byte(s){cause}")
+    };
+
+    log::warn!(
+        "Recovered {batches} record batch(es) into Feather file {}{tail}",
+        sealed_path.display()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::Ordering};
+    use std::sync::{Arc, Mutex, atomic::Ordering};
 
-    use datafusion::arrow::ipc::reader::StreamReader;
     use nautilus_common::{clock::VirtualClock, live::LiveClock};
+    #[cfg(target_os = "linux")]
+    use nautilus_model::data::HasTsInit;
     use nautilus_model::{
         data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
@@ -1575,6 +1722,100 @@ mod tests {
             .map(Result::unwrap)
             .flat_map(|batch| restore_staged_record_batches(batch).unwrap())
             .collect()
+    }
+
+    fn read_quotes(path: &Path) -> Vec<Data> {
+        read_feather_batches(path)
+            .into_iter()
+            .flat_map(|batch| {
+                let metadata = batch.schema().metadata().clone();
+                QuoteTick::decode_data_batch(&metadata, batch).unwrap()
+            })
+            .collect()
+    }
+
+    fn quote_at(ts: u64) -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.0"),
+            Price::from("1.1"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    }
+
+    fn quotes_at(timestamps: &[u64]) -> Vec<Data> {
+        timestamps
+            .iter()
+            .map(|&ts| Data::from(quote_at(ts)))
+            .collect()
+    }
+
+    // Seals one flushed batch per quote, then reopens the stream as a partial file whose writer
+    // exited before sealing it
+    fn write_partial_file(directory: &Path, timestamps: &[u64]) -> PathBuf {
+        let mut writer = FeatherWriter::new(
+            directory.to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+        );
+
+        for &ts in timestamps {
+            writer.write(quote_at(ts)).unwrap();
+            writer.flush().unwrap();
+        }
+
+        writer.close().unwrap();
+
+        let sealed = feather_files(directory, FEATHER_EXTENSION).remove(0);
+        let partial = sealed.with_extension(FEATHER_PARTIAL_EXTENSION);
+        fs::rename(&sealed, &partial).unwrap();
+        partial
+    }
+
+    const TORN_TAIL: &str = ": Io error: failed to fill whole buffer";
+
+    static RECOVERY_LOGS: RecoveryLogCapture = RecoveryLogCapture(Mutex::new(Vec::new()));
+
+    // The logger is process-global, so only warnings naming `directory` belong to the caller
+    fn recover_with_warnings(directory: &Path) -> Vec<String> {
+        let _ = log::set_logger(&RECOVERY_LOGS);
+        log::set_max_level(log::LevelFilter::Warn);
+
+        recover_partial_feather_files(directory);
+
+        let directory = directory.display().to_string();
+        RECOVERY_LOGS
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(level, message)| *level == log::Level::Warn && message.contains(&directory))
+            .map(|(_, message)| message.clone())
+            .collect()
+    }
+
+    struct RecoveryLogCapture(Mutex<Vec<(log::Level, String)>>);
+
+    impl log::Log for RecoveryLogCapture {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.target() == "nautilus_persistence::writer::feather"
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((record.level(), record.args().to_string()));
+            }
+        }
+
+        fn flush(&self) {}
     }
 
     #[rstest]
@@ -2053,16 +2294,26 @@ mod tests {
         );
         writer.write(quote2).unwrap();
 
+        // Windows locks block reads through other handles, so the open file is measured instead:
+        // if closing adds only the 8-byte end-of-stream marker, both quotes were already on disk
         let partial = feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION);
-        let flushed_rows = read_feather_batches(&partial[0])
+        let flushed_len = fs::metadata(&partial[0]).unwrap().len();
+        let open_writers = writer.writers.len();
+        let last_flush_ns = writer.last_flush_ns;
+        let sealed_before_close = feather_files(temp_dir.path(), FEATHER_EXTENSION);
+        writer.close().unwrap();
+
+        let sealed = partial[0].with_extension("");
+        let sealed_rows = read_feather_batches(&sealed)
             .iter()
             .map(RecordBatch::num_rows)
             .sum::<usize>();
-        assert_eq!(writer.writers.len(), 1);
-        assert_eq!(writer.last_flush_ns, UnixNanos::from(200_000_000));
+        assert_eq!(open_writers, 1);
+        assert_eq!(last_flush_ns, UnixNanos::from(200_000_000));
         assert_eq!(partial.len(), 1);
-        assert_eq!(flushed_rows, 2);
-        assert!(feather_files(temp_dir.path(), FEATHER_EXTENSION).is_empty());
+        assert!(sealed_before_close.is_empty());
+        assert_eq!(fs::metadata(&sealed).unwrap().len(), flushed_len + 8);
+        assert_eq!(sealed_rows, 2);
     }
 
     #[rstest]
@@ -2346,7 +2597,7 @@ mod tests {
 
     #[rstest]
     #[cfg(unix)]
-    fn failed_seal_reports_the_error_and_publishes_nothing() {
+    fn failed_seal_of_a_removed_file_reports_the_error_and_publishes_nothing() {
         let temp_dir = TempDir::new().unwrap();
 
         let mut writer = FeatherWriter::new(
@@ -2381,7 +2632,7 @@ mod tests {
 
     #[rstest]
     #[cfg(target_os = "linux")]
-    fn failed_flush_abandons_the_file_and_next_write_opens_a_new_one() {
+    fn failed_seal_recovers_the_batches_that_reached_the_file() {
         let temp_dir = TempDir::new().unwrap();
 
         let mut writer = FeatherWriter::new(
@@ -2392,19 +2643,53 @@ mod tests {
             Some(0),
         );
 
-        let quote = |ts: u64| {
-            QuoteTick::new(
-                InstrumentId::from("AUD/USD.SIM"),
-                Price::from("1.0"),
-                Price::from("1.1"),
-                Quantity::from("1000"),
-                Quantity::from("1000"),
-                UnixNanos::from(ts),
-                UnixNanos::from(ts),
-            )
-        };
+        writer.write(quote_at(1)).unwrap();
+        writer.flush().unwrap();
+        writer.write(quote_at(2)).unwrap();
 
-        writer.write(quote(1)).unwrap();
+        // Route the open stream to a device that reports a full disk, so sealing it fails
+        let (path, file) = writer.writers.iter_mut().next().unwrap();
+        let sealed = path.path.clone();
+        let full = OpenOptions::new().write(true).open("/dev/full").unwrap();
+        file.writer =
+            StreamWriter::try_new(CountingWriter::new(BufWriter::new(full)), &file.schema).unwrap();
+
+        let error = writer.close().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Io error: No space left on device (os error 28)"
+        );
+        assert!(writer.is_closed());
+        assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
+        assert_eq!(read_quotes(&sealed), quotes_at(&[1]));
+    }
+
+    #[rstest]
+    #[case::nothing_flushed(false, vec![3])]
+    #[case::batch_flushed(true, vec![1, 3])]
+    #[cfg(target_os = "linux")]
+    fn failed_flush_recovers_the_abandoned_file_and_next_write_opens_a_new_one(
+        #[case] flushed: bool,
+        #[case] expected: Vec<u64>,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+        );
+
+        writer.write(quote_at(1)).unwrap();
+
+        if flushed {
+            writer.flush().unwrap();
+        }
+
+        writer.write(quote_at(2)).unwrap();
 
         // Route the open stream to a device that reports a full disk on every write
         let (abandoned, file) = writer.writers.iter_mut().next().unwrap();
@@ -2414,27 +2699,183 @@ mod tests {
             StreamWriter::try_new(CountingWriter::new(BufWriter::new(full)), &file.schema).unwrap();
 
         let error = writer.flush().unwrap_err();
-        writer.write(quote(2)).unwrap();
+        writer.write(quote_at(3)).unwrap();
         writer.close().unwrap();
 
-        let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
-
-        let recovered = sealed
+        let mut recovered = feather_files(temp_dir.path(), FEATHER_EXTENSION)
             .iter()
-            .flat_map(|path| read_feather_batches(path))
-            .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
-                QuoteTick::decode_data_batch(&metadata, batch).unwrap()
-            })
+            .flat_map(|path| read_quotes(path))
             .collect::<Vec<_>>();
+        recovered.sort_by_key(HasTsInit::ts_init);
 
+        // Quote 2 was buffered when the flush failed, and the full device also fails the writer's
+        // drop-time flush, so it reaches no file
         assert_eq!(
             error.to_string(),
             "Io error: No space left on device (os error 28)"
         );
-        assert!(!abandoned.path.exists());
-        assert_eq!(sealed.len(), 1);
-        assert_eq!(recovered, vec![Data::from(quote(2))]);
+        assert_eq!(abandoned.path.exists(), flushed);
+        assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
+        assert_eq!(recovered, quotes_at(&expected));
+    }
+
+    #[rstest]
+    #[case::end_of_stream_marker(0, &[], vec![1, 2, 3], "")]
+    #[case::no_end_of_stream_marker(8, &[], vec![1, 2, 3], "")]
+    #[case::stray_bytes(8, &[0xFF, 0xFF], vec![1, 2, 3], "")]
+    #[case::truncated_last_batch(9, &[], vec![1, 2], TORN_TAIL)]
+    fn recovery_seals_complete_batches_and_drops_the_rest(
+        #[case] cut: usize,
+        #[case] stray: &[u8],
+        #[case] expected: Vec<u64>,
+        #[case] cause: &str,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let directory = temp_dir.path().join("recover");
+        let partial = write_partial_file(&directory, &[1, 2, 3]);
+        let mut staged = fs::read(&partial).unwrap();
+        staged.truncate(staged.len() - cut);
+        staged.extend_from_slice(stray);
+        fs::write(&partial, &staged).unwrap();
+
+        // The expected batches alone form this prefix, which ends before the end-of-stream marker
+        let reference = fs::read(write_partial_file(
+            &temp_dir.path().join("reference"),
+            &expected,
+        ))
+        .unwrap();
+        let complete = &reference[..reference.len() - 8];
+
+        let warnings = recover_with_warnings(&directory);
+
+        let sealed = partial.with_extension("");
+        let dropped = staged.len() - complete.len();
+
+        let tail = if dropped == 0 {
+            String::new()
+        } else {
+            format!(", dropped {dropped} trailing byte(s){cause}")
+        };
+
+        assert!(!partial.exists());
+        assert_eq!(fs::read(&sealed).unwrap(), complete);
+        assert_eq!(read_quotes(&sealed), quotes_at(&expected));
+        assert_eq!(
+            warnings,
+            vec![format!(
+                "Recovered {} record batch(es) into Feather file {}{tail}",
+                expected.len(),
+                sealed.display()
+            )],
+        );
+    }
+
+    #[rstest]
+    #[case::schema_only(0, "")]
+    #[case::truncated_schema(1, TORN_TAIL)]
+    fn recovery_removes_a_file_without_a_complete_batch(#[case] cut: u64, #[case] cause: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let partial = temp_dir.path().join("quotes_1.feather.partial");
+        let file = File::create(&partial).unwrap();
+        StreamWriter::try_new(&file, &QuoteTick::get_schema(None)).unwrap();
+        file.set_len(file.metadata().unwrap().len() - cut).unwrap();
+        drop(file);
+
+        let warnings = recover_with_warnings(temp_dir.path());
+
+        assert_eq!(fs::read_dir(temp_dir.path()).unwrap().count(), 0);
+        assert_eq!(
+            warnings,
+            vec![format!(
+                "Removed Feather file {} with no complete record batch{cause}",
+                partial.display()
+            )],
+        );
+    }
+
+    #[rstest]
+    fn recovery_leaves_a_file_with_an_unreadable_tail() {
+        let temp_dir = TempDir::new().unwrap();
+        let partial = write_partial_file(temp_dir.path(), &[1, 2]);
+
+        // A continuation marker followed by a negative metadata length is corrupt, not cut short
+        let mut staged = fs::read(&partial).unwrap();
+        staged.truncate(staged.len() - 8);
+        staged.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]);
+        fs::write(&partial, &staged).unwrap();
+
+        let warnings = recover_with_warnings(temp_dir.path());
+
+        assert_eq!(fs::read(&partial).unwrap(), staged);
+        assert_eq!(
+            warnings,
+            vec![format!(
+                "Failed to recover Feather file {}: Parser error: Invalid metadata length: -16",
+                partial.display()
+            )],
+        );
+    }
+
+    #[rstest]
+    #[cfg(unix)]
+    fn recovery_continues_after_a_file_it_cannot_recover() {
+        let temp_dir = TempDir::new().unwrap();
+        let run = temp_dir.path().join("run");
+        let partial = write_partial_file(&run, &[1]);
+
+        // A partial path that resolves to a directory fails to open for writing on every Unix
+        // platform, even as root
+        let unrecoverable = temp_dir.path().join("bad.feather.partial");
+        std::os::unix::fs::symlink(&run, &unrecoverable).unwrap();
+
+        let warnings = recover_with_warnings(temp_dir.path());
+
+        let sealed = partial.with_extension("");
+        assert_eq!(read_quotes(&sealed), quotes_at(&[1]));
+        assert_eq!(
+            warnings,
+            vec![
+                format!(
+                    "Failed to recover Feather file {}: Is a directory (os error 21)",
+                    unrecoverable.display()
+                ),
+                format!(
+                    "Recovered 1 record batch(es) into Feather file {}, dropped 8 trailing byte(s)",
+                    sealed.display()
+                ),
+            ],
+        );
+    }
+
+    #[rstest]
+    fn recovery_leaves_open_and_empty_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().join("open"),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+        );
+        writer.write(quote_at(1)).unwrap();
+        writer.flush().unwrap();
+
+        // Windows locks block reads through other handles, so the open file is compared by length
+        let open = feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).remove(0);
+        let open_len = fs::metadata(&open).unwrap().len();
+        let empty = temp_dir.path().join("empty.feather.partial");
+        File::create(&empty).unwrap();
+
+        recover_partial_feather_files(temp_dir.path());
+
+        let partial = feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION);
+        let open_len_after = fs::metadata(&open).unwrap().len();
+        writer.close().unwrap();
+
+        assert_eq!(partial, vec![empty, open.clone()]);
+        assert_eq!(open_len_after, open_len);
+        assert_eq!(read_quotes(&open.with_extension("")), quotes_at(&[1]));
     }
 
     #[rstest]

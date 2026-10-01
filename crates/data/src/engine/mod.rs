@@ -111,7 +111,8 @@ use nautilus_model::{
         PriceType, RecordFlag,
     },
     identifiers::{
-        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
+        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Venue,
+        parse_generic_spread_id_legs,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -1747,9 +1748,11 @@ impl DataEngine {
                 })
                 .collect();
             let cache = self.cache.clone();
-            let validate_sequence = self.config.validate_data_sequence;
             let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
-                process_engine_bar(&cache, validate_sequence, false, bar);
+                // Request-generated bars are delivered only through the cache.
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar_historical(bar) {
+                    log_error_on_cache_insert(&e);
+                }
 
                 for aggregator in &downstream {
                     aggregator.borrow_mut().handle_bar(bar);
@@ -5696,39 +5699,7 @@ fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentI
         return Some(vec![(instrument_id, 1)]);
     }
 
-    symbol
-        .split(GENERIC_SPREAD_ID_SEPARATOR)
-        .map(|component| parse_spread_leg(component, instrument_id.venue))
-        .collect()
-}
-
-fn parse_spread_leg(component: &str, venue: Venue) -> Option<(InstrumentId, i64)> {
-    if let Some(rest) = component.strip_prefix("((") {
-        let (ratio, symbol) = rest.split_once("))")?;
-        return parse_spread_leg_parts(ratio, symbol, venue, -1);
-    }
-
-    let rest = component.strip_prefix('(')?;
-    let (ratio, symbol) = rest.split_once(')')?;
-    parse_spread_leg_parts(ratio, symbol, venue, 1)
-}
-
-fn parse_spread_leg_parts(
-    ratio: &str,
-    symbol: &str,
-    venue: Venue,
-    sign: i64,
-) -> Option<(InstrumentId, i64)> {
-    if symbol.is_empty() {
-        return None;
-    }
-
-    let ratio = ratio.parse::<i64>().ok()?.checked_mul(sign)?;
-    if ratio == 0 {
-        return None;
-    }
-
-    Some((InstrumentId::new(Symbol::new(symbol), venue), ratio))
+    parse_generic_spread_id_legs(&instrument_id).ok()
 }
 
 #[inline(always)]
@@ -5986,8 +5957,8 @@ fn derive_quote_from_depth(depth: &OrderBookDepth) -> Option<QuoteTick> {
 }
 
 // Validates a bar against `last_bar` before writing and (optionally) publishing.
-// Shared by `handle_bar` and aggregator-emitted bars so both honor
-// `validate_data_sequence`.
+// Live bars and aggregator emissions honor `validate_data_sequence`;
+// request-generated bars use `Cache::add_bar_historical`.
 fn process_engine_bar(
     cache: &Rc<RefCell<Cache>>,
     validate_sequence: bool,
@@ -6038,8 +6009,6 @@ fn validate_bar_sequence(cache: &Rc<RefCell<Cache>>, validate_sequence: bool, ba
         return false;
     }
 
-    // Bar revision overwrite needs a `Bar.is_revision` field on the model;
-    // not present today. Tracked under #8 in the data engine parity plan
     true
 }
 

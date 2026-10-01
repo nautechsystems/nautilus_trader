@@ -2497,6 +2497,11 @@ mod tests {
             &[PAYLOAD_TYPE_BARS_RESPONSE],
         ),
         cache_mutation(
+            "add_bar_historical",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_greeks",
             CacheMutationRecoveryClass::MissingLiveRecovery,
             &[],

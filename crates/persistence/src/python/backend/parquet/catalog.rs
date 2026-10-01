@@ -14,13 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 #![expect(
-    clippy::match_same_arms,
     clippy::too_many_arguments,
     reason = "PyO3 catalog wrapper mirrors Python API dispatch surface"
 )]
 
 use std::collections::HashMap;
 
+use nautilus_common::enums::Environment;
 use nautilus_core::{
     UnixNanos,
     python::{to_pytype_err, to_pyvalue_err},
@@ -56,6 +56,7 @@ use crate::{
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
         types::{HasCatalogDataType, parquet_catalog_data_type_path_prefixes},
     },
+    config::CatalogCompression,
     python::backend::{
         PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
         arrow_record_batches_from_pybytes, catalog_metadata_to_pydict, catalog_record_type_from_py,
@@ -103,7 +104,7 @@ where
     T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
 {
     catalog
-        .query_typed_data::<T>(
+        .query::<T>(
             identifiers,
             start.map(UnixNanos::from),
             end.map(UnixNanos::from),
@@ -139,12 +140,13 @@ impl PyParquetDataCatalog {
     /// - `base_path`: The base path for the catalog
     /// - `storage_options`: Optional storage configuration for cloud backends
     /// - `batch_size`: Optional batch size for processing (default: 10,000)
-    /// - `compression`: Optional compression type (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 3=LZO, 4=BROTLI, 5=LZ4, 6=ZSTD)
+    /// - `compression`: Optional compression code (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 4=BROTLI, 5=`LZ4_RAW`, 6=ZSTD)
     /// - `max_row_group_size`: Optional maximum row group size (default: 131,072)
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying [`ParquetDataCatalog`] cannot be created.
+    /// Returns an error if `compression` is not one of the listed codes, or the underlying
+    /// [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     pub fn py_new(
@@ -154,27 +156,10 @@ impl PyParquetDataCatalog {
         compression: Option<u8>,
         max_row_group_size: Option<usize>,
     ) -> PyResult<Self> {
-        let compression = compression.map(|c| match c {
-            0 => parquet::basic::Compression::UNCOMPRESSED,
-            1 => parquet::basic::Compression::SNAPPY,
-            // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
-            // since we can't pass the level parameter through PyO3
-            2 => {
-                let level = parquet::basic::GzipLevel::default();
-                parquet::basic::Compression::GZIP(level)
-            }
-            3 => parquet::basic::Compression::LZO,
-            4 => {
-                let level = parquet::basic::BrotliLevel::default();
-                parquet::basic::Compression::BROTLI(level)
-            }
-            5 => parquet::basic::Compression::LZ4,
-            6 => {
-                let level = parquet::basic::ZstdLevel::default();
-                parquet::basic::Compression::ZSTD(level)
-            }
-            _ => parquet::basic::Compression::SNAPPY,
-        });
+        let compression = compression
+            .map(catalog_compression_from_code)
+            .transpose()?
+            .map(parquet::basic::Compression::from);
 
         // Convert HashMap to AHashMap for internal use
         let storage_options = storage_options.map(|m| m.into_iter().collect());
@@ -648,15 +633,15 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
-    #[pyo3(signature = (data_type, instrument_id=None, *, start, end))]
+    #[pyo3(signature = (data_type, identifier=None, *, start, end))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
         start: u64,
         end: u64,
     ) -> PyResult<()> {
@@ -665,7 +650,7 @@ impl PyParquetDataCatalog {
         let end_nanos = UnixNanos::from(end);
 
         self.inner
-            .extend_file_name(&data_type, instrument_id.as_deref(), start_nanos, end_nanos)
+            .extend_file_name(&data_type, identifier.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to extend file name: {e}")))
     }
 
@@ -698,17 +683,17 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
-    #[pyo3(signature = (data_type, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
+    #[pyo3(signature = (data_type, identifier=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &mut self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
@@ -721,7 +706,7 @@ impl PyParquetDataCatalog {
         self.inner
             .consolidate_data(
                 &data_type,
-                instrument_id.as_deref(),
+                identifier.as_deref(),
                 start_nanos,
                 end_nanos,
                 ensure_contiguous_files,
@@ -821,17 +806,17 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    /// - `identifier`: Optional instrument ID or bar type filter
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<()> {
         let data_type = data_type.into_inner();
         self.inner
-            .reset_data_file_names(&data_type, instrument_id.as_deref())
+            .reset_data_file_names(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
@@ -959,17 +944,17 @@ impl PyParquetDataCatalog {
             .map_err(|e| PyIOError::new_err(format!("Failed to list instruments: {e}")))
     }
 
-    /// List all Parquet files in the catalog for a given data type and instrument.
+    /// List all Parquet files in the catalog for a given data type and identifier.
     pub fn list_parquet_files(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: &str,
+        identifier: &str,
     ) -> PyResult<Vec<String>> {
         let data_type = data_type.into_inner();
         let list_files = |prefix: &str| -> PyResult<Vec<String>> {
             let directory = self
                 .inner
-                .make_path(prefix, Some(instrument_id))
+                .make_path(prefix, Some(identifier))
                 .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))?;
             self.inner
                 .list_parquet_files(&directory)
@@ -1284,23 +1269,23 @@ impl PyParquetDataCatalog {
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
-    #[pyo3(signature = (start, end, data_type, instrument_id=None))]
+    #[pyo3(signature = (start, end, data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
         end: u64,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         let data_type = data_type.into_inner();
         self.inner
-            .get_missing_intervals_for_request(start, end, &data_type, instrument_id.as_deref())
+            .get_missing_intervals_for_request(start, end, &data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
     }
 
@@ -1309,21 +1294,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Option<u64>> {
         let data_type = data_type.into_inner();
         self.inner
-            .query_first_timestamp(&data_type, instrument_id.as_deref())
+            .query_first_timestamp(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
@@ -1332,21 +1317,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Option<u64>> {
         let data_type = data_type.into_inner();
         self.inner
-            .query_last_timestamp(&data_type, instrument_id.as_deref())
+            .query_last_timestamp(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query last timestamp: {e}")))
     }
 
@@ -1355,21 +1340,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         let data_type = data_type.into_inner();
         self.inner
-            .get_intervals(&data_type, instrument_id.as_deref())
+            .get_intervals(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get intervals: {e}")))
     }
 
@@ -1734,10 +1719,11 @@ impl PyParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a list of data type names (as directory stems) in the catalog.
-    pub fn list_data_types(&self) -> PyResult<Vec<String>> {
+    /// Returns the data, record, and instrument types stored in the catalog.
+    pub fn list_data_types(&self) -> PyResult<Vec<PyCatalogDataType>> {
         self.inner
             .list_data_types()
+            .map(|data_types| data_types.into_iter().map(PyCatalogDataType::new).collect())
             .map_err(|e| PyIOError::new_err(format!("Failed to list data types: {e}")))
     }
 
@@ -1828,7 +1814,7 @@ impl PyParquetDataCatalog {
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
     /// - `data_type`: The stored family to convert (data type or record type).
-    /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
+    /// - `environment`: The environment of the run, which names the folder holding its feather files (default: `Environment.BACKTEST`)
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
     ///
@@ -1843,35 +1829,34 @@ impl PyParquetDataCatalog {
     /// catalog.convert_stream_to_data(
     ///     "instance-123",
     ///     NautilusDataType.QuoteTick,
-    ///     subdirectory="backtest"
+    ///     environment=Environment.BACKTEST
     /// )
     ///
     /// # Convert live run data with identifier filtering
     /// catalog.convert_stream_to_data(
     ///     "instance-456",
     ///     NautilusDataType.TradeTick,
-    ///     subdirectory="live",
+    ///     environment=Environment.LIVE,
     ///     identifiers=["EUR/USD.SIM"]
     /// )
     /// ```
-    #[pyo3(signature = (instance_id, data_type, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[pyo3(signature = (instance_id, data_type, environment=Environment::Backtest, identifiers=None, use_ts_event_for_ts_init=false))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
         data_type: PyCatalogDataType,
-        subdirectory: Option<&str>,
+        environment: Environment,
         identifiers: Option<Vec<String>>,
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
         let data_type = data_type.into_inner();
-        let subdir = subdirectory.unwrap_or("backtest");
 
         self.inner
             .convert_stream_to_data(
                 instance_id,
                 &data_type,
-                Some(subdir),
+                environment,
                 identifiers.as_deref(),
                 use_ts_event_for_ts_init,
             )
@@ -1879,24 +1864,31 @@ impl PyParquetDataCatalog {
     }
 
     /// Query custom data from Parquet files.
-    #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_custom_data(
         &mut self,
         py: Python<'_>,
-        type_name: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<&str>,
     ) -> PyResult<Vec<Py<PyAny>>> {
+        let NautilusDataType::Custom { type_name } = nautilus_data_type_from_py(data_type)? else {
+            return Err(to_pytype_err("data_type must be a custom NautilusDataType"));
+        };
+
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         let data = py
             .detach(|| {
                 self.inner.query_custom_data_dynamic(
-                    type_name,
+                    &type_name,
                     identifiers.as_deref(),
                     start_nanos,
                     end_nanos,
@@ -1919,5 +1911,43 @@ impl PyParquetDataCatalog {
         }
 
         Ok(python_objects)
+    }
+}
+
+// Codes follow the Parquet format codec numbering, except that 5 writes LZ4_RAW rather than the
+// deprecated Hadoop-framed LZ4; LZO (3) is excluded because the writer cannot produce it
+fn catalog_compression_from_code(code: u8) -> PyResult<CatalogCompression> {
+    match code {
+        0 => Ok(CatalogCompression::Uncompressed),
+        1 => Ok(CatalogCompression::Snappy),
+        2 => Ok(CatalogCompression::Gzip),
+        4 => Ok(CatalogCompression::Brotli),
+        5 => Ok(CatalogCompression::Lz4),
+        6 => Ok(CatalogCompression::Zstd),
+        _ => Err(to_pyvalue_err(format!(
+            "Invalid compression code {code}, expected one of 0 (UNCOMPRESSED), 1 (SNAPPY), \
+             2 (GZIP), 4 (BROTLI), 5 (LZ4_RAW), or 6 (ZSTD)"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::uncompressed(0, CatalogCompression::Uncompressed)]
+    #[case::snappy(1, CatalogCompression::Snappy)]
+    #[case::gzip(2, CatalogCompression::Gzip)]
+    #[case::brotli(4, CatalogCompression::Brotli)]
+    #[case::lz4(5, CatalogCompression::Lz4)]
+    #[case::zstd(6, CatalogCompression::Zstd)]
+    fn catalog_compression_from_code_maps_parquet_codes(
+        #[case] code: u8,
+        #[case] expected: CatalogCompression,
+    ) {
+        assert_eq!(catalog_compression_from_code(code).unwrap(), expected);
     }
 }

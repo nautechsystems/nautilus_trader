@@ -641,6 +641,9 @@ pub enum HyperliquidOrderStatus {
     /// Order canceled due to liquidation.
     #[serde(rename = "liquidatedCanceled")]
     LiquidatedCanceled,
+    /// Order canceled because its HIP-4 outcome settled.
+    #[serde(rename = "outcomeSettledCanceled")]
+    OutcomeSettledCanceled,
     /// Order was scheduled for cancel.
     #[serde(rename = "scheduledCancel")]
     ScheduledCancel,
@@ -711,6 +714,7 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
             | HyperliquidOrderStatus::SiblingFilledCanceled
             | HyperliquidOrderStatus::DelistedCanceled
             | HyperliquidOrderStatus::LiquidatedCanceled
+            | HyperliquidOrderStatus::OutcomeSettledCanceled
             | HyperliquidOrderStatus::ScheduledCancel => Self::Canceled,
             // All reject variants map to REJECTED
             HyperliquidOrderStatus::Rejected
@@ -1396,6 +1400,10 @@ mod tests {
             OrderStatus::from(HyperliquidOrderStatus::ReduceOnlyCanceled),
             OrderStatus::Canceled
         );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::OutcomeSettledCanceled),
+            OrderStatus::Canceled
+        );
 
         // Test specific reject reasons map to Rejected
         assert_eq!(
@@ -1433,6 +1441,13 @@ mod tests {
         assert_eq!(
             reduce_only_canceled,
             HyperliquidOrderStatus::ReduceOnlyCanceled
+        );
+
+        let outcome_settled_canceled: HyperliquidOrderStatus =
+            serde_json::from_str(r#""outcomeSettledCanceled""#).unwrap();
+        assert_eq!(
+            outcome_settled_canceled,
+            HyperliquidOrderStatus::OutcomeSettledCanceled
         );
 
         let tick_rejected: HyperliquidOrderStatus =

@@ -20,7 +20,6 @@ use std::{
     sync::Arc,
 };
 
-use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::Params;
 
@@ -29,7 +28,10 @@ use super::{
     filter::WriterRecordFilter,
     traits::StreamingDataSink,
 };
-use crate::common::{backend_name::backend_type, paths::local_writer_directory};
+use crate::{
+    catalog::factory::CatalogConnectConfig,
+    common::{backend_name::backend_type, paths::local_writer_directory},
+};
 
 /// Built-in Feather streaming writer registry key.
 pub const FEATHER_WRITER_FACTORY_NAME: &str = "Feather";
@@ -48,32 +50,55 @@ backend_type!(
 /// Connection settings handed to writer factories.
 #[derive(Clone, Debug)]
 pub struct WriterConnectConfig {
-    /// Run-session storage URI the writer stages into.
+    /// Local run-session directory the writer appends Feather files to.
     pub uri: String,
-    /// Backend-specific storage options (credentials, endpoints).
-    pub storage_options: Option<AHashMap<String, String>>,
+    /// Catalog that receives promoted data; required by every backend except `Feather`.
+    pub catalog: Option<CatalogConnectConfig>,
     /// Rotation settings used by built-in streaming writer backends.
     pub rotation_config: RotationConfig,
     /// Optional automatic flush interval in milliseconds.
     pub flush_interval_ms: Option<u64>,
     /// Optional record-family and identifier filter.
     pub record_filter: Option<WriterRecordFilter>,
+    /// Interval in milliseconds for promoting sealed files into `catalog`.
+    pub promotion_interval_ms: Option<u64>,
+    /// Whether closing the writer promotes remaining files into `catalog`.
+    pub promote_on_close: bool,
+    /// Whether Feather files are deleted after a successful promotion.
+    pub delete_feather_after_promotion: bool,
+    /// Whether promotion replaces `ts_init` with `ts_event`.
+    pub use_ts_event_for_ts_init: bool,
     /// Backend-specific writer parameters.
     pub params: Option<Params>,
 }
 
 impl WriterConnectConfig {
-    /// Creates a connect config for the given URI.
+    /// Creates a connect config for the given writer directory and promotion catalog.
     #[must_use]
-    pub fn new(uri: impl Into<String>, storage_options: Option<AHashMap<String, String>>) -> Self {
+    pub fn new(uri: impl Into<String>, catalog: Option<CatalogConnectConfig>) -> Self {
         Self {
             uri: uri.into(),
-            storage_options,
+            catalog,
             rotation_config: RotationConfig::NoRotation,
             flush_interval_ms: None,
             record_filter: None,
+            promotion_interval_ms: None,
+            promote_on_close: true,
+            delete_feather_after_promotion: false,
+            use_ts_event_for_ts_init: false,
             params: None,
         }
+    }
+
+    /// Returns the catalog that receives promoted data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming `backend` when no catalog is configured.
+    pub fn required_catalog(&self, backend: &str) -> anyhow::Result<&CatalogConnectConfig> {
+        self.catalog
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("{backend} writer requires a promotion catalog"))
     }
 }
 
@@ -133,6 +158,9 @@ pub fn replace_existing_writer_data(config: &WriterConnectConfig) -> anyhow::Res
 }
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicU64;
+
+    use nautilus_common::enums::Environment;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{Data, InstrumentClose, InstrumentStatus, NautilusDataType, QuoteTick},
@@ -151,6 +179,7 @@ mod tests {
     use crate::{
         backend::{default_writer_factories, parquet::catalog::ParquetDataCatalog},
         catalog::types::CatalogDataType,
+        writer::feather::FEATHER_PARTIAL_EXTENSION,
     };
 
     fn quote(ts_init: u64) -> QuoteTick {
@@ -327,6 +356,40 @@ mod tests {
     }
 
     #[rstest]
+    fn create_writer_feather_recovers_partial_files_at_startup() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = WriterConnectConfig::new(temp_dir.path().to_str().unwrap(), None);
+        let registry = default_writer_factories();
+        let start = || {
+            create_writer(
+                &WriterBackendType::Feather,
+                &config,
+                WriterClock::Test(Arc::new(AtomicU64::new(0))),
+                &registry,
+            )
+            .unwrap()
+        };
+
+        let mut crashed = start();
+        crashed.write_data(Data::Quote(quote(100))).unwrap();
+        crashed.close().unwrap();
+
+        // A writer that exited before sealing leaves its flushed stream as a partial file
+        let sealed = temp_dir.path().join("quotes").join("quotes_0.feather");
+        let partial = sealed.with_extension(FEATHER_PARTIAL_EXTENSION);
+        fs::rename(&sealed, &partial).unwrap();
+
+        let mut restarted = start();
+        let sealed_at_start = sealed.exists();
+        let partial_at_start = partial.exists();
+        restarted.close().unwrap();
+
+        assert!(sealed_at_start);
+        assert!(!partial_at_start);
+        assert_eq!(count_feather_files(temp_dir.path()), 1);
+    }
+
+    #[rstest]
     fn create_writer_feather_round_trips_quotes_through_catalog() {
         let temp_dir = TempDir::new().unwrap();
         let session = temp_dir.path().join("backtest").join("run-001");
@@ -349,14 +412,14 @@ mod tests {
             .convert_stream_to_data(
                 "run-001",
                 &CatalogDataType::from(NautilusDataType::QuoteTick),
-                Some("backtest"),
+                Environment::Backtest,
                 None,
                 false,
             )
             .unwrap();
 
         let loaded = catalog
-            .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+            .query::<QuoteTick>(None, None, None, None, None, true)
             .unwrap();
         assert_eq!(loaded, vec![expected]);
     }
@@ -438,7 +501,7 @@ mod tests {
                 .convert_stream_to_data(
                     "run-001",
                     &CatalogDataType::from(data_type),
-                    Some("backtest"),
+                    Environment::Backtest,
                     None,
                     false,
                 )
@@ -446,10 +509,10 @@ mod tests {
         }
 
         let loaded_statuses = catalog
-            .query_typed_data::<InstrumentStatus>(None, None, None, None, None, true)
+            .query::<InstrumentStatus>(None, None, None, None, None, true)
             .unwrap();
         let loaded_closes = catalog
-            .query_typed_data::<InstrumentClose>(None, None, None, None, None, true)
+            .query::<InstrumentClose>(None, None, None, None, None, true)
             .unwrap();
         assert_eq!(loaded_statuses, statuses);
         assert_eq!(loaded_closes, closes);
@@ -488,7 +551,7 @@ mod tests {
             .convert_stream_to_data(
                 "run-001",
                 &CatalogDataType::from(NautilusDataType::Instrument),
-                Some("backtest"),
+                Environment::Backtest,
                 None,
                 false,
             )
@@ -527,7 +590,15 @@ mod tests {
     // Without the cloud feature, the Parquet writer rejects an S3 URI before the local-path check
     #[cfg_attr(feature = "cloud", case::parquet(WriterBackendType::Parquet))]
     fn create_writer_rejects_remote_staging_uri(#[case] backend: WriterBackendType) {
-        let config = WriterConnectConfig::new("s3://bucket/backtest/run-001", None);
+        let catalog = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            "s3://bucket/backtest/run-001",
+            Some(CatalogConnectConfig::new(
+                catalog.path().to_string_lossy(),
+                None,
+            )),
+        );
 
         let error = create_writer(
             &backend,

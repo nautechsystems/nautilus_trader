@@ -98,6 +98,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
@@ -223,3 +224,12 @@ name = "hyperliquid-chained-modify-smoke"
 path = "examples/chained_modify_smoke.rs"
 required-features = ["examples"]
 doc = false
+
+# Public market-data validation; explicitly connects to Hyperliquid mainnet.
+# Run with `cargo test --package nautilus-hyperliquid --features examples --test hyperliquid-book-stress -- --timeout 10 --rounds 12`
+[[test]]
+name = "hyperliquid-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

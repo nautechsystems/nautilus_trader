@@ -174,7 +174,7 @@ macro_rules! define_builtin_data_dispatch {
                 $(
                     NautilusDataType::$variant => Some(
                         catalog
-                            .query_typed_data::<$type>(
+                            .query::<$type>(
                                 identifiers,
                                 start,
                                 end,

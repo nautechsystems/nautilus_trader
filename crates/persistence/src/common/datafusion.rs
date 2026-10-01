@@ -31,6 +31,7 @@ use datafusion::{
         buffer::{OffsetBuffer, ScalarBuffer},
         compute::{cast, concat, take_record_batch},
         datatypes::{DataType, Schema},
+        error::ArrowError,
         record_batch::RecordBatch,
     },
     catalog::TableProvider,
@@ -127,7 +128,7 @@ impl DataBackendSession {
         self.session_ctx.register_object_store(url, object_store);
     }
 
-    /// Registers an OpenDAL-backed storage backend with the session context.
+    /// Registers a storage backend's object store with the session context.
     ///
     /// External catalog implementations can call this before adding native table providers or
     /// object-store-relative file paths to the session.
@@ -194,6 +195,19 @@ impl DataBackendSession {
         Ok(self.execute_registered(table_name, sql_query)?)
     }
 
+    // Returns `false` without registering when the files' schemas cannot merge, such as files
+    // written at different precisions.
+    pub(crate) fn try_register_parquet_files_table(
+        &mut self,
+        table_name: &str,
+        file_paths: Vec<String>,
+    ) -> anyhow::Result<bool> {
+        match self.register_parquet_files_table(table_name, file_paths) {
+            Err(e) if is_schema_merge_error(&e) => Ok(false),
+            result => result.map(|()| true),
+        }
+    }
+
     fn register_parquet_files_table(
         &mut self,
         table_name: &str,
@@ -239,6 +253,15 @@ impl DataBackendSession {
         // Create a new session context to completely reset the DataFusion state
         self.session_ctx = SessionContext::new_with_config(session_config());
     }
+}
+
+fn is_schema_merge_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<ArrowError>(),
+            Some(ArrowError::SchemaError(_))
+        )
+    })
 }
 
 pub(crate) fn session_config() -> SessionConfig {

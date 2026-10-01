@@ -37,6 +37,8 @@ from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
+from nautilus_trader.model import generic_spread_id_to_list
+from nautilus_trader.model import new_generic_spread_id
 
 
 GENERATED_IDENTIFIER_CASES = (
@@ -285,6 +287,47 @@ def test_instrument_id_pickle() -> None:
     pickled = pickle.dumps(iid)
     unpickled = pickle.loads(pickled)
     assert unpickled == iid
+
+
+def test_generic_spread_id_round_trip() -> None:
+    """
+    Test generic spread id round trip.
+    """
+    msft = InstrumentId.from_str("MSFT.NASDAQ")
+    aapl = InstrumentId.from_str("AAPL.NASDAQ")
+
+    spread = new_generic_spread_id([(msft, 1), (aapl, -2)])
+
+    assert spread == InstrumentId.from_str("((2))AAPL___(1)MSFT.NASDAQ")
+    assert generic_spread_id_to_list(spread) == [(aapl, -2), (msft, 1)]
+
+
+def test_new_generic_spread_id_single_leg_raises() -> None:
+    """
+    Test new generic spread id single leg raises.
+    """
+    msft = InstrumentId.from_str("MSFT.NASDAQ")
+    expected_err = "instrument_ratios list needs to have at least 2 legs"
+
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        new_generic_spread_id([(msft, 1)])
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == expected_err
+
+
+def test_generic_spread_id_to_list_invalid_leg_raises() -> None:
+    """
+    Test generic spread id to list invalid leg raises.
+    """
+    spread = InstrumentId.from_str("(1)AAPL___MSFT.NASDAQ")
+    expected_err = "Invalid generic spread leg component: MSFT"
+
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        generic_spread_id_to_list(spread)
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == expected_err
 
 
 def test_option_series_id_construction() -> None:

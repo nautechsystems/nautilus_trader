@@ -46,7 +46,7 @@ use crate::{
         Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, fixed::check_float_precision},
 };
 
 /// Represents a position in a market.
@@ -145,8 +145,10 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns an error if the instrument ID does not match the fill or the fill has no position
-    /// ID.
+    /// Returns an error if the instrument ID does not match the fill, the fill has no position
+    /// ID, or the precision of the instrument size, multiplier, or settlement currency, or of the
+    /// fill price, quantity, or a commission converted through `f64`, exceeds
+    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION).
     #[allow(
         clippy::needless_pass_by_value,
         reason = "constructor takes the opening fill by value as the position's seed event"
@@ -154,6 +156,7 @@ impl Position {
     pub fn new_checked(instrument: &InstrumentAny, fill: OrderFilled) -> CorrectnessResult<Self> {
         Self::check_fill_instrument(instrument.id(), "instrument.id()", &fill)?;
         let position_id = Self::fill_position_id(&fill)?;
+        check_float_precision(fill.last_px.precision)?;
 
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
@@ -195,6 +198,9 @@ impl Position {
             realized_return: 0.0,
             realized_pnl: None,
         };
+
+        item.check_state_float_precision()?;
+        item.check_fill_float_precision(&fill)?;
         item.apply_fill(&fill, true)?;
         Ok(item)
     }
@@ -378,12 +384,15 @@ impl Position {
     /// # Errors
     ///
     /// Returns an error if the fill instrument or position identity does not match this position,
-    /// the fill has no position ID, or an ordinary duplicate trade ID is applied. An error leaves
-    /// the position unchanged.
+    /// the fill has no position ID, the precision of the fill price, quantity, or a commission
+    /// converted through `f64` exceeds
+    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION), or an ordinary duplicate
+    /// trade ID is applied. An error leaves the position unchanged.
     pub fn try_apply(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
         Self::check_fill_instrument(self.instrument_id, "self.instrument_id", fill)?;
         let position_id = Self::fill_position_id(fill)?;
         check_equal(&self.id, &position_id, "self.id", "fill.position_id")?;
+        self.check_fill_float_precision(fill)?;
         self.apply_fill(fill, true)
     }
 
@@ -405,6 +414,50 @@ impl Position {
             .ok_or_else(|| CorrectnessError::PredicateViolation {
                 message: "`fill.position_id` was None".to_string(),
             })
+    }
+
+    fn check_fill_float_precision(&self, fill: &OrderFilled) -> CorrectnessResult<()> {
+        check_float_precision(fill.last_px.precision)?;
+        check_float_precision(fill.last_qty.precision)?;
+
+        // Only settlement and base-currency commissions convert through `f64`
+        if let Some(commission) = fill.commission
+            && (commission.currency == self.settlement_currency
+                || (self.is_currency_pair && self.base_currency == Some(commission.currency)))
+        {
+            check_float_precision(commission.currency.precision)?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn check_state_float_precision(&self) -> CorrectnessResult<()> {
+        check_float_precision(self.size_precision)?;
+        check_float_precision(self.multiplier.precision)?;
+        check_float_precision(self.settlement_currency.precision)?;
+        check_float_precision(self.quantity.precision)?;
+        check_float_precision(self.buy_qty.precision)?;
+        check_float_precision(self.sell_qty.precision)?;
+
+        if let Some(realized_pnl) = self.realized_pnl {
+            check_float_precision(realized_pnl.currency.precision)?;
+        }
+
+        for fill in &self.events {
+            self.check_fill_float_precision(fill)?;
+        }
+
+        for event in &self.replay_events {
+            match event {
+                PositionReplayEvent::Filled(fill) => self.check_fill_float_precision(fill)?,
+                PositionReplayEvent::InstrumentClosed(close) => {
+                    check_float_precision(close.close_price.precision)?;
+                }
+                PositionReplayEvent::Adjusted(_) => {}
+            }
+        }
+
+        Ok(())
     }
 
     fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) -> CorrectnessResult<()> {
@@ -1328,7 +1381,10 @@ impl Position {
     ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
 
-        let result = if self.is_inverse && !self.instrument_class.is_premium_based() {
+        let result = if self
+            .instrument_class
+            .divides_notional_by_price(self.is_inverse)
+        {
             anyhow::ensure!(
                 self.base_currency.is_some(),
                 "inverse position {} has no base currency",
@@ -1346,14 +1402,16 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns an error if inverse P&L cannot be calculated or the result cannot be represented as
-    /// [`Money`].
+    /// Returns an error if the `quantity` precision exceeds
+    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION), inverse P&L cannot be
+    /// calculated, or the result cannot be represented as [`Money`].
     pub fn try_calculate_pnl(
         &self,
         avg_px_open: f64,
         avg_px_close: f64,
         quantity: Quantity,
     ) -> anyhow::Result<Money> {
+        check_float_precision(quantity.precision)?;
         let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64())?;
         Money::new_checked(pnl_raw, self.settlement_currency).map_err(Into::into)
     }
@@ -1404,12 +1462,14 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns an error if inverse P&L cannot be calculated or the result cannot be represented as
-    /// [`Money`].
+    /// Returns an error if the position is not flat and the `last` precision exceeds
+    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION), inverse P&L cannot be
+    /// calculated, or the result cannot be represented as [`Money`].
     pub fn try_unrealized_pnl(&self, last: Price) -> anyhow::Result<Money> {
         if self.side == PositionSide::Flat {
             Ok(Money::zero(self.settlement_currency))
         } else {
+            check_float_precision(last.precision)?;
             let pnl =
                 self.calculate_pnl_raw(self.avg_px_open, last.as_f64(), self.quantity.as_f64())?;
             Money::new_checked(pnl, self.settlement_currency).map_err(Into::into)
@@ -1709,7 +1769,10 @@ mod tests {
 
     use crate::{
         data::InstrumentClose,
-        enums::{InstrumentCloseType, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
+        enums::{
+            CurrencyType, InstrumentCloseType, OrderSide, OrderType, PositionAdjustmentType,
+            PositionSide,
+        },
         events::{
             OrderEventAny, OrderFillVoided, OrderFilled, PositionAdjusted, PositionSnapshot,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
@@ -1943,6 +2006,223 @@ mod tests {
             }
         );
         assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::price_17("1.00000000000000001", "100000", None, 17)]
+    #[case::price_18("1.000000000000000001", "100000", None, 18)]
+    #[case::quantity_18("1.00000", "1.000000000000000001", None, 18)]
+    #[case::settlement_commission_18("1.00000", "100000", Some(("USD", 18)), 18)]
+    #[case::base_commission_18("1.00000", "100000", Some(("AUD", 18)), 18)]
+    fn test_new_checked_rejects_fill_values_above_float_precision(
+        #[case] last_px: &str,
+        #[case] last_qty: &str,
+        #[case] commission: Option<(&str, u8)>,
+        #[case] expected_precision: u8,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_px(Price::from(last_px))
+            .last_qty(Quantity::from(last_qty))
+            .position_id(PositionId::from("P-1"))
+            .build();
+        fill.commission = commission.map(|(code, precision)| {
+            let currency = Currency::new(code, precision, 0, code, CurrencyType::Fiat);
+            Money::from_decimal(dec!(1), currency).unwrap()
+        });
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Fixed-point precision {expected_precision} exceeds maximum float precision 16"
+            )
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::size_precision(18, 0, 2)]
+    #[case::multiplier(0, 18, 2)]
+    #[case::settlement_currency(0, 0, 18)]
+    fn test_new_checked_rejects_instrument_above_float_precision(
+        #[case] size_precision: u8,
+        #[case] multiplier_precision: u8,
+        #[case] quote_precision: u8,
+        mut audusd_sim: CurrencyPair,
+    ) {
+        audusd_sim.size_precision = size_precision;
+        audusd_sim.multiplier = Quantity::from_decimal_dp(dec!(1), multiplier_precision).unwrap();
+        audusd_sim.quote_currency =
+            Currency::new("USD", quote_precision, 840, "US dollar", CurrencyType::Fiat);
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-1"))
+            .build();
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Fixed-point precision 18 exceeds maximum float precision 16"
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_accepts_fill_values_at_float_precision(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let usd = Currency::new("USD", 16, 840, "US dollar", CurrencyType::Fiat);
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_px(Price::from("1.5000000000000000"))
+            .last_qty(Quantity::from("2.0000000000000000"))
+            .position_id(PositionId::from("P-1"))
+            .build();
+        fill.commission = Some(Money::from_decimal(dec!(0.25), usd).unwrap());
+
+        let position = Position::new_checked(&instrument, fill).unwrap();
+
+        assert_eq!(position.avg_px_open, 1.5);
+        assert_eq!(position.signed_qty, 2.0);
+        assert_eq!(position.quantity, Quantity::from("2.0000000000000000"));
+        assert_eq!(position.realized_pnl, Some(Money::from("-0.25 USD")));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_accepts_unconverted_commission_above_float_precision(
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let wei = Currency::new("WEI", 18, 0, "Wei", CurrencyType::Crypto);
+        let commission = Money::from_decimal(dec!(0.000000000000000001), wei).unwrap();
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-1"))
+            .build();
+        fill.commission = Some(commission);
+
+        let position = Position::new_checked(&instrument, fill).unwrap();
+
+        assert_eq!(position.commissions(), vec![commission]);
+        assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_apply_rejects_fill_above_float_precision_without_mutation(
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-1");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let fill_invalid = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-2"))
+            .last_px(Price::from("1.000000000000000001"))
+            .position_id(position_id)
+            .build();
+        let mut position = Position::new(&instrument, fill_open);
+        let state_before = serde_json::to_value(&position).unwrap();
+
+        let error = position.try_apply(&fill_invalid).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Fixed-point precision 18 exceeds maximum float precision 16"
+        );
+        assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::unchanged(|_: &mut Position| {}, None)]
+    #[case::buy_qty(
+        |position: &mut Position| position.buy_qty = Quantity::from("1.000000000000000001"),
+        Some(18)
+    )]
+    #[case::sell_qty(
+        |position: &mut Position| position.sell_qty = Quantity::from("1.000000000000000001"),
+        Some(18)
+    )]
+    #[case::event_fill(
+        |position: &mut Position| position.events[0].last_px = Price::from("1.000000000000000001"),
+        Some(18)
+    )]
+    #[case::replay_fill(
+        |position: &mut Position| {
+            let mut fill = position.events[0].clone();
+            fill.last_qty = Quantity::from("1.00000000000000001");
+            position.replay_events.push(PositionReplayEvent::Filled(fill));
+        },
+        Some(17)
+    )]
+    #[case::replay_close(
+        |position: &mut Position| {
+            let close = InstrumentClose::new(
+                position.instrument_id,
+                Price::from("1.000000000000000001"),
+                InstrumentCloseType::ContractExpired,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+            position.replay_events.push(PositionReplayEvent::InstrumentClosed(close));
+        },
+        Some(18)
+    )]
+    #[case::realized_pnl(
+        |position: &mut Position| {
+            let usd = Currency::new("USD", 18, 840, "US dollar", CurrencyType::Fiat);
+            position.realized_pnl = Some(Money::from_decimal(dec!(1), usd).unwrap());
+        },
+        Some(18)
+    )]
+    fn test_check_state_float_precision_covers_stored_values(
+        #[case] mutate: fn(&mut Position),
+        #[case] expected_error_precision: Option<u8>,
+        mut stub_position_long: Position,
+    ) {
+        mutate(&mut stub_position_long);
+
+        let result = stub_position_long.check_state_float_precision();
+
+        let expected = expected_error_precision.map_or(Ok(()), |precision| {
+            Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Fixed-point precision {precision} exceeds maximum float precision 16"
+                ),
+            })
+        });
+
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_pnl_rejects_values_above_float_precision(stub_position_long: Position) {
+        let last = Price::from("1.000000000000000001");
+        let quantity = Quantity::from("1.000000000000000001");
+        let expected = "Fixed-point precision 18 exceeds maximum float precision 16";
+
+        let unrealized = stub_position_long.try_unrealized_pnl(last).unwrap_err();
+        let total = stub_position_long.try_total_pnl(last).unwrap_err();
+        let calculated = stub_position_long
+            .try_calculate_pnl(1.0, 1.0, quantity)
+            .unwrap_err();
+
+        assert_eq!(unrealized.to_string(), expected);
+        assert_eq!(total.to_string(), expected);
+        assert_eq!(calculated.to_string(), expected);
     }
 
     #[rstest]

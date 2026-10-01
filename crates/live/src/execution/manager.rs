@@ -376,6 +376,15 @@ impl ExecutionManager {
                 .is_none_or(|order| Self::submission_is_unacknowledged(&order))
     }
 
+    /// Returns retained submissions which still lack a native outcome or venue confirmation.
+    pub(crate) fn unresolved_submission_ids(&self) -> Vec<ClientOrderId> {
+        self.submissions
+            .keys()
+            .copied()
+            .filter(|client_order_id| self.submission_recovery_pending(*client_order_id))
+            .collect()
+    }
+
     /// Retires submission recovery after a native outcome has been applied.
     ///
     /// An acknowledgement ends the submission budget, including recovery for commands
@@ -1119,6 +1128,7 @@ impl ExecutionManager {
         // Process orphan fills (fills without matching order reports)
         let processed_venue_order_ids: IndexSet<VenueOrderId> =
             order_reports.keys().copied().collect();
+        let mut dropped_fill_groups: Vec<(VenueOrderId, InstrumentId, usize)> = Vec::new();
 
         for (venue_order_id, fills) in fill_reports {
             if processed_venue_order_ids.contains(venue_order_id) {
@@ -1247,6 +1257,14 @@ impl ExecutionManager {
                         external_orders.push(metadata);
                     }
                 }
+            } else {
+                log::debug!(
+                    "Dropping {} fill(s) for venue order {venue_order_id} ({}): \
+                     no order report or cached order",
+                    fills.len(),
+                    first_fill.instrument_id,
+                );
+                dropped_fill_groups.push((*venue_order_id, first_fill.instrument_id, fills.len()));
             }
         }
 
@@ -1337,6 +1355,26 @@ impl ExecutionManager {
 
         if orders_skipped_no_instrument > 0 {
             log::warn!("{orders_skipped_no_instrument} orders skipped (instrument not in cache)");
+        }
+
+        if !dropped_fill_groups.is_empty() {
+            let dropped_fill_count: usize =
+                dropped_fill_groups.iter().map(|(_, _, count)| count).sum();
+
+            let samples = dropped_fill_groups
+                .iter()
+                .take(5)
+                .map(|(venue_order_id, instrument_id, _)| {
+                    format!("{venue_order_id} ({instrument_id})")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            log::warn!(
+                "Dropped {dropped_fill_count} fill(s) in {} fill group(s) without an order report \
+                 or cached order ({samples})",
+                dropped_fill_groups.len(),
+            );
         }
 
         if orders_skipped_duplicate > 0 {

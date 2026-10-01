@@ -20,7 +20,9 @@
     reason = "catalog store functions forward object-store errors"
 )]
 
+use anyhow::Context;
 use nautilus_common::live::block_on_nautilus_with;
+use nautilus_model::data::NautilusDataType;
 use object_store::ObjectMeta;
 
 use super::{
@@ -32,7 +34,9 @@ use super::{
     urisafe_instrument_id,
 };
 use crate::{
-    catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
+    catalog::types::{
+        CatalogDataType, catalog_data_type_from_path, parquet_catalog_data_type_path_prefixes,
+    },
     common::paths::normalize_path_separators,
 };
 
@@ -850,24 +854,29 @@ impl ParquetDataCatalog {
         if !self.is_remote_uri() {
             let directory = PathBuf::from(self.native_base_path_string()).join(subdirectory);
 
-            // Check if directory exists
-            if !directory.exists() {
-                return Ok(Vec::new());
-            }
+            let entries = match std::fs::read_dir(&directory) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+                Err(e) => {
+                    return Err(e)
+                        .with_context(|| format!("failed to list {}", directory.display()));
+                }
+            };
 
-            // List all entries in the directory
             let mut directories = Vec::new();
 
-            if let Ok(entries) = std::fs::read_dir(&directory) {
-                for entry in entries.flatten() {
-                    if let Ok(file_type) = entry.file_type()
-                        && file_type.is_dir()
-                    {
-                        // Use file_name() to get the directory name (not file_stem which removes extension)
-                        if let Some(name) = entry.path().file_name() {
-                            directories.push(name.to_string_lossy().to_string());
-                        }
-                    }
+            for entry in entries {
+                let entry =
+                    entry.with_context(|| format!("failed to list {}", directory.display()))?;
+                let file_type = entry
+                    .file_type()
+                    .with_context(|| format!("failed to read {}", entry.path().display()))?;
+
+                // Use file_name() to get the directory name (not file_stem which removes extension)
+                if file_type.is_dir()
+                    && let Some(name) = entry.path().file_name()
+                {
+                    directories.push(name.to_string_lossy().to_string());
                 }
             }
 
@@ -907,14 +916,14 @@ impl ParquetDataCatalog {
         Ok(list_result)
     }
 
-    /// Lists all data types available in the catalog.
+    /// Lists the data, record, and instrument types stored in the catalog.
     ///
-    /// This method returns the names of all data type directories in the catalog.
-    /// Data types correspond to different kinds of market data (e.g., "quotes", "trades", "bars").
+    /// Each `data/<type>` directory maps to its catalog type, and each `data/custom/<type_name>`
+    /// directory to a custom data type. Unrecognized directories are skipped with a warning.
     ///
     /// # Returns
     ///
-    /// Returns a vector of data type names, or an error if the operation fails.
+    /// Returns the catalog types, or an error if the operation fails.
     ///
     /// # Errors
     ///
@@ -938,12 +947,31 @@ impl ParquetDataCatalog {
     /// // List all data types
     /// let data_types = catalog.list_data_types()?;
     /// for data_type in data_types {
-    ///     println!("Available data type: {}", data_type);
+    ///     println!("Available data type: {data_type}");
     /// }
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn list_data_types(&self) -> anyhow::Result<Vec<String>> {
-        self.list_directory_stems("data")
+    pub fn list_data_types(&self) -> anyhow::Result<Vec<CatalogDataType>> {
+        let mut data_types = Vec::new();
+
+        for stem in self.list_directory_stems("data")? {
+            if stem == "custom" {
+                for type_name in self.list_directory_stems("data/custom")? {
+                    data_types.push(CatalogDataType::from(NautilusDataType::Custom {
+                        type_name,
+                    }));
+                }
+
+                continue;
+            }
+
+            match catalog_data_type_from_path(&stem) {
+                Ok(data_type) => data_types.push(data_type),
+                Err(e) => log::warn!("Skipping catalog directory data/{stem}: {e}"),
+            }
+        }
+
+        Ok(data_types)
     }
 
     /// Lists all backtest run IDs available in the catalog.

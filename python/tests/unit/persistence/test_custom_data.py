@@ -25,6 +25,7 @@ from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import register_custom_data_class
@@ -214,7 +215,7 @@ def _roundtrip(tmp_path: Path, data_type: object, original: object) -> object:
     catalog.write_custom_data([CustomData(data_type, original)])
 
     result = catalog.query_custom_data(
-        data_type.type_name,
+        NautilusDataType.Custom(data_type.type_name),
         identifiers=[data_type.identifier] if data_type.identifier else None,
     )
 

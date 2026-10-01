@@ -615,6 +615,7 @@ impl FeedHandler {
                                 }
                             } else {
                                 self.book.delta_subs.remove(&market_index);
+                                self.cancel_orphaned_book_recovery(market_index);
                             }
                         }
                         HandlerCommand::SetDepthSub { market_index, subscribed } => {
@@ -628,6 +629,7 @@ impl FeedHandler {
                                 }
                             } else {
                                 self.book.depth_subs.remove(&market_index);
+                                self.cancel_orphaned_book_recovery(market_index);
                             }
                         }
                         HandlerCommand::SetExecutionContext { account_id, account_index } => {
@@ -1571,6 +1573,24 @@ impl FeedHandler {
                 .as_str(),
         );
 
+        let waiting = matches!(error, LighterWsError::Client(_))
+            && self
+                .subscription_attempts
+                .get(&topic)
+                .is_some_and(|attempt| {
+                    !attempt.response_txs.is_empty() || !attempt.pending_response_txs.is_empty()
+                });
+
+        if waiting {
+            // The waiting subscriber owns the failure and releases its stream reference; an expired
+            // initial wait must not start recovery before that release.
+            self.book.initial.remove(&market_index);
+            self.cancel_subscription_attempt(&topic, &error.to_string());
+            log::error!(
+                "Lighter book subscription rejected for market_index={market_index}: {error}"
+            );
+        }
+
         if let Some(recovery) = self
             .book
             .recovery
@@ -1584,22 +1604,7 @@ impl FeedHandler {
             recovery
                 .outcome
                 .send_replace(BookRecoveryOutcome::Rejected(error));
-        } else if matches!(error, LighterWsError::Client(_))
-            && self
-                .subscription_attempts
-                .get(&topic)
-                .is_some_and(|attempt| {
-                    !attempt.response_txs.is_empty() || !attempt.pending_response_txs.is_empty()
-                })
-        {
-            // The waiting subscriber owns the failure and releases its stream reference; an expired
-            // initial wait must not start recovery before that release.
-            self.book.initial.remove(&market_index);
-            self.cancel_subscription_attempt(&topic, &error.to_string());
-            log::error!(
-                "Lighter book subscription rejected for market_index={market_index}: {error}"
-            );
-        } else {
+        } else if !waiting {
             self.start_book_recovery(market_index);
         }
     }
@@ -1631,6 +1636,14 @@ impl FeedHandler {
             cmd_tx,
             self.book_snapshot_timeout,
         ));
+    }
+
+    // A rejected subscriber releases its stream reference without an unsubscribe, so the last
+    // consumer's release must end the recovery.
+    fn cancel_orphaned_book_recovery(&mut self, market_index: i64) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            self.book.recovery.remove(&market_index);
+        }
     }
 
     fn complete_typed_subscription(&mut self, topic: &str, epoch: u64) -> bool {
@@ -2335,6 +2348,7 @@ pub(crate) fn create_lighter_ws_timeout_error(_msg: String) -> LighterWsError {
 mod tests {
     use std::time::Duration;
 
+    use futures_util::FutureExt;
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_model::{
         enums::{AccountType, BookAction, RecordFlag},
@@ -2417,6 +2431,10 @@ mod tests {
         include_str!("../../test_data/ws_spot_market_stats_subscribed_single_bad_body.json");
     const WS_BOOK_SUBSCRIBED_BAD_BODY: &str =
         include_str!("../../test_data/ws_order_book_subscribed_bad_body.json");
+    const WS_SUBSCRIBE_FAILED: &str =
+        r#"{"type":"error","code":30012,"message":"failed to subscribe"}"#;
+    const BOOK_SUBSCRIBE_REJECTION: &str =
+        "client error: venue rejected the WebSocket subscribe with code 30012: order_book:0";
 
     fn handle_control_text(
         handler: &mut FeedHandler,
@@ -2613,6 +2631,212 @@ mod tests {
         assert!(!handler.inflight_subs.contains_key(&topic));
         assert!(!handler.book.initial.contains_key(&0));
         assert!(initial.is_cancelled());
+    }
+
+    // A rejected replacement answers the subscriber still waiting on the initial subscribe, and
+    // the recovery keeps its gate closed until the subscriber releases the book.
+    #[rstest]
+    #[case::response_txs(false)]
+    #[case::pending_response_txs(true)]
+    #[tokio::test]
+    async fn book_client_rejection_during_recovery_answers_waiting_subscriber(
+        #[case] pending: bool,
+    ) {
+        let (mut handler, _cmd_tx, mut result) =
+            recovering_book_with_waiting_subscriber(false).await;
+        let topic = Ustr::from("order_book:0");
+
+        if pending {
+            // Book subscribes carry no auth, so seed a waiter behind a pending auth change directly
+            let attempt = handler.subscription_attempts.get_mut(&topic).unwrap();
+            attempt.pending_auth = Some(SecretString::from("token"));
+            attempt.pending_response_txs = std::mem::take(&mut attempt.response_txs);
+        }
+
+        let recovery = Arc::clone(handler.book.recovery[&0].current().unwrap());
+        let gate_opened = !recovery.gate.lock().is_closed();
+        let pending = result.try_recv();
+
+        handle_control_text(&mut handler, WS_SUBSCRIBE_FAILED);
+
+        assert!(gate_opened);
+        assert_eq!(
+            pending,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        assert_eq!(
+            result.try_recv(),
+            Ok(Err(BOOK_SUBSCRIBE_REJECTION.to_string()))
+        );
+        assert!(!handler.subscription_attempts.contains_key(&topic));
+        assert!(!handler.inflight_subs.contains_key(&topic));
+        assert!(!handler.book.expected.contains_key(&0));
+        assert!(recovery.is_running());
+        assert!(recovery.gate.lock().is_closed());
+        assert!(matches!(
+            &*recovery.outcome.borrow(),
+            BookRecoveryOutcome::Rejected(LighterWsError::Client(message))
+                if message == "venue rejected the WebSocket subscribe with code 30012"
+        ));
+    }
+
+    // The rejected subscriber's release ends the recovery unless another consumer still references
+    // the book, whose next replacement then queues a fresh attempt; either way a late snapshot
+    // cannot reopen the book.
+    #[rstest]
+    #[case::deltas_last_reference(false, false)]
+    #[case::deltas_other_consumer(false, true)]
+    #[case::depth_last_reference(true, false)]
+    #[case::depth_other_consumer(true, true)]
+    #[tokio::test]
+    async fn book_rejected_subscriber_release_cancels_orphaned_recovery(
+        #[case] depth: bool,
+        #[case] other_consumer: bool,
+    ) {
+        let (mut handler, cmd_tx, mut result) =
+            recovering_book_with_waiting_subscriber(depth).await;
+        let topic = Ustr::from("order_book:0");
+
+        if other_consumer {
+            let other = if depth {
+                &mut handler.book.delta_subs
+            } else {
+                &mut handler.book.depth_subs
+            };
+
+            other.insert(0);
+            assert!(!handler.subscriptions.add_reference("order_book:0"));
+        }
+
+        let recovery = Arc::clone(handler.book.recovery[&0].current().unwrap());
+        handle_control_text(&mut handler, WS_SUBSCRIBE_FAILED);
+        let answer = result.try_recv();
+
+        // Release as the rejected client does: drop the reference, then clear the consumer flag
+        let released = handler.subscriptions.remove_reference("order_book:0");
+
+        let release = if depth {
+            HandlerCommand::SetDepthSub {
+                market_index: 0,
+                subscribed: false,
+            }
+        } else {
+            HandlerCommand::SetBookDeltasSub {
+                market_index: 0,
+                subscribed: false,
+            }
+        };
+
+        cmd_tx.send(release).unwrap();
+        cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+        assert!(handler.next().await.is_none());
+
+        let frame: LighterWsFrame = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_book_subscribed.json"
+        ))
+        .unwrap();
+        let late = handler.handle_frame(frame, UnixNanos::from(1));
+        let (completion, _completed) = tokio::sync::oneshot::channel();
+        handler.queue_book_replacement(
+            0,
+            BookWrite {
+                cancel: recovery.cancellation.child_token(),
+                gate: recovery.gate.clone(),
+                completion,
+            },
+        );
+
+        let replacement = handler.subscription_attempts.get(&topic).map(|attempt| {
+            (
+                attempt.response_txs.len(),
+                handler.pending_subs.contains(&(topic, attempt.generation)),
+            )
+        });
+
+        assert_eq!(answer, Ok(Err(BOOK_SUBSCRIBE_REJECTION.to_string())));
+        assert_eq!(released, !other_consumer);
+        assert_eq!(recovery.is_running(), other_consumer);
+        assert_eq!(handler.book.recovery.contains_key(&0), other_consumer);
+        assert_eq!(handler.book.work.len(), usize::from(other_consumer));
+        assert!(!recovery.is_accepted());
+        assert!(recovery.gate.lock().is_closed());
+        assert!(late.is_empty());
+        assert!(!handler.book.snapshots_seen.contains(&0));
+        assert_eq!(handler.book.writes.contains_key(&0), other_consumer);
+        assert_eq!(replacement, other_consumer.then_some((0, true)));
+    }
+
+    // Rate limits the initial book subscribe, which starts a recovery, then confirms the
+    // recovery's replacement write while the initial subscriber still waits.
+    async fn recovering_book_with_waiting_subscriber(
+        depth: bool,
+    ) -> (
+        FeedHandler,
+        tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        tokio::sync::oneshot::Receiver<Result<(), String>>,
+    ) {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+        handler.set_command_sender(cmd_tx.clone());
+        handler.instruments.insert(0, stub_eth_perp_instrument());
+
+        if depth {
+            handler.book.depth_subs.insert(0);
+        } else {
+            handler.book.delta_subs.insert(0);
+        }
+
+        handler.subscriptions.add_reference("order_book:0");
+        let (response, result) = tokio::sync::oneshot::channel();
+        mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), Some(response));
+        handle_control_text(
+            &mut handler,
+            r#"{"type":"error","code":30009,"message":"rate limit exceeded"}"#,
+        );
+
+        // The first attempt requests its replacement on the first poll
+        assert!(handler.book.work.next().now_or_never().is_none());
+
+        let Ok(HandlerCommand::RecoverBook {
+            market_index,
+            cancel,
+            gate,
+            completion,
+        }) = handler.cmd_rx.try_recv()
+        else {
+            panic!("expected book replacement request");
+        };
+
+        handler.queue_book_replacement(
+            market_index,
+            BookWrite {
+                cancel,
+                gate,
+                completion,
+            },
+        );
+
+        handler.pump_pending_subscribes().await;
+
+        // The send fails without a socket, so confirm the write as the connection would
+        let Some(BookWorkResult::Sent {
+            market_index,
+            generation,
+            cancel,
+            write,
+            ..
+        }) = handler.book.work.next().await
+        else {
+            panic!("expected replacement send");
+        };
+
+        handler.complete_book_send(market_index, generation, cancel, write, Ok(0));
+
+        (handler, cmd_tx, result)
     }
 
     // A failed replacement frees its slot during backoff so other subscriptions can proceed

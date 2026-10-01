@@ -215,12 +215,97 @@ smallest stream that covers the active Nautilus subscriptions:
 - Book deltas subscribe at the AX level matching the Nautilus book type. `L1_MBP` has no
   delta-capable AX equivalent, so the adapter logs a warning and subscribes at L2 instead.
 - If multiple Nautilus data types are active for a symbol, the adapter resubscribes only when the
-  required AX level or delivery flags change.
+  required AX level or delivery flags change, or when an order book needs a fresh snapshot (see
+  [Order book recovery](#order-book-recovery)).
+- Subscription changes reach AX in the order the data engine issues them, so an unsubscribe
+  followed by a resubscribe leaves the stream subscribed.
 
 AX documents estimated funding rates on ticker events and an estimated-funding request on the orders
 WebSocket. Ticker models retain estimated-funding metadata. Nautilus exposes settled funding-rate
 updates through HTTP polling; the adapter does not emit a separate estimated-funding data type or
 request standalone estimates.
+
+### Order book recovery
+
+The data client tracks each order book delta subscription with the
+[shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
+AX L2 and L3 messages carry a full snapshot and no sequence number, and AX sends one right after
+each subscribe acknowledgement, including for an empty or unchanged book. The client accepts every
+message as a snapshot. It suppresses book output while a subscription write is in flight and drops
+frames for a book that is no longer subscribed.
+
+Recovery replaces the symbol's subscription with an unsubscribe and a subscribe on the same
+connection, echoing its current level and trade and ticker flags. AX carries all market data for a
+symbol on one stream, so trades, quotes, mark prices, and instrument status for that symbol pause
+while the replacement runs. Recovery starts when:
+
+- An initial subscription write fails.
+- No snapshot arrives within `book_snapshot_timeout_secs` (default 10 seconds) after the initial
+  subscription write completes or the connection is re-established. A data client `connect` after
+  `disconnect` counts too: the client keeps its books, and the WebSocket client replays their
+  subscriptions.
+- An L2 or L3 frame cannot be converted, such as an incremental (`st: false`) frame. The book stops
+  emitting until a replacement snapshot arrives, and a running recovery's current attempt fails
+  without waiting for its snapshot deadline.
+
+A subscription AX rejects delivers no snapshot, so its snapshot deadline starts recovery. A
+subscription the client cannot queue because the WebSocket handler has stopped starts no recovery,
+and its book emits nothing. Subscribing to deltas for a book whose stream is already open replaces
+the stream, so the book starts from a fresh snapshot.
+
+Each recovery makes up to eight attempts within 180 seconds, with exponential backoff, then
+continues at an interval that doubles from one minute to fifteen minutes until a snapshot is
+accepted. A running recovery continues across reconnects with its remaining budget, and
+unsubscribe or shutdown cancels it. A recovery waiting between attempts after its budget retries at
+once on the new connection. Recovery never ends in a failed state.
+
+The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
+queued before a replacement can complete recovery once the replacement write finishes. AX sends no
+frames while a book is unchanged, so the client does not treat a silent book as stale.
+
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only
+from a failed initial write or an invalid frame. Within the retry budget, a replacement that
+delivers no snapshot leaves its attempt waiting until a snapshot is accepted, an invalid frame
+fails it, recovery is cancelled, or the 180-second initial budget ends.
+
+### Live recovery validation
+
+The `ax-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It uses AX sandbox market data, submits no orders, and checks five perpetual books against
+the book stream contract and against the book in each raw L2 frame the harness relays.
+
+The AX market data stream requires authentication, so the harness reads sandbox API credentials
+from `AX_API_KEY` and `AX_API_SECRET` and runs without `scripts/strip-adapter-env.bash`. From the
+repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo test -p nautilus-architect-ax --features examples --test ax-book-stress -- --timeout 10 --rounds 14
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): rotates invalid frames that each book recovers without a reconnect,
+  snapshots held past their deadlines after a reconnect, late snapshots after a reconnect, a
+  rejected replacement, reconnects cut before their snapshots, a restart during recovery, and a
+  40-second traffic freeze that closes no socket.
+- `initial`: drops each book's first snapshot and silences its stream, in a fresh session per
+  round. With `--timeout 0`, the books stay dark until a reconnect replays their subscriptions.
+- `turnover`: unsubscribes and resubscribes a recovering book just after recovery starts, after its
+  replacement reaches the venue, or after a rejected replacement's deadline. The new subscription
+  must keep streaming once the venue settles, with no further replacement.
+- `boundaries`: rejects every attempt in the retry budget, then checks the retry ceiling, a
+  reconnect that ends the ceiling wait, unsubscribe during recovery, and shutdown during a
+  reconnect. It requires a nonzero `--timeout`, since snapshot deadlines end each rejected attempt,
+  and at least three `--symbols`.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (14 by default). `--symbols` takes a comma-separated list of
+symbols to check. The sandbox market maker quotes only some instruments, and a book that stops
+streaming fails the run, so choose books that stream.
+
+The harness requires the sandbox market data WebSocket and REST API. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
 
 ### HTTP API behavior
 
@@ -446,6 +531,7 @@ API base URL. The adapter resolves both from the configured environment.
 | `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
 | `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.  |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                        |
 
 ### Execution client configuration options

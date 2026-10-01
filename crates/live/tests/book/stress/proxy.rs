@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A local WebSocket relay that injects faults between an adapter and its venue.
+//! A local relay that injects faults between an adapter and its venue.
 //!
 //! Each proxied socket opens its own venue connection and its own [`WireConnection`]. The relay
 //! passes every venue message to [`WireConnection::upstream`] first, so the harness oracle sees
@@ -21,6 +21,11 @@
 //! holds in that order. An adapter subscribe that a reject rule matches never reaches the venue;
 //! the relay answers it with a venue rejection instead. Messages the relay does not rewrite are
 //! forwarded byte for byte.
+//!
+//! A route relays WebSocket messages, or CRLF-delimited lines over raw TCP for a venue such as
+//! Betfair. A line route has no path to route by, so it serves the proxy address alone; the relay
+//! presents each line to the wire handling as a text message, and [`WireCodec::connect`] opens
+//! its venue connection.
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -41,13 +46,14 @@ use axum::{
     http::HeaderMap,
     routing::get,
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, future::BoxFuture};
 use nautilus_common::live::dst::{
     self,
     time::{Duration, Instant},
 };
-use nautilus_network::net::TcpListener;
+use nautilus_network::net::{TcpListener, TcpStream};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue};
 
 const HELD_MAX: usize = 20_000;
@@ -87,23 +93,6 @@ impl FaultProxy {
             upstream_failures: AtomicUsize::new(0),
         });
 
-        let mut app = Router::new();
-
-        for (index, route) in state.routes.iter().enumerate() {
-            let state = Arc::clone(&state);
-
-            let handler = move |ws: WebSocketUpgrade, headers: HeaderMap| {
-                let state = Arc::clone(&state);
-                async move { ws.on_upgrade(move |socket| relay(socket, state, index, headers)) }
-            };
-
-            app = app.route(route.route.path, get(handler));
-        }
-
-        if let Some(router) = router {
-            app = app.merge(router);
-        }
-
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("proxy listener binds");
@@ -111,9 +100,41 @@ impl FaultProxy {
             .local_addr()
             .expect("proxy listener has an address");
 
-        let server = dst::task::spawn(async move {
-            axum::serve(listener, app).await.expect("proxy serves");
-        });
+        let server = if state.routes.iter().any(|route| route.route.is_line()) {
+            assert!(
+                state.routes.len() == 1 && router.is_none(),
+                "a line route serves the proxy address alone"
+            );
+            let state = Arc::clone(&state);
+
+            dst::task::spawn(async move {
+                loop {
+                    let (adapter, _) = listener.accept().await.expect("proxy accepts");
+                    dst::task::spawn(relay_lines(adapter, Arc::clone(&state), 0));
+                }
+            })
+        } else {
+            let mut app = Router::new();
+
+            for (index, route) in state.routes.iter().enumerate() {
+                let state = Arc::clone(&state);
+
+                let handler = move |ws: WebSocketUpgrade, headers: HeaderMap| {
+                    let state = Arc::clone(&state);
+                    async move { ws.on_upgrade(move |socket| relay(socket, state, index, headers)) }
+                };
+
+                app = app.route(route.route.path, get(handler));
+            }
+
+            if let Some(router) = router {
+                app = app.merge(router);
+            }
+
+            dst::task::spawn(async move {
+                axum::serve(listener, app).await.expect("proxy serves");
+            })
+        };
 
         Self {
             addr,
@@ -256,19 +277,26 @@ impl FaultProxy {
     }
 }
 
-/// A proxied WebSocket endpoint.
+/// A proxied endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Route {
     /// Name used in counters and report fields.
     pub(crate) name: &'static str,
-    /// Local path the adapter connects to.
+    /// Local path the adapter connects to; a line route has none.
     pub(crate) path: &'static str,
-    /// Venue URL the relay connects to.
+    /// Venue URL the relay connects to. A `ws://` or `wss://` URL makes a WebSocket route, and
+    /// any other URL a line route.
     pub(crate) upstream: String,
     /// Reconnect registry endpoint of the adapter socket on this route.
     pub(crate) endpoint: &'static str,
     /// Handshake headers copied from the adapter's request to the venue.
     pub(crate) headers: &'static [&'static str],
+}
+
+impl Route {
+    fn is_line(&self) -> bool {
+        !(self.upstream.starts_with("ws://") || self.upstream.starts_with("wss://"))
+    }
 }
 
 /// The kind of book frame a fault rule applies to.
@@ -321,7 +349,28 @@ pub(crate) trait WireConnection: Send {
 pub(crate) trait WireCodec: Send + Sync + 'static {
     /// Opens wire handling for connection `number` on `route`, counting from one.
     fn open(&self, route: &Route, number: usize) -> Box<dyn WireConnection>;
+
+    /// Opens the venue connection for a line route.
+    ///
+    /// The default connects over plain TCP to the address after the upstream URL's scheme. A
+    /// venue overrides it to wrap the connection, for example in TLS.
+    fn connect(&self, route: &Route) -> BoxFuture<'static, std::io::Result<Box<dyn LineStream>>> {
+        let addr = route
+            .upstream
+            .split_once("://")
+            .map_or_else(|| route.upstream.clone(), |(_, addr)| addr.to_string());
+
+        Box::pin(async move {
+            let stream = TcpStream::connect(addr).await?;
+            Ok(Box::new(stream) as Box<dyn LineStream>)
+        })
+    }
 }
+
+/// A venue connection that a line route relays.
+pub(crate) trait LineStream: AsyncRead + AsyncWrite + Send + Unpin {}
+
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> LineStream for T {}
 
 /// Fault rules and counters for one book.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -397,15 +446,17 @@ async fn relay(mut socket: WebSocket, state: Arc<ProxyState>, index: usize, head
     let mut held = VecDeque::<(String, Message)>::new();
     let mut release = state.release.subscribe();
 
-    loop {
+    'relay: loop {
         state.thaw().await;
 
         tokio::select! {
             biased;
 
             Ok(()) = release.changed() => {
-                if !release_held(&state, &mut socket, &mut held).await {
-                    break;
+                for message in take_released(&state, &mut held) {
+                    if socket.send(to_client(message)).await.is_err() {
+                        break 'relay;
+                    }
                 }
             }
             message = socket.recv() => {
@@ -457,24 +508,101 @@ async fn relay(mut socket: WebSocket, state: Arc<ProxyState>, index: usize, head
     let _ = dst::time::timeout(Duration::from_secs(1), upstream.close(None)).await;
 }
 
-// Returns false once the adapter socket closes
-async fn release_held(
-    state: &ProxyState,
-    socket: &mut WebSocket,
-    held: &mut VecDeque<(String, Message)>,
-) -> bool {
-    let mut remaining = VecDeque::new();
+async fn relay_lines(adapter: TcpStream, state: Arc<ProxyState>, index: usize) {
+    let route_state = &state.routes[index];
+    let route = &route_state.route;
 
-    while let Some((key, message)) = held.pop_front() {
-        if state.is_held(&key) {
-            remaining.push_back((key, message));
-        } else if socket.send(to_client(message)).await.is_err() {
-            return false;
+    let upstream = match state.codec.connect(route).await {
+        Ok(upstream) => upstream,
+        Err(e) => {
+            state.upstream_failures.fetch_add(1, Ordering::SeqCst);
+            eprintln!("Upstream connect failed on route {}: {e}", route.name);
+            return;
+        }
+    };
+
+    state.active.fetch_add(1, Ordering::SeqCst);
+    let _active = ActiveRelay(Arc::clone(&state));
+    let number = route_state.connections.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut wire = state.codec.open(route, number);
+    let mut held = VecDeque::<(String, Message)>::new();
+    let mut release = state.release.subscribe();
+    let (adapter_read, mut adapter_write) = adapter.into_split();
+    let mut adapter_lines = BufReader::new(adapter_read).lines();
+    let (upstream_read, mut upstream_write) = tokio::io::split(upstream);
+    let mut upstream_lines = BufReader::new(upstream_read).lines();
+
+    'relay: loop {
+        state.thaw().await;
+
+        tokio::select! {
+            biased;
+
+            Ok(()) = release.changed() => {
+                for message in take_released(&state, &mut held) {
+                    if write_line(&mut adapter_write, &message).await.is_err() {
+                        break 'relay;
+                    }
+                }
+            }
+            line = adapter_lines.next_line() => {
+                let Ok(Some(line)) = line else { break };
+                let message = Message::Text(line.into());
+
+                if let Some(reply) = state.reject(wire.as_mut(), &message) {
+                    if write_line(&mut adapter_write, &reply).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+
+                let keys = wire.client(&message);
+
+                if write_line(&mut upstream_write, &message).await.is_err()
+                    || state.unsubscribe(&keys)
+                {
+                    break;
+                }
+            }
+            line = upstream_lines.next_line() => {
+                let Ok(Some(line)) = line else { break };
+                route_state.frames.fetch_add(1, Ordering::SeqCst);
+                let mut message = Message::Text(line.into());
+
+                match state.inspect(route.name, number, wire.as_mut(), &mut message, &held) {
+                    Action::Forward => {
+                        if write_line(&mut adapter_write, &message).await.is_err() {
+                            break;
+                        }
+                    }
+                    Action::Drop => {}
+                    Action::Hold(key) => {
+                        held.push_back((key, message));
+                        assert!(held.len() < HELD_MAX, "held-frame queue stays bounded");
+                    }
+                    Action::Cut => break,
+                }
+            }
         }
     }
 
-    *held = remaining;
-    true
+    let _ = dst::time::timeout(Duration::from_secs(1), upstream_write.shutdown()).await;
+}
+
+async fn write_line(
+    writer: &mut (impl AsyncWrite + Unpin),
+    message: &Message,
+) -> std::io::Result<()> {
+    let text = message.to_text().map_err(std::io::Error::other)?;
+    writer.write_all(format!("{text}\r\n").as_bytes()).await
+}
+
+// Removes held frames whose book no longer holds and returns them in arrival order
+fn take_released(state: &ProxyState, held: &mut VecDeque<(String, Message)>) -> Vec<Message> {
+    let (released, remaining): (Vec<_>, Vec<_>) =
+        held.drain(..).partition(|(key, _)| !state.is_held(key));
+    *held = remaining.into();
+    released.into_iter().map(|(_, message)| message).collect()
 }
 
 fn to_client(message: Message) -> ClientMessage {
@@ -658,11 +786,16 @@ impl Drop for ActiveRelay {
 mod tests {
     use rstest::rstest;
     use serde_json::{Value, json};
+    use tokio::{
+        io::Lines,
+        net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    };
     use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
     use super::*;
 
     type Client = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+    type LineReader = Lines<BufReader<OwnedReadHalf>>;
 
     // Frames are JSON objects: `{"key": "A", "kind": "snapshot"}`, `{"unsubscribed": "A"}`,
     // `{"rejected": "A"}`, and adapter commands `{"subscribe": "A"}` and `{"unsubscribe": "A"}`
@@ -1252,5 +1385,175 @@ mod tests {
             proxy.stats(),
             "connections_test=1 cuts=0 dropped=1 held=0 corrupted=1 rejected=1 upstream_failures=0"
         );
+    }
+
+    // A line venue that sends every line the test pushes and reports what the adapter sends
+    struct LineVenue {
+        url: String,
+        lines: tokio::sync::broadcast::Sender<String>,
+        commands: tokio::sync::mpsc::UnboundedReceiver<String>,
+    }
+
+    async fn start_line_venue() -> LineVenue {
+        let (lines, _) = tokio::sync::broadcast::channel::<String>(64);
+        let (command_tx, commands) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let venue_lines = lines.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut lines = venue_lines.subscribe();
+                let commands = command_tx.clone();
+
+                tokio::spawn(async move {
+                    let (read, mut write) = stream.into_split();
+                    let mut reader = BufReader::new(read).lines();
+
+                    loop {
+                        tokio::select! {
+                            line = lines.recv() => {
+                                let Ok(line) = line else { break };
+                                let framed = format!("{line}\r\n");
+                                if write.write_all(framed.as_bytes()).await.is_err() {
+                                    break;
+                                }
+                            }
+                            command = reader.next_line() => match command {
+                                Ok(Some(command)) => {
+                                    let _ = commands.send(command);
+                                }
+                                _ => break,
+                            },
+                        }
+                    }
+                });
+            }
+        });
+
+        LineVenue {
+            url: format!("tcp://{addr}"),
+            lines,
+            commands,
+        }
+    }
+
+    async fn start_line_proxy(upstream: &str) -> FaultProxy {
+        let route = Route {
+            name: "test",
+            path: "",
+            upstream: upstream.to_string(),
+            endpoint: "test-endpoint",
+            headers: &[],
+        };
+
+        FaultProxy::start(vec![route], Arc::new(TestCodec), None).await
+    }
+
+    // Returns once the relay has connected upstream, so the venue receives every later line
+    async fn connect_lines(proxy: &FaultProxy) -> (LineReader, OwnedWriteHalf) {
+        let connections = proxy.connections("test");
+        let stream = tokio::net::TcpStream::connect(proxy.addr()).await.unwrap();
+        wait_for(|| proxy.connections("test") > connections).await;
+        let (read, write) = stream.into_split();
+        (BufReader::new(read).lines(), write)
+    }
+
+    async fn send_line(write: &mut OwnedWriteHalf, line: &str) {
+        write
+            .write_all(format!("{line}\r\n").as_bytes())
+            .await
+            .unwrap();
+    }
+
+    async fn receive_lines(reader: &mut LineReader) -> Vec<String> {
+        let mut received = Vec::new();
+
+        while let Ok(Ok(Some(line))) =
+            tokio::time::timeout(std::time::Duration::from_millis(500), reader.next_line()).await
+        {
+            received.push(line);
+        }
+
+        received
+    }
+
+    #[tokio::test]
+    async fn line_route_relays_lines_under_fault_rules() {
+        let mut venue = start_line_venue().await;
+        let proxy = start_line_proxy(&venue.url).await;
+        let (mut reader, mut write) = connect_lines(&proxy).await;
+        {
+            let mut fault = proxy.fault("A");
+            fault.drop_updates = 1;
+            fault.reject = 1;
+        }
+
+        let subscribe = |key: &str| json!({"subscribe": key}).to_string();
+
+        for frame in [
+            frame("A", "snapshot", 1),
+            frame("A", "update", 2),
+            frame("B", "update", 3),
+        ] {
+            venue.lines.send(frame).unwrap();
+        }
+
+        let relayed = receive_lines(&mut reader).await;
+        send_line(&mut write, &subscribe("A")).await;
+        send_line(&mut write, &subscribe("B")).await;
+        let replies = receive_lines(&mut reader).await;
+        let command = venue.commands.recv().await.unwrap();
+
+        assert_eq!(
+            relayed,
+            [frame("A", "snapshot", 1), frame("B", "update", 3)]
+        );
+        assert_eq!(replies, [json!({"rejected": "A"}).to_string()]);
+        assert_eq!(command, subscribe("B"));
+        assert!(venue.commands.try_recv().is_err());
+        let fault = proxy.fault("A").clone();
+        assert_eq!(fault.dropped, 1);
+        assert_eq!(fault.rejected, 1);
+        assert_eq!(fault.forwarded, 1);
+        assert_eq!(proxy.frames(), vec![("test", 3)]);
+        assert_eq!(proxy.active(), 1);
+    }
+
+    #[tokio::test]
+    async fn line_route_cut_closes_the_adapter_connection() {
+        let venue = start_line_venue().await;
+        let proxy = start_line_proxy(&venue.url).await;
+        let (mut reader, _write) = connect_lines(&proxy).await;
+        proxy.cut(Some("test"), FrameKind::Snapshot, 1);
+
+        venue.lines.send(frame("A", "snapshot", 1)).unwrap();
+        let next = tokio::time::timeout(std::time::Duration::from_secs(5), reader.next_line())
+            .await
+            .unwrap();
+        wait_for(|| proxy.active() == 0).await;
+
+        assert!(matches!(next, Ok(None)));
+        assert_eq!(proxy.cuts(), 1);
+    }
+
+    #[tokio::test]
+    async fn line_route_upstream_failure_closes_the_adapter_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed = format!("tcp://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let proxy = start_line_proxy(&closed).await;
+
+        let stream = tokio::net::TcpStream::connect(proxy.addr()).await.unwrap();
+        wait_for(|| proxy.upstream_failures() == 1).await;
+        let mut reader = BufReader::new(stream).lines();
+        let next = tokio::time::timeout(std::time::Duration::from_secs(5), reader.next_line())
+            .await
+            .unwrap();
+
+        assert!(matches!(next, Ok(None)));
+        assert_eq!(proxy.connections("test"), 0);
+        assert_eq!(proxy.active(), 0);
     }
 }

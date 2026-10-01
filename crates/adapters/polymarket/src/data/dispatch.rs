@@ -15,10 +15,18 @@
 
 //! WebSocket market-message dispatch for the Polymarket data client.
 //!
+//! A book delta subscription keeps a local book from its first accepted
+//! snapshot. Polymarket reports a match as same-timestamp `price_change`
+//! messages that send the taker's resting remainder before removing the levels
+//! it consumed, while every message's `best_bid` / `best_ask` already reflect
+//! the completed match. A batch that leaves the local book crossed therefore
+//! also deletes the levels beyond those prices, and the venue's later removals
+//! delete nothing. Other `price_change` batches remain wire-faithful.
+//!
 //! With `compute_effective_deltas` enabled, book snapshots emit only the net
-//! diff when a maintained local book exists (an empty diff emits nothing).
-//! Incremental `price_change` batches remain wire-faithful and keep that book
-//! current. After an epoch reset, the next snapshot seeds the book unchanged.
+//! diff against the local book (an empty diff emits nothing), and book snapshots,
+//! price changes, and best bid/ask events older than that book are ignored. After
+//! an epoch reset, the next snapshot seeds the book unchanged.
 //!
 //! Tick-size changes are handled as book epoch transitions: the local order
 //! book is dropped, incremental `price_change` deltas are gated through the
@@ -36,7 +44,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::one::Ref};
 use nautilus_common::{
     live::{
         dst::time::{Duration, Instant},
@@ -49,11 +57,15 @@ use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_live::task::TaskGroup;
 use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
-    data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas, QuoteTick},
-    enums::{BookType, MarketStatusAction},
+    data::{
+        BookOrder, Data as NautilusData, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
+        QuoteTick,
+    },
+    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
+    types::Quantity,
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -83,7 +95,7 @@ use crate::{
         error::PolymarketWsError,
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuote, PolymarketWsMessage},
         parse::{
-            parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
+            parse_book_deltas, parse_book_snapshot, parse_price, parse_quote_from_best_bid_ask,
             parse_quote_from_price_change, parse_quote_from_snapshot, parse_timestamp_ms,
             parse_trade_tick, verify_book_snapshot_hash,
         },
@@ -355,7 +367,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            if let Some(book) = ctx.order_books.get(&instrument_id) {
+            if let Some(book) = comparison_book(ctx, instrument_id) {
                 let ts_event = match parse_timestamp_ms(&snap.timestamp) {
                     Ok(ts) => ts,
                     Err(e) => {
@@ -403,40 +415,34 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     meta.size_precision,
                     ts_init,
                 ) {
-                    Ok(deltas) => {
-                        if ctx.compute_effective_deltas {
-                            match ctx.order_books.get(&instrument_id) {
-                                Some(book) => {
-                                    let mut scratch = book.clone();
-                                    drop(book);
+                    Ok(deltas) => match comparison_book(ctx, instrument_id) {
+                        Some(book) => {
+                            let mut scratch = book.clone();
+                            drop(book);
 
-                                    match apply_snapshot_and_diff(&mut scratch, &deltas) {
-                                        Ok(effective) => Some((effective, Some(scratch))),
-                                        Err(e) => {
-                                            log::error!(
-                                                "Failed to apply book snapshot for {instrument_id}: {e}"
-                                            );
-                                            None
-                                        }
-                                    }
-                                }
-                                None => {
-                                    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
-                                    match book.apply_deltas(&deltas) {
-                                        Ok(()) => Some((Some(deltas), Some(book))),
-                                        Err(e) => {
-                                            log::error!(
-                                                "Failed to apply book snapshot for {instrument_id}: {e}"
-                                            );
-                                            Some((Some(deltas), None))
-                                        }
-                                    }
+                            match apply_snapshot_and_diff(&mut scratch, &deltas) {
+                                Ok(effective) => Some((effective, Some(scratch))),
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to apply book snapshot for {instrument_id}: {e}"
+                                    );
+                                    None
                                 }
                             }
-                        } else {
-                            Some((Some(deltas), None))
                         }
-                    }
+                        None => {
+                            let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+                            match book.apply_deltas(&deltas) {
+                                Ok(()) => Some((Some(deltas), Some(book))),
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to apply book snapshot for {instrument_id}: {e}"
+                                    );
+                                    Some((Some(deltas), None))
+                                }
+                            }
+                        }
+                    },
                     Err(e) => {
                         log::error!("Failed to parse book snapshot: {e}");
                         None
@@ -543,7 +549,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     continue;
                 }
 
-                if let Some(book) = ctx.order_books.get(&instrument_id)
+                if let Some(book) = comparison_book(ctx, instrument_id)
                     && ts_event < book.ts_last
                 {
                     log::warn!(
@@ -583,14 +589,17 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             .collect::<Vec<_>>();
 
                             if !parsed.is_empty() {
-                                let deltas = OrderBookDeltas::new(instrument_id, parsed);
+                                let mut deltas = OrderBookDeltas::new(instrument_id, parsed);
 
-                                if ctx.compute_effective_deltas
-                                    && let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
-                                    && let Err(e) = book.apply_deltas(&deltas)
+                                if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
+                                    && let Some(change) = changes.last()
                                 {
-                                    log::error!(
-                                        "Failed to apply book deltas for {instrument_id}: {e}"
+                                    deltas = apply_price_change(
+                                        &mut book,
+                                        deltas,
+                                        change,
+                                        meta.price_precision,
+                                        meta.size_precision,
                                     );
                                 }
 
@@ -1170,7 +1179,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     Some((quote.ask_price, quote.ask_size)),
                 )
             });
-            let (bid_top, ask_top) = match ctx.order_books.get(&instrument_id) {
+
+            let (bid_top, ask_top) = match comparison_book(ctx, instrument_id) {
                 Some(book) if book.ts_last > ts_event => {
                     log::trace!("Ignoring best bid/ask older than local book for {instrument_id}");
                     return;
@@ -1232,10 +1242,120 @@ fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, qu
     }
 }
 
+// Effective-delta paths compare against the local book only when that mode is enabled
+fn comparison_book(
+    ctx: &WsMessageContext,
+    instrument_id: InstrumentId,
+) -> Option<Ref<'_, InstrumentId, OrderBook>> {
+    if ctx.compute_effective_deltas {
+        ctx.order_books.get(&instrument_id)
+    } else {
+        None
+    }
+}
+
+// The change's best prices already reflect the completed match, so levels beyond them are gone
+fn apply_price_change(
+    book: &mut OrderBook,
+    deltas: OrderBookDeltas,
+    change: &PolymarketQuote,
+    price_precision: u8,
+    size_precision: u8,
+) -> OrderBookDeltas {
+    let instrument_id = deltas.instrument_id;
+
+    if let Err(e) = book.apply_deltas(&deltas) {
+        log::error!("Failed to apply book deltas for {instrument_id}: {e}");
+        return deltas;
+    }
+
+    if !is_crossed(book) {
+        return deltas;
+    }
+
+    let parse_top = |top: Option<&str>| {
+        top.map(|price| parse_price(price, price_precision))
+            .transpose()
+    };
+
+    let (best_bid, best_ask) = match (
+        parse_top(change.best_bid.as_deref()),
+        parse_top(change.best_ask.as_deref()),
+    ) {
+        (Ok(bid), Ok(ask)) => (bid, ask),
+        (Err(e), _) | (_, Err(e)) => {
+            log::warn!("Book for {instrument_id} crossed with an invalid venue top: {e}");
+            return deltas;
+        }
+    };
+
+    let mut stale = Vec::new();
+
+    if let Some(best_bid) = best_bid {
+        stale.extend(
+            book.bids(None)
+                .map(|level| level.price.value)
+                .take_while(|price| *price > best_bid)
+                .map(|price| (OrderSide::Buy, price)),
+        );
+    }
+
+    if let Some(best_ask) = best_ask {
+        stale.extend(
+            book.asks(None)
+                .map(|level| level.price.value)
+                .take_while(|price| *price < best_ask)
+                .map(|price| (OrderSide::Sell, price)),
+        );
+    }
+
+    let OrderBookDeltas {
+        deltas: mut batch,
+        ts_event,
+        ts_init,
+        ..
+    } = deltas;
+
+    if let Some(last) = batch.last_mut() {
+        last.flags &= !(RecordFlag::F_LAST as u8);
+    }
+
+    for (side, price) in stale {
+        let order = BookOrder::new(side, price, Quantity::zero(size_precision), 0);
+        book.delete(order, 0, 0, ts_event);
+        batch.push(OrderBookDelta::new(
+            instrument_id,
+            BookAction::Delete,
+            order,
+            0,
+            0,
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    if let Some(last) = batch.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
+    if is_crossed(book) {
+        log::warn!("Book for {instrument_id} remains crossed at the venue top");
+    }
+
+    OrderBookDeltas::new(instrument_id, batch)
+}
+
+fn is_crossed(book: &OrderBook) -> bool {
+    matches!(
+        (book.best_bid_price(), book.best_ask_price()),
+        (Some(bid), Some(ask)) if bid > ask
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::VecDeque,
+        collections::{BTreeMap, VecDeque},
         net::SocketAddr,
         num::NonZeroUsize,
         ops::{Deref, DerefMut},
@@ -1271,7 +1391,7 @@ mod tests {
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
-    use nautilus_live::book::recovery::BookRecoveryOutcome;
+    use nautilus_live::book::{conformance::BookStreamChecker, recovery::BookRecoveryOutcome};
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
         enums::{
@@ -9991,7 +10111,20 @@ mod tests {
 
         assert!(recovery.is_accepted());
         assert!(!ctx.book_sync.book_gated(instrument_id));
-        assert!(!ctx.order_books.contains_key(&instrument_id));
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(
+            book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    rust_decimal::Decimal::new(49, 2),
+                    rust_decimal::Decimal::new(1000, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(45, 2),
+                    rust_decimal::Decimal::new(500, 2)
+                ),
+            ]
+        );
     }
 
     #[rstest]
@@ -10449,7 +10582,21 @@ mod tests {
         }
 
         assert!(!ctx.book_sync.book_gated(instrument_id));
-        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert_eq!(
+            ctx.order_books
+                .get(&instrument_id)
+                .map(|book| (book.best_bid_price(), book.best_ask_price())),
+            Some((
+                valid
+                    .bids
+                    .last()
+                    .map(|level| Price::from(level.price.as_str())),
+                valid
+                    .asks
+                    .last()
+                    .map(|level| Price::from(level.price.as_str())),
+            ))
+        );
         assert!(ctx.last_quotes.contains_key(&instrument_id));
         assert_eq!(events.len(), 2);
         // Order-insensitive by design: a pre-acceptance replay may emit the Quote,
@@ -10543,11 +10690,27 @@ mod tests {
         ctx.active_quote_subs.insert(instrument_id);
         ctx.book_sync
             .request_recovery(instrument_id, Instant::now());
+        // Polymarket sends bids ascending and asks descending, so best-of-book is last
+        let expected_top = (
+            snapshot
+                .bids
+                .last()
+                .map(|level| Price::from(level.price.as_str())),
+            snapshot
+                .asks
+                .last()
+                .map(|level| Price::from(level.price.as_str())),
+        );
 
         handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
 
         assert!(!ctx.book_sync.book_gated(instrument_id));
-        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert_eq!(
+            ctx.order_books
+                .get(&instrument_id)
+                .map(|book| (book.best_bid_price(), book.best_ask_price())),
+            Some(expected_top)
+        );
         assert!(ctx.last_quotes.contains_key(&instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert_eq!(events.len(), 2);
@@ -10559,7 +10722,7 @@ mod tests {
     }
 
     #[rstest]
-    fn price_change_emits_delta_without_updating_local_book_state_when_disabled() {
+    fn price_change_emits_delta_and_updates_local_book_when_disabled() {
         let asset_id_str = "0xTOKEN10";
         let market = "0xMARKET";
 
@@ -10572,13 +10735,9 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
-        ctx.order_books.insert(
-            instrument_id,
-            OrderBook::new(instrument_id, BookType::L2_MBP),
-        );
 
         // Incremental deltas require an accepted snapshot; seed one so this
-        // test exercises the steady-state path with book maintenance disabled.
+        // test exercises the steady-state path with effective deltas disabled.
         handle_market_message(
             make_snapshot(
                 market,
@@ -10602,9 +10761,32 @@ mod tests {
         );
 
         let book = ctx.order_books.get(&instrument_id).expect("book entry");
-        assert_eq!(book.best_bid_price(), None);
-        assert_eq!(book.best_bid_size(), None);
-        assert_eq!(book.update_count, 0);
+        assert_eq!(
+            book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    rust_decimal::Decimal::new(54, 2),
+                    rust_decimal::Decimal::new(500, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(50, 2),
+                    rust_decimal::Decimal::new(2000, 2)
+                ),
+            ]
+        );
+        assert_eq!(
+            book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    rust_decimal::Decimal::new(56, 2),
+                    rust_decimal::Decimal::new(800, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(59, 2),
+                    rust_decimal::Decimal::new(1200, 2)
+                ),
+            ]
+        );
     }
 
     #[rstest]
@@ -11334,6 +11516,458 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    // Mainnet events captured read-only on 2026-09-29: a subscribe dump, the updates that
+    // followed, and a same-timestamp burst in which a SELL remainder at 0.301 arrives before the
+    // removals of the 0.311 and 0.301 bids it consumed, then the closing `book`.
+    #[rstest]
+    #[case::wire(false, 1)]
+    #[case::effective(true, 0)]
+    fn price_change_burst_prunes_levels_beyond_venue_top(
+        #[case] compute_effective_deltas: bool,
+        #[case] closing_batches: usize,
+    ) {
+        let mut messages: Vec<MarketWsMessage> = serde_json::from_str(include_str!(
+            "../../test_data/ws_market_price_change_crossing_burst.json"
+        ))
+        .expect("captured burst should deserialize");
+
+        let Some(MarketWsMessage::Book(closing)) = messages.pop() else {
+            panic!("capture must end with the closing book");
+        };
+
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = compute_effective_deltas;
+        let inst = seed_instrument(
+            &ctx,
+            closing.asset_id.as_str(),
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        let mut checker = BookStreamChecker::new(BookType::L2_MBP, false);
+        checker.open(instrument_id);
+        let crossing = messages.len() - 3;
+        let mut crossing_batches = Vec::new();
+
+        for (index, message) in messages.into_iter().enumerate() {
+            handle_market_message(message, &ctx);
+
+            for batch in collect_delta_batches(&mut data_rx) {
+                assert_eq!(checker.apply(&batch), Ok(()), "event {index}");
+
+                if index == crossing {
+                    crossing_batches.push(batch);
+                }
+            }
+        }
+
+        let levels = |levels: &[PolymarketBookLevel]| {
+            levels
+                .iter()
+                .map(|level| (level.price.parse().unwrap(), level.size.parse().unwrap()))
+                .collect::<BTreeMap<rust_decimal::Decimal, rust_decimal::Decimal>>()
+        };
+
+        let verified = checker.verify(
+            instrument_id,
+            usize::MAX,
+            &levels(&closing.bids),
+            &levels(&closing.asks),
+        );
+
+        handle_market_message(MarketWsMessage::Book(closing), &ctx);
+
+        let closing_emitted = collect_delta_batches(&mut data_rx);
+        let closing_applied: Vec<_> = closing_emitted
+            .iter()
+            .map(|batch| checker.apply(batch))
+            .collect();
+        let ts_event = UnixNanos::from(1_790_658_827_000_000_000_u64);
+
+        let actual: Vec<_> = crossing_batches
+            .iter()
+            .flat_map(|batch| &batch.deltas)
+            .map(|delta| {
+                (
+                    delta.instrument_id,
+                    delta.action,
+                    delta.order.side,
+                    delta.order.price,
+                    delta.order.size,
+                    delta.order.order_id,
+                    delta.flags,
+                    delta.sequence,
+                    delta.ts_event,
+                )
+            })
+            .collect();
+
+        assert_eq!(crossing_batches.len(), 1);
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    instrument_id,
+                    BookAction::Update,
+                    Some(OrderSide::Sell),
+                    Price::from("0.301"),
+                    Quantity::from("45.83"),
+                    0,
+                    0,
+                    0,
+                    ts_event,
+                ),
+                (
+                    instrument_id,
+                    BookAction::Delete,
+                    Some(OrderSide::Buy),
+                    Price::from("0.311"),
+                    Quantity::from("0.00"),
+                    0,
+                    0,
+                    0,
+                    ts_event,
+                ),
+                (
+                    instrument_id,
+                    BookAction::Delete,
+                    Some(OrderSide::Buy),
+                    Price::from("0.301"),
+                    Quantity::from("0.00"),
+                    0,
+                    RecordFlag::F_LAST as u8,
+                    0,
+                    ts_event,
+                ),
+            ]
+        );
+        assert!(
+            crossing_batches[0]
+                .deltas
+                .iter()
+                .all(|delta| delta.ts_init == crossing_batches[0].ts_init)
+        );
+        assert_eq!(verified, Ok(()));
+        assert_eq!(closing_applied, vec![Ok(()); closing_batches]);
+    }
+
+    // Every Polymarket price change also carries the complement asset's entry, listed last here, so
+    // each asset must prune against its own reported top.
+    #[rstest]
+    #[case::bid_side_cross(
+        ("0.30", PolymarketOrderSide::Sell, "7", Some("0.29"), Some("0.30")),
+        vec![
+            (BookAction::Update, OrderSide::Sell, "0.30", "7.00"),
+            (BookAction::Delete, OrderSide::Buy, "0.31", "0.00"),
+            (BookAction::Delete, OrderSide::Buy, "0.30", "0.00"),
+        ],
+        false,
+    )]
+    #[case::ask_side_cross(
+        ("0.34", PolymarketOrderSide::Buy, "3", Some("0.34"), Some("0.35")),
+        vec![
+            (BookAction::Update, OrderSide::Buy, "0.34", "3.00"),
+            (BookAction::Delete, OrderSide::Sell, "0.33", "0.00"),
+            (BookAction::Delete, OrderSide::Sell, "0.34", "0.00"),
+        ],
+        false,
+    )]
+    #[case::locked_book(
+        ("0.31", PolymarketOrderSide::Sell, "2", Some("0.30"), Some("0.31")),
+        vec![(BookAction::Update, OrderSide::Sell, "0.31", "2.00")],
+        false,
+    )]
+    #[case::invalid_top(
+        ("0.30", PolymarketOrderSide::Sell, "7", Some("invalid"), Some("0.30")),
+        vec![(BookAction::Update, OrderSide::Sell, "0.30", "7.00")],
+        true,
+    )]
+    #[case::missing_top(
+        ("0.30", PolymarketOrderSide::Sell, "7", None, None),
+        vec![(BookAction::Update, OrderSide::Sell, "0.30", "7.00")],
+        true,
+    )]
+    fn price_change_prunes_levels_beyond_own_asset_top(
+        #[case] change: (&str, PolymarketOrderSide, &str, Option<&str>, Option<&str>),
+        #[case] expected: Vec<(BookAction, OrderSide, &str, &str)>,
+        #[case] crossed: bool,
+    ) {
+        let market = "0xMARKET";
+        let asset_id = "0xTOKEN_PRUNE";
+        let complement_id = "0xTOKEN_PRUNE_COMPLEMENT";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id =
+            seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01")).id();
+        let complement = seed_instrument(
+            &ctx,
+            complement_id,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_delta_subs.insert(complement);
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.29", "4"),
+                    ("0.30", "10"),
+                    ("0.31", "20"),
+                    ("0.33", "5"),
+                    ("0.34", "6"),
+                    ("0.35", "7"),
+                ],
+            ),
+            &ctx,
+        );
+        handle_market_message(
+            make_snapshot(
+                market,
+                complement_id,
+                &[
+                    ("0.65", "4"),
+                    ("0.66", "10"),
+                    ("0.67", "20"),
+                    ("0.69", "5"),
+                    ("0.70", "6"),
+                    ("0.71", "7"),
+                ],
+            ),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
+
+        let quote = |asset: &str,
+                     (price, side, size, best_bid, best_ask): (
+            &str,
+            PolymarketOrderSide,
+            &str,
+            Option<&str>,
+            Option<&str>,
+        )| PolymarketQuote {
+            asset_id: Ustr::from(asset),
+            price: price.to_string(),
+            side,
+            size: size.to_string(),
+            hash: String::new(),
+            best_bid: best_bid.map(str::to_string),
+            best_ask: best_ask.map(str::to_string),
+        };
+
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market: Ustr::from(market),
+                price_changes: vec![
+                    quote(asset_id, change),
+                    quote(
+                        complement_id,
+                        (
+                            "0.68",
+                            PolymarketOrderSide::Buy,
+                            "1",
+                            Some("0.68"),
+                            Some("0.69"),
+                        ),
+                    ),
+                ],
+                timestamp: "1700000002000".to_string(),
+            }),
+            &ctx,
+        );
+
+        let deltas_for = |batches: &[OrderBookDeltas], id: InstrumentId| {
+            batches
+                .iter()
+                .filter(|batch| batch.instrument_id == id)
+                .flat_map(|batch| &batch.deltas)
+                .map(|delta| {
+                    (
+                        delta.action,
+                        delta.order.side,
+                        delta.order.price,
+                        delta.order.size,
+                        delta.flags,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let batches = collect_delta_batches(&mut data_rx);
+        let last = expected.len() - 1;
+
+        let expected = expected
+            .into_iter()
+            .enumerate()
+            .map(|(index, (action, side, price, size))| {
+                let flags = if index == last {
+                    RecordFlag::F_LAST as u8
+                } else {
+                    0
+                };
+
+                (
+                    action,
+                    Some(side),
+                    Price::from(price),
+                    Quantity::from(size),
+                    flags,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(deltas_for(&batches, instrument_id), expected);
+        assert_eq!(
+            deltas_for(&batches, complement),
+            vec![(
+                BookAction::Update,
+                Some(OrderSide::Buy),
+                Price::from("0.68"),
+                Quantity::from("1.00"),
+                RecordFlag::F_LAST as u8,
+            )]
+        );
+        assert_eq!(is_crossed(&book), crossed);
+    }
+
+    // Wire mode keeps its local book only to prune crossed levels; events older than that book
+    // still emit, and `best_bid_ask` sizes still come from the last quote.
+    #[rstest]
+    fn wire_mode_local_book_leaves_stale_and_best_bid_ask_paths_unchanged() {
+        let asset_id = "0xTOKEN_WIRE_BOOK";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.52", "300"),
+                    ("0.53", "400"),
+                ],
+            ),
+            &ctx,
+        );
+        handle_market_message(make_price_change(market, asset_id, "0.51", "50"), &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        let mut stale_snapshot = make_snapshot(
+            market,
+            asset_id,
+            &[("0.48", "20"), ("0.50", "5"), ("0.53", "6"), ("0.54", "12")],
+        );
+
+        let MarketWsMessage::Book(snapshot) = &mut stale_snapshot else {
+            unreachable!("make_snapshot must return a book message");
+        };
+
+        snapshot.timestamp = "1700000001000".to_string();
+        handle_market_message(stale_snapshot, &ctx);
+        let snapshot_batches = collect_delta_batches(&mut data_rx);
+
+        let MarketWsMessage::PriceChange(mut stale_change) =
+            make_price_change(market, asset_id, "0.49", "7")
+        else {
+            unreachable!("make_price_change must return a price change message");
+        };
+
+        stale_change.timestamp = "1700000000500".to_string();
+        handle_market_message(MarketWsMessage::PriceChange(stale_change), &ctx);
+
+        let MarketWsMessage::PriceChange(mut later_change) =
+            make_price_change(market, asset_id, "0.47", "1")
+        else {
+            unreachable!("make_price_change must return a price change message");
+        };
+
+        later_change.timestamp = "1700000004000".to_string();
+        handle_market_message(MarketWsMessage::PriceChange(later_change), &ctx);
+        let change_batches = collect_delta_batches(&mut data_rx);
+
+        ctx.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.50"),
+                Price::from("0.54"),
+                Quantity::from("12.00"),
+                Quantity::from("13.00"),
+                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::default(),
+            ),
+        );
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.53"), &ctx);
+        let quotes = emitted_quotes(&mut data_rx);
+
+        let book = ctx
+            .order_books
+            .get(&instrument_id)
+            .expect("wire mode keeps a book");
+        assert_eq!(
+            snapshot_batches
+                .iter()
+                .map(|batch| batch.deltas.len())
+                .collect::<Vec<_>>(),
+            vec![5]
+        );
+        assert_eq!(
+            change_batches
+                .iter()
+                .map(|batch| batch.deltas.len())
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+        assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
+        assert_eq!(quotes[0].bid_price, Price::from("0.50"));
+        assert_eq!(quotes[0].ask_price, Price::from("0.53"));
+        assert_eq!(quotes[0].bid_size, Quantity::from("12.00"));
+        assert_eq!(quotes[0].ask_size, Quantity::from("0.00"));
+        assert_eq!(
+            book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    rust_decimal::Decimal::new(50, 2),
+                    rust_decimal::Decimal::new(500, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(49, 2),
+                    rust_decimal::Decimal::new(700, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(48, 2),
+                    rust_decimal::Decimal::new(2000, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(47, 2),
+                    rust_decimal::Decimal::new(100, 2)
+                ),
+            ]
+        );
+        assert_eq!(
+            book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    rust_decimal::Decimal::new(53, 2),
+                    rust_decimal::Decimal::new(600, 2)
+                ),
+                (
+                    rust_decimal::Decimal::new(54, 2),
+                    rust_decimal::Decimal::new(1200, 2)
+                ),
+            ]
+        );
     }
 
     #[rstest]
@@ -12263,12 +12897,10 @@ mod tests {
 
         let levels = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
-        assert!(!ctx.order_books.contains_key(&instrument_id));
 
         while data_rx.try_recv().is_ok() {}
 
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
-        assert!(!ctx.order_books.contains_key(&instrument_id));
 
         let batches = collect_delta_batches(&mut data_rx);
         assert_eq!(batches.len(), 1);
@@ -12282,6 +12914,10 @@ mod tests {
                 .all(|d| d.flags & RecordFlag::F_SNAPSHOT as u8 != 0),
             "wire-faithful emission must keep F_SNAPSHOT on every record: {deltas:?}",
         );
+
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.49")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.51")));
     }
 
     #[rstest]

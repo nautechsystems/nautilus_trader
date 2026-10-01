@@ -30,7 +30,10 @@ use std::{
 
 use bytes::Bytes;
 use nautilus_core::string::secret::{REDACTED, SecretString};
-use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
+use nautilus_live::{
+    book::snapshot::SnapshotGate,
+    task::{SharedTaskSlot, TaskJoinOutcome},
+};
 use nautilus_network::{
     SocketState, SocketStateSink, WriterSender,
     mode::ReconnectRequestOutcome,
@@ -450,8 +453,8 @@ impl BetfairStreamClient {
                             .market_image_tainted
                             .store(false, Ordering::Release);
                     } else if lifecycle_h.market_image_tainted.load(Ordering::Acquire) {
-                        if complete {
-                            reissue_market_subscription(
+                        if complete
+                            && let Err(e) = reissue_market_subscription(
                                 &request_id_h,
                                 &market_active_sub_id_h,
                                 &lifecycle_h,
@@ -459,7 +462,9 @@ impl BetfairStreamClient {
                                 &market_clk_tx_h,
                                 &market_initial_clk_tx_h,
                                 writer_tx_handler.get(),
-                            );
+                            )
+                        {
+                            log::error!("Failed to recover Betfair market stream: {e}");
                         }
                         return;
                     }
@@ -468,8 +473,8 @@ impl BetfairStreamClient {
                     if lifecycle_state == StreamLifecycleState::Degraded
                         && mcm.ct != Some(ChangeType::SubImage)
                     {
-                        if complete {
-                            reissue_market_subscription(
+                        if complete
+                            && let Err(e) = reissue_market_subscription(
                                 &request_id_h,
                                 &market_active_sub_id_h,
                                 &lifecycle_h,
@@ -477,7 +482,9 @@ impl BetfairStreamClient {
                                 &market_clk_tx_h,
                                 &market_initial_clk_tx_h,
                                 writer_tx_handler.get(),
-                            );
+                            )
+                        {
+                            log::error!("Failed to recover Betfair market stream: {e}");
                         }
                         return;
                     }
@@ -824,6 +831,32 @@ impl BetfairStreamClient {
         heartbeat_ms: Option<u64>,
         conflate_ms: Option<u64>,
     ) -> Result<(), BetfairStreamError> {
+        self.write_market_subscription(
+            market_filter,
+            data_filter,
+            heartbeat_ms,
+            conflate_ms,
+            &SnapshotGate::default(),
+        )
+    }
+
+    /// Queues a market subscription without waiting, so subscriptions reach the venue in call
+    /// order.
+    ///
+    /// Opens `gate` once the write is queued, under the lock that orders change messages, so no
+    /// message from the new subscription is handled while the gate is closed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or sending fails.
+    pub(crate) fn write_market_subscription(
+        &self,
+        market_filter: StreamMarketFilter,
+        data_filter: MarketDataFilter,
+        heartbeat_ms: Option<u64>,
+        conflate_ms: Option<u64>,
+        gate: &SnapshotGate,
+    ) -> Result<(), BetfairStreamError> {
         if self.closed.load(Ordering::SeqCst) || self.socket.is_closed() {
             return Err(BetfairStreamError::Disconnected(
                 "stream client is closed".to_string(),
@@ -874,6 +907,8 @@ impl BetfairStreamClient {
                 data,
             })
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+
+        gate.open();
         Ok(())
     }
 
@@ -936,6 +971,41 @@ impl BetfairStreamClient {
                 data,
             })
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Requests a fresh image of every subscribed market.
+    ///
+    /// Reissues the retained market subscription under a new ID and without clocks, so Betfair
+    /// replaces it and sends a new `SUB_IMAGE`. Change messages from the replaced subscription are
+    /// discarded from this call onward. Opens `gate` once the write is queued, as
+    /// [`Self::write_market_subscription`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is closed, no market subscription is retained, or the
+    /// subscription cannot be queued.
+    pub(crate) fn request_market_image(
+        &self,
+        gate: &SnapshotGate,
+    ) -> Result<(), BetfairStreamError> {
+        if self.closed.load(Ordering::SeqCst) || self.socket.is_closed() {
+            return Err(BetfairStreamError::Disconnected(
+                "stream client is closed".to_string(),
+            ));
+        }
+
+        let _state = lock_stream_state(&self.market_state_lock);
+        reissue_market_subscription(
+            &self.request_id,
+            &self.market_active_sub_id,
+            &self.lifecycle,
+            &self.market_sub_tx,
+            &self.market_clk_tx,
+            &self.market_initial_clk_tx,
+            Some(&self.socket.writer_tx),
+        )?;
+        gate.open();
         Ok(())
     }
 
@@ -1431,26 +1501,22 @@ fn reissue_market_subscription(
     clk_tx: &watch::Sender<Option<String>>,
     initial_clk_tx: &watch::Sender<Option<String>>,
     writer_tx: Option<&WriterSender<WriterCommand>>,
-) {
+) -> Result<(), BetfairStreamError> {
     let Some(writer_tx) = writer_tx else {
-        log::error!("Cannot recover Betfair market stream before writer initialization");
-        return;
+        return Err(BetfairStreamError::Disconnected(
+            "writer is not initialized".to_string(),
+        ));
     };
     let Some(mut sub) = sub_tx.borrow().clone() else {
-        log::error!("Cannot recover Betfair market stream without a retained subscription");
-        return;
+        return Err(BetfairStreamError::ProtocolError(
+            "no retained market subscription".to_string(),
+        ));
     };
     let id = request_id.fetch_add(1, Ordering::Relaxed);
     sub.id = Some(id);
     sub.clk = None;
     sub.initial_clk = None;
-    let data = match serde_json::to_vec(&sub) {
-        Ok(data) => Bytes::from(data),
-        Err(e) => {
-            log::error!("Failed to serialize Betfair market recovery subscription: {e}");
-            return;
-        }
-    };
+    let data = Bytes::from(serde_json::to_vec(&sub)?);
 
     active_id.store(id, Ordering::SeqCst);
     lifecycle.market.set(StreamLifecycleState::Pending);
@@ -1465,12 +1531,12 @@ fn reissue_market_subscription(
     let _ = initial_clk_tx.send(None);
     let _ = sub_tx.send(Some(sub));
 
-    if let Err(e) = writer_tx.send(WriterCommand::SendOrReplay {
-        key: MARKET_SUBSCRIPTION_REPLAY_KEY,
-        data,
-    }) {
-        log::error!("Failed to queue Betfair market recovery subscription: {e}");
-    }
+    writer_tx
+        .send(WriterCommand::SendOrReplay {
+            key: MARKET_SUBSCRIPTION_REPLAY_KEY,
+            data,
+        })
+        .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))
 }
 
 fn reissue_order_subscription(
@@ -1743,7 +1809,7 @@ mod tests {
         let (order_clk_tx, _order_clk_rx) = watch::channel(None::<String>);
         let (order_initial_clk_tx, _order_initial_clk_rx) = watch::channel(None::<String>);
 
-        reissue_market_subscription(
+        let market_result = reissue_market_subscription(
             &request_id,
             &market_active_id,
             &lifecycle,
@@ -1762,6 +1828,10 @@ mod tests {
             None,
         );
 
+        assert!(matches!(
+            market_result,
+            Err(BetfairStreamError::Disconnected(_))
+        ));
         assert_eq!(
             (
                 request_id.load(Ordering::Acquire),
@@ -2112,6 +2182,63 @@ mod tests {
             .unwrap()
             .unwrap();
         client.close().await.expect("close stream");
+    }
+
+    #[rstest]
+    #[case::no_subscription(false, "Protocol error: no retained market subscription")]
+    #[case::closed(true, "Disconnected: stream client is closed")]
+    #[tokio::test]
+    async fn test_request_market_image_fails_without_open_subscription(
+        #[case] subscribe_then_close: bool,
+        #[case] expected: &str,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut lines = tokio::io::AsyncBufReadExt::lines(tokio::io::BufReader::new(socket));
+            while let Ok(Some(_)) = lines.next_line().await {}
+        });
+
+        let credential = BetfairCredential::new(
+            "testuser".to_string(),
+            "testpass".to_string(),
+            "test-app-key".to_string(),
+        );
+
+        let config = BetfairStreamConfig {
+            host: "127.0.0.1".to_string(),
+            port,
+            heartbeat_secs: None,
+            heartbeat_timeout_secs: Some(60),
+            reconnect_delay_initial_ms: 200,
+            reconnect_delay_max_ms: 1_000,
+            use_tls: false,
+        };
+
+        let client = BetfairStreamClient::connect(
+            &credential,
+            "session".to_string(),
+            Arc::new(|_| {}),
+            config,
+        )
+        .await
+        .unwrap();
+
+        if subscribe_then_close {
+            client
+                .subscribe_markets(Default::default(), Default::default(), None, None)
+                .await
+                .unwrap();
+            client.close().await.expect("close stream");
+        }
+
+        let result = client.request_market_image(&SnapshotGate::default());
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
+        client.close().await.expect("close stream");
+        server.abort();
     }
 
     #[rstest]

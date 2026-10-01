@@ -1,0 +1,191 @@
+[
+  {
+    "exchange": "neg_risk",
+    "side": "BUY",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "7575758",
+    "fee": "85000",
+    "price": "0.66",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "BUY",
+    "maker_amount_filled": "4999998",
+    "taker_amount_filled": "7042251",
+    "fee": "72490",
+    "price": "0.71",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "BUY",
+    "maker_amount_filled": "14999998",
+    "taker_amount_filled": "21126758",
+    "fee": "217490",
+    "price": "0.71",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "BUY",
+    "maker_amount_filled": "999999",
+    "taker_amount_filled": "1219511",
+    "fee": "12590",
+    "price": "0.82",
+    "fee_rate": "0.07"
+  },
+  {
+    "exchange": "standard",
+    "side": "BUY",
+    "maker_amount_filled": "1000000",
+    "taker_amount_filled": "2083334",
+    "fee": "36400",
+    "price": "0.48",
+    "fee_rate": "0.07"
+  },
+  {
+    "exchange": "standard",
+    "side": "BUY",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "5952381",
+    "fee": "0",
+    "price": "0.84",
+    "fee_rate": "0"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "7570000",
+    "taker_amount_filled": "4920500",
+    "fee": "86100",
+    "price": "0.65",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "7590000",
+    "taker_amount_filled": "5009400",
+    "fee": "85150",
+    "price": "0.66",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "SELL",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "1550000",
+    "fee": "53470",
+    "price": "0.31",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "SELL",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "3350000",
+    "fee": "55270",
+    "price": "0.67",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "SELL",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "1350000",
+    "fee": "49270",
+    "price": "0.27",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "7040000",
+    "taker_amount_filled": "4928000",
+    "fee": "73920",
+    "price": "0.70",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "21130000",
+    "taker_amount_filled": "14791000",
+    "fee": "221860",
+    "price": "0.70",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "SELL",
+    "maker_amount_filled": "5950000",
+    "taker_amount_filled": "4938500",
+    "fee": "0",
+    "price": "0.83",
+    "fee_rate": "0"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "BUY",
+    "maker_amount_filled": "5000000",
+    "taker_amount_filled": "8928572",
+    "fee": "110000",
+    "price": "0.56",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "8920000",
+    "taker_amount_filled": "4906000",
+    "fee": "110380",
+    "price": "0.55",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "standard",
+    "side": "BUY",
+    "maker_amount_filled": "4999980",
+    "taker_amount_filled": "5149310",
+    "fee": "10140",
+    "price": "0.971",
+    "fee_rate": "0.07"
+  },
+  {
+    "exchange": "standard",
+    "side": "SELL",
+    "maker_amount_filled": "5140000",
+    "taker_amount_filled": "4960100",
+    "fee": "12150",
+    "price": "0.965",
+    "fee_rate": "0.07"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "BUY",
+    "maker_amount_filled": "5220000",
+    "taker_amount_filled": "9321429",
+    "fee": "114840",
+    "price": "0.56",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "9330000",
+    "taker_amount_filled": "5131500",
+    "fee": "115450",
+    "price": "0.55",
+    "fee_rate": "0.05"
+  },
+  {
+    "exchange": "neg_risk",
+    "side": "SELL",
+    "maker_amount_filled": "8930000",
+    "taker_amount_filled": "4911500",
+    "fee": "110500",
+    "price": "0.55",
+    "fee_rate": "0.05"
+  }
+]

@@ -2074,7 +2074,6 @@ def test_live_stub_exposes_builder_engine_config_methods() -> None:
         ("nautilus_trader.infrastructure", "RedisCacheConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
-        ("nautilus_trader.persistence", "DataBackendSession"),
         ("nautilus_trader.persistence", "ParquetDataCatalog"),
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),
     ],
@@ -2752,9 +2751,13 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         proxy_url="http://user:password@proxy.example.test",
         event_type_ids=[7, 9],
         stream_heartbeat_secs=43,
+        book_snapshot_timeout_secs=0,
     )
     betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
-    bybit_config = BybitDataClientConfig(instrument_status_poll_secs=23)
+    bybit_config = BybitDataClientConfig(
+        instrument_status_poll_secs=23,
+        book_snapshot_timeout_secs=0,
+    )
     databento_config = DatabentoDataClientConfig(
         api_key="readback-api-key",
         publishers_filepath=tmp_path / "publishers.json",
@@ -2772,7 +2775,9 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     assert betfair_config.event_type_ids == ["7", "9"]
     assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
+    assert betfair_config.book_snapshot_timeout_secs == 0
     assert bybit_config.instrument_status_poll_secs == 23
+    assert bybit_config.book_snapshot_timeout_secs == 0
     assert databento_config.publishers_filepath == tmp_path / "publishers.json"
     assert databento_config.use_exchange_as_venue is True
     assert databento_config.bars_timestamp_on_close is False

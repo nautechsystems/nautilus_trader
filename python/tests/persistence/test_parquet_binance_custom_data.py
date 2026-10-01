@@ -75,7 +75,7 @@ def test_binance_futures_ticker_catalog_round_trip(tmp_path) -> None:
 
     catalog.write_custom_data([CustomData(data_type, ticker)])
     result = catalog.query_custom_data(
-        "BinanceFuturesTicker",
+        NautilusDataType.Custom("BinanceFuturesTicker"),
         identifiers=[str(BTCUSDT_PERP)],
     )
 
@@ -100,7 +100,7 @@ def test_binance_futures_open_interest_catalog_round_trip(tmp_path) -> None:
 
     catalog.write_custom_data([CustomData(data_type, open_interest)])
     result = catalog.query_custom_data(
-        "BinanceFuturesOpenInterest",
+        NautilusDataType.Custom("BinanceFuturesOpenInterest"),
         identifiers=[str(BTCUSDT_PERP)],
     )
 
@@ -128,7 +128,7 @@ def test_binance_futures_liquidation_catalog_round_trip(tmp_path) -> None:
 
     catalog.write_custom_data([CustomData(data_type, liquidation)])
     result = catalog.query_custom_data(
-        "BinanceFuturesLiquidation",
+        NautilusDataType.Custom("BinanceFuturesLiquidation"),
         identifiers=[str(BTCUSDT_PERP)],
     )
 

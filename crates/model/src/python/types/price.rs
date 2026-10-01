@@ -391,8 +391,8 @@ impl Price {
         self.raw() / scale
     }
 
-    fn __float__(&self) -> f64 {
-        self.as_f64()
+    fn __float__(&self) -> PyResult<f64> {
+        self.as_f64_checked()
     }
 
     #[pyo3(signature = (ndigits=None))]
@@ -551,8 +551,8 @@ impl Price {
     }
 
     #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        self.as_f64()
+    fn py_as_double(&self) -> PyResult<f64> {
+        self.as_f64_checked()
     }
 }
 

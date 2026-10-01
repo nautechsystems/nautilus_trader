@@ -980,6 +980,7 @@ impl PolymarketExecutionClient {
             self.fill_tracker.restore_order(
                 venue_order_id,
                 venue_leg_qty,
+                order.quantity().saturating_sub(venue_leg_qty),
                 cached_venue_leg_filled,
                 order.order_side(),
             );
@@ -1288,6 +1289,7 @@ impl PolymarketExecutionClient {
                 fill_tracker.restore_order(
                     venue_order_id,
                     venue_leg_qty,
+                    order.quantity().saturating_sub(venue_leg_qty),
                     confirmed_venue_leg_filled,
                     order.order_side(),
                 );

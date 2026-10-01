@@ -874,8 +874,9 @@ emissions are filtered to active subscriptions.
 ### Order book recovery ownership
 
 [`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Polymarket, Lighter, and Binance. Keep venue-specific book synchronization and recovery in each
-adapter's `src/book/`, with WebSocket handlers dispatching commands and frames.
+OKX, Polymarket, Lighter, Binance, Hyperliquid, Bybit, Betfair, and AX Exchange. Keep venue-specific
+book synchronization and recovery in each adapter's `src/book/`, with stream handlers dispatching
+commands and frames.
 
 #### Per-book sync
 
@@ -890,8 +891,9 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-OKX, Polymarket, and Binance keep a `BookSync` per book. Lighter keeps a `BookRecoveryState` per
-book inside its handler-owned tracker.
+OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book. Betfair
+keeps one per market, since it images whole markets. Lighter keeps a `BookRecoveryState` per book
+inside its handler-owned tracker.
 
 #### Starting recovery
 
@@ -964,11 +966,17 @@ snapshot parsing. The shared types describe the result of validation and monitor
 
 Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
 its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+Hyperliquid accepts every `l2Book` frame as a snapshot, and with stale stream recovery enabled its
+stream health monitor starts recovery for a stale delta book. Betfair carries one market
+subscription per connection, so a replacement re-images every market; recoveries join a pending
+image request rather than writing competing subscriptions, and a reconnect resumes synced books from
+the subscription's clocks. AX Exchange accepts every L2 and L3 frame as a snapshot and keeps its
+books across client reconnects, since its WebSocket client replays subscriptions on connect.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter): a replacement resubscribes, and the venue stream delivers the
-  snapshot.
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange): a replacement
+  resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 
@@ -1047,6 +1055,20 @@ client declares a history bound, as described in
 [bounded mass-status reports](#bounded-mass-status-reports), or when it does not use the realtime
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
+
+##### Mass-status order evidence
+
+Give every fill report order evidence: an order report for its venue order ID in the same mass
+status, or an order the cache already holds. Reconciliation drops a fill group with neither and
+logs a warning. The exception is a group whose fills carry a `venue_position_id`: reconciliation
+builds its order when `generate_missing_orders` is enabled and skips it otherwise. A mass status
+that reports only open orders therefore loses the fills of closed orders missing from the cache,
+such as orders placed outside the node or before a restart without a persisted cache.
+
+When the venue keeps no queryable record of an order, such as a venue with no closed-order history
+or a block-trade or settlement fill, build a `FILLED` order report from its fills. Withhold the
+fills instead when applying them would misstate a position, for example when they miss balance
+changes made without a trade.
 
 ##### Mass-status timestamp contract
 

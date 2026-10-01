@@ -302,10 +302,12 @@ pub fn parse_orderbook_deltas(
         .context("received negative sequence in Bybit order book message")?;
 
     let total_levels = depth.b.len() + depth.a.len();
-    let capacity = if is_snapshot {
-        total_levels + 1
+    let capacity = total_levels + usize::from(is_snapshot);
+
+    let snapshot_flag = if is_snapshot {
+        RecordFlag::F_SNAPSHOT as u8
     } else {
-        total_levels
+        0
     };
     let mut deltas = Vec::with_capacity(capacity);
 
@@ -330,7 +332,7 @@ pub fn parse_orderbook_deltas(
         };
 
         processed += 1;
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | snapshot_flag;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -1281,6 +1283,12 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument.id());
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+        );
         assert_eq!(
             deltas.deltas[1].order.price,
             instrument.make_price(27450.00)
@@ -1313,6 +1321,12 @@ mod tests {
         assert_eq!(bid.order.size, instrument.make_qty(0.400, None));
 
         let ask = &deltas.deltas[1];
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .all(|delta| !RecordFlag::F_SNAPSHOT.matches(delta.flags))
+        );
         assert_eq!(ask.action, BookAction::Delete);
         assert_eq!(ask.order.side, OrderSide::Sell.into());
         assert_eq!(ask.order.size, instrument.make_qty(0.0, None));

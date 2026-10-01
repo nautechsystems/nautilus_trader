@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Feather writer compatibility exports.
+//! Order book synchronization and recovery for AX Exchange.
+//!
+//! - [`sync`] owns snapshot tracking and recovery state transitions.
+//! - [`recovery`] owns subscription and recovery tasks, using the shared retry runner.
+//!
+//! Every L2 and L3 frame carries a complete snapshot with no sequence number, and AX sends one
+//! right after each subscribe acknowledgement, so the tracker accepts each frame as a snapshot and
+//! validates no linkage. The data client routes book frames through the tracker and starts recovery
+//! for missing initial or post-reconnect snapshots and invalid frames. Outcome types come from
+//! [`nautilus_live::book`].
 
-pub use crate::writer::feather::*;
+pub(crate) mod recovery;
+pub(crate) mod sync;
+
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind};

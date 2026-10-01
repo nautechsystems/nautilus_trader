@@ -17,7 +17,9 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};
+use crate::{
+    indicator::Indicator, python::float_precision, ratio::spread_analyzer::SpreadAnalyzer,
+};
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
@@ -79,6 +81,11 @@ impl SpreadAnalyzer {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        // The analyzer ignores quotes for other instruments without converting them
+        if quote.instrument_id == self.instrument_id {
+            float_precision::check_quote(quote)?;
+        }
+
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 

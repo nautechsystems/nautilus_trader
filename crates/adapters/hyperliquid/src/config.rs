@@ -18,6 +18,7 @@
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -30,11 +31,13 @@ use crate::common::{
 /// Configuration for the Hyperliquid data client.
 ///
 /// The `stale_stream_*` options control the stream health monitor. With recovery
-/// enabled, a stale stream is warned about first, targeted-resubscribed once per
-/// recovery cooldown (preserving its original `l2Book` options), and escalated to
-/// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
-/// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
-/// guide ("Stream health and recovery") for details.
+/// enabled, a stale stream is warned about first, then acted on once per recovery
+/// cooldown. A stale order book delta stream, including depth that shares its stream,
+/// starts shared book recovery, which resubscribes until a fresh snapshot arrives.
+/// Depth-only and BBO streams receive a targeted resubscribe (preserving the original
+/// `l2Book` options) and escalate to a full WebSocket reconnect after
+/// `stale_stream_max_targeted_resubscribes` failed attempts. Fresh data resets the ladder. See the Hyperliquid integration guide
+/// ("Stream health and recovery") for details.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
@@ -83,10 +86,16 @@ pub struct HyperliquidDataClientConfig {
     /// Must be positive for recovery to run.
     #[builder(default = 120)]
     pub stale_stream_recovery_cooldown_secs: u64,
-    /// Targeted resubscribe attempts for a stale stream before escalating to a
-    /// full WebSocket reconnect.
+    /// Targeted resubscribe attempts for a stale depth-only or BBO stream before
+    /// escalating to a full WebSocket reconnect.
     #[builder(default = 3)]
     pub stale_stream_max_targeted_resubscribes: u32,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Interval for refreshing instruments in minutes.
     ///
     /// Set to 0 to disable the periodic refresh.
@@ -113,6 +122,7 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidDataClientConfig {
     stale_stream_recovery_enabled: bool,
     stale_stream_recovery_cooldown_secs: u64,
     stale_stream_max_targeted_resubscribes: u32,
+    book_snapshot_timeout_secs: u64,
 });
 
 impl Default for HyperliquidDataClientConfig {
@@ -334,6 +344,7 @@ transport_backend = "tungstenite"
         assert!(!config.stale_stream_recovery_enabled);
         assert_eq!(config.stale_stream_recovery_cooldown_secs, 120);
         assert_eq!(config.stale_stream_max_targeted_resubscribes, 3);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]
@@ -346,6 +357,7 @@ stale_stream_warning_cooldown_secs = 20
 stale_stream_recovery_enabled = true
 stale_stream_recovery_cooldown_secs = 45
 stale_stream_max_targeted_resubscribes = 5
+book_snapshot_timeout_secs = 4
 ",
         )
         .unwrap();
@@ -356,6 +368,7 @@ stale_stream_max_targeted_resubscribes = 5
         assert!(config.stale_stream_recovery_enabled);
         assert_eq!(config.stale_stream_recovery_cooldown_secs, 45);
         assert_eq!(config.stale_stream_max_targeted_resubscribes, 5);
+        assert_eq!(config.book_snapshot_timeout_secs, 4);
     }
 
     #[rstest]

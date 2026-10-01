@@ -349,7 +349,7 @@ fn strip_data_type_column(
         .iter()
         .enumerate()
         .filter(|(i, _)| *i != data_type_col_idx)
-        .map(|(_, f)| f.clone())
+        .map(|(_, f)| Arc::clone(f))
         .collect();
     let new_columns: Vec<Arc<dyn arrow::array::Array>> = batch
         .columns()

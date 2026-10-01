@@ -52,6 +52,7 @@ use crate::{
     position::Position,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        fixed::check_float_precision,
         money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
     },
 };
@@ -617,6 +618,7 @@ impl Account for MarginAccount {
             // to avoid double-limiting that occurs in position.calculate_pnl()
             let mut pnl_quantity = fill.last_qty.min(pos.quantity);
             pnl_quantity.precision = fill.last_qty.precision;
+            check_float_precision(fill.last_px.precision)?;
             let pnl =
                 pos.try_calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity)?;
             pnls.push(pnl);
@@ -1443,6 +1445,48 @@ mod tests {
 
         // Should return empty PnL list
         assert_eq!(pnls.len(), 0);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::precision_16("50001.0000000000000000", None)]
+    #[case::precision_17("50001.00000000000000000", Some(17))]
+    #[case::precision_18("50001.000000000000000000", Some(18))]
+    fn test_calculate_pnls_checks_reducing_fill_price_float_precision(
+        margin_account: MarginAccount,
+        #[case] last_px: &str,
+        #[case] expected_error_precision: Option<u8>,
+    ) {
+        let btcusdt = currency_pair_btcusdt();
+        let instrument = InstrumentAny::CurrencyPair(btcusdt.clone());
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("1.000000"))
+            .last_px(Price::from("50000.00"))
+            .currency(btcusdt.quote_currency)
+            .position_id(PositionId::from("P-1"))
+            .build();
+        let position = Position::new(&instrument, fill_open);
+        let fill_close = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from("1.000000"))
+            .last_px(Price::from(last_px))
+            .currency(btcusdt.quote_currency)
+            .position_id(PositionId::from("P-1"))
+            .build();
+
+        let result = margin_account.calculate_pnls(&instrument, &fill_close, Some(position));
+
+        match expected_error_precision {
+            None => assert_eq!(result.unwrap(), vec![Money::from("1 USDT")]),
+            Some(precision) => assert_eq!(
+                result.unwrap_err().to_string(),
+                format!("Fixed-point precision {precision} exceeds maximum float precision 16")
+            ),
+        }
     }
 
     #[rstest]

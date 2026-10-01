@@ -325,7 +325,7 @@ mod tests {
                 if field.name() == "ts_init" {
                     Arc::new(field.as_ref().clone().with_nullable(true))
                 } else {
-                    field.clone()
+                    Arc::clone(field)
                 }
             })
             .collect::<Vec<_>>();

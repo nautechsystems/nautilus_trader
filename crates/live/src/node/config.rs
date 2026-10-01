@@ -788,6 +788,7 @@ pub struct LiveNodeConfig {
     #[builder(default = Duration::from_secs(10))]
     pub timeout_disconnection: Duration,
     /// The delay after stopping the node to await residual events before final shutdown.
+    /// Retained submissions still unresolved at this boundary cause shutdown to return an error.
     #[builder(default = Duration::from_secs(10))]
     pub delay_post_stop: Duration,
     /// The timeout to await pending tasks cancellation during shutdown.
@@ -1305,8 +1306,8 @@ mean_dispatch_ns_clear = 700
     fn test_validate_runtime_support_accepts_streaming_config() {
         let config = LiveNodeConfig {
             streaming: Some(StreamingConfig::new(
-                "catalog".to_string(),
-                "file".to_string(),
+                "stream".to_string(),
+                None,
                 1_000,
                 false,
                 RotationConfig::NoRotation,

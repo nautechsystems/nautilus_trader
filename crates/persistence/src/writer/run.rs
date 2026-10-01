@@ -9,12 +9,14 @@
 
 //! Shared staged-writer session and run-state types.
 
+use nautilus_common::enums::Environment;
+
 use crate::common::storage::StorageBackend;
 
 #[derive(Clone)]
 pub struct FeatherSessionSource {
     pub storage: StorageBackend,
-    pub kind: String,
+    pub environment: Environment,
     pub instance_id: String,
 }
 
@@ -22,12 +24,12 @@ impl FeatherSessionSource {
     #[must_use]
     pub fn new(
         storage: StorageBackend,
-        kind: impl Into<String>,
+        environment: Environment,
         instance_id: impl Into<String>,
     ) -> Self {
         Self {
             storage,
-            kind: kind.into(),
+            environment,
             instance_id: instance_id.into(),
         }
     }

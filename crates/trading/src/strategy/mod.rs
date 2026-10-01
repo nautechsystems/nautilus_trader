@@ -41,7 +41,7 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, Params, UUID4};
 use nautilus_execution::order_manager::OrderManagerAction;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
@@ -379,7 +379,7 @@ pub trait Strategy: DataActor {
         }
 
         if let Some(trigger_price) = trigger_price {
-            if !STOP_ORDER_TYPES.contains(&order.order_type()) {
+            if !has_trigger_price(order.order_type()) {
                 anyhow::bail!(
                     "{} orders do not have a STOP trigger price",
                     order.order_type()
@@ -517,7 +517,7 @@ pub trait Strategy: DataActor {
             }
 
             if let Some(trigger_price) = trigger_price {
-                if !STOP_ORDER_TYPES.contains(&order.order_type()) {
+                if !has_trigger_price(order.order_type()) {
                     anyhow::bail!(
                         "{} orders do not have a STOP trigger price",
                         order.order_type()
@@ -2460,6 +2460,16 @@ fn registered_strategy_id(core: &StrategyCore) -> anyhow::Result<StrategyId> {
         .ok_or_else(|| anyhow::anyhow!("Strategy not registered: strategy_id is not set"))
 }
 
+// Trailing stops carry a venue-maintained trigger that a modify can reset, matching the risk
+// engine's modify projection.
+fn has_trigger_price(order_type: OrderType) -> bool {
+    STOP_ORDER_TYPES.contains(&order_type)
+        || matches!(
+            order_type,
+            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+        )
+}
+
 fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<AccountId> {
     order.account_id().ok_or_else(|| {
         anyhow::anyhow!(
@@ -2499,7 +2509,7 @@ mod tests {
     use nautilus_model::{
         enums::{
             ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionAdjustmentType, PositionSide, TriggerType,
+            PositionAdjustmentType, PositionSide, TrailingOffsetType, TriggerType,
         },
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
@@ -2519,6 +2529,7 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use serde_json::Value;
 
     use super::*;
@@ -2966,6 +2977,31 @@ mod tests {
             None,
             None,
         ))
+    }
+
+    fn make_initialized_trailing_stop_order(
+        order_type: OrderType,
+        client_order_id: &str,
+    ) -> OrderAny {
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .trigger_price(Price::from("49000.0"))
+            .trailing_offset(Decimal::from(100))
+            .trailing_offset_type(TrailingOffsetType::Price);
+
+        if order_type == OrderType::TrailingStopLimit {
+            builder
+                .price(Price::from("48900.0"))
+                .limit_offset(Decimal::from(100));
+        }
+
+        builder.build()
     }
 
     fn make_initialized_algorithm_order(client_order_id: &str) -> OrderAny {
@@ -4172,6 +4208,153 @@ mod tests {
             Some(TradingCommand::ModifyOrder(_))
         ));
         assert!(exec_messages.is_empty());
+    }
+
+    #[rstest]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    fn test_modify_order_changes_trailing_stop_trigger(#[case] order_type: OrderType) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let order = make_initialized_trailing_stop_order(order_type, "O-TRAILING-MODIFY");
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("49500.0")),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+
+        let [TradingCommand::ModifyOrder(command)] = risk_messages.as_slice() else {
+            panic!("expected one ModifyOrder command, was {risk_messages:?}");
+        };
+
+        assert_eq!(command.client_order_id, order.client_order_id());
+        assert_eq!(command.quantity, None);
+        assert_eq!(command.price, None);
+        assert_eq!(command.trigger_price, Some(Price::from("49500.0")));
+    }
+
+    #[rstest]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    fn test_modify_orders_changes_trailing_stop_trigger(#[case] order_type: OrderType) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let mut order = make_initialized_trailing_stop_order(order_type, "O-TRAILING-BATCH-MODIFY");
+        let account_id = AccountId::from("ACC-001");
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from("V-TRAILING-BATCH-MODIFY"),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_orders(
+                vec![(
+                    order.client_order_id(),
+                    None,
+                    None,
+                    Some(Price::from("49500.0")),
+                )],
+                None,
+                None,
+            )
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+
+        let [TradingCommand::ModifyOrders(command)] = risk_messages.as_slice() else {
+            panic!("expected one BatchModifyOrders command, was {risk_messages:?}");
+        };
+
+        let [modify] = command.modifies.as_slice() else {
+            panic!("expected one ModifyOrder, was {:?}", command.modifies);
+        };
+
+        assert_eq!(modify.client_order_id, order.client_order_id());
+        assert_eq!(
+            modify.venue_order_id,
+            Some(VenueOrderId::from("V-TRAILING-BATCH-MODIFY"))
+        );
+        assert_eq!(modify.quantity, None);
+        assert_eq!(modify.price, None);
+        assert_eq!(modify.trigger_price, Some(Price::from("49500.0")));
+    }
+
+    #[rstest]
+    #[case::market(OrderType::Market)]
+    #[case::limit(OrderType::Limit)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    fn test_modify_order_rejects_trigger_for_order_without_trigger(#[case] order_type: OrderType) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-NO-TRIGGER-MODIFY"))
+            .quantity(Quantity::from(100_000));
+
+        if order_type == OrderType::Limit {
+            builder.price(Price::from("50000.0"));
+        }
+
+        let order = builder.build();
+        add_order_to_cache(&strategy, &order);
+
+        let result = strategy.modify_order(
+            order.client_order_id(),
+            None,
+            None,
+            Some(Price::from("49500.0")),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("{order_type} orders do not have a STOP trigger price")
+        );
+        assert!(risk_messages.get_messages().is_empty());
     }
 
     #[rstest]

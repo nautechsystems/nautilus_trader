@@ -65,6 +65,8 @@ class BybitDataClientConfig:
     @property
     def update_instruments_interval_mins(self) -> int | None: ...
     @property
+    def book_snapshot_timeout_secs(self) -> int: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -85,6 +87,7 @@ class BybitDataClientConfig:
         update_instruments_interval_mins: int | None = None,
         instrument_status_poll_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        book_snapshot_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def instrument_status_poll_secs(self) -> int | None: ...

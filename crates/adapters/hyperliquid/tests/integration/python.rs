@@ -117,6 +117,7 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
                 obj(py, true),
                 obj(py, 45_u64),
                 obj(py, 5_u32),
+                obj(py, 42_u64),
             ],
         )
         .expect("recovery args tuple should build");
@@ -130,6 +131,7 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
         assert_eq!(legacy_config.stale_stream_receive_timeout_secs, 120);
         assert_eq!(legacy_config.stream_health_check_interval_secs, 15);
         assert_eq!(legacy_config.stale_stream_warning_cooldown_secs, 60);
+        assert_eq!(legacy_config.book_snapshot_timeout_secs, 10);
         assert_eq!(extended_config.update_instruments_interval_mins, 19);
         assert_eq!(extended_config.stale_stream_receive_timeout_secs, 31);
         assert_eq!(extended_config.stream_health_check_interval_secs, 7);
@@ -140,6 +142,7 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
         assert!(recovery_config.stale_stream_recovery_enabled);
         assert_eq!(recovery_config.stale_stream_recovery_cooldown_secs, 45);
         assert_eq!(recovery_config.stale_stream_max_targeted_resubscribes, 5);
+        assert_eq!(recovery_config.book_snapshot_timeout_secs, 42);
     });
 }
 

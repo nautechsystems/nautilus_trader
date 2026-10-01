@@ -17,33 +17,38 @@
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use indexmap::IndexMap;
 use nautilus_common::cache::Cache;
 use nautilus_core::{
     DurationNanos, UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND,
     time::AtomicTime,
 };
 use nautilus_model::{
-    enums::{InstrumentCloseType, OrderSide, OrderStatus, PositionSide, TimeInForce},
+    enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    order_fill_tracker::OrderFillTrackerMap,
-    parse::{OrderReportParseContext, parse_timestamp, parse_validated_order_status_report},
+    parse::{
+        OrderReportParseContext, parse_timestamp, parse_validated_order_status_report,
+        sum_filled_quantity, weighted_average_price,
+    },
     settlement::{AdmissionContext, AdmissionError, AdmittedLeg, TradeEvidence, admit_trade_legs},
 };
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{
-            PolymarketLiquiditySide, PolymarketOutcome, PolymarketSignerType, PolymarketTradeStatus,
+            PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType,
+            PolymarketTradeStatus,
         },
         models::is_owned_by_account,
     },
@@ -362,12 +367,28 @@ pub(super) fn validate_client_bound_order_quantity(
     expected_quantity: Quantity,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        expected_quantity.as_decimal() == provider_order.original_size,
+        venue_qty_matches(
+            provider_order.side == PolymarketOrderSide::Buy,
+            provider_order.original_size,
+            provider_order.size_matched,
+            expected_quantity.as_decimal(),
+        ),
         "provider order quantity {} does not match cached order quantity {}",
         provider_order.original_size,
         expected_quantity,
     );
     Ok(())
+}
+
+// A BUY whose venue fills exceed its signed size had its cached quantity raised to those fills
+pub(super) fn venue_qty_matches(
+    is_buy: bool,
+    signed_qty: Decimal,
+    matched_qty: Decimal,
+    expected_qty: Decimal,
+) -> bool {
+    expected_qty == signed_qty
+        || (is_buy && matched_qty > signed_qty && expected_qty == matched_qty)
 }
 
 fn validate_client_bound_order_row(
@@ -1198,13 +1219,14 @@ pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
     data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    fill_tracker: &OrderFillTrackerMap,
     ctx: &FillContext<'_>,
     client_id: ClientId,
     venue: Venue,
     lookback_mins: Option<u64>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
+    retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
+    is_cached_order: impl Fn(&VenueOrderId) -> bool,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let ts_init = ctx.clock.get_time_ns();
     let lookback_start = lookback_mins
@@ -1228,7 +1250,7 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
+    let (fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
         ctx,
         instruments,
@@ -1246,9 +1268,7 @@ pub(crate) async fn generate_mass_status(
         );
     }
 
-    fill_tracker.snap_fill_reports(&mut fill_reports);
-
-    let position_reports = if ctx.signer_type == PolymarketSignerType::Session {
+    let mut position_reports = if ctx.signer_type == PolymarketSignerType::Session {
         Vec::new()
     } else {
         let positions = data_api_client
@@ -1267,11 +1287,34 @@ pub(crate) async fn generate_mass_status(
         )?
     };
 
+    if lookback_start.is_none() {
+        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
+    } else {
+        order_reports
+            .iter_mut()
+            .for_each(normalize_terminal_order_report_quantity);
+    }
+
+    let aligned_instrument_ids =
+        align_position_reports_to_fills(&mut position_reports, &fill_reports, retained_trade_ids)?;
+    let closed_order_reports = build_closed_order_reports(
+        &fill_reports,
+        &order_reports,
+        &position_reports,
+        &aligned_instrument_ids,
+        lookback_start.is_some(),
+        is_cached_order,
+        ts_init,
+    )?;
+    let closed_order_count = closed_order_reports.len();
+    order_reports.extend(closed_order_reports);
+
     log::debug!(
-        "Generated mass status: {} orders ({} filtered), {} fills ({} instrument-filtered, \
-         {} in-scope historical misses, {} unowned maker trades, {} untimestamped trades), {} \
-         positions",
+        "Generated mass status: {} orders ({} closed, {} filtered), {} fills ({} \
+         instrument-filtered, {} in-scope historical misses, {} unowned maker trades, {} \
+         untimestamped trades), {} positions",
         order_reports.len(),
+        closed_order_count,
         orders_filtered,
         fill_reports.len(),
         fill_discards.unmapped_instruments,
@@ -1280,10 +1323,6 @@ pub(crate) async fn generate_mass_status(
         fill_discards.untimestamped_trades,
         position_reports.len(),
     );
-
-    if lookback_start.is_none() {
-        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
-    }
 
     let mut mass_status = ExecutionMassStatus::new(client_id, ctx.account_id, venue, ts_init, None);
 
@@ -1306,6 +1345,198 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_fill_reports(fill_reports);
 
     Ok(Some(mass_status))
+}
+
+// The CLOB lists only open orders, and reconciliation drops fills that have no order evidence
+fn build_closed_order_reports(
+    fill_reports: &[FillReport],
+    order_reports: &[OrderStatusReport],
+    position_reports: &[PositionStatusReport],
+    aligned_instrument_ids: &AHashSet<InstrumentId>,
+    is_bounded: bool,
+    is_cached_order: impl Fn(&VenueOrderId) -> bool,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let open_order_ids: AHashSet<VenueOrderId> = order_reports
+        .iter()
+        .map(|report| report.venue_order_id)
+        .collect();
+    let position_instrument_ids: AHashSet<InstrumentId> = position_reports
+        .iter()
+        .map(|report| report.instrument_id)
+        .collect();
+    let mut fills_by_order: IndexMap<VenueOrderId, Vec<FillReport>> = IndexMap::new();
+
+    for fill in fill_reports {
+        if open_order_ids.contains(&fill.venue_order_id) || is_cached_order(&fill.venue_order_id) {
+            continue;
+        }
+
+        // Reported positions take fills only when they explain the position, and unbounded
+        // reconciliation builds positions from fills, which miss redemptions and merges.
+        let is_reportable = if position_instrument_ids.contains(&fill.instrument_id) {
+            aligned_instrument_ids.contains(&fill.instrument_id)
+        } else {
+            is_bounded
+        };
+
+        if !is_reportable {
+            continue;
+        }
+
+        fills_by_order
+            .entry(fill.venue_order_id)
+            .or_default()
+            .push(fill.clone());
+    }
+
+    fills_by_order
+        .values()
+        .map(|fills| build_closed_order_report(fills, ts_init))
+        .collect()
+}
+
+fn build_closed_order_report(
+    fills: &[FillReport],
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let first = fills.first().context("closed order holds no fills")?;
+    anyhow::ensure!(
+        fills
+            .iter()
+            .all(|fill| fill.instrument_id == first.instrument_id
+                && fill.order_side == first.order_side),
+        "confirmed fills of venue order {} disagree on instrument or side",
+        first.venue_order_id,
+    );
+
+    let filled = sum_filled_quantity(fills);
+    let filled_qty = Quantity::from_decimal_dp(filled, first.last_qty.precision)?;
+    let ts_accepted = fills
+        .iter()
+        .map(|fill| fill.ts_event)
+        .fold(first.ts_event, Ord::min);
+    let ts_last = fills
+        .iter()
+        .map(|fill| fill.ts_event)
+        .fold(first.ts_event, Ord::max);
+
+    // Trades carry no limit price, time in force, or signed size, so the fills define the order
+    let mut report = OrderStatusReport::new(
+        first.account_id,
+        first.instrument_id,
+        None,
+        first.venue_order_id,
+        Some(first.order_side),
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        filled_qty,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        None,
+    );
+    report.avg_px = weighted_average_price(fills, filled);
+    Ok(report)
+}
+
+// The Data API reports size and average cost to four decimal places, too coarse to match fills
+fn align_position_reports_to_fills(
+    position_reports: &mut [PositionStatusReport],
+    fill_reports: &[FillReport],
+    retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
+) -> anyhow::Result<AHashSet<InstrumentId>> {
+    let mut aligned_instrument_ids = AHashSet::new();
+
+    for report in position_reports {
+        let fills: Vec<&FillReport> = fill_reports
+            .iter()
+            .filter(|fill| fill.instrument_id == report.instrument_id)
+            .collect();
+
+        // Reconciliation keeps a retained position, so align only when these fills built it
+        if retained_trade_ids
+            .get(&report.instrument_id)
+            .is_some_and(|trade_ids| {
+                !trade_ids
+                    .iter()
+                    .all(|trade_id| fills.iter().any(|fill| fill.trade_id == *trade_id))
+            })
+        {
+            continue;
+        }
+
+        let Some((qty, avg_px)) = long_position_from_fills(&fills) else {
+            continue;
+        };
+
+        if (qty - report.quantity.as_decimal()).abs() >= dec!(0.0001) {
+            continue;
+        }
+
+        let quantity = Quantity::from_decimal_dp(qty, report.quantity.precision)?;
+
+        log::debug!(
+            "Aligning position report {} from Data API size {} to confirmed fills {quantity}",
+            report.instrument_id,
+            report.quantity,
+        );
+
+        *report = PositionStatusReport::new(
+            report.account_id,
+            report.instrument_id,
+            report.position_side,
+            quantity,
+            report.ts_last,
+            report.ts_init,
+            Some(report.report_id),
+            report.venue_position_id,
+            Some(avg_px),
+        );
+        aligned_instrument_ids.insert(report.instrument_id);
+    }
+
+    Ok(aligned_instrument_ids)
+}
+
+// Returns the quantity and average entry price when the fills build one long position from zero,
+// or `None` when a sell empties or exceeds it, or a buy and a sell share an ambiguous event time.
+fn long_position_from_fills(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
+    let mut sorted_fills = fills.to_vec();
+    sorted_fills.sort_by_key(|fill| fill.ts_event);
+
+    if sorted_fills.windows(2).any(|pair| {
+        matches!(pair, [left, right]
+            if left.ts_event == right.ts_event && left.order_side != right.order_side)
+    }) {
+        return None;
+    }
+
+    let mut qty = Decimal::ZERO;
+    let mut value = Decimal::ZERO;
+
+    for fill in sorted_fills {
+        let last_qty = fill.last_qty.as_decimal();
+
+        match fill.order_side {
+            OrderSide::Buy => {
+                qty += last_qty;
+                value += last_qty * fill.last_px.as_decimal();
+            }
+            OrderSide::Sell => {
+                if last_qty >= qty {
+                    return None;
+                }
+
+                value -= value * last_qty / qty;
+                qty -= last_qty;
+            }
+        }
+    }
+
+    (qty > Decimal::ZERO).then(|| (qty, value / qty))
 }
 
 pub(crate) fn trades_params_for_window(
@@ -1497,8 +1728,23 @@ pub(crate) fn cap_order_report_filled_qty(
 pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
     if report.order_status != OrderStatus::Filled
         || report.filled_qty.is_zero()
-        || report.filled_qty >= report.quantity
+        || report.filled_qty == report.quantity
     {
+        return;
+    }
+
+    if report.filled_qty > report.quantity {
+        // A BUY is bounded by its pUSD spend, so it can fill more shares than it signed
+        if report.order_side == Some(OrderSide::Buy) {
+            log::debug!(
+                "Raising terminal BUY order report {} quantity from {} to venue fills {}",
+                report.venue_order_id,
+                report.quantity,
+                report.filled_qty,
+            );
+            report.quantity = report.filled_qty;
+        }
+
         return;
     }
 
@@ -2170,5 +2416,351 @@ mod tests {
 
         assert!(reports.is_empty());
         assert_eq!(filtered, 1);
+    }
+
+    #[rstest]
+    #[case::signed_qty(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0000), true)]
+    #[case::raised_buy(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0040), true)]
+    #[case::raised_sell(PolymarketOrderSide::Sell, dec!(10.0040), dec!(10.0040), false)]
+    #[case::buy_short_of_fills(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0020), false)]
+    #[case::buy_without_overfill(PolymarketOrderSide::Buy, dec!(10.0000), dec!(10.0040), false)]
+    fn test_validate_client_bound_order_quantity(
+        #[case] side: PolymarketOrderSide,
+        #[case] size_matched: Decimal,
+        #[case] expected_qty: Decimal,
+        #[case] valid: bool,
+    ) {
+        let mut order = open_order();
+        order.side = side;
+        order.original_size = dec!(10.0000);
+        order.size_matched = size_matched;
+
+        let result = validate_client_bound_order_quantity(
+            &order,
+            Quantity::from_decimal_dp(expected_qty, 4).unwrap(),
+        );
+
+        assert_eq!(result.is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case::buy_overfill_raises(OrderSide::Buy, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285714))]
+    #[case::sell_overfill_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::buy_overfill_not_filled(OrderSide::Buy, OrderStatus::PartiallyFilled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::dust_underfill_lowers(OrderSide::Sell, OrderStatus::Filled, dec!(100.000000), dec!(99.995000), dec!(99.995000))]
+    #[case::real_underfill_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(100.000000), dec!(99.000000), dec!(100.000000))]
+    fn test_normalize_terminal_order_report_quantity(
+        #[case] order_side: OrderSide,
+        #[case] order_status: OrderStatus,
+        #[case] quantity: Decimal,
+        #[case] filled_qty: Decimal,
+        #[case] expected_qty: Decimal,
+    ) {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            None,
+            VenueOrderId::from("0xorder"),
+            order_side.into(),
+            OrderType::Limit,
+            TimeInForce::Fok,
+            order_status,
+            Quantity::from_decimal_dp(quantity, 6).unwrap(),
+            Quantity::from_decimal_dp(filled_qty, 6).unwrap(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        normalize_terminal_order_report_quantity(&mut report);
+
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.filled_qty.as_decimal(), filled_qty);
+    }
+
+    fn window_fill(
+        venue_order_id: &str,
+        order_side: OrderSide,
+        last_qty: Decimal,
+        last_px: Decimal,
+        ts_event: u64,
+    ) -> FillReport {
+        FillReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            VenueOrderId::from(venue_order_id),
+            TradeId::from(format!("T-{venue_order_id}-{ts_event}").as_str()),
+            order_side,
+            Quantity::from_decimal_dp(last_qty, 6).unwrap(),
+            Price::from_decimal_dp(last_px, 4).unwrap(),
+            Money::zero(Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::from(ts_event),
+            None,
+        )
+    }
+
+    fn data_api_position_report(quantity: Decimal, avg_px: Decimal) -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            PositionSide::Long,
+            Quantity::from_decimal_dp(quantity, 6).unwrap(),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+            None,
+            None,
+            Some(avg_px),
+        )
+    }
+
+    #[rstest]
+    fn test_build_closed_order_reports_groups_fills_of_unreported_orders() {
+        let fills = vec![
+            window_fill("V-BUY", OrderSide::Buy, dec!(5), dec!(0.55), 10),
+            window_fill("V-SELL", OrderSide::Sell, dec!(8.92), dec!(0.54), 20),
+            window_fill("V-BUY", OrderSide::Buy, dec!(3.928572), dec!(0.56), 30),
+            window_fill("V-OPEN", OrderSide::Buy, dec!(1), dec!(0.50), 40),
+            window_fill("V-CACHED", OrderSide::Buy, dec!(2), dec!(0.50), 50),
+        ];
+
+        let open_report = OrderStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            None,
+            VenueOrderId::from("V-OPEN"),
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.000000"),
+            Quantity::from("1.000000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+
+        let reports = build_closed_order_reports(
+            &fills,
+            &[open_report],
+            &[],
+            &AHashSet::new(),
+            true,
+            |venue_order_id| venue_order_id.as_str() == "V-CACHED",
+            UnixNanos::from(100),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 2);
+        let buy = &reports[0];
+        assert_eq!(buy.account_id, AccountId::from("POLYMARKET-001"));
+        assert_eq!(
+            buy.instrument_id,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET")
+        );
+        assert_eq!(buy.client_order_id, None);
+        assert_eq!(buy.venue_order_id, VenueOrderId::from("V-BUY"));
+        assert_eq!(buy.order_side, Some(OrderSide::Buy));
+        assert_eq!(buy.order_type, OrderType::Market);
+        assert_eq!(buy.time_in_force, TimeInForce::Gtc);
+        assert_eq!(buy.order_status, OrderStatus::Filled);
+        assert_eq!(buy.quantity, Quantity::from("8.928572"));
+        assert_eq!(buy.filled_qty, Quantity::from("8.928572"));
+        assert_eq!(
+            buy.avg_px,
+            Some((dec!(2.75) + dec!(3.928572) * dec!(0.56)) / dec!(8.928572))
+        );
+        assert_eq!(buy.price, None);
+        assert_eq!(buy.ts_accepted, UnixNanos::from(10));
+        assert_eq!(buy.ts_last, UnixNanos::from(30));
+        assert_eq!(buy.ts_init, UnixNanos::from(100));
+        let sell = &reports[1];
+        assert_eq!(sell.venue_order_id, VenueOrderId::from("V-SELL"));
+        assert_eq!(sell.order_side, Some(OrderSide::Sell));
+        assert_eq!(sell.order_status, OrderStatus::Filled);
+        assert_eq!(sell.quantity, Quantity::from("8.920000"));
+        assert_eq!(sell.filled_qty, Quantity::from("8.920000"));
+        assert_eq!(sell.avg_px, Some(dec!(0.54)));
+        assert_eq!(sell.ts_accepted, UnixNanos::from(20));
+        assert_eq!(sell.ts_last, UnixNanos::from(20));
+    }
+
+    #[rstest]
+    #[case::bounded_without_position(true, false, false, 1)]
+    #[case::bounded_aligned_position(true, true, true, 1)]
+    #[case::bounded_unaligned_position(true, true, false, 0)]
+    #[case::unbounded_aligned_position(false, true, true, 1)]
+    #[case::unbounded_unaligned_position(false, true, false, 0)]
+    #[case::unbounded_without_position(false, false, false, 0)]
+    fn test_build_closed_order_reports_scope(
+        #[case] is_bounded: bool,
+        #[case] has_position: bool,
+        #[case] is_aligned: bool,
+        #[case] expected_count: usize,
+    ) {
+        let fills = vec![window_fill(
+            "V-BUY",
+            OrderSide::Buy,
+            dec!(5),
+            dec!(0.55),
+            10,
+        )];
+
+        let position_reports = if has_position {
+            vec![data_api_position_report(dec!(5), dec!(0.55))]
+        } else {
+            Vec::new()
+        };
+
+        let aligned_instrument_ids = if is_aligned {
+            AHashSet::from([InstrumentId::from("TEST-TOKEN.POLYMARKET")])
+        } else {
+            AHashSet::new()
+        };
+
+        let reports = build_closed_order_reports(
+            &fills,
+            &[],
+            &position_reports,
+            &aligned_instrument_ids,
+            is_bounded,
+            |_| false,
+            UnixNanos::from(100),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), expected_count);
+    }
+
+    #[rstest]
+    fn test_build_closed_order_reports_rejects_contradictory_sides() {
+        let fills = vec![
+            window_fill("V-1", OrderSide::Buy, dec!(5), dec!(0.55), 10),
+            window_fill("V-1", OrderSide::Sell, dec!(5), dec!(0.55), 20),
+        ];
+
+        let error = build_closed_order_reports(
+            &fills,
+            &[],
+            &[],
+            &AHashSet::new(),
+            true,
+            |_| false,
+            UnixNanos::from(100),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "confirmed fills of venue order V-1 disagree on instrument or side"
+        );
+    }
+
+    #[rstest]
+    #[case::truncated_size(dec!(8.928572), None, dec!(8.937144), dec!(0.56), true)]
+    #[case::gap_at_increment(dec!(8.928628), None, dec!(8.9371), dec!(0.5599), false)]
+    #[case::retained_from_fills(dec!(8.928572), Some("T-V-1-10"), dec!(8.937144), dec!(0.56), true)]
+    #[case::retained_from_report(dec!(8.928572), Some("S-RETAINED"), dec!(8.9371), dec!(0.5599), false)]
+    fn test_align_position_reports_to_fills(
+        #[case] last_buy_qty: Decimal,
+        #[case] retained_trade_id: Option<&str>,
+        #[case] expected_qty: Decimal,
+        #[case] expected_avg_px: Decimal,
+        #[case] is_aligned: bool,
+    ) {
+        let mut other_instrument_fill =
+            window_fill("V-OTHER", OrderSide::Buy, dec!(1), dec!(0.30), 15);
+        other_instrument_fill.instrument_id = InstrumentId::from("OTHER-TOKEN.POLYMARKET");
+        let fills = vec![
+            window_fill("V-1", OrderSide::Buy, dec!(8.928572), dec!(0.56), 10),
+            other_instrument_fill,
+            window_fill("V-2", OrderSide::Sell, dec!(8.92), dec!(0.55), 20),
+            window_fill("V-3", OrderSide::Buy, last_buy_qty, dec!(0.56), 30),
+        ];
+        let mut reports = vec![data_api_position_report(dec!(8.9371), dec!(0.5599))];
+        let report_id = reports[0].report_id;
+
+        let retained_trade_ids: AHashMap<InstrumentId, AHashSet<TradeId>> = retained_trade_id
+            .map(|trade_id| {
+                (
+                    InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+                    AHashSet::from([TradeId::from(trade_id)]),
+                )
+            })
+            .into_iter()
+            .collect();
+
+        let aligned_instrument_ids =
+            align_position_reports_to_fills(&mut reports, &fills, &retained_trade_ids).unwrap();
+
+        let report = &reports[0];
+        assert_eq!(
+            aligned_instrument_ids.contains(&InstrumentId::from("TEST-TOKEN.POLYMARKET")),
+            is_aligned
+        );
+        assert_eq!(aligned_instrument_ids.len(), usize::from(is_aligned));
+        assert_eq!(report.account_id, AccountId::from("POLYMARKET-001"));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET")
+        );
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.quantity.precision, 6);
+        assert_eq!(report.signed_decimal_qty, expected_qty);
+        assert_eq!(report.avg_px_open, Some(expected_avg_px));
+        assert_eq!(report.report_id, report_id);
+        assert_eq!(report.ts_last, UnixNanos::from(100));
+        assert_eq!(report.ts_init, UnixNanos::from(100));
+    }
+
+    #[rstest]
+    #[case::partial_close_keeps_average(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(2), dec!(0.80), 3)],
+        Some((dec!(8), dec!(0.575))),
+    )]
+    #[case::replays_in_event_order(
+        vec![(OrderSide::Buy, dec!(2), dec!(0.80), 3), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(10), dec!(0.50), 1)],
+        Some((dec!(8), dec!(0.575))),
+    )]
+    #[case::same_side_share_time(
+        vec![(OrderSide::Buy, dec!(4), dec!(0.50), 1), (OrderSide::Buy, dec!(4), dec!(0.60), 1)],
+        Some((dec!(8), dec!(0.55))),
+    )]
+    #[case::opposite_sides_share_time(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(2), dec!(0.80), 2)],
+        None,
+    )]
+    #[case::sells_to_flat(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(10), dec!(0.60), 2), (OrderSide::Buy, dec!(5), dec!(0.40), 3)],
+        None,
+    )]
+    #[case::sells_earlier_shares(
+        vec![(OrderSide::Sell, dec!(1), dec!(0.60), 1), (OrderSide::Buy, dec!(5), dec!(0.40), 2)],
+        None,
+    )]
+    #[case::ends_flat(
+        vec![(OrderSide::Buy, dec!(5), dec!(0.40), 1), (OrderSide::Sell, dec!(5), dec!(0.60), 2)],
+        None,
+    )]
+    fn test_long_position_from_fills(
+        #[case] trades: Vec<(OrderSide, Decimal, Decimal, u64)>,
+        #[case] expected: Option<(Decimal, Decimal)>,
+    ) {
+        let fills: Vec<FillReport> = trades
+            .into_iter()
+            .map(|(side, qty, px, ts_event)| {
+                window_fill(&format!("V-{ts_event}"), side, qty, px, ts_event)
+            })
+            .collect();
+
+        let fill_refs: Vec<&FillReport> = fills.iter().collect();
+
+        assert_eq!(long_position_from_fills(&fill_refs), expected);
     }
 }

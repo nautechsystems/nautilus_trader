@@ -203,10 +203,17 @@ fn test_auto_flush() {
     );
     writer.write(quote2).unwrap();
 
-    let rows = StreamReader::try_new(File::open(&partial).unwrap(), None)
+    // Windows locks block reads through other handles, so the open file is measured instead: if
+    // closing adds only the 8-byte end-of-stream marker, both quotes were already on disk
+    let flushed_len = fs::metadata(&partial).unwrap().len();
+    writer.close().unwrap();
+
+    let sealed = partial.with_extension("");
+    let rows = StreamReader::try_new(File::open(&sealed).unwrap(), None)
         .unwrap()
         .map(|batch| batch.unwrap().num_rows())
         .sum::<usize>();
+    assert_eq!(fs::metadata(&sealed).unwrap().len(), flushed_len + 8);
     assert_eq!(rows, 2);
     assert_eq!(temp_dir.path().read_dir().unwrap().count(), 1);
 }

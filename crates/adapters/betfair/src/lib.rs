@@ -29,7 +29,7 @@
 //! The system spans research, deterministic simulation, and live execution within a single
 //! event-driven architecture, providing research-to-live semantic parity.
 //!
-//! # Naming conventions
+//! # Naming Conventions
 //!
 //! Betfair's API uses British English spelling. This crate preserves those
 //! spellings in type names, method strings, and fixture files, e.g.
@@ -65,6 +65,8 @@ pub mod http;
 pub mod loader;
 pub mod provider;
 pub mod stream;
+
+pub(crate) mod book;
 
 #[cfg(feature = "python")]
 pub mod python;

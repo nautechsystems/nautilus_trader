@@ -29,13 +29,14 @@ use std::{
 };
 
 use ahash::AHashSet;
-use nautilus_common::live::block_on_nautilus_with;
+use nautilus_common::{enums::Environment, live::block_on_nautilus_with};
 use nautilus_core::UnixNanos;
 use nautilus_model::data::Data;
 
 use crate::{
     common::{
-        conversion::FeatherConversionSummary, paths::normalize_path_separators,
+        conversion::FeatherConversionSummary,
+        paths::{environment_directory, environment_from_directory, normalize_path_separators},
         storage::StorageBackend,
     },
     writer::{
@@ -46,10 +47,10 @@ use crate::{
 
 pub(crate) fn list_session_feather_files(
     storage: &StorageBackend,
-    kind: &str,
+    environment: Environment,
     instance_id: &str,
 ) -> anyhow::Result<Vec<String>> {
-    let run_directory = format!("{kind}/{instance_id}");
+    let run_directory = format!("{}/{instance_id}", environment_directory(environment));
     let mut files =
         block_on_nautilus_with(|| storage.list_files(&run_directory, Some(".feather")))?;
     files.sort();
@@ -58,8 +59,8 @@ pub(crate) fn list_session_feather_files(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PromotionSession {
-    pub(crate) catalog_uri: String,
-    pub(crate) kind: String,
+    pub(crate) root_uri: String,
+    pub(crate) environment: Environment,
     pub(crate) instance_id: String,
 }
 
@@ -83,26 +84,24 @@ impl PromotionSession {
             .map(str::to_string)
             .collect::<Vec<_>>();
         let instance_id = components.last()?.clone();
-        let kind = components.get(components.len().checked_sub(2)?)?.clone();
-        if !is_run_kind(&kind) {
-            return None;
-        }
+        let environment =
+            environment_from_directory(components.get(components.len().checked_sub(2)?)?)?;
 
-        let catalog_segments = &components[..components.len().saturating_sub(2)];
+        let root_segments = &components[..components.len().saturating_sub(2)];
 
-        let catalog_path = if catalog_segments.is_empty() {
+        let root_path = if root_segments.is_empty() {
             "/".to_string()
         } else {
-            format!("/{}", catalog_segments.join("/"))
+            format!("/{}", root_segments.join("/"))
         };
 
-        url.set_path(&catalog_path);
+        url.set_path(&root_path);
         url.set_query(None);
         url.set_fragment(None);
 
         Some(Self {
-            catalog_uri: url.to_string(),
-            kind,
+            root_uri: url.to_string(),
+            environment,
             instance_id,
         })
     }
@@ -111,22 +110,16 @@ impl PromotionSession {
         let normalized = normalize_path_separators(path);
         let path = PathBuf::from(&normalized);
         let instance_id = path.file_name()?.to_string_lossy().to_string();
-        let kind = path.parent()?.file_name()?.to_string_lossy().to_string();
-        if !is_run_kind(&kind) {
-            return None;
-        }
+        let environment =
+            environment_from_directory(&path.parent()?.file_name()?.to_string_lossy())?;
 
-        let catalog_uri = path.parent()?.parent()?.to_string_lossy().to_string();
+        let root_uri = path.parent()?.parent()?.to_string_lossy().to_string();
         Some(Self {
-            catalog_uri,
-            kind,
+            root_uri,
+            environment,
             instance_id,
         })
     }
-}
-
-fn is_run_kind(kind: &str) -> bool {
-    matches!(kind, "backtest" | "live" | "sandbox")
 }
 
 pub(crate) trait PromotionSink: Send {
@@ -917,6 +910,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use nautilus_common::enums::Environment;
     use nautilus_model::data::{Data, NautilusDataType};
     use rstest::rstest;
 
@@ -1011,7 +1005,7 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let storage =
             create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
-        let source = FeatherSessionSource::new(storage, "backtest", "run-leftovers");
+        let source = FeatherSessionSource::new(storage, Environment::Backtest, "run-leftovers");
         let state = Arc::new(Mutex::new(RecordingState::default()));
 
         let backend = RecordingBackend {
@@ -1162,8 +1156,8 @@ mod tests {
         let session =
             PromotionSession::from_uri(r"C:\catalog\backtest\run-1").expect("valid run path");
 
-        assert_eq!(session.catalog_uri, "C:/catalog");
-        assert_eq!(session.kind, "backtest");
+        assert_eq!(session.root_uri, "C:/catalog");
+        assert_eq!(session.environment, Environment::Backtest);
         assert_eq!(session.instance_id, "run-1");
     }
 
@@ -1172,9 +1166,9 @@ mod tests {
         let session =
             PromotionSession::from_uri(r"\\server\share\live\run-2").expect("valid UNC run path");
 
-        // catalog_uri is platform-dependent here (Windows retains a trailing
-        // separator at the UNC prefix+root floor), so only kind/instance_id are asserted.
-        assert_eq!(session.kind, "live");
+        // root_uri is platform-dependent here (Windows retains a trailing
+        // separator at the UNC prefix+root floor), so only environment/instance_id are asserted.
+        assert_eq!(session.environment, Environment::Live);
         assert_eq!(session.instance_id, "run-2");
     }
 
@@ -1183,8 +1177,8 @@ mod tests {
         let session =
             PromotionSession::from_uri("/tmp/catalog/sandbox/run-3").expect("valid run path");
 
-        assert_eq!(session.catalog_uri, "/tmp/catalog");
-        assert_eq!(session.kind, "sandbox");
+        assert_eq!(session.root_uri, "/tmp/catalog");
+        assert_eq!(session.environment, Environment::Sandbox);
         assert_eq!(session.instance_id, "run-3");
     }
 

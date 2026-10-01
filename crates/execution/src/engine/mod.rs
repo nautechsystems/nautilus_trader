@@ -4029,6 +4029,7 @@ impl ExecutionEngine {
                     fill.last_qty,
                     order.quantity()
                 );
+                log::warn!("{msg}");
                 anyhow::bail!("{msg}");
             }
         }

@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python feather compatibility export.
+//! Order book synchronization and recovery for Hyperliquid.
+//!
+//! - [`sync`] owns snapshot tracking and recovery state transitions.
+//! - [`recovery`] owns subscription and recovery tasks, using the shared retry runner.
+//!
+//! Every `l2Book` frame carries a complete snapshot of the aggregated top levels with no sequence
+//! number, so the tracker accepts each frame as a snapshot and validates no linkage. The data
+//! client routes delta frames through the tracker and starts recovery for missing initial or
+//! post-reconnect snapshots, invalid frames, and stale streams when the stream health monitor's
+//! recovery is enabled. Outcome types come from [`nautilus_live::book`].
 
-pub use super::backend::feather::PyStreamingFeatherWriter;
+pub(crate) mod recovery;
+pub(crate) mod sync;
+
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind};

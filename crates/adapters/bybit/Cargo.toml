@@ -102,6 +102,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
@@ -176,3 +177,12 @@ name = "bybit-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
+
+# Public market-data validation; explicitly connects to Bybit mainnet.
+# Run with `cargo test --package nautilus-bybit --features examples --test bybit-book-stress -- --timeout 10 --rounds 21`
+[[test]]
+name = "bybit-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

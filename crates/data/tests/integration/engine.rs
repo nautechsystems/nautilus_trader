@@ -1647,6 +1647,129 @@ fn test_request_scoped_bar_aggregator_runs_alongside_live_subscription(
 }
 
 #[rstest]
+#[case::validation_disabled(false)]
+#[case::validation_enabled(true)]
+fn test_request_scoped_bar_aggregator_older_history_inserted_before_newer_live_bar(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] validate_sequence: bool,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        validate_data_sequence: validate_sequence,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+    let live_subscribe = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(live_subscribe);
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buy,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    // a live bar is cached before the requested history
+    data_engine.process_data(Data::Trade(make_trade(2_000, "live-1")));
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(2_000)),
+    );
+
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Request(RequestCommand::Trades(request)));
+
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![make_trade(1_000, "historical-1")],
+        None,
+        None,
+        UnixNanos::from(1_000),
+        Some(params),
+    )));
+
+    // the older requested aggregate is cached behind the newer live bar
+    let stamps: Vec<_> = cache
+        .borrow()
+        .bars(&bar_type)
+        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
+        .unwrap_or_default();
+    assert_eq!(stamps, vec![UnixNanos::from(2_000), UnixNanos::from(1_000)]);
+
+    // the live path continues to extend the series
+    data_engine.process_data(Data::Trade(make_trade(3_000, "live-2")));
+
+    let stamps: Vec<_> = cache
+        .borrow()
+        .bars(&bar_type)
+        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(3_000),
+            UnixNanos::from(2_000),
+            UnixNanos::from(1_000),
+        ],
+    );
+}
+
+#[rstest]
 fn test_request_scoped_quote_bar_aggregators_handle_multiple_bar_types(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
@@ -2368,6 +2491,129 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
     let responses = response_saver.get_messages();
     assert_eq!(responses.len(), 1);
     assert_eq!(response_data_count(&responses[0]), Some(3));
+}
+
+#[rstest]
+fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(3));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+
+    // a live bar is cached under the standard bar type before the requested history
+    let standard = target_bar_type.standard();
+    data_engine.process_data(Data::Bar(make_bar(
+        standard,
+        "108.00",
+        "108.00",
+        "108.00",
+        "108.00",
+        1,
+        minute(3),
+    )));
+    assert_eq!(
+        cache.borrow().bar(&standard).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(minute(3))),
+    );
+
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "95.00"
+            }
+        ]
+    }));
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(0)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(2)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![
+            make_bar(
+                child.bar_type,
+                "100.00",
+                "100.00",
+                "100.00",
+                "100.00",
+                1,
+                minute(0),
+            ),
+            make_bar(
+                child.bar_type,
+                "101.00",
+                "101.00",
+                "101.00",
+                "101.00",
+                1,
+                minute(1),
+            ),
+        ],
+        None,
+        None,
+        UnixNanos::from(minute(1)),
+        child.params,
+    )));
+
+    // the requested history is inserted behind the newer live bar
+    let stamps: Vec<_> = cache
+        .borrow()
+        .bars(&standard)
+        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(minute(3)),
+            UnixNanos::from(minute(1)),
+            UnixNanos::from(minute(0)),
+        ],
+    );
 }
 
 #[rstest]
@@ -12535,6 +12781,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
+    let pool_identifier = pool.pool_identifier;
 
     // Add pool to cache and create profiler
     let shared_pool = Arc::new(pool.clone());
@@ -12603,30 +12850,41 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let cmd = DataCommand::DefiSubscribe(sub);
     data_engine.borrow_mut().execute(cmd);
 
-    // Create and process swap that changes tick
-    let new_price = U160::from(56022770974786139918731938227u128); // Different price
-    let swap = PoolSwap::new(
-        chain,
-        dex,
-        instrument_id,
-        PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
-        "0x123".to_string(),
-        0,
-        0,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        Address::from([0x12; 20]),
-        Address::from([0x12; 20]),
-        I256::from_str("1000000000000000000").unwrap(),
-        I256::from_str("400000000000000").unwrap(),
-        new_price,
-        1000u128,
-        0i32,
-    );
+    // Replay a swap consistent with the profiler's initialized liquidity
+    let swap = cache
+        .borrow()
+        .pool_profiler(&instrument_id)
+        .unwrap()
+        .simulate_swap_through_ticks(
+            I256::from_str("100").unwrap(),
+            true,
+            U160::from(56022770974786139918731938227u128),
+            true,
+        )
+        .unwrap()
+        .to_swap_event(
+            chain,
+            dex,
+            pool_identifier,
+            BlockPosition::new(1000, "0x123".to_string(), 0, 0),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Address::from([0x12; 20]),
+            Address::from([0x12; 20]),
+        );
+    let expected_tick = swap.tick;
+    let expected_price = swap.sqrt_price_x96;
+    let expected_liquidity = swap.liquidity;
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_defi_data(DefiData::PoolSwap(swap));
+
+    let cache_ref = cache.borrow();
+    let updated = cache_ref.pool_profiler(&instrument_id).unwrap();
+    assert_eq!(updated.state.current_tick, expected_tick);
+    assert_eq!(updated.state.price_sqrt_ratio_x96, expected_price);
+    assert_eq!(updated.tick_map.liquidity, expected_liquidity);
+    assert_eq!(updated.last_processed_event.as_ref().unwrap().number, 1000);
 
     // Verify profiler state was updated by PoolUpdater
     let final_tick = cache

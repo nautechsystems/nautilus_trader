@@ -380,6 +380,29 @@ pub fn parse_outcome_instruments(
     Ok(defs)
 }
 
+pub(crate) fn parse_unlisted_outcome_instrument(
+    asset_id: HyperliquidAssetId,
+) -> Result<HyperliquidInstrumentDef, String> {
+    let (Some(outcome), Some(side)) = (asset_id.outcome_index(), asset_id.outcome_side()) else {
+        return Err(format!("Asset {asset_id} is not a HIP-4 outcome"));
+    };
+
+    // Only the encoding survives settlement, so market metadata stays empty
+    let market = OutcomeMarket {
+        outcome,
+        name: String::new(),
+        description: String::new(),
+        side_specs: Vec::new(),
+    };
+
+    let meta = OutcomeMeta {
+        outcomes: Vec::new(),
+        questions: Vec::new(),
+    };
+
+    build_outcome_def(&market, side, &meta)
+}
+
 fn build_outcome_def(
     market: &OutcomeMarket,
     side: u8,
@@ -2073,6 +2096,67 @@ mod tests {
 
         assert_eq!(defs[0].asset_index, 100_000_050);
         assert_eq!(defs[1].asset_index, 100_000_051);
+    }
+
+    #[rstest]
+    #[case::yes(0, "20-YES-OUTCOME", "#200", "+200", 100_000_200, "Yes")]
+    #[case::no(1, "20-NO-OUTCOME", "#201", "+201", 100_000_201, "No")]
+    fn test_parse_unlisted_outcome_instrument(
+        #[case] side: u8,
+        #[case] symbol: &str,
+        #[case] raw_symbol: &str,
+        #[case] base: &str,
+        #[case] asset_index: u32,
+        #[case] side_name: &str,
+    ) {
+        let listed_meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 20,
+                name: "Recurring".to_string(),
+                description: "class:priceBinary|underlying:BTC|expiry:20260511-0600".to_string(),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+
+        let listed = parse_outcome_instruments(&listed_meta).unwrap();
+
+        let def = parse_unlisted_outcome_instrument(HyperliquidAssetId::outcome(20, side)).unwrap();
+
+        let listed = &listed[usize::from(side)];
+        let outcome = def.outcome.as_ref().unwrap();
+        assert_eq!(def.symbol, symbol);
+        assert_eq!(def.raw_symbol, raw_symbol);
+        assert_eq!(def.base, base);
+        assert_eq!(def.quote, "USDH");
+        assert_eq!(def.market_type, HyperliquidMarketType::Outcome);
+        assert_eq!(def.asset_index, asset_index);
+        assert_eq!(def.price_decimals, OUTCOME_PRICE_DECIMALS);
+        assert_eq!(def.size_decimals, OUTCOME_SIZE_DECIMALS);
+        assert_eq!(def.tick_size, dec!(0.0001));
+        assert_eq!(def.lot_size, dec!(0.01));
+        assert!(def.active);
+        assert_eq!(outcome.outcome_index, 20);
+        assert_eq!(outcome.outcome_side, side);
+        assert_eq!(outcome.market_name, "");
+        assert_eq!(outcome.side_name.unwrap(), side_name);
+        assert_eq!(outcome.description, None);
+        assert_eq!(outcome.expiration_ns, UnixNanos::default());
+        assert_eq!(
+            (def.symbol, def.raw_symbol, def.asset_index),
+            (listed.symbol, listed.raw_symbol, listed.asset_index),
+            "an unlisted side must map to the same instrument as its listed form",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_unlisted_outcome_instrument_rejects_non_outcome_asset() {
+        let result = parse_unlisted_outcome_instrument(HyperliquidAssetId::spot(107));
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Asset 10107 is not a HIP-4 outcome".to_string()
+        );
     }
 
     #[rstest]

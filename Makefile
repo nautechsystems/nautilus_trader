@@ -879,6 +879,7 @@ test-scripts:  #-- Run repository script tests
 	$(info $(M) Running script tests...)
 	$Q bash .pre-commit-hooks/test_cargo_machete.sh
 	$Q bash .pre-commit-hooks/test_check_cargo_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_copyright_year.bash
 	$Q python3 -B .pre-commit-hooks/test_check_dependency_features.py
 	$Q bash .pre-commit-hooks/test_check_docs_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_dst_conventions.sh
@@ -1380,6 +1381,15 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 PYTHON_TEST_ENV = PYTHONWARNDEFAULTENCODING=1 PYTHONWARNINGS="$(if $(PYTHONWARNINGS),$(PYTHONWARNINGS)$(comma))error::EncodingWarning,ignore::EncodingWarning:plotly.validator_cache"
 
+# `pytest -n logical` reads this pytest-xdist worker count, capped by host CPU count like the
+# Rust defaults. Override with PYTEST_XDIST_AUTO_NUM_WORKERS when needed
+ifeq ($(origin PYTEST_XDIST_AUTO_NUM_WORKERS),undefined)
+export PYTEST_XDIST_AUTO_NUM_WORKERS := $(shell \
+	n='$(HOST_CPU_COUNT)'; \
+	[ "$$n" -gt 32 ] && n=32; \
+	printf '%s' "$$n")
+endif
+
 .PHONY: pytest-collect-fast
 pytest-collect-fast:  #-- Collect Python tests against the existing extension
 	@if [ -z "$(PYTHON_EXTENSION_PATH)" ]; then \
@@ -1392,7 +1402,7 @@ pytest-collect-fast:  #-- Collect Python tests against the existing extension
 .PHONY: pytest
 pytest: build-debug  #-- Run Python tests
 	$(info $(M) Running Python tests...)
-	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
+	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE -n logical tests/ --ignore=tests/unit/test_live_node.py
 	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
 
 .PHONY: pytest-isolated

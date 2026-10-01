@@ -258,13 +258,10 @@ fn binary_search_for_size(
         if slippage_mid < impact_bps {
             low = mid;
 
-            // Adaptive expansion: only expand when midpoint is in the top 20% of the range
-            // This indicates we're approaching the upper bound
-            let range = high - low;
-            let threshold = range / U256::from(5); // 20% of range
-
+            // Adaptive expansion: only expand when the midpoint is within the top 20% of the
+            // upper bound, which indicates the target lies at or beyond it.
             if config.enable_adaptive_bounds
-                && high - mid <= threshold
+                && high - mid <= high / U256::from(5)
                 && expansions < config.max_bound_expansions
             {
                 high *= U256::from(2);

@@ -288,7 +288,7 @@ fn append_identifier_column_if_present(
         } else {
             (
                 identifier_field.clone(),
-                catalog_batch.column(identifier_index).clone(),
+                Arc::clone(catalog_batch.column(identifier_index)),
             )
         };
 
@@ -1680,8 +1680,8 @@ fn convert_custom(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
             )));
             columns.push(cast(column.as_ref(), &DataType::Utf8)?);
         } else {
-            fields.push(field.clone());
-            columns.push(column.clone());
+            fields.push(Arc::clone(field));
+            columns.push(Arc::clone(column));
         }
     }
 
@@ -2033,7 +2033,7 @@ mod tests {
                 if lists {
                     let item = Arc::new(Field::new("item", values.data_type().clone(), true));
                     let column =
-                        FixedSizeListArray::try_new(item, 10, values.clone(), None).unwrap();
+                        FixedSizeListArray::try_new(item, 10, Arc::clone(values), None).unwrap();
                     fields.push(Field::new(
                         format!("{prefix}_{name}"),
                         column.data_type().clone(),
@@ -2055,7 +2055,7 @@ mod tests {
 
         for name in ["flags", "sequence", "ts_event", "ts_init"] {
             fields.push(raw.schema().field_with_name(name).unwrap().clone());
-            columns.push(raw.column_by_name(name).unwrap().clone());
+            columns.push(Arc::clone(raw.column_by_name(name).unwrap()));
         }
         let legacy = RecordBatch::try_new(
             Arc::new(Schema::new_with_metadata(fields, metadata.clone())),
@@ -2337,7 +2337,7 @@ mod tests {
 
         let displayed =
             catalog_record_batch_to_display(&data_type, raw.schema().metadata(), &raw).unwrap();
-        let identifier = displayed.column_by_name(KEY_IDENTIFIER).unwrap().clone();
+        let identifier = Arc::clone(displayed.column_by_name(KEY_IDENTIFIER).unwrap());
         let without_identifier = record_batch_without_identifier_column(displayed).unwrap();
 
         assert_eq!(&identifier, raw.column_by_name(KEY_IDENTIFIER).unwrap());

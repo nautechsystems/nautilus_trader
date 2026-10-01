@@ -54,6 +54,7 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+pub(crate) mod book;
 pub mod common;
 pub mod config;
 pub mod data;

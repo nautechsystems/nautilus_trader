@@ -771,7 +771,7 @@ pub(crate) fn try_notional_value(
 ) -> anyhow::Result<Money> {
     let amount = if is_inverse && use_quote_for_inverse {
         quantity.as_decimal()
-    } else if is_inverse && !instrument_class.is_premium_based() {
+    } else if instrument_class.divides_notional_by_price(is_inverse) {
         anyhow::ensure!(
             price.is_positive(),
             "price must be positive for inverse notional valuation"

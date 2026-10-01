@@ -117,7 +117,8 @@ stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creat
 pool metadata.
 
 When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
-the same pool instrument ID. The instrument keeps the raw pool `token0`/`token1` order as base/quote
+the same pool instrument ID. The instrument takes its base and quote from `Pool::get_base_token`
+and `Pool::get_quote_token`, the token-priority orientation that swap trade info and execution use,
 and derives price and size precision from token decimals up to `FIXED_PRECISION`. Distinct pool
 identifiers let same-token pools coexist in the cache and on the message bus.
 
@@ -791,9 +792,12 @@ startup reconciliation logs and continues. Order, fill, and position report prob
 so LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist
 an intent.
 
-A swap stays `Submitted` until finality, and venue status queries cannot resolve it. Set
-`inflight_check_interval_ms = 0` and leave open-order checks off. The engine's default in-flight
-timeout would otherwise reject a live swap.
+A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client
+requires submission retention: when the in-flight check exhausts its retries, LiveNode logs a
+warning and keeps the swap `Submitted` instead of rejecting it, so the finalized fill or rejection
+still applies to that order. If the node stops before finality, shutdown reports incomplete
+submission recovery for each swap submitted during that run, and the persisted intent reconciles on
+the next connect. Leave open-order checks off.
 
 Execution routing follows Nautilus's multi-venue broker pattern because the client represents a
 wallet and RPC connection for one chain while each instrument venue identifies both its chain and
@@ -1389,9 +1393,8 @@ Execution validation on public networks must remain read-only and must not load 
 - Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment
   on the client's chain. Order lists are denied, modify and cancel operations are rejected, and
   venue report probes return an error except mass status, which returns `Ok(None)`; all fail closed
-  with no on-chain or durable side effects. LiveNode must disable in-flight checks and leave
-  open-order checks off. Quote-denominated and multi-hop orders are not supported. See
-  [Execution](#execution).
+  with no on-chain or durable side effects. LiveNode must leave open-order checks off.
+  Quote-denominated and multi-hop orders are not supported. See [Execution](#execution).
 - Postgres-backed execution requires authenticated signed-transaction envelopes. Disconnected
   rollback can restore plaintext for incident work, but the adapter rejects execution until the
   database is protected and passes a full check again. Treat database storage, replicas, backups,

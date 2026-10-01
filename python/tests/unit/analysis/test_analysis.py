@@ -18,6 +18,7 @@ Test analysis behavior.
 
 import math
 import sys
+from decimal import Decimal
 
 import pytest
 
@@ -59,6 +60,7 @@ from nautilus_trader.analysis import UpCaptureRatio
 from nautilus_trader.analysis import ValueAtRisk
 from nautilus_trader.analysis import WinRate
 from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyType
 from nautilus_trader.model import Money
 from nautilus_trader.model import Position
 from nautilus_trader.model import PositionId
@@ -399,6 +401,51 @@ def test_portfolio_analyzer_formatted_stats_empty() -> None:
     assert analyzer.get_stats_position_returns_formatted() == []
     assert analyzer.get_stats_portfolio_returns_formatted() == []
     assert analyzer.get_stats_general_formatted() == []
+
+
+def _precision_currency(precision: int) -> Currency:
+    return Currency(
+        code=f"TST{precision}",
+        precision=precision,
+        iso4217=0,
+        name=f"Test {precision}dp",
+        currency_type=CurrencyType.CRYPTO,
+    )
+
+
+@pytest.mark.parametrize("method", ["add_trade", "record_trade"])
+def test_portfolio_analyzer_trade_accepts_float_precision(method: str) -> None:
+    """
+    Test portfolio analyzer trade accepts float precision.
+    """
+    analyzer = PortfolioAnalyzer()
+    currency = _precision_currency(16)
+
+    getattr(analyzer, method)(PositionId("P-1"), 1, Money.from_decimal(Decimal("1.5"), currency))
+
+    assert analyzer.realized_pnls(currency) == [("P-1", 1, 1.5)]
+
+
+@pytest.mark.parametrize("precision", [17, 18])
+@pytest.mark.parametrize("method", ["add_trade", "record_trade"])
+def test_portfolio_analyzer_trade_rejects_precision_above_float_precision(
+    method: str,
+    precision: int,
+) -> None:
+    """
+    Test portfolio analyzer trade rejects precision above float precision.
+    """
+    analyzer = PortfolioAnalyzer()
+    currency = _precision_currency(precision)
+    pnl = Money.from_decimal(Decimal("1.5"), currency)
+
+    with pytest.raises(ValueError, match="maximum float precision") as exc_info:
+        getattr(analyzer, method)(PositionId("P-1"), 1, pnl)
+
+    assert str(exc_info.value) == (
+        f"Fixed-point precision {precision} exceeds maximum float precision 16"
+    )
+    assert analyzer.realized_pnls(currency) is None
 
 
 def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias() -> None:

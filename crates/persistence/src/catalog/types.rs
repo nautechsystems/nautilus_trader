@@ -500,13 +500,21 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
 
 /// Parses a stored catalog type path back into its catalog type.
 ///
-/// Accepts the data type path prefixes, the record type directories, and the instrument class
-/// directories.
+/// Accepts the shared-table `record/<type>` and `instrument/<class>` paths, `custom/<type>` data
+/// paths, and the flat Parquet data, record, and instrument class directories.
 ///
 /// # Errors
 ///
 /// Returns an error if `path` names no catalog type.
 pub fn catalog_data_type_from_path(path: &str) -> anyhow::Result<CatalogDataType> {
+    if let Some(record_type) = path.strip_prefix("record/") {
+        return Ok(CatalogDataType::Record(record_type.parse()?));
+    }
+
+    if let Some(instrument_type) = path.strip_prefix("instrument/") {
+        return Ok(CatalogDataType::Instrument(instrument_type.parse()?));
+    }
+
     if let Ok(data_type) = data_type_from_data_path_prefix(path) {
         return Ok(CatalogDataType::Data(data_type));
     }
@@ -518,6 +526,46 @@ pub fn catalog_data_type_from_path(path: &str) -> anyhow::Result<CatalogDataType
     path.parse::<NautilusInstrumentType>()
         .map(CatalogDataType::Instrument)
         .map_err(|_| anyhow::anyhow!("Unknown catalog type path '{path}'"))
+}
+
+/// Returns the shared-table catalog prefix for a record type.
+///
+/// Shared-table backends store records under `record/<type>` and instrument classes under
+/// `instrument/<class>`, where Parquet keeps the flat [`record_path_prefix`] directory.
+#[must_use]
+pub fn record_table_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str> {
+    Cow::Owned(format!("record/{}", record_path_prefix(record_type)))
+}
+
+/// Returns the shared-table catalog prefix for an instrument class.
+#[must_use]
+pub fn instrument_table_path_prefix(instrument_type: &NautilusInstrumentType) -> Cow<'static, str> {
+    Cow::Owned(format!(
+        "instrument/{}",
+        instrument_path_prefix(instrument_type)
+    ))
+}
+
+/// Returns the shared-table catalog prefix for a catalog type.
+#[must_use]
+pub fn catalog_data_type_path_prefix(catalog_type: &CatalogDataType) -> Cow<'static, str> {
+    match catalog_type {
+        CatalogDataType::Data(data_type) => {
+            let prefix = data_path_prefix(data_type);
+
+            // A data prefix the flat record parser also claims, such as DeFi's `defi`, uses the
+            // type name so it parses back as data
+            if prefix.parse::<NautilusRecordType>().is_ok() {
+                Cow::Owned(data_type.to_string())
+            } else {
+                prefix
+            }
+        }
+        CatalogDataType::Record(record_type) => record_table_path_prefix(record_type),
+        CatalogDataType::Instrument(instrument_type) => {
+            instrument_table_path_prefix(instrument_type)
+        }
+    }
 }
 
 /// Returns the SQL-safe table-name stem identifying a catalog type.
@@ -777,6 +825,69 @@ mod tests {
         assert_eq!(
             CatalogDataType::from(NautilusInstrumentType::Equity),
             CatalogDataType::Instrument(NautilusInstrumentType::Equity)
+        );
+    }
+
+    #[rstest]
+    #[case::data(CatalogDataType::Data(NautilusDataType::QuoteTick), "quotes")]
+    #[case::custom(
+        CatalogDataType::Data(NautilusDataType::Custom {
+            type_name: "Signal".to_string(),
+        }),
+        "custom/Signal",
+    )]
+    #[case::record(
+        CatalogDataType::Record(NautilusRecordType::AccountState),
+        "record/account_state"
+    )]
+    #[case::instrument(
+        CatalogDataType::Instrument(NautilusInstrumentType::CurrencyPair),
+        "instrument/currency_pair"
+    )]
+    fn catalog_data_type_path_prefix_round_trips(
+        #[case] catalog_type: CatalogDataType,
+        #[case] prefix: &str,
+    ) {
+        assert_eq!(catalog_data_type_path_prefix(&catalog_type), prefix);
+        assert_eq!(catalog_data_type_from_path(prefix).unwrap(), catalog_type);
+    }
+
+    #[rstest]
+    fn catalog_data_type_path_prefix_round_trips_every_family() {
+        let mut catalog_types = NautilusRecordType::iter()
+            .map(CatalogDataType::Record)
+            .chain(NautilusInstrumentType::iter().map(CatalogDataType::Instrument))
+            .collect::<Vec<_>>();
+
+        macro_rules! push_data_types {
+            ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+                $(catalog_types.push(CatalogDataType::Data(NautilusDataType::$variant));)+
+            };
+        }
+        nautilus_model::for_each_data_type!(push_data_types);
+
+        // DeFi data exists whenever the model enables DeFi, even without this crate's feature
+        if let Ok(defi) = "Defi".parse::<NautilusDataType>() {
+            catalog_types.push(CatalogDataType::Data(defi));
+        }
+
+        for catalog_type in catalog_types {
+            let prefix = catalog_data_type_path_prefix(&catalog_type);
+            assert_eq!(
+                catalog_data_type_from_path(&prefix).unwrap(),
+                catalog_type,
+                "{prefix}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn catalog_data_type_from_path_rejects_unknown_shared_table_record() {
+        let error = catalog_data_type_from_path("record/not_a_type").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid `NautilusRecordType`: 'not_a_type'"
         );
     }
 

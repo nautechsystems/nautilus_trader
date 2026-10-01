@@ -19,7 +19,7 @@ use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     identifiers::PositionId,
     position::Position,
-    types::{Currency, Money},
+    types::{Currency, Money, fixed::check_float_precision},
 };
 use pyo3::prelude::*;
 
@@ -178,8 +178,15 @@ impl PortfolioAnalyzer {
         clippy::trivially_copy_pass_by_ref,
         reason = "matches underlying add_trade signature"
     )]
-    fn py_add_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+    fn py_add_trade(
+        &mut self,
+        position_id: &PositionId,
+        ts_event: u64,
+        realized_pnl: &Money,
+    ) -> PyResult<()> {
+        check_float_precision(realized_pnl.currency.precision).map_err(to_pyvalue_err)?;
         self.add_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
+        Ok(())
     }
 
     /// Records a trade's PnL realized at `ts_event`, observed during portfolio processing.
@@ -188,8 +195,15 @@ impl PortfolioAnalyzer {
         clippy::trivially_copy_pass_by_ref,
         reason = "matches underlying record_trade signature"
     )]
-    fn py_record_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+    fn py_record_trade(
+        &mut self,
+        position_id: &PositionId,
+        ts_event: u64,
+        realized_pnl: &Money,
+    ) -> PyResult<()> {
+        check_float_precision(realized_pnl.currency.precision).map_err(to_pyvalue_err)?;
         self.record_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
+        Ok(())
     }
 
     // Note: calculate_statistics is not exposed to Python because it requires

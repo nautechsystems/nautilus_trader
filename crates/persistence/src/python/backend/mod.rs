@@ -28,5 +28,4 @@ pub(crate) use conversion::{
 
 pub mod feather;
 pub mod parquet;
-pub mod session;
 pub mod writer;

@@ -381,8 +381,10 @@ Deltas and depth share a recovery episode for each market:
 
 Recovery never ends in a failed state. A rejected replacement, or a subscription rejected when
 replayed after reconnect, keeps recovering at the growing interval, so a late snapshot still
-restores the book. A rejected initial subscribe fails the subscribe call instead, and a later
-subscribe starts afresh. Other markets continue independently.
+restores the book. A venue subscribe failure other than rate limiting fails the initial subscribe
+call instead while that call waits, even after a recovery has started. The recovery then continues
+only while another consumer remains. A later subscribe starts afresh. Other markets continue
+independently.
 
 See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
 for the shared recovery machinery and adapter responsibilities.

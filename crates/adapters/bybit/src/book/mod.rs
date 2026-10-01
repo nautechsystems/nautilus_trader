@@ -13,6 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python catalog compatibility export.
+//! Order book synchronization and recovery for Bybit.
+//!
+//! - [`sync`] owns update ID validation, snapshot tracking, and recovery state transitions.
+//! - [`recovery`] owns recovery tasks and replacement subscriptions, using the shared retry runner.
+//!
+//! The data client routes book frames through the tracker and starts recovery when needed.
+//! Recovery tasks use the tracker to claim ownership; incoming snapshots complete recovery through
+//! the same tracker. Outcome types come from [`nautilus_live::book`]. Each product type has its
+//! own public socket, so reconnect handling is scoped to the books of that product type.
 
-pub use super::backend::parquet::catalog::PyParquetDataCatalog;
+pub(crate) mod recovery;
+pub(crate) mod sync;
+
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind};
