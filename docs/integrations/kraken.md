@@ -639,10 +639,11 @@ flag.
   a netting position's average. Reconciliation uses it to open a position from flat and never
   compares it. Futures keeps the default, since that endpoint reports one netted position whose
   price Kraken documents as the average entry price.
-- Synthetic FLAT cleanup: If the local cache has an open spot margin position
-  that no longer appears on the venue (Kraken omits closed positions from
-  `OpenPositions`), the adapter emits a synthetic FLAT report on the next
-  position-check tick so the engine reconciles to closed.
+- No synthetic FLAT cleanup: `OpenPositions` reports leveraged positions only, so an
+  unleveraged spot holding never appears there and its absence is not evidence that the
+  position is closed. The bulk read therefore reports only what the venue returns, and
+  a leveraged position closed while the node was down is reconciled from fills rather
+  than from a fabricated FLAT.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
   account-state refresh; used margin populates `MarginBalance.initial`, while
   equity and free margin populate the summary balance (see Spot margin trading).
@@ -789,10 +790,15 @@ that dictionary to `AccountState.info`.
 ### Position reconciliation
 
 Open spot margin positions are surfaced via `POST /0/private/OpenPositions`
-on each `position_check_interval_secs` tick. Closed positions on the venue
-that still appear open in the local cache are reconciled to FLAT on the next
-sweep. This path is independent of `use_spot_position_reports` (which is
-wallet-derived, cash-mode-only).
+on each `position_check_interval_secs` tick. This path is independent of
+`use_spot_position_reports` (which is wallet-derived, cash-mode-only).
+
+The spot client declares bulk position coverage only when the reports enumerate every
+holding, which is cash mode with `use_spot_position_reports=True`. Under
+`spot_account_type=Margin` the source is `OpenPositions`, which omits unleveraged lots,
+and cash mode without wallet-derived reports returns nothing at all. In both of those
+configurations an absent report leaves the cached position untouched instead of closing
+it.
 
 ## Funding rates
 
