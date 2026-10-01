@@ -530,7 +530,28 @@ impl OrderEmulator {
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        let matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        let (quote, trade) = {
+            let cache = self.cache.borrow();
+            (
+                cache.quote(&instrument_id).copied(),
+                cache.trade(&instrument_id).copied(),
+            )
+        };
+
+        let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        if let Some(quote) = quote {
+            matching_core.set_bid_raw(quote.bid_price);
+            matching_core.set_ask_raw(quote.ask_price);
+        }
+
+        if let Some(trade) = trade {
+            matching_core.set_last_raw(trade.price);
+            if quote.is_none() {
+                matching_core.set_bid_raw(trade.price);
+                matching_core.set_ask_raw(trade.price);
+            }
+        }
+
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {instrument_id:?}");
@@ -2938,6 +2959,72 @@ mod tests {
             &risk_events[0],
             OrderEventAny::Released(event) if event.client_order_id == client_order_id
         ));
+    }
+
+    #[rstest]
+    fn test_submit_order_uses_cached_quote_for_immediate_release(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.submit_cached_quote");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5099.00", "5101.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5200.00"))
+            .unwrap();
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(core.bid, Some(Price::from("5099.00")));
+        assert_eq!(core.ask, Some(Price::from("5101.00")));
+        assert_eq!(core.last, Some(Price::from("5200.00")));
+    }
+
+    #[rstest]
+    fn test_submit_order_uses_cached_trade_for_immediate_release(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.submit_cached_trade");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5101.00"))
+            .unwrap();
+        let order = create_stop_market_order(&instrument, TriggerType::LastPrice);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(core.bid, Some(Price::from("5101.00")));
+        assert_eq!(core.ask, Some(Price::from("5101.00")));
+        assert_eq!(core.last, Some(Price::from("5101.00")));
     }
 
     #[rstest]
