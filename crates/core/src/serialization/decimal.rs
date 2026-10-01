@@ -13,20 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Exact decimal parsing and JSON serialization contracts.
+//!
 //! Exact decimal ingestion, separate from instrument and currency rounding.
 //!
-//! [`deserialize_json`](crate::serialization::decimal::deserialize_json) preserves quoted and
-//! unquoted JSON tokens with the default features.
+//! [`deserialize_json`] preserves quoted and unquoted JSON tokens with the default features.
 //! It uses `RawValue`, which Serde's internally tagged and untagged enum buffers do not support.
 //!
-//! Use [`deserialize`](crate::serialization::decimal::deserialize) for those buffers: strings and
-//! 64-bit integers work with all feature sets. Larger integers, fractional tokens, and scientific
-//! numeric tokens require
+//! Use [`deserialize`] for those buffers: strings and 64-bit integers work with all feature sets.
+//! Larger integers, fractional tokens, and scientific numeric tokens require
 //! `serde_json/arbitrary_precision` from the first JSON parse. Floats are rejected because their
 //! original decimal digits are unavailable.
 //! Even with arbitrary precision, `Number`'s Serde deserializer delivers some decimals as floats.
-//! For buffered `Value` use [`deserialize_json`](crate::serialization::decimal::deserialize_json);
-//! for `Number` use `parse(&number.to_string())`.
+//! For buffered `Value` use [`deserialize_json`]; for `Number` use `parse(&number.to_string())`.
 //! These routes preserve the buffered decimal text when arbitrary precision was enabled at ingest.
 //! Serde enum buffering of a `Value` may still deliver floats, which are rejected.
 //!
@@ -37,17 +36,16 @@
 //!
 //! A `Value` or `Number` created through floating-point conversion has already lost its source
 //! spelling. No API here recovers those digits. In particular, passing a default-feature `Value`
-//! to [`deserialize_json`](crate::serialization::decimal::deserialize_json) reparses its rendered
-//! value, not the original JSON token.
+//! to [`deserialize_json`] reparses its rendered value, not the original JSON token.
 //!
 //! Required fields reject missing, null, empty, invalid, overflowing, and underflowing values.
 //! Optional fields accept null as `None`; add `#[serde(default)]` to accept missing fields.
 //! Empty strings remain errors. Representability concerns numeric value, so redundant trailing
 //! zeros may be removed. Instrument precision and currency rounding belong to model constructors.
 //!
-//! [`serialize`](crate::serialization::decimal::serialize) emits exact JSON numbers, including
-//! through `serde_json::to_value`. Enable `serde_json/arbitrary_precision` for the full Decimal
-//! range. Without it, values whose numeric value would change are errors. String output uses
+//! [`serialize`] emits exact JSON numbers, including through `serde_json::to_value`. Enable
+//! `serde_json/arbitrary_precision` for the full Decimal range. Without it, values whose numeric
+//! value would change are errors. String output uses
 //! [`serialize_decimal_as_str`](crate::serialization::serialize_decimal_as_str) and
 //! [`serialize_optional_decimal_as_str`](crate::serialization::serialize_optional_decimal_as_str).
 //! These JSON number contracts do not extend to MessagePack or other Serde formats.

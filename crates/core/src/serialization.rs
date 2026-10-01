@@ -34,7 +34,6 @@ use serde::{
 use serde_json::value::RawValue;
 use ustr::Ustr;
 
-/// Exact decimal parsing and JSON serialization contracts.
 pub mod decimal;
 
 /// Sorted serialization for `AHashSet<T>` where element order must be deterministic.
