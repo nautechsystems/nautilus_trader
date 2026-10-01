@@ -119,6 +119,7 @@ pub(super) use crate::{
 pub(super) const MODIFY_TRAILING_OFFSET_PARAM: &str = "trailing_offset";
 
 pub(super) const DENIAL_CLIENT_NOT_READY: &str = "IB_CLIENT_NOT_READY";
+pub(super) const DENIAL_ORDER_INVALID: &str = "ORDER_INVALID";
 pub(super) const DENIAL_ORDER_LIST_INVALID: &str = "ORDER_LIST_INVALID";
 pub(super) const DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED: &str = "ORDER_LIST_SIBLING_SUBMIT_FAILED";
 pub(super) const DENIAL_POST_ONLY_UNSUPPORTED: &str = "UNSUPPORTED_POST_ONLY";
@@ -1483,7 +1484,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         avg_px_open,
                     );
 
-                    reports.push(report);
+                    if Self::upsert_position_report(&mut reports, report) {
+                        tracing::debug!(
+                            "Superseded duplicate IB position report for {instrument_id}"
+                        );
+                    }
                 }
                 Ok(PositionUpdate::PositionEnd) => {
                     // End of position list

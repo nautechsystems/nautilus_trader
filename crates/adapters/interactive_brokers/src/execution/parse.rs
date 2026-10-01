@@ -137,9 +137,12 @@ pub(crate) fn fill_missing_avg_px(
 /// Replaces IB's position average cost with the entry price of the fills that built the position.
 ///
 /// IB's `avgCost` includes commissions, while a position rebuilt from fills has the average of
-/// their prices. When the fills of an instrument net to exactly the reported quantity, the
-/// position was flat before them, so they hold its whole history and give its entry price.
-/// Other positions keep IB's average cost, which position recovery prices from.
+/// their prices. The fills in the mass status cover only the current window, so the replay
+/// starts from the quantity the position must have held before the window: the reported
+/// quantity minus the window's net quantity. Once that replay passes through flat, or flips,
+/// every later fill is known, and the entry price is the netting average of the fills after the
+/// last flat crossing. A position that still carries a pre-window remnant keeps IB's average
+/// cost, which position recovery prices from.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     fill_reports: &[FillReport],
@@ -156,38 +159,55 @@ pub(crate) fn fill_position_avg_px_from_fills(
             .collect();
         fills.sort_by_key(|fill| fill.ts_event);
 
-        if let Some((quantity, avg_px)) = netting_entry(&fills)
-            && quantity == report.signed_decimal_qty
-        {
+        let window_qty: Decimal = fills.iter().map(|fill| signed_fill_qty(fill)).sum();
+        let pre_window_qty = report.signed_decimal_qty - window_qty;
+
+        if let Some(avg_px) = entry_price_after_window(pre_window_qty, &fills) {
             report.avg_px_open = Some(avg_px);
         }
     }
 }
 
-// Replays fills with netting semantics: fills on the open side average in, reducing fills
-// keep the entry price, and a flip opens at the flipping fill's price
-fn netting_entry(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
-    let mut quantity = Decimal::ZERO;
-    let mut avg_px = Decimal::ZERO;
+fn signed_fill_qty(fill: &FillReport) -> Decimal {
+    let last_qty = fill.last_qty.as_decimal();
+
+    match fill.order_side {
+        OrderSide::Buy => last_qty,
+        OrderSide::Sell => -last_qty,
+    }
+}
+
+// Replays the window fills with netting semantics from `pre_window_qty` and returns the entry
+// price of the position left at the end, when that position was opened within the window.
+// Fills on the open side average in, reducing fills keep the entry price, and a flip opens at
+// the flipping fill's price; a lot that predates the window has no known entry price until the
+// replay passes through flat.
+fn entry_price_after_window(pre_window_qty: Decimal, fills: &[&FillReport]) -> Option<Decimal> {
+    let mut quantity = pre_window_qty;
+    let mut entry: Option<Decimal> = None;
 
     for fill in fills {
         let last_qty = fill.last_qty.as_decimal();
         let last_px = fill.last_px.as_decimal();
-        let signed_qty = match fill.order_side {
-            OrderSide::Buy => last_qty,
-            OrderSide::Sell => -last_qty,
-        };
+        let signed_qty = signed_fill_qty(fill);
 
-        if quantity.is_zero() || quantity.is_sign_negative() == signed_qty.is_sign_negative() {
+        if quantity.is_zero() {
+            entry = Some(last_px);
+        } else if quantity.is_sign_negative() == signed_qty.is_sign_negative() {
             let open_qty = quantity.abs();
-            avg_px = (avg_px * open_qty + last_px * last_qty) / (open_qty + last_qty);
+            entry = entry.map(|px| (px * open_qty + last_px * last_qty) / (open_qty + last_qty));
         } else if last_qty > quantity.abs() {
-            avg_px = last_px;
+            entry = Some(last_px);
         }
+
         quantity += signed_qty;
     }
 
-    (!quantity.is_zero()).then_some((quantity, avg_px))
+    if quantity.is_zero() {
+        return None;
+    }
+
+    entry
 }
 
 /// Returns whether an execution is the combo-level (BAG) execution of a spread order.
@@ -816,6 +836,13 @@ mod tests {
         "228.00"
     )]
     #[case::fills_partial_history(PositionSide::Long, vec![(OrderSide::Buy, 2, "230.00")], "229.81")]
+    #[case::remnant_closed_then_reopened(
+        PositionSide::Long,
+        vec![(OrderSide::Sell, 7, "229.00"), (OrderSide::Buy, 7, "231.00")],
+        "231.00"
+    )]
+    #[case::remnant_flipped_in_window(PositionSide::Short, vec![(OrderSide::Sell, 9, "228.00")], "228.00")]
+    #[case::remnant_reduced_in_window(PositionSide::Long, vec![(OrderSide::Sell, 2, "235.00")], "229.81")]
     #[case::no_fills(PositionSide::Long, vec![], "229.81")]
     fn test_fill_position_avg_px_from_fills(
         #[case] position_side: PositionSide,
@@ -881,6 +908,119 @@ mod tests {
         assert_eq!(
             reports[0].avg_px_open,
             Some(Decimal::from_str(expected).unwrap())
+        );
+    }
+
+    fn crypto_fill(
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        qty: &str,
+        px: &str,
+        trade_id: &str,
+        ts_event: u64,
+    ) -> FillReport {
+        FillReport::new(
+            account_id,
+            instrument_id,
+            VenueOrderId::new(format!("PERM-{trade_id}")),
+            TradeId::new(trade_id),
+            side,
+            Quantity::from(qty),
+            Price::from(px),
+            Money::from("0.15 USD"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_crypto_commission_in_avg_cost() {
+        // A same-day crypto position: IB's `avgCost` carries the $0.20 commission on a $19.61
+        // trade (about 1%), far outside the 0.01% startup tolerance, while the position the
+        // node replays from the fill has the fill price. The single fill nets to the reported
+        // fractional quantity, so the report takes the fill price as its entry.
+        let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
+        let account_id = AccountId::from("IB-DUR151935");
+        let quantity = Quantity::from("0.16481252");
+        let mut reports = vec![PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            quantity,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str("120.1597").unwrap()),
+        )];
+        let fill_reports = vec![crypto_fill(
+            account_id,
+            instrument_id,
+            OrderSide::Buy,
+            "0.16481252",
+            "118.97",
+            "00012dbb.6abc1b9a.01.01",
+            1_790_790_301_000_000_000,
+        )];
+
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(Decimal::from_str("118.97").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_crypto_reopened_after_pre_window_lot_closed() {
+        // The session window holds the SELL that closed yesterday's lot and the BUY that opened
+        // the current one. The window nets to -0.03831565, not the reported +0.12649687, so the
+        // replay must start from the pre-window quantity (0.16481252), pass through flat on the
+        // SELL, and take the BUY price as the entry instead of IB's commission-inclusive 119.19.
+        let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
+        let account_id = AccountId::from("IB-DUR151935");
+        let mut reports = vec![PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("0.12649687"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str("119.19").unwrap()),
+        )];
+        let fill_reports = vec![
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Sell,
+                "0.16481252",
+                "117.41",
+                "00012dbb.6abd6a97.01.01",
+                1_790_845_000_000_000_000,
+            ),
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Buy,
+                "0.12649687",
+                "118.01",
+                "00012dbb.6abd6a9a.01.01",
+                1_790_847_486_920_000_000,
+            ),
+        ];
+
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(Decimal::from_str("118.01").unwrap())
         );
     }
 
