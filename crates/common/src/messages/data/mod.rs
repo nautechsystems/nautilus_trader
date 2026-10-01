@@ -39,6 +39,16 @@ pub mod unsubscribe;
 /// [`InstrumentId::parse_parent_components`]: nautilus_model::identifiers::InstrumentId::parse_parent_components
 pub const PARAMS_IS_PARENT: &str = "is_parent";
 
+/// Params key requesting repair of an already tracked external bar feed when `true`.
+///
+/// The client adapter consumes this key without forwarding or retaining it. For an
+/// active feed it retains the acquisition normally, then requests a physical
+/// re-subscription without changing ownership or handlers. Repair errors are logged
+/// and the acquisition remains held until its matching release. An inactive feed
+/// follows the ordinary subscribe path. Internally aggregated, continuous-future,
+/// and external-client subscriptions do not support this request.
+pub const PARAMS_FORCE_RESUBSCRIBE: &str = "force_resubscribe";
+
 // Re-exports
 pub use request::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,

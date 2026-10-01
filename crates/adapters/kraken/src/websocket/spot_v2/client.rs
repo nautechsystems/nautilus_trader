@@ -1433,6 +1433,50 @@ impl KrakenSpotWebSocketClient {
             .await
     }
 
+    /// Requests a physical repair of a held OHLC subscription without changing ownership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The bar type cannot be mapped to a Kraken OHLC interval.
+    /// - The request cannot be serialized or admitted to the handler.
+    pub async fn resubscribe_bars(&self, bar_type: BarType) -> Result<(), KrakenWsError> {
+        let symbol = to_ws_v2_symbol(bar_type.instrument_id().symbol.inner());
+        let interval = bar_type_to_ws_interval(bar_type)?;
+        let topic = format!("ohlc:{symbol}:{interval}");
+        let build_payload = |method| {
+            let request = KrakenWsRequest {
+                method,
+                params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                    channel: KrakenWsChannel::Ohlc,
+                    symbol: Some(vec![symbol]),
+                    snapshot: matches!(method, KrakenWsMethod::Subscribe).then_some(false),
+                    depth: None,
+                    interval: Some(interval),
+                    event_trigger: None,
+                    token: None,
+                    snap_orders: None,
+                    snap_trades: None,
+                })),
+                req_id: Some(self.get_next_req_id()),
+            };
+            serde_json::to_string(&request)
+                .map(SecretString::from)
+                .map_err(|e| KrakenWsError::JsonError(e.to_string()))
+        };
+        let unsubscribe = build_payload(KrakenWsMethod::Unsubscribe)?;
+        let subscribe = build_payload(KrakenWsMethod::Subscribe)?;
+        self.cmd_tx
+            .read()
+            .await
+            .send(SpotHandlerCommand::ResubscribeBars {
+                topic,
+                unsubscribe,
+                subscribe,
+            })
+            .map_err(|e| KrakenWsError::ConnectionError(format!("Failed to send repair: {e}")))
+    }
+
     /// Subscribes to execution updates (order and fill events).
     ///
     /// Requires authentication - call `authenticate()` first.
@@ -1676,12 +1720,28 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::Ordering};
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
+    use axum::{
+        Router,
+        extract::ws::{Message, WebSocketUpgrade},
+        routing::get,
+    };
+    use futures_util::StreamExt;
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+    use nautilus_model::{data::BarType, identifiers::ClientId};
     use parking_lot::Mutex;
     use rstest::rstest;
+    use serde_json::{Value, json};
     use tokio_util::sync::CancellationToken;
+    use ustr::Ustr;
 
     use super::*;
     use crate::config::KrakenDataClientConfig;
@@ -2166,5 +2226,177 @@ mod tests {
         assert_eq!(value["params"]["channel"], serde_json::json!("book"));
         assert_eq!(value["params"]["symbol"], serde_json::json!([symbol]));
         assert_eq!(value["params"]["depth"], serde_json::json!(depth));
+    }
+
+    async fn mock_server() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<(usize, Value)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let app = Router::new().route(
+            "/v2",
+            get(move |ws: WebSocketUpgrade| {
+                let tx = tx.clone();
+                let connection = connections.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    ws.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(message)) = socket.next().await {
+                            match message {
+                                Message::Text(text) => {
+                                    let value = serde_json::from_str(&text).unwrap();
+
+                                    if tx.send((connection, value)).is_err() {
+                                        break;
+                                    }
+                                }
+                                Message::Ping(data) => {
+                                    if socket.send(Message::Pong(data)).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Message::Close(_) => break,
+                                _ => {}
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/v2", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, rx, task)
+    }
+
+    async fn receive(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<(usize, Value)>,
+    ) -> (usize, Value) {
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_force_bar_resubscribe_frames_and_reconnect_replay() {
+        let (url, mut rx, server) = mock_server().await;
+        let registry = SocketReconnectRegistry::default();
+        let client_id = ClientId::from("KRAKEN");
+        let endpoint = Ustr::from("bar-repair-test");
+        let config = KrakenDataClientConfig {
+            ws_public_url: Some(url),
+            ..Default::default()
+        };
+        let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None)
+            .with_socket_control(SocketControl::with_registry(
+                client_id, None, endpoint, &registry,
+            ));
+        client.connect().await.unwrap();
+        client.wait_until_active(5.0).await.unwrap();
+        let bar_type = BarType::from("XBT/USD.KRAKEN-5-MINUTE-LAST-EXTERNAL");
+        let topic = "ohlc:BTC/USD:5";
+        client.subscribe_bars(bar_type).await.unwrap();
+        client.subscribe_bars(bar_type).await.unwrap();
+        let (connection, original) = receive(&mut rx).await;
+        let replay_payload = client
+            .subscription_payloads
+            .read()
+            .await
+            .get(topic)
+            .unwrap()
+            .clone();
+        client.resubscribe_bars(bar_type).await.unwrap();
+        let (unsubscribe_connection, unsubscribe) = receive(&mut rx).await;
+        let (subscribe_connection, subscribe) = receive(&mut rx).await;
+        assert_eq!(unsubscribe["method"], json!("unsubscribe"));
+        assert_eq!(subscribe["method"], json!("subscribe"));
+        assert_eq!(unsubscribe_connection, connection);
+        assert_eq!(subscribe_connection, connection);
+        assert_eq!(unsubscribe["params"]["channel"], json!("ohlc"));
+        assert_eq!(unsubscribe["params"]["symbol"], json!(["BTC/USD"]));
+        assert_eq!(unsubscribe["params"]["interval"], json!(5));
+        assert!(unsubscribe["params"].get("snapshot").is_none());
+        assert_eq!(subscribe["params"], original["params"]);
+        assert_eq!(subscribe["params"]["snapshot"], json!(false));
+        assert_ne!(unsubscribe["req_id"], subscribe["req_id"]);
+        assert_ne!(original["req_id"], unsubscribe["req_id"]);
+        assert_eq!(client.subscriptions.get_reference_count(topic), 2);
+        assert_eq!(
+            client.subscription_payloads.read().await.get(topic),
+            Some(&replay_payload)
+        );
+        assert!(
+            client
+                .subscriptions
+                .pending_subscribe_topics()
+                .contains(&topic.to_string())
+        );
+        let handle = registry.handle(client_id, endpoint).unwrap();
+        assert_eq!(
+            handle.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+        let (reconnected, replay) = receive(&mut rx).await;
+        assert_ne!(reconnected, connection);
+        assert_eq!(replay, original);
+        assert_eq!(client.subscriptions.get_reference_count(topic), 2);
+        client.unsubscribe_bars(bar_type).await.unwrap();
+        client.unsubscribe_bars(bar_type).await.unwrap();
+        let (_, final_release) = receive(&mut rx).await;
+        assert_eq!(final_release["method"], json!("unsubscribe"));
+        client.resubscribe_bars(bar_type).await.unwrap();
+        client.send_ping().await.unwrap();
+        let (_, fence) = receive(&mut rx).await;
+        assert_eq!(fence["method"], json!("ping"));
+        assert_eq!(client.subscriptions.get_reference_count(topic), 0);
+        assert!(
+            !client
+                .subscription_payloads
+                .read()
+                .await
+                .contains_key(topic)
+        );
+        client.disconnect().await.unwrap();
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_force_bar_resubscribe_after_final_release_sends_nothing() {
+        let (url, mut rx, server) = mock_server().await;
+        let config = KrakenDataClientConfig {
+            ws_public_url: Some(url),
+            ..Default::default()
+        };
+        let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+        client.connect().await.unwrap();
+        client.wait_until_active(5.0).await.unwrap();
+        let bar_type = BarType::from("XBT/USD.KRAKEN-1-MINUTE-LAST-EXTERNAL");
+        let topic = "ohlc:BTC/USD:1";
+        client.subscribe_bars(bar_type).await.unwrap();
+        receive(&mut rx).await;
+        client.unsubscribe_bars(bar_type).await.unwrap();
+        client.resubscribe_bars(bar_type).await.unwrap();
+        client.send_ping().await.unwrap();
+        let (_, release) = receive(&mut rx).await;
+        assert_eq!(release["method"], json!("unsubscribe"));
+        let (_, fence) = receive(&mut rx).await;
+        assert_eq!(fence["method"], json!("ping"));
+        assert_eq!(client.subscriptions.get_reference_count(topic), 0);
+        assert!(
+            !client
+                .subscription_payloads
+                .read()
+                .await
+                .contains_key(topic)
+        );
+        assert!(client.subscriptions.all_topics().is_empty());
+        client.disconnect().await.unwrap();
+        server.abort();
     }
 }

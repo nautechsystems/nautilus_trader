@@ -2438,3 +2438,153 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
     // Expect adapter state cleared and no panic on second unsubscribe
     assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
 }
+
+#[rstest]
+#[case::shared(true, false, true)]
+#[case::shared_repair_fails(true, true, true)]
+#[case::unshared(false, false, true)]
+#[case::shared_without_key(true, false, false)]
+fn test_force_bar_resubscribe_balances_ownership(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] shared: bool,
+    #[case] repair_fails: bool,
+    #[case] force: bool,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let repairs = Rc::new(RefCell::new(Vec::new()));
+    let mut client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    client.repairs = Some(repairs.clone());
+    client.repair_fails = repair_fails;
+    let mut adapter =
+        DataClientAdapter::new(client_id, Some(venue), false, false, Box::new(client));
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let mut params = Params::new();
+    params.insert("other".to_string(), serde_json::json!(42));
+    let subscribe = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    adapter.execute_subscribe(SubscribeCommand::Bars(subscribe.clone()));
+
+    if shared {
+        let mut sibling = subscribe.clone();
+        sibling.command_id = UUID4::new();
+        adapter.execute_subscribe(SubscribeCommand::Bars(sibling));
+    }
+    let unsubscribe = UnsubscribeCommand::Bars(UnsubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    adapter.execute_unsubscribe(&unsubscribe);
+    assert_eq!(adapter.subscriptions_bars.contains(&bar_type), shared);
+    let mut repair = subscribe.clone();
+    repair.command_id = UUID4::new();
+
+    if force {
+        repair
+            .params
+            .as_mut()
+            .unwrap()
+            .insert("force_resubscribe".to_string(), serde_json::json!(true));
+    }
+    adapter.execute_subscribe(SubscribeCommand::Bars(repair));
+    assert_eq!(repairs.borrow().len(), usize::from(shared && force));
+
+    if let Some(repair) = repairs.borrow().first() {
+        assert_eq!(repair.params.as_ref(), Some(&params));
+    }
+    assert!(adapter.subscriptions_bars.contains(&bar_type));
+
+    if shared {
+        adapter.execute_unsubscribe(&unsubscribe);
+        assert!(adapter.subscriptions_bars.contains(&bar_type));
+    }
+    adapter.execute_unsubscribe(&unsubscribe);
+    assert!(!adapter.subscriptions_bars.contains(&bar_type));
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), if shared { 2 } else { 4 });
+
+    for command in recorded.iter() {
+        match command {
+            DataCommand::Subscribe(SubscribeCommand::Bars(bars)) => {
+                assert_eq!(bars.params.as_ref(), Some(&params));
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Bars(bars)) => {
+                assert_eq!(bars.params.as_ref(), Some(&params));
+            }
+            _ => panic!("unexpected command: {command:?}"),
+        }
+    }
+}
+
+#[rstest]
+#[case(serde_json::json!(true))]
+#[case(serde_json::json!(false))]
+#[case(serde_json::json!("true"))]
+fn test_force_bar_resubscribe_inactive_strips_retained_params(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] value: serde_json::Value,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let mut adapter =
+        DataClientAdapter::new(client_id, Some(venue), false, false, Box::new(client));
+    let mut params = Params::new();
+    params.insert("force_resubscribe".to_string(), value);
+    params.insert("other".to_string(), serde_json::json!(42));
+    let subscribe = SubscribeCommand::Bars(SubscribeBars::new(
+        "AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL".into(),
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    ));
+    adapter.execute_subscribe(subscribe.clone());
+    adapter.execute_unsubscribe(&subscribe.into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+
+    for command in recorder.borrow().iter() {
+        let params = match command {
+            DataCommand::Subscribe(SubscribeCommand::Bars(bars)) => bars.params.as_ref().unwrap(),
+            DataCommand::Unsubscribe(UnsubscribeCommand::Bars(bars)) => {
+                bars.params.as_ref().unwrap()
+            }
+            _ => panic!("unexpected command"),
+        };
+        assert!(!params.contains_key("force_resubscribe"));
+        assert_eq!(params.get_u64("other"), Some(42));
+    }
+}
