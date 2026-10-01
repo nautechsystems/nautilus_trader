@@ -40,7 +40,7 @@ use nautilus_persistence::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         delete::DeleteOperationKind,
-        paths::{timestamps_to_filename, urisafe_instrument_id},
+        paths::{make_object_store_path, timestamps_to_filename, urisafe_instrument_id},
     },
     catalog::{
         traits::{
@@ -61,7 +61,9 @@ use nautilus_serialization::{
     ensure_custom_data_registered,
 };
 use nautilus_testkit::common::get_test_data_file_path;
-use object_store::local::LocalFileSystem;
+use object_store::{
+    ObjectStoreExt, local::LocalFileSystem, memory::InMemory, path::Path as ObjectPath,
+};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -8400,4 +8402,241 @@ fn test_filter_files_matches_query_files_for_bar_identifiers(
 
     assert_eq!(filtered.len(), expected);
     assert_eq!(queried.len(), expected);
+}
+
+const NON_ASCII_IDENTIFIER: &str = "CAFÉ.SIM";
+
+// In-memory stands in for S3, where deleting a missing key succeeds silently
+fn create_temp_catalog_on_store(remote: bool) -> (TempDir, ParquetDataCatalog) {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+
+    if remote {
+        catalog.base_path = "catalog".to_string();
+        catalog.original_uri = "s3://test-bucket/catalog".to_string();
+        catalog.object_store = Arc::new(InMemory::new());
+    }
+
+    (temp_dir, catalog)
+}
+
+fn non_ascii_quote_keys(catalog: &ParquetDataCatalog) -> Vec<String> {
+    let directory = catalog
+        .make_path("quotes", Some(NON_ASCII_IDENTIFIER))
+        .unwrap();
+    let mut keys = catalog.list_parquet_files(&directory).unwrap();
+    keys.sort();
+    keys
+}
+
+fn non_ascii_quote_key(catalog: &ParquetDataCatalog, start: u64, end: u64) -> String {
+    let directory = catalog
+        .make_path("quotes", Some(NON_ASCII_IDENTIFIER))
+        .unwrap();
+    let filename = timestamps_to_filename(UnixNanos::from(start), UnixNanos::from(end));
+    ObjectPath::from(format!("{directory}/{filename}")).to_string()
+}
+
+#[rstest]
+fn test_consolidation_of_non_ascii_identifier_replaces_source_files(
+    #[values(false, true)] remote: bool,
+    #[values("data", "data_by_period", "catalog", "catalog_by_period")] operation: &str,
+) {
+    let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
+    let first = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let second = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+    let data_type = CatalogDataType::from(NautilusDataType::QuoteTick);
+
+    match operation {
+        "data" => catalog.consolidate_data(
+            &data_type,
+            Some(NON_ASCII_IDENTIFIER),
+            None,
+            None,
+            None,
+            None,
+        ),
+        "data_by_period" => catalog.consolidate_data_by_period(
+            &data_type,
+            Some(NON_ASCII_IDENTIFIER),
+            Some(1_000_000),
+            None,
+            None,
+            Some(false),
+        ),
+        "catalog" => catalog.consolidate_catalog(None, None, None, None),
+        "catalog_by_period" => {
+            catalog.consolidate_catalog_by_period(Some(1_000_000), None, None, Some(false))
+        }
+        _ => unreachable!("unknown consolidation {operation}"),
+    }
+    .unwrap();
+
+    let quotes: Vec<QuoteTick> = catalog.query(None, None, None, None, None, true).unwrap();
+
+    assert_eq!(
+        non_ascii_quote_keys(&catalog),
+        vec![non_ascii_quote_key(&catalog, 1_000, 6_000)]
+    );
+    assert_eq!(quotes, [first, second].concat());
+}
+
+#[rstest]
+fn test_consolidate_data_by_period_keeps_non_ascii_custom_data(
+    #[values(false, true)] remote: bool,
+) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
+    let instrument_id = InstrumentId::from(NON_ASCII_IDENTIFIER);
+
+    for ts_inits in [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]] {
+        catalog
+            .write_custom_data_batch(
+                rust_test_custom_data_range(instrument_id, &ts_inits),
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }),
+            Some(NON_ASCII_IDENTIFIER),
+            Some(1_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some(NON_ASCII_IDENTIFIER))
+        .unwrap();
+
+    assert_eq!(catalog.list_parquet_files(&directory).unwrap().len(), 1);
+    assert_eq!(
+        rust_test_custom_data_ts_inits(&mut catalog, instrument_id),
+        (1..=10).collect::<Vec<_>>(),
+    );
+}
+
+#[rstest]
+fn test_delete_catalog_range_of_non_ascii_identifier(#[values(false, true)] remote: bool) {
+    let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
+    let first = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let second = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+
+    catalog
+        .delete_catalog_range(Some(UnixNanos::from(4_000)), None)
+        .unwrap();
+
+    let quotes: Vec<QuoteTick> = catalog.query(None, None, None, None, None, true).unwrap();
+
+    assert_eq!(
+        non_ascii_quote_keys(&catalog),
+        vec![non_ascii_quote_key(&catalog, 1_000, 2_000)]
+    );
+    assert_eq!(quotes, first);
+}
+
+#[rstest]
+fn test_reset_file_names_of_non_ascii_identifier(
+    #[values(false, true)] remote: bool,
+    #[values(false, true)] whole_catalog: bool,
+) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+    let quotes = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    catalog
+        .write_to_parquet(
+            &quotes,
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(3_000)),
+            None,
+        )
+        .unwrap();
+
+    if whole_catalog {
+        catalog.reset_all_file_names()
+    } else {
+        catalog.reset_data_file_names(
+            &NautilusDataType::QuoteTick.into(),
+            Some(NON_ASCII_IDENTIFIER),
+        )
+    }
+    .unwrap();
+
+    assert_eq!(
+        non_ascii_quote_keys(&catalog),
+        vec![non_ascii_quote_key(&catalog, 1_000, 2_000)]
+    );
+}
+
+#[rstest]
+fn test_get_intervals_of_non_ascii_identifier(#[values(false, true)] remote: bool) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+    let quotes = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+
+    let intervals = catalog
+        .get_intervals(
+            &NautilusDataType::QuoteTick.into(),
+            Some(NON_ASCII_IDENTIFIER),
+        )
+        .unwrap();
+
+    assert_eq!(intervals, vec![(1_000, 2_000)]);
+}
+
+// A bare instrument id reaches bar files only through the bar-type directory names
+#[rstest]
+fn test_get_intervals_of_non_ascii_bar_instrument_id(#[values(false, true)] remote: bool) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+
+    let bar_type = BarType::new(
+        InstrumentId::from(NON_ASCII_IDENTIFIER),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::External,
+    );
+
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1.00001, 5),
+        Price::new(1.10000, 5),
+        Price::new(1.00000, 5),
+        Price::new(1.00000, 5),
+        Quantity::new(100_000.0, 0),
+        UnixNanos::from(1_000),
+        UnixNanos::from(2_000),
+    );
+    catalog.write_to_parquet(&[bar], None, None, None).unwrap();
+
+    let intervals = catalog
+        .get_intervals(&NautilusDataType::Bar.into(), Some(NON_ASCII_IDENTIFIER))
+        .unwrap();
+
+    assert_eq!(intervals, vec![(2_000, 2_000)]);
+}
+
+#[rstest]
+fn test_list_backtest_runs_decodes_encoded_run_name(#[values(false, true)] remote: bool) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+    let key = ObjectPath::from(make_object_store_path(
+        &catalog.base_path,
+        ["backtest", "run-é", "run.json"],
+    ));
+    get_runtime()
+        .block_on(catalog.object_store.put(&key, b"{}".to_vec().into()))
+        .unwrap();
+
+    assert_eq!(
+        catalog.list_backtest_runs().unwrap(),
+        vec!["run-é".to_string()]
+    );
 }

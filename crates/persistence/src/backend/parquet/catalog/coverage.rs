@@ -16,8 +16,8 @@
 //! Interval coverage and missing-interval checks for the Parquet catalog.
 
 use super::{
-    Cow, ParquetDataCatalog, extract_bar_type_instrument_id, parse_filename_timestamps,
-    query::is_parquet_bar_prefix, query_interval_diff, urisafe_instrument_id, urlencoding,
+    ParquetDataCatalog, extract_bar_type_instrument_id, parse_filename_timestamps,
+    query::is_parquet_bar_prefix, query_interval_diff, urisafe_instrument_id,
 };
 use crate::catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes};
 
@@ -315,15 +315,11 @@ impl ParquetDataCatalog {
         let mut all_intervals = Vec::new();
 
         for subdir in &subdirs {
-            let decoded = urlencoding::decode(subdir).unwrap_or(Cow::Borrowed(subdir));
-
-            if extract_bar_type_instrument_id(&decoded) != Some(safe_id.as_str()) {
+            if extract_bar_type_instrument_id(subdir) != Some(safe_id.as_str()) {
                 continue;
             }
 
-            // Use decoded name to avoid double percent-encoding
-            // (to_object_path uses Path::from which re-encodes)
-            let subdir_path = self.make_path(data_cls, Some(&decoded))?;
+            let subdir_path = self.make_path(data_cls, Some(subdir))?;
             all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
         }
 
@@ -383,12 +379,8 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn get_directory_intervals(&self, directory: &str) -> anyhow::Result<Vec<(u64, u64)>> {
-        // Use object store for all operations
-        // Convert directory to object path format (consistent with how files are written)
-        // For local stores with empty base_path, to_object_path returns path as-is.
-        // For remote stores, to_object_path preserves or prepends the catalog base path.
-        let object_dir = self.to_object_path(directory)?;
-        let list_result = self.list_objects(object_dir.as_ref())?;
+        // `list_objects` encodes the prefix itself
+        let list_result = self.list_objects(&self.object_store_path(directory)?)?;
 
         let mut intervals = Vec::new();
 

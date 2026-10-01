@@ -37,7 +37,7 @@ use url::Url;
 
 pub use crate::common::paths::normalize_path_to_uri;
 use crate::{
-    backend::parquet::io::create_object_store_from_path,
+    backend::parquet::io::{create_object_store_from_path, decode_object_store_segment},
     common::paths::{
         environment_directory, environment_from_directory, file_uri_to_native_path,
         make_object_store_path, path_to_file_uri,
@@ -154,7 +154,8 @@ impl StorageBackend {
         datafusion_root_url(&self.original_uri)
     }
 
-    /// Lists immediate child directory stems below a storage-relative subdirectory.
+    /// Lists immediate child directory stems below a storage-relative subdirectory, decoded from
+    /// their percent-encoded object-store form.
     ///
     /// This is used by catalog data and run-session discovery so local, memory, and cloud
     /// backends share one object-store listing path.
@@ -176,7 +177,7 @@ impl StorageBackend {
             if let Some(relative_path) = path.strip_prefix(&prefix_str)
                 && let Some(stem) = relative_path.split('/').find(|segment| !segment.is_empty())
             {
-                stems.insert(stem.to_string());
+                stems.insert(decode_object_store_segment(stem));
             }
         }
 
@@ -292,7 +293,7 @@ impl StorageBackend {
         let mut manifests = Vec::new();
 
         for file in files {
-            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::from(file)).await? {
+            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::parse(file)?).await? {
                 manifests.push(manifest);
             }
         }
@@ -641,6 +642,46 @@ mod tests {
         assert_eq!(manifest.status, RunStatus::Completed);
         assert!(manifest.empty);
         assert_eq!(manifest.schema_version, 1);
+    }
+
+    #[rstest]
+    fn storage_backend_lists_manifest_of_run_with_encoded_name() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+        futures::executor::block_on(storage.write_run_manifest(
+            Environment::Backtest,
+            "run-é",
+            RunStatus::Completed,
+            true,
+        ))
+        .unwrap();
+
+        let manifests = futures::executor::block_on(
+            storage.list_run_manifests(environment_directory(Environment::Backtest)),
+        )
+        .unwrap();
+        let manifest =
+            futures::executor::block_on(storage.read_run_manifest(Environment::Backtest, "run-é"))
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(manifests, vec![manifest]);
+    }
+
+    #[rstest]
+    fn storage_backend_lists_run_ids_with_encoded_name() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+        futures::executor::block_on(storage.write_run_manifest(
+            Environment::Backtest,
+            "run-é",
+            RunStatus::Completed,
+            true,
+        ))
+        .unwrap();
+
+        let runs =
+            futures::executor::block_on(storage.list_run_ids(Environment::Backtest)).unwrap();
+
+        assert_eq!(runs, vec!["run-é".to_string()]);
     }
 
     #[rstest]

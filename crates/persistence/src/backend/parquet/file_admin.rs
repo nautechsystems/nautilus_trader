@@ -24,7 +24,7 @@ use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         intervals::are_intervals_disjoint,
-        io::min_max_from_parquet_metadata_object_store,
+        io::{decode_object_store_segment, min_max_from_parquet_metadata_object_store},
         paths::{make_object_store_path, timestamps_to_filename},
     },
     catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
@@ -67,7 +67,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `path`: The file path to delete, relative to the catalog structure.
+    /// - `path`: The file path to delete, as an object-store listing returns it.
     ///
     /// # Returns
     ///
@@ -85,7 +85,7 @@ impl ParquetDataCatalog {
     ///
     /// This operation is irreversible. Ensure the file is no longer needed before deletion.
     pub(crate) fn delete_file(&self, path: &str) -> anyhow::Result<()> {
-        let object_path = self.to_object_path(path)?;
+        let object_path = self.to_object_path_parsed(path)?;
         self.execute_async(|| async {
             self.object_store
                 .delete(&object_path)
@@ -242,7 +242,7 @@ impl ParquetDataCatalog {
         let mut moves = Vec::with_capacity(parquet_files.len());
 
         for file in parquet_files {
-            let object_path = ObjectPath::from(file.as_str());
+            let object_path = self.to_object_path_parsed(&file)?;
 
             let (first_ts, last_ts) = self.execute_async(|| async {
                 min_max_from_parquet_metadata_object_store(
@@ -340,11 +340,16 @@ impl ParquetDataCatalog {
 
             while let Some(object) = stream.next().await {
                 let object = object?;
-                let path_str = object.location.to_string();
+                let parts = object.location.parts().collect::<Vec<_>>();
 
-                // Extract directory path
-                if let Some(parent) = std::path::Path::new(&path_str).parent() {
-                    directories.insert(parent.to_string_lossy().to_string());
+                // Decode to match `make_path` output, which callers encode again
+                if let Some((_, parent)) = parts.split_last() {
+                    let directory = parent
+                        .iter()
+                        .map(|part| decode_object_store_segment(part.as_ref()))
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    directories.insert(directory);
                 }
             }
 

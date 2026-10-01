@@ -808,7 +808,7 @@ pub(crate) fn remote_full_uri(uri: &str, object_path: &str) -> anyhow::Result<St
     }
 }
 
-/// Appends an encoded object-store path to the local storage URI.
+/// Appends an encoded object-store path to a local or remote storage URI.
 /// Preserve the encoded names used by the native object-store backend.
 pub(crate) fn append_path_to_file_uri(base_uri: &str, path: &str) -> String {
     if let Ok(mut url) = Url::parse(base_uri) {

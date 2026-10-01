@@ -37,7 +37,7 @@ use crate::{
     catalog::types::{
         CatalogDataType, catalog_data_type_from_path, parquet_catalog_data_type_path_prefixes,
     },
-    common::paths::normalize_path_separators,
+    common::{paths::normalize_path_separators, storage::StorageBackend},
 };
 
 impl ParquetDataCatalog {
@@ -468,10 +468,19 @@ impl ParquetDataCatalog {
     }
 
     /// Resolves a path for use with DataFusion (avoiding Windows path doubling for file://).
-    /// Returns the path as-is if it is already a full URI or absolute; otherwise builds
-    /// file:// base + path for local catalogs or `reconstruct_full_uri` for remote.
+    /// A remote path resolves to a URL under the store root whose path decodes to the object
+    /// key. A local path is returned as-is if it is already a full URI or absolute; otherwise it
+    /// joins the file:// base or goes through `reconstruct_full_uri`.
     #[must_use]
     pub(crate) fn resolve_path_for_datafusion(&self, path: &str) -> String {
+        // DataFusion decodes the URL path once, so encode the key again
+        if self.is_remote_uri()
+            && let Ok(key) = self.object_store_path(path)
+            && let Ok(root) = remote_store_root_url(&self.original_uri)
+        {
+            return append_path_to_file_uri(root.as_str(), &key);
+        }
+
         if path.contains("://") {
             return path.to_string();
         }
@@ -696,7 +705,7 @@ impl ParquetDataCatalog {
         ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)
     }
 
-    fn object_store_path(&self, path: &str) -> anyhow::Result<String> {
+    pub(super) fn object_store_path(&self, path: &str) -> anyhow::Result<String> {
         let normalized_path = normalize_path_separators(path);
 
         if self.is_remote_uri() {
@@ -819,8 +828,8 @@ impl ParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a vector of directory names (stems) found in the subdirectory,
-    /// or an error if the operation fails.
+    /// Returns the sorted directory names (stems) found in the subdirectory, decoded from their
+    /// percent-encoded object-store form, or an error if the operation fails.
     ///
     /// # Errors
     ///
@@ -876,7 +885,7 @@ impl ParquetDataCatalog {
                 if file_type.is_dir()
                     && let Some(name) = entry.path().file_name()
                 {
-                    directories.push(name.to_string_lossy().to_string());
+                    directories.push(decode_object_store_segment(&name.to_string_lossy()));
                 }
             }
 
@@ -884,36 +893,13 @@ impl ParquetDataCatalog {
             return Ok(directories);
         }
 
-        // For remote URIs, use object store listing (only lists directories with files)
-        let directory = make_object_store_path(&self.base_path, [subdirectory]);
+        let storage = StorageBackend {
+            object_store: self.object_store.clone(),
+            base_path: self.base_path.clone(),
+            original_uri: self.original_uri.clone(),
+        };
 
-        let list_result = self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("{directory}/"));
-            let mut stream = self.object_store.list(Some(&prefix));
-            let mut directories = Vec::new();
-            let mut seen_dirs = std::collections::HashSet::new();
-
-            while let Some(object) = stream.next().await {
-                let object = object?;
-                let path_str = object.location.to_string();
-
-                // Extract the immediate subdirectory name
-                if let Some(relative_path) = path_str.strip_prefix(&format!("{directory}/")) {
-                    let parts: Vec<&str> = relative_path.split('/').collect();
-                    if let Some(first_part) = parts.first()
-                        && !first_part.is_empty()
-                        && !seen_dirs.contains(*first_part)
-                    {
-                        seen_dirs.insert(first_part.to_string());
-                        directories.push(first_part.to_string());
-                    }
-                }
-            }
-
-            Ok::<Vec<String>, anyhow::Error>(directories)
-        })?;
-
-        Ok(list_result)
+        self.execute_async(|| async { storage.list_directory_stems(subdirectory).await })
     }
 
     /// Lists the data, record, and instrument types stored in the catalog.

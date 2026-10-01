@@ -61,28 +61,9 @@ enum StagingReply {
     Closed(bool),
 }
 
+#[derive(Clone)]
 struct StagingClient {
     tx: SyncSender<StagingMessage>,
-    reply_tx: SyncSender<StagingReply>,
-    replies: Receiver<StagingReply>,
-}
-
-impl StagingClient {
-    fn new(tx: SyncSender<StagingMessage>) -> Self {
-        let (reply_tx, replies) = mpsc::sync_channel(1);
-
-        Self {
-            tx,
-            reply_tx,
-            replies,
-        }
-    }
-}
-
-impl Clone for StagingClient {
-    fn clone(&self) -> Self {
-        Self::new(self.tx.clone())
-    }
 }
 
 impl StagingClient {
@@ -155,10 +136,12 @@ impl StagingClient {
     where
         F: FnOnce(SyncSender<StagingReply>) -> StagingMessage,
     {
+        // A per-request channel disconnects if the worker panics
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         self.tx
-            .send(message(self.reply_tx.clone()))
+            .send(message(reply_tx))
             .map_err(|e| anyhow::anyhow!("Staging worker disconnected: {e}"))?;
-        self.replies
+        reply_rx
             .recv()
             .map_err(|e| anyhow::anyhow!("Staging worker disconnected: {e}"))
     }
@@ -176,7 +159,7 @@ impl StagingWorker {
             .name("feather-staging".to_string())
             .spawn(move || run_staging_worker(writer, &rx))?;
         Ok(Self {
-            client: StagingClient::new(tx),
+            client: StagingClient { tx },
             handle: Some(handle),
         })
     }
@@ -634,5 +617,48 @@ where
 {
     fn drop(&mut self) {
         self.stop_promotion_timer();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{Arc, atomic::AtomicU64},
+        time::Duration,
+    };
+
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[rstest]
+    fn test_staging_request_returns_error_when_worker_panics() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+        );
+
+        let worker = StagingWorker::spawn(writer).unwrap();
+        let client = worker.client.clone();
+        let (result_tx, result_rx) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            let result = client.write_any(Box::new(|_| panic!("staging worker test panic")));
+            let _ = result_tx.send(result.map_err(|e| e.to_string()));
+        });
+
+        let result = result_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("staging request did not return after the worker panicked");
+        assert_eq!(
+            result,
+            Err("Staging worker disconnected: receiving on a closed channel".to_string())
+        );
     }
 }

@@ -152,6 +152,20 @@ def test_catalog_rejects_unsupported_compression_code(tmp_path: Path, code: int)
     )
 
 
+@pytest.mark.parametrize("field", ["batch_size", "max_row_group_size"])
+def test_catalog_rejects_zero_count(tmp_path: Path, field: str) -> None:
+    """
+    Reject a zero row count when the catalog is constructed.
+    """
+    with pytest.raises(ValueError, match=f"invalid {field}") as exc_info:
+        ParquetDataCatalog(str(tmp_path), **{field: 0})
+
+    assert str(exc_info.value) == (
+        f"invalid {field}: must be a positive number of rows; omit the field for the backend "
+        "default"
+    )
+
+
 def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> None:
     """
     Verify migration planner resolves funding and close files.

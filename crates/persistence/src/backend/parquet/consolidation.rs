@@ -354,11 +354,10 @@ impl ParquetDataCatalog {
             timestamps_to_filename(UnixNanos::from(intervals[0].0), UnixNanos::from(last_end));
         let path = make_object_store_path(directory, [&file_name]);
 
-        // Convert string paths to ObjectPath for the function call
-        let object_paths: Vec<ObjectPath> = files_to_consolidate
+        let object_paths = files_to_consolidate
             .iter()
-            .map(|(path, _)| ObjectPath::from(path.as_str()))
-            .collect();
+            .map(|(path, _)| self.to_object_path_parsed(path))
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         self.execute_async(|| async {
             combine_parquet_files_from_object_store(

@@ -470,7 +470,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         use_ts_event_for_ts_init: bool,
         record_promoted: bool,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
-        let object_path = ObjectPath::from(file);
+        let object_path = ObjectPath::parse(file)?;
 
         let read = block_on_nautilus_with(|| {
             read_feather_record_batches_with_identity(
@@ -509,12 +509,9 @@ impl PromotionBackend for ParquetPromotionBackend {
     }
 
     fn delete_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<()> {
+        let object_path = ObjectPath::parse(file)?;
         block_on_nautilus_with(|| async {
-            source
-                .storage
-                .object_store
-                .delete(&ObjectPath::from(file))
-                .await?;
+            source.storage.object_store.delete(&object_path).await?;
             Ok::<(), anyhow::Error>(())
         })
     }
@@ -573,7 +570,10 @@ fn feather_replay_identity(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicU64;
+    use std::{
+        path::{Path, PathBuf},
+        sync::atomic::AtomicU64,
+    };
 
     use arrow::datatypes::SchemaRef;
     use nautilus_common::enums::Environment;
@@ -583,6 +583,7 @@ mod tests {
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
+    use object_store::memory::InMemory;
     use parquet::{
         basic::Compression,
         file::{
@@ -600,7 +601,10 @@ mod tests {
         common::storage::RUN_MANIFEST_FILENAME,
         config::{CatalogCompression, DataCatalogConfig},
         test_data::RustTestHashMapCustomData,
-        writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
+        writer::{
+            feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
+            promotion::list_session_feather_files,
+        },
     };
 
     #[rstest]
@@ -698,6 +702,118 @@ mod tests {
         };
 
         assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parquet_close_promotes_per_identifier_file_with_non_ascii_identifier(
+        #[values(false, true)] delete_source: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, staged_file) = stage_per_identifier_quote(&staging);
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.delete_feather_after_promotion = delete_source;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+
+        sink.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(rows.as_ref(), &[quote]);
+        assert_eq!(staged_file.exists(), !delete_source);
+    }
+
+    #[rstest]
+    fn parquet_manual_conversion_reads_per_identifier_file_with_non_ascii_identifier() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, _) = stage_per_identifier_quote(&staging);
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        catalog
+            .convert_stream_to_data(
+                "run-1",
+                &NautilusDataType::QuoteTick.into(),
+                Environment::Backtest,
+                None,
+                false,
+            )
+            .unwrap();
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parquet_promotion_writes_non_ascii_identifier_to_object_store() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, staged_file) = stage_per_identifier_quote(&staging);
+
+        let source = FeatherSessionSource::new(
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap(),
+            Environment::Backtest,
+            "run-1",
+        );
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        catalog.base_path = "catalog".to_string();
+        catalog.original_uri = "s3://test-bucket/catalog".to_string();
+        catalog.object_store = Arc::new(InMemory::new());
+
+        let mut backend = ParquetPromotionBackend {
+            catalog,
+            legacy_manifest_missing: Arc::default(),
+        };
+
+        let files =
+            list_session_feather_files(&source.storage, Environment::Backtest, "run-1").unwrap();
+
+        for file in &files {
+            backend.convert_file(&source, file, false, true).unwrap();
+            backend.delete_file(&source, file).unwrap();
+        }
+
+        let DataBatch::Quote(rows) = backend
+            .catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(rows.as_ref(), &[quote]);
+        assert!(!staged_file.exists());
     }
 
     #[rstest]
@@ -1429,6 +1545,33 @@ mod tests {
 
     fn local_catalog(directory: &TempDir) -> CatalogConnectConfig {
         CatalogConnectConfig::new(directory.path().to_string_lossy(), None)
+    }
+
+    // Earlier per-instrument writers staged files in identifier directories
+    fn stage_per_identifier_quote(staging: &Path) -> (QuoteTick, PathBuf) {
+        let mut quote = sample_quote();
+        quote.instrument_id = InstrumentId::from("CAFÉ.SIM");
+
+        let mut writer = FeatherWriter::new(
+            staging.to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        writer.write(quote).unwrap();
+        writer.close().unwrap();
+
+        let identifier_directory = staging.join("quotes").join("CAFÉ.SIM");
+        let staged_file = identifier_directory.join("quotes_0.feather");
+        fs::create_dir(&identifier_directory).unwrap();
+        fs::rename(
+            staging.join("quotes").join("quotes_0.feather"),
+            &staged_file,
+        )
+        .unwrap();
+
+        (quote, staged_file)
     }
 
     fn sample_quote() -> QuoteTick {
