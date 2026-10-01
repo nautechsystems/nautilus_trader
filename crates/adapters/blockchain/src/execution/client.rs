@@ -3707,7 +3707,8 @@ enum SwapQuoteKind {
 /// transaction exists, `OrderSubmitted` after broadcast acceptance, and `OrderRejected` on
 /// a definitive node rejection or an on-chain revert. No fill is emitted at broadcast or
 /// first inclusion; fills arrive with finality reconciliation. Ambiguous outcomes keep the
-/// order submitted untouched while the persisted record reconciles.
+/// order submitted untouched while the persisted record reconciles. The client retains
+/// unresolved submissions, so an exhausted in-flight check leaves the order submitted.
 async fn execute_swap(
     mut plan: SwapPlan,
     executor: TransactionExecutor,
@@ -5829,6 +5830,10 @@ impl ExecutionClient for BlockchainExecutionClient {
         Ok(())
     }
 
+    fn retain_unresolved_submissions(&self) -> bool {
+        true
+    }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.core.is_connected() {
             log::warn!("Blockchain execution client already connected");
@@ -6295,11 +6300,21 @@ mod tests {
         sol_types::SolValue,
     };
     use nautilus_common::{
-        cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+        cache::Cache,
+        clock::{Clock, VirtualClock},
+        live::runner::replace_exec_event_sender,
+        messages::{ExecutionEvent, execution::TradingCommand},
         testing::wait_until_async,
     };
     use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
+    use nautilus_live::{
+        execution::{
+            config::ExecutionManagerConfig,
+            submission::{SubmissionRecoveryExhausted, SubmissionRecoverySource},
+        },
+        manager::ExecutionManager,
+    };
     use nautilus_model::{
         defi::{
             PoolProfiler,
@@ -9840,6 +9855,135 @@ mod tests {
         ));
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case::filled("execution_inflight_finality_fill_test", false)]
+    #[case::reverted("execution_inflight_finality_revert_test", true)]
+    #[tokio::test]
+    async fn swap_awaiting_finality_survives_inflight_exhaustion(
+        #[case] test_name: &str,
+        #[case] reverted: bool,
+    ) {
+        let min_amount_out = expected_min_amount_out(50);
+        let (expected_hash, _) = expected_swap_tx(min_amount_out).await;
+
+        let state = if reverted {
+            let block = finalized_swap_block(expected_hash, min_amount_out);
+            let receipt = receipt_with_transaction_hash(RECEIPT_REVERTED, expected_hash);
+            with_finalized_identity(
+                swap_rpc_state()
+                    .await
+                    .with_response("eth_getTransactionReceipt", &receipt),
+                &block,
+                &receipt,
+            )
+        } else {
+            finalized_swap_rpc_state(expected_hash, min_amount_out)
+        };
+
+        let Some((admin_pool, schema, mut client, _state, cache)) =
+            swap_client_with_database(test_name, state).await
+        else {
+            return;
+        };
+
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let client_order_id = order.client_order_id();
+        let mut receiver = start_with_events(&mut client);
+
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+        let swap_events = collect_order_events(&mut receiver);
+        assert_eq!(swap_events.len(), 2, "was: {swap_events:?}");
+        assert!(matches!(&swap_events[0], OrderEventAny::Submitted(_)));
+
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let config = ExecutionManagerConfig::default();
+        let max_retries = config.inflight_max_retries;
+        let mut manager = ExecutionManager::new(clock, cache.clone(), config).unwrap();
+
+        // The open-order check registers the client's retention requirement, as LiveNode does
+        assert!(manager.check_open_orders(&[&client]).await.is_empty());
+        cache.borrow_mut().update_order(&swap_events[0]).unwrap();
+        tokio::time::pause();
+        manager.register_submission(order.init_event(), Some(client.client_id()));
+
+        // Hold the finality outcome until well past the default in-flight budget
+        let mut inflight_events = Vec::new();
+        let mut queries_sent = 0;
+
+        for _ in 0..60 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            let result = manager.check_inflight_orders();
+            inflight_events.extend(result.events);
+
+            for query in result.queries {
+                let TradingCommand::QueryOrder(query) = query else {
+                    panic!("expected QueryOrder, was {query:?}");
+                };
+
+                client.query_order(query).unwrap();
+                queries_sent += 1;
+            }
+        }
+
+        let exhaustions = manager.take_submission_recovery_exhaustions();
+        let status_before_finality = cache.borrow().order(&client_order_id).unwrap().status();
+        cache.borrow_mut().update_order(&swap_events[1]).unwrap();
+        tokio::time::resume();
+        drop_execution_schema(&admin_pool, &schema).await;
+
+        assert!(inflight_events.is_empty(), "was: {inflight_events:?}");
+        assert_eq!(queries_sent, max_retries - 1);
+        assert!(collect_order_events(&mut receiver).is_empty());
+        assert_eq!(
+            exhaustions,
+            vec![SubmissionRecoveryExhausted {
+                trader_id: order.trader_id(),
+                client_id: Some(client.client_id()),
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+                client_order_id,
+                source: SubmissionRecoverySource::Inflight,
+                retry_count: max_retries,
+                ts_event: UnixNanos::default(),
+            }]
+        );
+        assert_eq!(status_before_finality, OrderStatus::Submitted);
+        let cache = cache.borrow();
+        let resolved = cache.order(&client_order_id).unwrap();
+
+        if reverted {
+            let OrderEventAny::Rejected(rejected) = &swap_events[1] else {
+                panic!("expected OrderRejected, was {:?}", swap_events[1]);
+            };
+
+            assert_eq!(
+                rejected.reason.as_str(),
+                format!("Transaction {expected_hash} reverted on-chain")
+            );
+            assert!(!rejected.reconciliation);
+            assert_eq!(resolved.status(), OrderStatus::Rejected);
+            assert_eq!(
+                resolved.filled_qty(),
+                Quantity::zero(order.quantity().precision)
+            );
+        } else {
+            assert!(matches!(&swap_events[1], OrderEventAny::Filled(_)));
+            assert_eq!(resolved.status(), OrderStatus::Filled);
+            assert_eq!(resolved.filled_qty(), order.quantity());
+        }
     }
 
     #[tokio::test]

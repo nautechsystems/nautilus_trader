@@ -306,6 +306,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot book unsubscribe and resubscribe commands reaching the stream pool out of order
 - Fixed Binance Rust data clients not registering `BinanceBar` custom data for persistence
 - Fixed Blockchain RPC WebSocket blocks missing their chain, panicking the data engine
+- Fixed Blockchain swaps awaiting finality rejected by the in-flight check before their fill arrived
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Bybit book recovery after update ID gaps, missing snapshots, and reconnects
