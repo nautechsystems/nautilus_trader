@@ -378,6 +378,11 @@ impl ExecutionManager {
     }
 
     /// Returns retained submissions which still lack a native outcome or venue confirmation.
+    ///
+    /// Only the node's shutdown path reads this, so it is gated with its callers: without the
+    /// `node` feature the method has none, and a dependent crate that leaves the feature off would
+    /// see it as dead code.
+    #[cfg(feature = "node")]
     pub(crate) fn unresolved_submission_ids(&self) -> Vec<ClientOrderId> {
         self.submissions
             .keys()
