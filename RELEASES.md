@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
 - Added Architect AX instrument schedules and estimated funding metadata to response models
+- Added Betfair `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Binance `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
@@ -288,6 +289,9 @@ Released on TBD (UTC).
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
 - Fixed Betfair resting SP bets treated as closed before BSP reconciliation
+- Fixed Betfair book recovery after unparsable runner changes, missing images, and changes before an image
+- Fixed Betfair market images leaving stale levels on runners the image omits
+- Fixed Betfair concurrent book subscriptions dropping markets from the stream subscription
 - Fixed Binance order ID encoding for short alphanumeric tags (#5055), thanks for reporting @logeid
 - Fixed Binance WebSocket subscribe bursts that closed sockets with 1008 (#5014), thanks @costajohnt
 - Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
@@ -364,6 +368,8 @@ Released on TBD (UTC).
 
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
+- Added Betfair live book stress harness with fault injection and an independent book oracle
+- Added CRLF line relay routes to the shared book stress fault proxy
 - Added Binance live book stress harness with fault injection and independent book oracles
 - Added Bybit live book stress harness with fault injection and an independent book oracle
 - Added Hyperliquid live book stress harness with fault injection and an independent book oracle
@@ -374,6 +380,7 @@ Released on TBD (UTC).
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Standardized adapter JSON decimal parsing on shared core parsers
+- Standardized Betfair book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Bybit book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Hyperliquid book recovery on the shared recovery runner and 10s snapshot default
@@ -464,6 +471,7 @@ Released on TBD (UTC).
 - Documented v1 `StreamingConfig` migration to `writer_path`, `catalog`, and `RotationConfig` (#5115), thanks @faysou
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
+- Documented Betfair order book recovery, retry limits, and live recovery validation
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Binance order book synchronization, recovery limits, and snapshot pacing

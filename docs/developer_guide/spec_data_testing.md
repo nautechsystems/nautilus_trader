@@ -112,8 +112,8 @@ never receives data.
   is an empty snapshot.
 - An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
 - Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic
-  within a snapshot episode. OKX `seqId` can reset, and Polymarket and Hyperliquid books carry no
-  sequence, so their checkers skip this rule and rely on the oracle.
+  within a snapshot episode. OKX `seqId` can reset, and Polymarket, Hyperliquid, and Betfair books
+  carry no venue sequence, so their checkers skip this rule and rely on the oracle.
 - A book emits nothing after its unsubscribe settles.
 
 ### Validation levels
@@ -226,9 +226,11 @@ The shared module runs the harness, and the venue supplies only its own pieces b
   self-check.
 - The scenarios, written against `Session`.
 
-`FaultProxy` relays the adapter's WebSocket traffic to the venue. It applies per-book `Fault` rules
-(drop snapshots or updates, corrupt, hold, silence, cut on unsubscribe, reject subscribes) and
-connection-wide cuts and freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
+`FaultProxy` relays the adapter's WebSocket traffic to the venue, or CRLF-delimited lines over raw
+TCP for a route whose upstream URL is not a WebSocket URL. A line route serves the proxy address
+alone, and the venue's `WireCodec::connect` opens its upstream connection, for example over TLS. It
+applies per-book `Fault` rules (drop snapshots or updates, corrupt, hold, silence, cut on
+unsubscribe, reject subscribes) and connection-wide cuts and freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
 books to heal, and checks at shutdown that every socket and reconnect handle is released.
 
 Every harness accepts the same flags, and venues add their own; `--help` lists them:
@@ -245,6 +247,9 @@ Run the harness explicitly, with adapter environment variables stripped:
 CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
   cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18
 ```
+
+Betfair streams market data only to logged-in accounts, so its harness runs with the Betfair
+credentials set; see [Live recovery validation](../integrations/betfair.md#live-recovery-validation).
 
 The harness writes one line per event to stderr, each led by a fixed word:
 
@@ -264,7 +269,8 @@ traffic. The shared proxy, argument parsing, and wire book carry unit tests in t
 `book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
 Document the harness in the adapter's integration guide under a `Live recovery validation` heading
 that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
-endpoints it requires. OKX, Binance, Lighter, Polymarket, Hyperliquid, and Bybit provide harnesses.
+endpoints it requires. OKX, Binance, Lighter, Polymarket, Hyperliquid, Bybit, and Betfair provide
+harnesses.
 
 ### In-band verification
 

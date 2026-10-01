@@ -46,7 +46,10 @@ python = [
 ]
 
 [package.metadata.cargo-machete]
-ignored = ["arrow"] # Used by `custom_data` macro expansion
+ignored = [
+  "arrow", # Used by `custom_data` macro expansion
+  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
+]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -100,10 +103,15 @@ nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+rustls = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
+tokio-rustls = { workspace = true }
 toml = { workspace = true }
+webpki-roots = { workspace = true }
 
 # Run with `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 [[example]]
@@ -131,3 +139,12 @@ name = "betfair-backtest"
 path = "examples/betfair_backtest.rs"
 required-features = ["examples"]
 doc = false
+
+# Mainnet market-data validation; requires Betfair credentials and a live application key.
+# Run with `cargo test --package nautilus-betfair --features examples --test betfair-book-stress -- --timeout 10 --rounds 10`
+[[test]]
+name = "betfair-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

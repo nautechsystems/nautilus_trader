@@ -44,6 +44,17 @@ impl From<serde_json::Error> for BetfairStreamError {
     }
 }
 
+/// Determines if a failed book recovery attempt should retry within its budget.
+///
+/// A full writer queue and a missed snapshot deadline are transient. A closed client, a missing
+/// subscription, and authentication or serialization failures do not clear on their own.
+pub(crate) fn should_retry_stream_error(error: &BetfairStreamError) -> bool {
+    matches!(
+        error,
+        BetfairStreamError::ConnectionFailed(_) | BetfairStreamError::Timeout(_)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -77,6 +88,17 @@ mod tests {
     )]
     fn test_display(#[case] error: BetfairStreamError, #[case] expected: &str) {
         assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::queue_full(BetfairStreamError::ConnectionFailed("full".to_string()), true)]
+    #[case::timeout(BetfairStreamError::Timeout("snapshot".to_string()), true)]
+    #[case::closed(BetfairStreamError::Disconnected("closed".to_string()), false)]
+    #[case::auth(BetfairStreamError::AuthenticationFailed("token".to_string()), false)]
+    #[case::protocol(BetfairStreamError::ProtocolError("no subscription".to_string()), false)]
+    #[case::json(BetfairStreamError::JsonError("encode".to_string()), false)]
+    fn test_should_retry_stream_error(#[case] error: BetfairStreamError, #[case] expected: bool) {
+        assert_eq!(should_retry_stream_error(&error), expected);
     }
 
     #[rstest]

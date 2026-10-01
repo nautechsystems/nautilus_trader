@@ -37,8 +37,8 @@
 //! its wire parsing, oracle, and instruments, writes its scenarios against [`Session`], and hands
 //! them to [`run`]:
 //!
-//! - [`FaultProxy`] relays the adapter's WebSocket traffic to the venue and applies per-book
-//!   [`Fault`] rules plus connection cuts and freezes.
+//! - [`FaultProxy`] relays the adapter's WebSocket or line traffic to the venue and applies
+//!   per-book [`Fault`] rules plus connection cuts and freezes.
 //! - [`Session`] subscribes books, passes every emitted batch through [`BookStreamChecker`] and the
 //!   venue oracle, waits for books to heal, and checks shutdown.
 //! - [`run`] parses `--scenario`, `--timeout`, `--rounds`, and venue flags, runs the venue
@@ -70,7 +70,7 @@ use nautilus_model::identifiers::TraderId;
 pub(crate) use self::{
     args::{Flag, StressArgs},
     oracle::{WireBook, WireView, WireViews},
-    proxy::{Fault, FaultProxy, FrameKind, Route, Upstream, WireCodec, WireConnection},
+    proxy::{Fault, FaultProxy, FrameKind, LineStream, Route, Upstream, WireCodec, WireConnection},
     session::{BookProgress, Coverage, Session, StressVenue},
 };
 

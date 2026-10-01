@@ -66,6 +66,8 @@ class BetfairDataClientConfig:
     def subscribe_race_data(self) -> bool: ...
     @property
     def subscribe_cricket_data(self) -> bool: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
     def __init__(
         self,
         account_currency: str | None = None,
@@ -94,6 +96,7 @@ class BetfairDataClientConfig:
         subscription_delay_secs: int | None = None,
         subscribe_race_data: bool = False,
         subscribe_cricket_data: bool = False,
+        book_snapshot_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def username(self) -> str | None: ...

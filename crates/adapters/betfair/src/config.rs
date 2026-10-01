@@ -21,6 +21,7 @@ use nautilus_common::factories::ClientConfig;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     identifiers::AccountId,
     types::{Currency, Money},
@@ -180,6 +181,10 @@ pub struct BetfairDataClientConfig {
     /// Subscribe to the sports data stream for cricket match updates.
     #[builder(default)]
     pub subscribe_cricket_data: bool,
+    /// Maximum time to wait for an initial or recovery market image in seconds.
+    /// Set to 0 to disable.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
 }
 
 #[cfg(feature = "python")]
@@ -206,6 +211,7 @@ nautilus_core::impl_pyo3_config_getters!(BetfairDataClientConfig {
     subscription_delay_secs: u64,
     subscribe_race_data: bool,
     subscribe_cricket_data: bool,
+    book_snapshot_timeout_secs: u64,
 });
 
 impl Default for BetfairDataClientConfig {
@@ -526,6 +532,7 @@ mod tests {
         assert_eq!(config.subscription_delay_secs, 3);
         assert!(!config.subscribe_race_data);
         assert!(!config.subscribe_cricket_data);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]

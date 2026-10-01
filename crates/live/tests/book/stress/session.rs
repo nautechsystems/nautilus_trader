@@ -346,6 +346,18 @@ impl<V: StressVenue> Session<V> {
             self.expect_snapshot(instrument_id);
         }
 
+        self.reconnect_resuming(endpoint)
+    }
+
+    /// Requests a reconnect of `endpoint` whose venue resumes each book in place, so no book on it
+    /// needs a new snapshot.
+    ///
+    /// A request during an in-flight reconnect joins it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the endpoint has no reconnect handle or refuses the request.
+    pub(crate) fn reconnect_resuming(&self, endpoint: &'static str) -> ReconnectRequestOutcome {
         let handle = self
             .registry
             .handle(self.venue.client_id(), Ustr::from(endpoint))
