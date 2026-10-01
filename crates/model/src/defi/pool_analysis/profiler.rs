@@ -494,7 +494,9 @@ impl PoolProfiler {
     /// to `sqrt_price_limit_x96` even after the amount is exhausted. This reproduces a
     /// historical swap whose recorded amount (the on-chain consumed amount) runs out at the
     /// last liquid tick before an empty range to the boundary; forward simulation leaves it
-    /// unset so the swap stops where the amount is spent, matching `UniswapV3`.
+    /// unset so the swap stops where the amount is spent, matching `UniswapV3`. With an exact
+    /// input, it also charges any input left at `sqrt_price_limit_x96` as fee, because the chain
+    /// consumed the recorded amount in full.
     ///
     /// # Errors
     ///
@@ -536,10 +538,15 @@ impl PoolProfiler {
             self.state.fee_growth_global_1
         };
 
+        // A replayed swap's recorded input was consumed in full, so input left at the event
+        // price is charged as fee even when that price equals the starting price.
+        let replay_exact_input = traverse_empty_ranges && exact_input;
+
         // The replay clause keeps crossing empty ranges to the limit after the amount runs out
         while (amount_specified_remaining != I256::ZERO
             || (traverse_empty_ranges && current_active_liquidity == 0))
-            && sqrt_price_limit_x96 != current_sqrt_price
+            && (sqrt_price_limit_x96 != current_sqrt_price
+                || (replay_exact_input && amount_specified_remaining.is_positive()))
         {
             let sqrt_price_start_x96 = current_sqrt_price;
 
@@ -561,13 +568,24 @@ impl PoolProfiler {
             } else {
                 sqrt_price_next
             };
-            let swap_step_result = compute_swap_step(
+
+            let mut swap_step_result = compute_swap_step(
                 current_sqrt_price,
                 sqrt_price_target,
                 current_active_liquidity,
                 amount_specified_remaining,
                 fee_tier,
             )?;
+
+            // Matches the on-chain step that ran out of input before its target; a step ending on
+            // a tick boundary keeps its fee because the chain crosses first.
+            if replay_exact_input
+                && swap_step_result.sqrt_ratio_next_x96 == sqrt_price_limit_x96
+                && swap_step_result.sqrt_ratio_next_x96 != sqrt_price_next
+            {
+                swap_step_result.fee_amount =
+                    amount_specified_remaining.into_raw() - swap_step_result.amount_in;
+            }
 
             // Update current price to the new price after this swap step (BEFORE amount updates, matching Solidity)
             current_sqrt_price = swap_step_result.sqrt_ratio_next_x96;
@@ -1572,8 +1590,8 @@ impl PoolProfiler {
             self.state.fee_growth_global_0,
             self.state.fee_growth_global_1,
         );
-        position.update_liquidity(liquidity_delta);
         position.update_fees(fee_growth_inside_0, fee_growth_inside_1);
+        position.update_liquidity(liquidity_delta);
         position.update_amounts(liquidity_delta, amount0, amount1);
 
         if let Some(active_liquidity) = new_active_liquidity {
@@ -1959,35 +1977,32 @@ impl PoolProfiler {
         let mut total_amount0 = U256::ZERO;
         let current_sqrt_price = self.state.price_sqrt_ratio_x96;
         let current_tick = self.state.current_tick;
-        let mut total_fees_0_collected: u128 = 0;
 
         // 1. Calculate token0 from active liquidity positions
         for position in self.positions.values() {
-            if position.liquidity > 0 {
-                if position.tick_upper <= current_tick {
-                    // Position is below current price - no token0
-                    continue;
-                } else if position.tick_lower > current_tick {
-                    // Position is above current price - all token0
-                    let sqrt_ratio_a = get_sqrt_ratio_at_tick(position.tick_lower);
-                    let sqrt_ratio_b = get_sqrt_ratio_at_tick(position.tick_upper);
-                    let amount0 =
-                        get_amount0_delta(sqrt_ratio_a, sqrt_ratio_b, position.liquidity, true);
-                    total_amount0 += amount0;
-                } else {
-                    // Position is active - token0 from current price to upper tick
-                    let sqrt_ratio_upper = get_sqrt_ratio_at_tick(position.tick_upper);
-                    let amount0 = get_amount0_delta(
-                        current_sqrt_price,
-                        sqrt_ratio_upper,
-                        position.liquidity,
-                        true,
-                    );
-                    total_amount0 += amount0;
-                }
+            // Empty positions and positions below current price hold no token0
+            if position.liquidity == 0 || position.tick_upper <= current_tick {
+                continue;
             }
 
-            total_fees_0_collected += position.total_amount0_collected;
+            if position.tick_lower > current_tick {
+                // Position is above current price - all token0
+                let sqrt_ratio_a = get_sqrt_ratio_at_tick(position.tick_lower);
+                let sqrt_ratio_b = get_sqrt_ratio_at_tick(position.tick_upper);
+                let amount0 =
+                    get_amount0_delta(sqrt_ratio_a, sqrt_ratio_b, position.liquidity, true);
+                total_amount0 += amount0;
+            } else {
+                // Position is active - token0 from current price to upper tick
+                let sqrt_ratio_upper = get_sqrt_ratio_at_tick(position.tick_upper);
+                let amount0 = get_amount0_delta(
+                    current_sqrt_price,
+                    sqrt_ratio_upper,
+                    position.liquidity,
+                    true,
+                );
+                total_amount0 += amount0;
+            }
         }
 
         // 2. Add accumulated swap fees (fee_growth_global represents total fees accumulated)
@@ -2009,12 +2024,10 @@ impl PoolProfiler {
             }
         }
 
-        let total_fees_0_left = fee_growth_0 - U256::from(total_fees_0_collected);
-
         // 4. Add protocol fees
         total_amount0 += self.state.protocol_fees_token0;
 
-        total_amount0 + total_fees_0_left
+        total_amount0
     }
 
     /// Estimates the total amount of token1 in the pool.
@@ -2028,36 +2041,32 @@ impl PoolProfiler {
         let mut total_amount1 = U256::ZERO;
         let current_sqrt_price = self.state.price_sqrt_ratio_x96;
         let current_tick = self.state.current_tick;
-        let mut total_fees_1_collected: u128 = 0;
 
         // 1. Calculate token1 from active liquidity positions
         for position in self.positions.values() {
-            if position.liquidity > 0 {
-                if position.tick_lower > current_tick {
-                    // Position is above current price - no token1
-                    continue;
-                } else if position.tick_upper <= current_tick {
-                    // Position is below current price - all token1
-                    let sqrt_ratio_a = get_sqrt_ratio_at_tick(position.tick_lower);
-                    let sqrt_ratio_b = get_sqrt_ratio_at_tick(position.tick_upper);
-                    let amount1 =
-                        get_amount1_delta(sqrt_ratio_a, sqrt_ratio_b, position.liquidity, true);
-                    total_amount1 += amount1;
-                } else {
-                    // Position is active - token1 from lower tick to current price
-                    let sqrt_ratio_lower = get_sqrt_ratio_at_tick(position.tick_lower);
-                    let amount1 = get_amount1_delta(
-                        sqrt_ratio_lower,
-                        current_sqrt_price,
-                        position.liquidity,
-                        true,
-                    );
-                    total_amount1 += amount1;
-                }
+            // Empty positions and positions above current price hold no token1
+            if position.liquidity == 0 || position.tick_lower > current_tick {
+                continue;
             }
 
-            // Sum collected fees
-            total_fees_1_collected += position.total_amount1_collected;
+            if position.tick_upper <= current_tick {
+                // Position is below current price - all token1
+                let sqrt_ratio_a = get_sqrt_ratio_at_tick(position.tick_lower);
+                let sqrt_ratio_b = get_sqrt_ratio_at_tick(position.tick_upper);
+                let amount1 =
+                    get_amount1_delta(sqrt_ratio_a, sqrt_ratio_b, position.liquidity, true);
+                total_amount1 += amount1;
+            } else {
+                // Position is active - token1 from lower tick to current price
+                let sqrt_ratio_lower = get_sqrt_ratio_at_tick(position.tick_lower);
+                let amount1 = get_amount1_delta(
+                    sqrt_ratio_lower,
+                    current_sqrt_price,
+                    position.liquidity,
+                    true,
+                );
+                total_amount1 += amount1;
+            }
         }
 
         // 2. Add accumulated swap fees for token1
@@ -2074,12 +2083,10 @@ impl PoolProfiler {
             }
         }
 
-        let total_fees_1_left = fee_growth_1 - U256::from(total_fees_1_collected);
-
         // 4. Add protocol fees
         total_amount1 += self.state.protocol_fees_token1;
 
-        total_amount1 + total_fees_1_left
+        total_amount1
     }
 
     /// Sets the global fee growth for both tokens.

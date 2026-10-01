@@ -117,7 +117,8 @@ stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creat
 pool metadata.
 
 When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
-the same pool instrument ID. The instrument keeps the raw pool `token0`/`token1` order as base/quote
+the same pool instrument ID. The instrument takes its base and quote from `Pool::get_base_token`
+and `Pool::get_quote_token`, the token-priority orientation that swap trade info and execution use,
 and derives price and size precision from token decimals up to `FIXED_PRECISION`. Distinct pool
 identifiers let same-token pools coexist in the cache and on the message bus.
 

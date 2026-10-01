@@ -126,6 +126,7 @@ Released on TBD (UTC).
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
 - Changed logging init to fail on an unusable log file; lazy Rust init keeps console logging
 - Changed Rust `FileWriter::new` to return `anyhow::Result` instead of `Option`
+- Changed DeFi pool `CurrencyPair` base and quote to follow token priority, matching swap trade info and execution
 - Changed Betfair, Binance, and Tardis crates to gate Arrow support behind an opt-in `arrow` feature
 - Changed Deribit `DeribitWebSocketClient::modify_order` to take `DeribitEditParams`
 - Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
@@ -268,6 +269,13 @@ Released on TBD (UTC).
 - Fixed risk engine reset leaving a halted or reducing engine active without an event (#5085), thanks @folknor
 - Fixed canceled FOK orders leaving book liquidity marked consumed (#5106), thanks @ngarid
 - Fixed cash-account SELL checks for instruments without a base currency (#5112), thanks @yashwardhan-gautam
+- Fixed DeFi position fees accruing on liquidity after a mint or burn instead of before
+- Fixed DeFi swap replay dropping fees on input left at the swap's final price
+- Fixed DeFi size-for-impact search never expanding its upper bound
+- Fixed DeFi pool balance estimates adding raw fee growth to token amounts
+- Fixed DeFi price impact and slippage reporting 0 bps beyond the `u32` range
+- Fixed DeFi chain IDs and HyperSync URLs for 12 chains, including Unichain, Ink, and Hyperliquid
+- Fixed DeFi `Pool` display repeating the fee label
 - Fixed adapters logging routine events as warnings and duplicate failures twice
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
@@ -293,6 +301,7 @@ Released on TBD (UTC).
 - Fixed Binance depth snapshot bursts exceeding the venue request-weight limit
 - Fixed Binance Spot book unsubscribe and resubscribe commands reaching the stream pool out of order
 - Fixed Binance Rust data clients not registering `BinanceBar` custom data for persistence
+- Fixed Blockchain RPC WebSocket blocks missing their chain, panicking the data engine
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
 - Fixed Bybit book recovery after update ID gaps, missing snapshots, and reconnects

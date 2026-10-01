@@ -2124,6 +2124,60 @@ fn test_position_fee_growth_and_tokens_owed_after_swaps(mut uni_pool_profiler: P
 }
 
 #[rstest]
+fn test_position_fees_accrue_on_liquidity_before_update(mut uni_pool_profiler: PoolProfiler) {
+    let lower_tick = PoolTick::get_min_tick(TICK_SPACING) + TICK_SPACING;
+    let upper_tick = PoolTick::get_max_tick(TICK_SPACING) - TICK_SPACING;
+    let liquidity = expand_to_18_decimals(1);
+    let mint_event = create_mint_event(other_address(), lower_tick, upper_tick, liquidity);
+    uni_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(U256::from(liquidity) / U256::from(10), true, None)
+            .unwrap(),
+    );
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(U256::from(liquidity) / U256::from(100), false, None)
+            .unwrap(),
+    );
+
+    // A new position must not earn fees accrued before it existed
+    let late_mint = create_mint_event(lp_address(), lower_tick, upper_tick, liquidity);
+    uni_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(late_mint))
+        .unwrap();
+
+    // A full burn must keep the fees earned on the liquidity it removes
+    let full_burn = create_burn_event(other_address(), lower_tick, upper_tick, liquidity);
+    let burn_amount0 = FullMath::truncate_to_u128(full_burn.amount0);
+    let burn_amount1 = FullMath::truncate_to_u128(full_burn.amount1);
+    uni_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(full_burn))
+        .unwrap();
+
+    let late_position = uni_pool_profiler
+        .get_position(&lp_address(), lower_tick, upper_tick)
+        .expect("late position should exist");
+    let burned_position = uni_pool_profiler
+        .get_position(&other_address(), lower_tick, upper_tick)
+        .expect("burned position should keep tokens owed");
+    assert_eq!(late_position.liquidity, liquidity);
+    assert_eq!(late_position.tokens_owed_0, 0);
+    assert_eq!(late_position.tokens_owed_1, 0);
+    assert_eq!(burned_position.liquidity, 0);
+    assert_eq!(
+        burned_position.tokens_owed_0,
+        burn_amount0 + 299_999_999_999_999
+    );
+    assert_eq!(
+        burned_position.tokens_owed_1,
+        burn_amount1 + 29_999_999_999_999
+    );
+}
+
+#[rstest]
 fn test_does_not_clear_position_fee_growth_snapshot_if_no_more_liquidity(
     mut medium_fee_pool_profiler: PoolProfiler,
 ) {
@@ -3621,6 +3675,42 @@ fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
 }
 
 #[rstest]
+fn test_size_for_impact_bps_expands_bound_past_thin_active_range() {
+    // The initial bound comes from the thin active range only, so reaching the target through
+    // the deeper adjacent range requires upper bound expansion.
+    let starting_price = encode_sqrt_ratio_x96(1, 1);
+    let pool_definition = pool_definition(Some(3000), Some(60), Some(starting_price));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
+    profiler.initialize(starting_price).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            -60,
+            60,
+            expand_to_18_decimals(1) / 1000,
+        )
+        .unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            -6000,
+            -60,
+            expand_to_18_decimals(1) / 10,
+        )
+        .unwrap();
+
+    let result = profiler.size_for_impact_bps_detailed(100, true).unwrap();
+    let actual_slippage = slippage_for_size_bps(&profiler, result.size, true).unwrap();
+
+    assert!(result.converged);
+    assert_eq!(result.expansion_count, 3);
+    assert_eq!(actual_slippage, result.actual_impact_bps);
+    assert!(actual_slippage.abs_diff(100) <= 1);
+}
+
+#[rstest]
 fn test_slippage_for_size_bps_propagates_zero_spot_price_error() {
     const TICK: i32 = 440_000;
 
@@ -4090,6 +4180,95 @@ fn test_simulate_traverse_is_noop_when_swap_stays_liquid(low_fee_pool_profiler: 
     assert_eq!(replay.liquidity_after, forward.liquidity_after);
     assert_eq!(replay.amount0, forward.amount0);
     assert_eq!(replay.amount1, forward.amount1);
+}
+
+#[rstest]
+fn test_estimate_balances_track_swap_amounts(mut low_fee_pool_profiler: PoolProfiler) {
+    let amount_in = U256::from(expand_to_18_decimals(1)) / U256::from(10);
+    let balance0_before = low_fee_pool_profiler.estimate_balance_of_token0();
+    let balance1_before = low_fee_pool_profiler.estimate_balance_of_token1();
+
+    let quote = low_fee_pool_profiler
+        .swap_exact_in(amount_in, true, None)
+        .unwrap();
+    low_fee_pool_profiler.apply_swap_quote(&quote);
+
+    // Fees enter the estimate through fee growth, which floors per unit of liquidity
+    assert!(quote.lp_fee > U256::ZERO);
+    assert!(
+        low_fee_pool_profiler
+            .estimate_balance_of_token0()
+            .abs_diff(balance0_before + amount_in)
+            <= U256::from(1)
+    );
+    assert_eq!(
+        low_fee_pool_profiler.estimate_balance_of_token1(),
+        balance1_before - quote.get_output_amount()
+    );
+}
+
+#[rstest]
+#[case::unchanged_price_zero_for_one("1", true)]
+#[case::unchanged_price_one_for_zero("1", false)]
+#[case::mid_range_zero_for_one("1000007919", true)]
+#[case::mid_range_one_for_zero("1000007919", false)]
+fn test_simulate_replay_charges_unconsumed_input_as_fee(
+    mut low_fee_pool_profiler: PoolProfiler,
+    #[case] amount: &str,
+    #[case] zero_for_one: bool,
+    #[values(0, 68)] fee_protocol: u8,
+) {
+    // Replaying a swap to its recorded final price must reproduce the forward fee state, where
+    // an exact-input step that runs out before its target charges all remaining input as fee.
+    // Liquidity above 2^96 keeps one wei of input from moving the price, leaving that remainder.
+    // The position ending at the starting tick makes a zero-for-one swap cross it before any
+    // input is charged.
+    low_fee_pool_profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            PoolTick::get_min_tick(10),
+            PoolTick::get_max_tick(10),
+            10u128.pow(30),
+        )
+        .unwrap();
+    low_fee_pool_profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            -10,
+            0,
+            10u128.pow(30),
+        )
+        .unwrap();
+    low_fee_pool_profiler.state.fee_protocol = fee_protocol;
+    let amount = I256::from_str(amount).unwrap();
+
+    let far_limit = if zero_for_one {
+        MIN_SQRT_RATIO + U160::from(1)
+    } else {
+        MAX_SQRT_RATIO - U160::from(1)
+    };
+
+    let forward = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, zero_for_one, far_limit, false)
+        .unwrap();
+    let replay = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, zero_for_one, forward.sqrt_price_after_x96, true)
+        .unwrap();
+
+    assert_eq!(replay.amount0, forward.amount0);
+    assert_eq!(replay.amount1, forward.amount1);
+    assert_eq!(replay.sqrt_price_after_x96, forward.sqrt_price_after_x96);
+    assert_eq!(replay.tick_after, forward.tick_after);
+    assert_eq!(replay.liquidity_after, forward.liquidity_after);
+    assert_eq!(
+        replay.fee_growth_global_after,
+        forward.fee_growth_global_after
+    );
+    assert_eq!(replay.lp_fee, forward.lp_fee);
+    assert_eq!(replay.protocol_fee, forward.protocol_fee);
+    assert_eq!(replay.crossed_ticks.len(), forward.crossed_ticks.len());
 }
 
 #[rstest]

@@ -262,25 +262,27 @@ impl TryFrom<&Pool> for CurrencyPair {
     type Error = CorrectnessError;
 
     fn try_from(p: &Pool) -> Result<Self, Self::Error> {
-        let size_precision = p.token0.decimals.min(FIXED_PRECISION);
-        let price_precision = p.token1.decimals.min(FIXED_PRECISION);
+        let base_token = p.get_base_token();
+        let quote_token = p.get_quote_token();
+        let size_precision = base_token.decimals.min(FIXED_PRECISION);
+        let price_precision = quote_token.decimals.min(FIXED_PRECISION);
 
         let price_increment =
             Price::from_mantissa_exponent(1, -price_precision.cast_signed(), price_precision);
         let size_increment =
             Quantity::from_mantissa_exponent(1, -size_precision.cast_signed(), size_precision);
         let base_currency = Currency::new_checked(
-            p.token0.symbol.as_str(),
+            base_token.symbol.as_str(),
             size_precision,
             0,
-            p.token0.name.as_str(),
+            base_token.name.as_str(),
             CurrencyType::Crypto,
         )?;
         let quote_currency = Currency::new_checked(
-            p.token1.symbol.as_str(),
+            quote_token.symbol.as_str(),
             price_precision,
             0,
-            p.token1.name.as_str(),
+            quote_token.name.as_str(),
             CurrencyType::Crypto,
         )?;
         let pair = Self::builder()
@@ -330,7 +332,7 @@ mod tests {
     use crate::{
         defi::{SharedPool, stubs::rain_pool},
         enums::CurrencyType,
-        types::{currency::Currency, fixed::FIXED_PRECISION},
+        types::{Price, Quantity, currency::Currency, fixed::FIXED_PRECISION},
     };
 
     #[rstest]
@@ -464,6 +466,31 @@ mod tests {
         assert_eq!(pair.size_increment.precision, expected_size_precision);
         assert_eq!(pair.ts_event, expected_ts_event);
         assert_eq!(pair.ts_init, expected_ts_init);
+    }
+
+    #[rstest]
+    fn test_pool_to_currency_pair_orients_inverted_pool_by_token_priority(rain_pool: SharedPool) {
+        let mut pool = (*rain_pool).clone();
+        pool.token0.symbol = "USDC".to_string();
+        pool.token0.name = "USD Coin".to_string();
+        pool.token0.decimals = 6;
+        pool.token1.symbol = "WETH".to_string();
+        pool.token1.name = "Wrapped Ether".to_string();
+        pool.token1.decimals = 8;
+        assert!(pool.is_base_quote_inverted());
+
+        let pair = CurrencyPair::from(pool);
+
+        assert_eq!(pair.base_currency.code, "WETH");
+        assert_eq!(pair.base_currency.name, "Wrapped Ether");
+        assert_eq!(pair.base_currency.precision, 8);
+        assert_eq!(pair.quote_currency.code, "USDC");
+        assert_eq!(pair.quote_currency.name, "USD Coin");
+        assert_eq!(pair.quote_currency.precision, 6);
+        assert_eq!(pair.size_precision, 8);
+        assert_eq!(pair.price_precision, 6);
+        assert_eq!(pair.size_increment, Quantity::from("0.00000001"));
+        assert_eq!(pair.price_increment, Price::from("0.000001"));
     }
 
     #[rstest]

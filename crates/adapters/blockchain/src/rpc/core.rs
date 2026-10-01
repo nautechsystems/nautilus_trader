@@ -468,7 +468,8 @@ impl CoreBlockchainRpcClient {
                                                 json
                                             ) {
                                                 Ok(block_response) => {
-                                                    let block = block_response.params.result;
+                                                    let mut block = block_response.params.result;
+                                                    block.set_chain(self.chain.name);
                                                     Ok(BlockchainMessage::Block(block))
                                                 }
                                                 Err(e) => Err(
@@ -679,7 +680,7 @@ impl CoreBlockchainRpcClient {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::address;
-    use nautilus_model::defi::{Chain, DexType};
+    use nautilus_model::defi::{Blockchain, Chain, DexType};
     use rstest::rstest;
 
     use super::*;
@@ -799,5 +800,55 @@ mod tests {
             .expect_err("unsubscribe ack should be skipped");
 
         assert!(matches!(error, BlockchainRpcClientError::NoMessageReceived));
+    }
+
+    #[tokio::test]
+    async fn next_rpc_message_sets_client_chain_on_new_block() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(8453)
+                .expect("Base chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        client
+            .subscription_event_types
+            .insert("0xblocks".to_string(), RpcEventType::NewBlock);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "eth_subscription",
+                "params": {
+                    "subscription": "0xblocks",
+                    "result": {
+                        "hash": "0xabc",
+                        "number": "0x10",
+                        "parentHash": "0xdef",
+                        "miner": "0x0000000000000000000000000000000000000001",
+                        "gasLimit": "0x1c9c380",
+                        "gasUsed": "0x5208",
+                        "timestamp": "0x6553f100"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .expect("block notification should enqueue");
+
+        let message = client
+            .next_rpc_message()
+            .await
+            .expect("block notification should parse");
+
+        let BlockchainMessage::Block(block) = message else {
+            panic!("expected block message");
+        };
+
+        assert_eq!(block.chain(), Blockchain::Base);
+        assert_eq!(block.number, 16);
+        assert_eq!(block.hash, "0xabc");
     }
 }

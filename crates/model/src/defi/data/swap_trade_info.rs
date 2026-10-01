@@ -83,7 +83,7 @@ impl SwapTradeInfo {
     /// before to after the swap.
     ///
     /// # Returns
-    /// Price impact in basis points (10000 = 100%)
+    /// Price impact in basis points (10000 = 100%), saturating at `u32::MAX`
     ///
     /// # Errors
     ///
@@ -95,7 +95,7 @@ impl SwapTradeInfo {
             let price_impact =
                 (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
 
-            Ok(price_impact.round().to_u32().unwrap_or(0))
+            Ok(price_impact.round().to_u32().unwrap_or(u32::MAX))
         } else {
             anyhow::bail!("Cannot calculate price impact, the spot price before is not set");
         }
@@ -108,7 +108,7 @@ impl SwapTradeInfo {
     /// cost to the trader.
     ///
     /// # Returns
-    /// Total slippage in basis points (10000 = 100%)
+    /// Total slippage in basis points (10000 = 100%), saturating at `u32::MAX`
     ///
     /// # Errors
     ///
@@ -120,7 +120,7 @@ impl SwapTradeInfo {
             let slippage =
                 (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
 
-            Ok(slippage.round().to_u32().unwrap_or(0))
+            Ok(slippage.round().to_u32().unwrap_or(u32::MAX))
         } else {
             anyhow::bail!("Cannot calculate slippage, the spot price before is not set")
         }
@@ -165,9 +165,8 @@ impl PriceMetric {
 ///
 /// # Precision Handling
 ///
-/// For tokens with more than 16 decimals, quantities and prices are automatically
-/// scaled down to `MAX_FLOAT_PRECISION` (16) to ensure safe f64 conversion while
-/// maintaining reasonable precision for practical trading purposes.
+/// Quantities keep each token's decimals and return an error when those exceed the
+/// supported quantity precision. Prices always use `FIXED_PRECISION`.
 #[derive(Debug)]
 pub struct SwapTradeInfoCalculator<'a> {
     /// Reference to token0 from the pool.
@@ -502,6 +501,18 @@ mod tests {
         swap_trade_info: SwapTradeInfo,
     ) {
         assert_eq!(swap_trade_info.get_slippage_bps().unwrap(), 20_000);
+    }
+
+    #[rstest]
+    fn test_get_price_impact_and_slippage_bps_saturate_beyond_u32(
+        mut swap_trade_info: SwapTradeInfo,
+    ) {
+        let one = Price::from_raw(10_i128.pow(u32::from(FIXED_PRECISION)), FIXED_PRECISION);
+        swap_trade_info.spot_price = one;
+        swap_trade_info.execution_price = one;
+
+        assert_eq!(swap_trade_info.get_price_impact_bps().unwrap(), u32::MAX);
+        assert_eq!(swap_trade_info.get_slippage_bps().unwrap(), u32::MAX);
     }
 
     #[rstest]
