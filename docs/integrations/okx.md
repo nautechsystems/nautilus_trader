@@ -1390,6 +1390,36 @@ OKX links to the order through `closeOrderAlgo`. Without a linked position, the 
 quantity and the adapter logs a warning. Reconciliation does not load an external order with zero
 quantity.
 
+### Unacknowledged submissions
+
+OKX defines `50004` and `51149` as [unknown request outcomes](https://my.okx.com/docs-v5/en/#error-code).
+The adapter leaves these submissions unresolved, but the default execution policy can still resolve
+them locally when reconciliation checks exhaust. OKX does not enable submission retention automatically.
+
+To retain unacknowledged submissions, including those with no response, select the existing engine
+policy when constructing the node:
+
+```rust
+use nautilus_live::{
+    config::LiveExecutionEngineConfig,
+    execution::submission::SubmissionRecoveryPolicy,
+};
+
+let exec_engine = LiveExecutionEngineConfig {
+    submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+    ..Default::default()
+};
+```
+
+This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded;
+exhaustion publishes `SubmissionRecoveryExhausted` once and preserves the submission identity for
+later authoritative evidence without resubmitting the order. See
+[submission recovery](../concepts/execution/reconciliation.md#submission-recovery)
+for confirmation and query-budget rules. Retained submissions still unresolved at the node's
+`delay_post_stop` boundary produce an [incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown)
+after teardown. The policy does not change timeout resolution for commands on already accepted
+orders, provide crash-durable recovery, or prove that positions are flat.
+
 ## Configuration
 
 ### Data client

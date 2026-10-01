@@ -377,6 +377,12 @@ budget until acknowledgement. Exhausted unacknowledged submissions remain unreso
 automatic per-order recovery queries stopped. Clients can also require this protection independently
 of the configured policy. Polymarket enables this protection automatically.
 
+Retained submissions also affect the [node shutdown result](../live.md#submission-recovery-at-shutdown).
+Rust `LiveNode::stop` and `run`, and hosted runs, report unresolved client order IDs after teardown
+when submission recovery is incomplete at the `delay_post_stop` boundary. This includes Polymarket
+without an explicit opt-in. Exhaustion diagnostics and successful teardown do not establish a venue
+outcome or position flatness.
+
 #### Exhaustion diagnostic
 
 With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
