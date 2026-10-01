@@ -37,7 +37,10 @@ use super::{
     context::OrderContextRegistry,
     order_fill_tracker::{BufferedFill, OrderFillTrackerMap},
     pending::{PendingCancelTracker, PendingSubmitTracker},
-    reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
+    reconciliation::{
+        cap_order_report_filled_qty, non_reopened_voided_before_leg,
+        validate_client_bound_order_quantity,
+    },
     reports::get_pusd_currency,
     settlement::SettlementRegistry,
     submitter::{
@@ -915,6 +918,11 @@ fn emit_drained_activity(
     if context.time_in_force == TimeInForce::Fok || has_filled {
         if let Some(quantity) = fill_tracker.check_terminal_quantity_normalization(&venue_order_id)
         {
+            // The tracker's quantity carries earlier venue orders' non-reopened voids, so take
+            // them out for the update to close the order at its filled quantity
+            let quantity = non_reopened_voided_before_leg(order, venue_order_id)
+                .and_then(|voided| quantity.checked_sub(voided))
+                .unwrap_or(quantity);
             emit_terminal_quantity_update(order, venue_order_id, quantity, emitter, clock);
         }
     } else if context.time_in_force == TimeInForce::Ioc
@@ -1199,6 +1207,7 @@ mod tests {
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
+        events::order::spec::OrderFillVoidedSpec,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
@@ -1452,6 +1461,138 @@ mod tests {
 
         assert!(promoted);
         assert_eq!(bumped, Some(Quantity::from("120.000058")));
+    }
+
+    // The first venue order filled 3 and had 1 more voided without reopening, so a modify to 12
+    // leaves 8 to the replacement. When the replacement ends with only dust unfilled, the terminal
+    // update closes the order at its filled quantity, without the voided 1.
+    #[rstest]
+    fn test_confirm_modify_replacement_dust_terminal_after_prior_void_closes_order() {
+        let instrument = test_instrument();
+        let account_id = AccountId::from("POLY-001");
+        let old_id = VenueOrderId::from("V-VOID-OLD");
+        let new_id = VenueOrderId::from("V-VOID-NEW");
+        let mut order = test_limit_order_with(
+            "O-VOID-DUST",
+            instrument.id(),
+            Quantity::from("10.000000"),
+            Price::new(0.50, 4),
+            TimeInForce::Gtc,
+        );
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        order.apply(submitted).unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+        order.apply(accepted).unwrap();
+        let mut last_fill = None;
+
+        for (trade_id, quantity) in [("trade-kept", "3.000000"), ("trade-failed", "1.000000")] {
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from(trade_id)),
+                None,
+                Some(Price::new(0.50, 4)),
+                Some(Quantity::from(quantity)),
+                None,
+                None,
+                None,
+                Some(account_id),
+            );
+            order.apply(filled.clone()).unwrap();
+            last_fill = Some(filled);
+        }
+        let Some(OrderEventAny::Filled(fill)) = last_fill else {
+            panic!("expected the failed trade's fill");
+        };
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(fill.last_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .maybe_position_id(fill.position_id)
+            .build();
+        order.apply(OrderEventAny::FillVoided(voided)).unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from("3.000000"));
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from("1.000000"));
+
+        let registry = OrderContextRegistry::default();
+        registry.register_context(old_id, OrderContext::from(&order));
+        registry.mark_accepted(old_id);
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(order.client_order_id(), old_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            order.client_order_id(),
+            new_id,
+            Quantity::from("12.000000"),
+            Quantity::from("8.000000"),
+            Price::from("0.5000"),
+        ));
+        let state = Arc::new(Mutex::new(state));
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        tracker.buffer_fill_for_test(
+            new_id,
+            test_fill_report(
+                instrument.id(),
+                new_id,
+                Quantity::from("7.999990"),
+                UnixNanos::from(900u64),
+            ),
+        );
+        tracker.buffer_report_for_test(
+            new_id,
+            OrderStatusReport::new(
+                account_id,
+                instrument.id(),
+                Some(order.client_order_id()),
+                new_id,
+                OrderSide::Buy.into(),
+                OrderType::Limit,
+                TimeInForce::Gtc,
+                OrderStatus::Filled,
+                Quantity::from("8.000000"),
+                Quantity::from("7.999990"),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                None,
+            ),
+        );
+        let settlement = SettlementRegistry::new(account_id);
+        let (emitter, mut receiver) = test_emitter();
+
+        assert!(confirm_modify_replacement(
+            &order,
+            new_id,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &tracker,
+            &settlement,
+            &registry,
+            &state,
+        ));
+
+        let mut last_quantity = None;
+
+        while let Ok(event) = receiver.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                if let OrderEventAny::Updated(updated) = &event {
+                    last_quantity = Some(updated.quantity);
+                }
+                order.apply(event).unwrap();
+            }
+        }
+        assert_eq!(last_quantity, Some(Quantity::from("10.999990")));
+        assert_eq!(order.filled_qty(), Quantity::from("10.999990"));
+        assert_eq!(order.status(), OrderStatus::Filled);
     }
 
     #[rstest]
