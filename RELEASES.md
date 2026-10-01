@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
+- Added a startup reconciliation warning for fills dropped without an order report or cached order
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Rust `new_generic_spread_id` and `parse_generic_spread_id_legs` identifier functions (#5041), thanks @faysou
@@ -419,6 +420,7 @@ Released on TBD (UTC).
 - Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Documented the adapter config field layout convention in the developer guide
 - Documented declined fill notification in the execution concepts guide
+- Documented the order evidence adapters must give mass-status fill reports
 - Documented own order book membership for emulated, quote-quantity, and external client orders
 - Documented trader-scoped Postgres cache and the `assign-account` migration (#5070), thanks @utx0
 - Documented shared order book recovery ownership and Lighter recovery limits

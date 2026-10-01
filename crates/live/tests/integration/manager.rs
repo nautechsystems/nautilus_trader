@@ -12838,9 +12838,12 @@ async fn test_orphan_fill_group_validates_when_later_fill_has_position_id() {
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
     assert!(cache.positions(None, None, None, None, None).is_empty());
 
-    assert!(
-        messages.iter().any(|message| message
-            == "Cannot materialize orphan fills for venue order V-MIXED-POSITION-001: venue position ID is missing")
+    assert_eq!(
+        messages,
+        vec![
+            "Cannot materialize orphan fills for venue order V-MIXED-POSITION-001: venue position ID is missing"
+                .to_string(),
+        ]
     );
 }
 
@@ -12897,6 +12900,76 @@ async fn test_orphan_fills_for_unknown_instrument_skipped() {
         messages
             .iter()
             .any(|message| message == "1 orders skipped (instrument not in cache)")
+    );
+}
+
+#[tokio::test]
+async fn test_orphan_fills_without_position_id_dropped() {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    let orphan_fill = |venue_order_id: &str, trade_id: &str, ts: u64| {
+        FillReport::new(
+            test_account_id(),
+            instrument_id,
+            VenueOrderId::from(venue_order_id),
+            TradeId::from(trade_id),
+            OrderSide::Buy,
+            Quantity::from("0.50"),
+            Price::from("3000.00"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+            None,
+        )
+    };
+
+    mass_status.add_fill_reports(vec![
+        orphan_fill("V-NETTING-001", "T-NETTING-001", 1_000),
+        orphan_fill("V-NETTING-001", "T-NETTING-002", 2_000),
+        orphan_fill("V-NETTING-002", "T-NETTING-003", 3_000),
+        orphan_fill("V-NETTING-003", "T-NETTING-004", 4_000),
+        orphan_fill("V-NETTING-004", "T-NETTING-005", 5_000),
+        orphan_fill("V-NETTING-005", "T-NETTING-006", 6_000),
+        orphan_fill("V-NETTING-006", "T-NETTING-007", 7_000),
+    ]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    let cache = ctx.cache.borrow();
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+    assert_eq!(
+        messages,
+        vec![
+            "Dropped 7 fill(s) in 6 fill group(s) without an order report or cached order \
+             (V-NETTING-001 (ETHUSDT-PERP.BINANCE), V-NETTING-002 (ETHUSDT-PERP.BINANCE), \
+             V-NETTING-003 (ETHUSDT-PERP.BINANCE), V-NETTING-004 (ETHUSDT-PERP.BINANCE), \
+             V-NETTING-005 (ETHUSDT-PERP.BINANCE))"
+                .to_string(),
+        ]
     );
 }
 

@@ -1048,6 +1048,20 @@ client declares a history bound, as described in
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
 
+##### Mass-status order evidence
+
+Give every fill report order evidence: an order report for its venue order ID in the same mass
+status, or an order the cache already holds. Reconciliation drops a fill group with neither and
+logs a warning. The exception is a group whose fills carry a `venue_position_id`: reconciliation
+builds its order when `generate_missing_orders` is enabled and skips it otherwise. A mass status
+that reports only open orders therefore loses the fills of closed orders missing from the cache,
+such as orders placed outside the node or before a restart without a persisted cache.
+
+When the venue keeps no queryable record of an order, such as a venue with no closed-order history
+or a block-trade or settlement fill, build a `FILLED` order report from its fills. Withhold the
+fills instead when applying them would misstate a position, for example when they miss balance
+changes made without a trade.
+
 ##### Mass-status timestamp contract
 
 `ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,

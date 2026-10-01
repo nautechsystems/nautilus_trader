@@ -495,6 +495,10 @@ does not prevent recovery from an explicit position report.
 
 - Infers `OrderFilled` events for missing trade reports.
 - Verifies fill report data consistency with tolerance-based price and commission comparisons.
+- Drops a fill group that has neither an order report nor a cached order, and logs one aggregated
+  warning per mass status for the dropped groups. A group whose fills carry a `venue_position_id`
+  is handled separately: the engine builds a filled order from it when `generate_missing_orders`
+  is enabled, and skips it otherwise.
 
 ### Event ordering
 
