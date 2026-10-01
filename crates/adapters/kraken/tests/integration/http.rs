@@ -4790,6 +4790,45 @@ async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, Inst
     (client, instrument_id)
 }
 
+/// A FIFO average must be marked so reconciliation never compares it with the cached one.
+///
+/// Buying 1 at 50,000 then 1 at 60,000 and closing 1 leaves Kraken reporting the surviving
+/// 60,000 lot, while a netting position keeps the blended 55,000. Both are right under their own
+/// convention, so the report has to say the average opens a position rather than matches one.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_entry_average_is_marked_opening_only() {
+    use nautilus_model::{
+        enums::{AccountType, AvgPxReconciliation},
+        identifiers::AccountId,
+    };
+
+    // The 50,000 lot is fully closed, so Kraken drops it and reports only the 60,000 one.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT2", "buy", "60000.00", dec!(1.0), dec!(0.0))],
+    ))
+    .await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].avg_px_open, Some(dec!(60000)));
+    assert_eq!(
+        reports[0].avg_px_open_reconciliation,
+        AvgPxReconciliation::OpeningOnly,
+        "a FIFO average must not be compared with the cached netting average"
+    );
+}
+
 /// Margin position reports must carry the entry average derived from `cost` and `vol`.
 ///
 /// Reconciliation opens a reported position at its entry average, and refuses to invent one, so a

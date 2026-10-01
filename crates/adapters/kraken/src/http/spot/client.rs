@@ -37,8 +37,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
     enums::{
-        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType,
-        PositionSide, TimeInForce, TriggerType,
+        AccountType, AvgPxReconciliation, BookType, CurrencyType, MarketStatusAction, OrderSide,
+        OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -2593,7 +2593,11 @@ impl KrakenSpotHttpClient {
                 None,
                 None,
                 avg_px_open,
-            );
+            )
+            // Kraken averages the lots that remain open under FIFO, so after a partial close it
+            // describes the surviving lots rather than the opening fills. It can open a position
+            // from flat, but must not be compared with a netting average.
+            .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly);
             reports.push(report);
         }
 
