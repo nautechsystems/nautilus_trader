@@ -38,6 +38,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        consts::USDC_DECIMALS,
         enums::{
             PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType,
             PolymarketTradeStatus,
@@ -369,6 +370,7 @@ fn admit_taker_leg(
         let last_px = validate_price(
             trade,
             trade.taker_price,
+            trade.taker_size,
             instrument,
             &format!("taker trade {} price", trade.id),
         )?;
@@ -461,6 +463,7 @@ fn admit_maker_leg(
         let last_px = validate_price(
             trade,
             maker_order.price,
+            maker_order.matched_amount,
             instrument,
             &format!("maker order {} price", maker_order.order_id),
         )?;
@@ -494,9 +497,12 @@ fn checked_trade_id(value: &str, evidence: &str) -> anyhow::Result<TradeId> {
 fn validate_price(
     trade: &NormalizedTrade<'_>,
     value: Decimal,
+    size: Decimal,
     instrument: &InstrumentAny,
     field: &str,
 ) -> anyhow::Result<Price> {
+    let value = snap_settlement_price(value, size, instrument.price_precision());
+
     if trade.from_rest {
         return validate_historical_price_evidence(value, field);
     }
@@ -504,6 +510,19 @@ fn validate_price(
     validate_price_evidence(value, instrument.price_precision(), field)?;
     Price::from_decimal_dp(value, instrument.price_precision())
         .with_context(|| format!("{field} {value} overflow"))
+}
+
+// Venue fill prices are ratios of 6-decimal settlement amounts, e.g. 0.42 as 0.4200001023529231
+fn snap_settlement_price(value: Decimal, size: Decimal, precision: u8) -> Decimal {
+    let snapped = value.round_dp(u32::from(precision));
+    if snapped == value || snapped <= Decimal::ZERO || snapped >= Decimal::ONE {
+        return value;
+    }
+
+    match (value - snapped).checked_mul(size) {
+        Some(diff) if diff.abs() <= Decimal::new(1, USDC_DECIMALS) => snapped,
+        _ => value,
+    }
 }
 
 fn validate_historical_price_evidence(value: Decimal, field: &str) -> anyhow::Result<Price> {
