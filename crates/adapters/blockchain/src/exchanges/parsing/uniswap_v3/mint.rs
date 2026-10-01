@@ -169,6 +169,8 @@ pub fn parse_mint_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Mint
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use alloy::primitives::U256;
     use rstest::*;
     use serde_json::json;
@@ -226,7 +228,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_mint_event_hypersync(hypersync_log: HypersyncLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_mint_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
@@ -250,7 +252,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_mint_event_rpc(rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_mint_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
@@ -274,8 +276,8 @@ mod tests {
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event_hypersync = parse_mint_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
+        let event_hypersync = parse_mint_event_hypersync(Arc::clone(&dex), &hypersync_log).unwrap();
         let event_rpc = parse_mint_event_rpc(dex, &rpc_log).unwrap();
 
         // Both parsers should produce identical results
