@@ -1767,12 +1767,11 @@ mod tests {
     use rust_decimal::{Decimal, prelude::ToPrimitive};
     use rust_decimal_macros::dec;
 
+    #[cfg(feature = "defi")]
+    use crate::enums::CurrencyType;
     use crate::{
         data::InstrumentClose,
-        enums::{
-            CurrencyType, InstrumentCloseType, OrderSide, OrderType, PositionAdjustmentType,
-            PositionSide,
-        },
+        enums::{InstrumentCloseType, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
         events::{
             OrderEventAny, OrderFillVoided, OrderFilled, PositionAdjusted, PositionSnapshot,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
