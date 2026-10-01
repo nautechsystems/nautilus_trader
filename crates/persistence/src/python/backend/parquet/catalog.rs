@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 #![expect(
-    clippy::match_same_arms,
     clippy::too_many_arguments,
     reason = "PyO3 catalog wrapper mirrors Python API dispatch surface"
 )]
@@ -57,6 +56,7 @@ use crate::{
         traits::{CatalogQuery, CatalogReader, CatalogRecordQuery, CatalogWriter},
         types::{HasCatalogDataType, parquet_catalog_data_type_path_prefixes},
     },
+    config::CatalogCompression,
     python::backend::{
         PyCatalogDataType, arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
         arrow_record_batches_from_pybytes, catalog_metadata_to_pydict, catalog_record_type_from_py,
@@ -140,12 +140,13 @@ impl PyParquetDataCatalog {
     /// - `base_path`: The base path for the catalog
     /// - `storage_options`: Optional storage configuration for cloud backends
     /// - `batch_size`: Optional batch size for processing (default: 10,000)
-    /// - `compression`: Optional compression type (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 3=LZO, 4=BROTLI, 5=LZ4, 6=ZSTD)
+    /// - `compression`: Optional compression code (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 4=BROTLI, 5=`LZ4_RAW`, 6=ZSTD)
     /// - `max_row_group_size`: Optional maximum row group size (default: 131,072)
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying [`ParquetDataCatalog`] cannot be created.
+    /// Returns an error if `compression` is not one of the listed codes, or the underlying
+    /// [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     pub fn py_new(
@@ -155,27 +156,10 @@ impl PyParquetDataCatalog {
         compression: Option<u8>,
         max_row_group_size: Option<usize>,
     ) -> PyResult<Self> {
-        let compression = compression.map(|c| match c {
-            0 => parquet::basic::Compression::UNCOMPRESSED,
-            1 => parquet::basic::Compression::SNAPPY,
-            // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
-            // since we can't pass the level parameter through PyO3
-            2 => {
-                let level = parquet::basic::GzipLevel::default();
-                parquet::basic::Compression::GZIP(level)
-            }
-            3 => parquet::basic::Compression::LZO,
-            4 => {
-                let level = parquet::basic::BrotliLevel::default();
-                parquet::basic::Compression::BROTLI(level)
-            }
-            5 => parquet::basic::Compression::LZ4,
-            6 => {
-                let level = parquet::basic::ZstdLevel::default();
-                parquet::basic::Compression::ZSTD(level)
-            }
-            _ => parquet::basic::Compression::SNAPPY,
-        });
+        let compression = compression
+            .map(catalog_compression_from_code)
+            .transpose()?
+            .map(parquet::basic::Compression::from);
 
         // Convert HashMap to AHashMap for internal use
         let storage_options = storage_options.map(|m| m.into_iter().collect());
@@ -1927,5 +1911,43 @@ impl PyParquetDataCatalog {
         }
 
         Ok(python_objects)
+    }
+}
+
+// Codes follow the Parquet format codec numbering, except that 5 writes LZ4_RAW rather than the
+// deprecated Hadoop-framed LZ4; LZO (3) is excluded because the writer cannot produce it
+fn catalog_compression_from_code(code: u8) -> PyResult<CatalogCompression> {
+    match code {
+        0 => Ok(CatalogCompression::Uncompressed),
+        1 => Ok(CatalogCompression::Snappy),
+        2 => Ok(CatalogCompression::Gzip),
+        4 => Ok(CatalogCompression::Brotli),
+        5 => Ok(CatalogCompression::Lz4),
+        6 => Ok(CatalogCompression::Zstd),
+        _ => Err(to_pyvalue_err(format!(
+            "Invalid compression code {code}, expected one of 0 (UNCOMPRESSED), 1 (SNAPPY), \
+             2 (GZIP), 4 (BROTLI), 5 (LZ4_RAW), or 6 (ZSTD)"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::uncompressed(0, CatalogCompression::Uncompressed)]
+    #[case::snappy(1, CatalogCompression::Snappy)]
+    #[case::gzip(2, CatalogCompression::Gzip)]
+    #[case::brotli(4, CatalogCompression::Brotli)]
+    #[case::lz4(5, CatalogCompression::Lz4)]
+    #[case::zstd(6, CatalogCompression::Zstd)]
+    fn catalog_compression_from_code_maps_parquet_codes(
+        #[case] code: u8,
+        #[case] expected: CatalogCompression,
+    ) {
+        assert_eq!(catalog_compression_from_code(code).unwrap(), expected);
     }
 }

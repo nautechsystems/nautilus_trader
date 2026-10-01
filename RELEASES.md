@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added `timezone` to `RotationConfig.scheduled_dates`, defaulting to UTC (#5115), thanks @faysou
 - Added shared-table `record/` and `instrument/` catalog paths for external catalog backends (#5115), thanks @faysou
 - Added Parquet catalog migration through `nautilus catalog migrate-parquet` (#4959), thanks @faysou
+- Added typed `batch_size`, `compression`, and `max_row_group_size` to `DataCatalogConfig` (#5166), thanks @faysou
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
 - Added a startup reconciliation warning for fills dropped without an order report or cached order
@@ -77,6 +78,7 @@ Released on TBD (UTC).
 - Replaced Rust `flush_streaming` with `close_streaming_writer` and `reopen_streaming_writer` (#5115), thanks @faysou
 - Replaced `StreamingConfig` `catalog_path` and `fs_protocol` with `writer_path` and `catalog` (#5115), thanks @faysou
 - Replaced `StreamingConfig` promotion `params` keys with typed promotion fields (#5115), thanks @faysou
+- Replaced Parquet `DataCatalogConfig.params` settings with typed fields; `params` keys now fail (#5166), thanks @faysou
 - Replaced `StreamingWriter` `backend` and `storage_options` with an optional `catalog` (#5115), thanks @faysou
 - Replaced `convert_stream_to_data` `subdirectory` with an `Environment` argument (#5115), thanks @faysou
 - Replaced Rust `ParquetDataCatalog::query_typed_data` and `query_typed` with `query`, which now returns `Vec<T>`
@@ -110,6 +112,9 @@ Released on TBD (UTC).
 - Changed `StreamingConfig.writer_backend` to follow the catalog backend, else `Feather` (#5115), thanks @faysou
 - Changed streaming to validate `StreamingConfig` and reject zero rotation sizes or intervals (#5115), thanks @faysou
 - Changed Rust run manifests and Feather session sources to take `Environment` and `RunStatus` (#5115), thanks @faysou
+- Changed `ParquetDataCatalog` to reject LZO and unknown `compression` codes, not use Snappy (#5166), thanks @faysou
+- Changed catalog `lz4` compression and code `5` to write `LZ4_RAW`, with `lz4_raw` as an alias (#5166), thanks @faysou
+- Changed Rust `DataCatalogConfig` builder to return `ConfigResult` and reject zero counts (#5166), thanks @faysou
 - Changed `StreamingConfig` type selectors and `record_filters` keys to take enums only (#5115), thanks @faysou
 - Changed `ParquetDataCatalog.query_custom_data` to take a `NautilusDataType` (#5115), thanks @faysou
 - Changed `ParquetDataCatalog.list_data_types` to return type enums in place of names (#5115), thanks @faysou

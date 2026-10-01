@@ -201,6 +201,73 @@ def test_engine_config_accepts_streaming_and_catalog_configs(
     assert config.catalogs == [catalog]
 
 
+def test_data_catalog_config_exposes_constructor_values() -> None:
+    """
+    Test data catalog config keeps every constructor value and parses the codec name.
+    """
+    config = DataCatalogConfig(
+        path="bucket/catalog",
+        fs_protocol="s3",
+        catalog_backend=CatalogBackend.External("DuckLake"),
+        params={"snapshot_id": 7},
+        name="history",
+        read_only=True,
+        fs_rust_storage_options={"region": "eu-west-1"},
+        batch_size=512,
+        compression="ZSTD",
+        max_row_group_size=2048,
+    )
+
+    assert config.path == "bucket/catalog"
+    assert config.fs_protocol == "s3"
+    assert config.catalog_backend == CatalogBackend.External("DuckLake")
+    assert config.params == {"snapshot_id": 7}
+    assert config.name == "history"
+    assert config.read_only is True
+    assert config.fs_rust_storage_option_keys == ["region"]
+    assert config.batch_size == 512
+    assert config.compression == "zstd"
+    assert config.max_row_group_size == 2048
+
+
+def test_data_catalog_config_defaults_typed_settings_to_none() -> None:
+    """
+    Test data catalog config leaves the typed settings to the backend defaults.
+    """
+    config = DataCatalogConfig(path="/data/catalog")
+
+    assert config.batch_size is None
+    assert config.compression is None
+    assert config.max_row_group_size is None
+
+
+@pytest.mark.parametrize("compression", ["lzo", "zip"])
+def test_data_catalog_config_rejects_unsupported_compression(compression: str) -> None:
+    """
+    Test data catalog config rejects LZO and unknown codec names at construction.
+    """
+    with pytest.raises(ValueError, match="unknown compression") as exc_info:
+        DataCatalogConfig(path="/data/catalog", compression=compression)
+
+    assert str(exc_info.value) == (
+        f"unknown compression `{compression}`; "
+        "valid values: uncompressed, snappy, gzip, brotli, lz4, zstd"
+    )
+
+
+@pytest.mark.parametrize("field", ["batch_size", "max_row_group_size"])
+def test_data_catalog_config_rejects_zero_count(field: str) -> None:
+    """
+    Test data catalog config rejects a zero row count at construction.
+    """
+    with pytest.raises(ValueError, match=f"invalid {field}") as exc_info:
+        DataCatalogConfig(path="/data/catalog", **{field: 0})
+
+    assert str(exc_info.value) == (
+        f"invalid {field}: must be a positive number of rows; omit the field for the backend default"
+    )
+
+
 def test_streaming_config_defaults_to_feather_without_catalog() -> None:
     """
     Test streaming config keeps only Feather files when no catalog is configured.

@@ -63,6 +63,40 @@ azure_catalog = ParquetDataCatalog(
 )
 ```
 
+## Compression and row groups
+
+`DataCatalogConfig` sets how a configured catalog reads and writes data files:
+
+| Field                | Controls                                    | Default          |
+| -------------------- | ------------------------------------------- | ---------------- |
+| `batch_size`         | Rows per batch the catalog reads and writes | 10,000           |
+| `compression`        | Codec name for written data files           | `zstd` (level 1) |
+| `max_row_group_size` | Maximum rows per written row group          | 131,072          |
+
+```python
+from nautilus_trader.config import DataCatalogConfig
+
+
+catalog = DataCatalogConfig(path="./catalog", compression="snappy", max_row_group_size=65_536)
+```
+
+`compression` accepts `uncompressed`, `snappy`, `gzip`, `brotli`, `lz4`, `lz4_raw`, or `zstd`,
+ignoring case. Construction fails for any other name and for a zero `batch_size` or
+`max_row_group_size`. `params` carries only options for an external catalog backend, and the
+Parquet catalog rejects any `params` key.
+
+`ParquetDataCatalog` takes the same settings as `batch_size`, `max_row_group_size`, and a numeric
+`compression` code: `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` (Brotli), `5` (LZ4), or `6`
+(zstd).
+
+:::info
+`lz4` and `lz4_raw` name the same codec: the catalog writes Parquet `LZ4_RAW`. The Parquet format
+deprecates the older Hadoop-framed `LZ4` codec, so the catalog never writes it, and compression code
+`5` writes `LZ4_RAW` even though Parquet numbers `LZ4_RAW` as `7`. Files written earlier with the
+Hadoop-framed codec remain readable. LZO is not supported because the Parquet writer cannot produce
+it, so the name `lzo` and code `3` fail at construction.
+:::
+
 ## Writing data
 
 Use the writer for the concrete data type. Instrument definitions and custom data have separate

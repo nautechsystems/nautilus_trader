@@ -470,6 +470,14 @@ the time of day in integer nanoseconds:
 | `rotation_time`, `rotation_timezone`                     | `schedule_ns` and `timezone` of `RotationConfig.scheduled_dates`       |
 | `rotation_mode=NO_ROTATION`                              | `rotation_config=RotationConfig.no_rotation()`, or omit it             |
 
+`DataCatalogConfig` takes `batch_size`, `max_row_group_size`, and `compression` as typed fields;
+`compression` is a codec name: `uncompressed`, `snappy`, `gzip`, `brotli`, `lz4`, `lz4_raw`, or
+`zstd`. Set these as fields, not `params` keys: `params` carries only options for an external
+catalog backend, and the Parquet catalog rejects any `params` key. `ParquetDataCatalog(compression=...)`
+takes the Parquet codec codes `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` (Brotli), `5` (LZ4),
+and `6` (zstd), and rejects LZO (`3`) and unknown codes. Both `lz4` and code `5` write Parquet
+`LZ4_RAW`; see [compression and row groups](docs/concepts/data/catalog.md#compression-and-row-groups).
+
 Custom Rust cache database adapters used with live orders must implement the batch
 `index_order_clients` operation. The default trait implementation rejects non-empty claims.
 

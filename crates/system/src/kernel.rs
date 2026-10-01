@@ -43,8 +43,6 @@ use std::{
     time::Duration,
 };
 
-#[cfg(feature = "streaming")]
-use anyhow::Context;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
@@ -440,9 +438,9 @@ impl NautilusKernel {
                     &catalog_config.connect_config(),
                     &catalog_factories,
                 )
-                .with_context(|| {
-                    format!(
-                        "Failed to create data catalog from '{}'",
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to create data catalog from '{}': {e:#}",
                         catalog_config.path()
                     )
                 })?;
@@ -1334,6 +1332,7 @@ mod streaming_tests {
         messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
         msgbus::{self, MStr, ShareableMessageHandler},
     };
+    use nautilus_core::Params;
     use nautilus_model::{
         data::{CustomData, DataType, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
@@ -1424,6 +1423,34 @@ mod streaming_tests {
         assert_eq!(kernel.data_engine.borrow().request_count(), 1);
         assert_eq!(kernel.data_engine.borrow().response_count(), 1);
         kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_configured_catalog_error_names_rejected_param() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().to_string_lossy().into_owned();
+        let mut params = Params::new();
+        params.insert("batch_size".to_string(), serde_json::json!(1024));
+
+        let config = KernelConfig {
+            catalogs: vec![
+                DataCatalogConfig::new(path.clone(), Some("file".to_string()), None)
+                    .with_params(Some(params)),
+            ],
+            ..KernelConfig::default()
+        };
+
+        let error = NautilusKernel::new("CatalogParamTest".to_string(), config)
+            .err()
+            .unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Failed to create data catalog from '{path}': Unknown Parquet catalog param \
+                 'batch_size': this catalog takes no params"
+            )
+        );
     }
 
     #[rstest]

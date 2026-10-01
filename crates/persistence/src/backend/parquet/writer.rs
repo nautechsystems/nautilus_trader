@@ -585,7 +585,10 @@ mod tests {
     };
     use parquet::{
         basic::Compression,
-        file::reader::{FileReader, SerializedFileReader},
+        file::{
+            metadata::RowGroupMetaData,
+            reader::{FileReader, SerializedFileReader},
+        },
     };
     use rstest::rstest;
     use tempfile::TempDir;
@@ -595,6 +598,7 @@ mod tests {
         backend::parquet::io::read_parquet_from_object_store,
         catalog::traits::{CatalogQuery, CatalogReader},
         common::storage::RUN_MANIFEST_FILENAME,
+        config::{CatalogCompression, DataCatalogConfig},
         test_data::RustTestHashMapCustomData,
         writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
     };
@@ -833,19 +837,33 @@ mod tests {
     }
 
     #[rstest]
-    fn parquet_promotion_honors_catalog_params() {
+    fn parquet_promotion_honors_catalog_settings() {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
-        let mut catalog = local_catalog(&directory);
-        let mut params = Params::new();
-        params.insert("compression".to_string(), serde_json::json!(0));
-        catalog.params = Some(params);
+        let catalog = DataCatalogConfig::builder()
+            .path(directory.path().to_string_lossy().to_string())
+            .batch_size(7)
+            .compression(CatalogCompression::Uncompressed)
+            .max_row_group_size(1)
+            .build()
+            .unwrap()
+            .connect_config();
+        let backend =
+            ParquetPromotionBackend::new(&catalog, Arc::new(AtomicBool::new(false))).unwrap();
 
         let config = WriterConnectConfig::new(staging.to_string_lossy(), Some(catalog));
         let mut sink =
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
                 .unwrap();
-        sink.write_data(Data::Quote(sample_quote())).unwrap();
+        let quote = sample_quote();
+        sink.write_data(Data::Quote(quote)).unwrap();
+        sink.write_data(Data::Quote(QuoteTick {
+            ts_event: UnixNanos::from(29),
+            ts_init: UnixNanos::from(31),
+            ..quote
+        }))
+        .unwrap();
+
         sink.close().unwrap();
 
         let files = ParquetDataCatalog::new(directory.path(), None, None, None, None)
@@ -855,11 +873,36 @@ mod tests {
             std::fs::File::open(directory.path().join(&files[0])).unwrap(),
         )
         .unwrap();
+        let metadata = reader.metadata();
 
+        assert_eq!(backend.catalog.batch_size, 7);
         assert_eq!(files.len(), 1);
+        assert_eq!(metadata.num_row_groups(), 2);
+        assert!(
+            metadata
+                .row_groups()
+                .iter()
+                .flat_map(RowGroupMetaData::columns)
+                .all(|column| column.compression() == Compression::UNCOMPRESSED)
+        );
+    }
+
+    #[rstest]
+    fn parquet_writer_rejects_unknown_catalog_param() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let mut catalog = local_catalog(&directory);
+        let mut params = Params::new();
+        params.insert("compression".to_string(), serde_json::json!(0));
+        catalog.params = Some(params);
+
+        let config = WriterConnectConfig::new(staging.to_string_lossy(), Some(catalog));
+        let error = parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+            .unwrap_err();
+
         assert_eq!(
-            reader.metadata().row_group(0).column(0).compression(),
-            Compression::UNCOMPRESSED,
+            error.to_string(),
+            "Unknown Parquet catalog param 'compression': this catalog takes no params"
         );
     }
 

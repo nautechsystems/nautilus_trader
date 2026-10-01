@@ -20,7 +20,7 @@ use std::str::FromStr;
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{
     DurationNanos, UnixNanos, from_pydict,
-    python::{params::params_to_pydict, to_pytype_err, to_pyvalue_err},
+    python::{enums::parse_enum, params::params_to_pydict, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
@@ -37,8 +37,8 @@ use pyo3::{
 };
 
 use crate::config::{
-    CatalogBackendType, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig, RotationConfig, RotationMode,
-    StreamingConfig, StreamingRecordFilterConfig,
+    CatalogBackendType, CatalogCompression, DEFAULT_ROTATION_TIMEZONE, DataCatalogConfig,
+    RotationConfig, RotationMode, StreamingConfig, StreamingRecordFilterConfig,
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -503,7 +503,11 @@ impl StreamingConfig {
 impl DataCatalogConfig {
     /// Configuration for a catalog available to request-time historical data loading.
     #[new]
-    #[pyo3(signature = (path, fs_protocol = None, catalog_backend = None, params = None, name = None, read_only = false, fs_rust_storage_options = None))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the PyO3 constructor mirrors the public Python configuration signature"
+    )]
+    #[pyo3(signature = (path, fs_protocol = None, catalog_backend = None, params = None, name = None, read_only = false, fs_rust_storage_options = None, batch_size = None, compression = None, max_row_group_size = None))]
     fn py_new(
         path: String,
         fs_protocol: Option<String>,
@@ -512,21 +516,35 @@ impl DataCatalogConfig {
         name: Option<String>,
         read_only: bool,
         fs_rust_storage_options: Option<std::collections::HashMap<String, String>>,
+        batch_size: Option<usize>,
+        compression: Option<&str>,
+        max_row_group_size: Option<usize>,
     ) -> pyo3::PyResult<Self> {
         let catalog_backend = catalog_backend.map(|backend| backend.inner());
+        let compression = compression
+            .map(|compression| parse_enum::<CatalogCompression>(compression, "compression"))
+            .transpose()?;
 
         let params = Python::attach(|py| match params {
             Some(params) => from_pydict(py, &params),
             None => Ok(None),
         })?;
 
-        Ok(Self::new(path, fs_protocol, catalog_backend)
-            .with_params(params)
-            .with_name(name)
-            .with_read_only(read_only)
-            .with_storage_options(
+        Self::builder()
+            .path(path)
+            .maybe_name(name)
+            .maybe_fs_protocol(fs_protocol)
+            .maybe_catalog_backend(catalog_backend)
+            .maybe_batch_size(batch_size)
+            .maybe_compression(compression)
+            .maybe_max_row_group_size(max_row_group_size)
+            .maybe_params(params)
+            .maybe_fs_rust_storage_options(
                 fs_rust_storage_options.map(|options| options.into_iter().collect()),
-            ))
+            )
+            .read_only(read_only)
+            .build()
+            .map_err(config_error_to_pyvalue_err)
     }
 
     /// Returns the path to the data catalog.
@@ -562,6 +580,28 @@ impl DataCatalogConfig {
     #[pyo3(name = "catalog_backend")]
     fn py_catalog_backend(&self) -> PyCatalogBackend {
         PyCatalogBackend::new(self.catalog_backend().clone())
+    }
+
+    /// Returns the number of rows per batch the catalog reads and writes.
+    #[getter]
+    #[pyo3(name = "batch_size")]
+    fn py_batch_size(&self) -> Option<usize> {
+        self.batch_size()
+    }
+
+    /// Returns the compression codec of written data files.
+    #[getter]
+    #[pyo3(name = "compression")]
+    fn py_compression(&self) -> Option<String> {
+        self.compression()
+            .map(|compression| compression.to_string())
+    }
+
+    /// Returns the maximum number of rows per written row group.
+    #[getter]
+    #[pyo3(name = "max_row_group_size")]
+    fn py_max_row_group_size(&self) -> Option<usize> {
+        self.max_row_group_size()
     }
 
     /// Returns backend-specific catalog parameters.

@@ -802,6 +802,23 @@ def test_streaming_writer_promotes_into_catalog(tmp_path: Path) -> None:
     assert ParquetDataCatalog(str(catalog_path)).query_quote_ticks() == [quote]
 
 
+def test_streaming_writer_rejects_unknown_catalog_param(tmp_path: Path) -> None:
+    """
+    Test streaming writer rejects a catalog param its catalog backend does not accept.
+    """
+    with pytest.raises(OSError, match="Unknown Parquet catalog param") as exc_info:
+        StreamingWriter(
+            str(tmp_path / "stream" / "backtest" / "run-1"),
+            Clock.new_test(),
+            catalog=DataCatalogConfig(path=str(tmp_path / "catalog"), params={"batch_size": 1024}),
+        )
+
+    assert str(exc_info.value) == (
+        "Failed to create writer: Unknown Parquet catalog param 'batch_size': "
+        "this catalog takes no params"
+    )
+
+
 def test_streaming_writer_without_catalog_keeps_feather_files(tmp_path: Path) -> None:
     """
     Test streaming writer without a catalog keeps only the Feather files.
