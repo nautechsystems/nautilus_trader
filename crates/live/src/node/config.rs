@@ -788,6 +788,7 @@ pub struct LiveNodeConfig {
     #[builder(default = Duration::from_secs(10))]
     pub timeout_disconnection: Duration,
     /// The delay after stopping the node to await residual events before final shutdown.
+    /// Retained submissions still unresolved at this boundary cause shutdown to return an error.
     #[builder(default = Duration::from_secs(10))]
     pub delay_post_stop: Duration,
     /// The timeout to await pending tasks cancellation during shutdown.

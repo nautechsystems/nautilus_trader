@@ -684,6 +684,12 @@ impl PyNodeRun {
                 if let Some(raised) = self.pending_throw.take() {
                     // Shutdown finished, so the injected exception is now honored. Reporting
                     // success here would break `asyncio.timeout`, `wait_for`, and task groups.
+                    if let Err(e) = result {
+                        let shutdown_error = to_pyruntime_err(e);
+                        shutdown_error.set_cause(py, raised.cause(py));
+                        raised.set_cause(py, Some(shutdown_error));
+                    }
+
                     return Err(raised);
                 }
 
@@ -966,7 +972,8 @@ impl PyLiveNode {
     /// Takes the node and returns an awaitable that resolves once the node has stopped. The host
     /// owns the loop and its signal handling, so this installs no signal handlers. Stop the node
     /// through the handle from `handle()`; cancelling the awaiting task requests the same graceful
-    /// shutdown, waits for it to finish, then re-raises the cancellation.
+    /// shutdown, waits for it to finish, then re-raises the cancellation. A shutdown error,
+    /// including incomplete submission recovery, is preserved as the exception's cause.
     ///
     /// Capture `cache`, `portfolio`, and `handle()` before calling this. They stay usable while the
     /// node runs, whereas the node itself is owned by the returned awaitable.

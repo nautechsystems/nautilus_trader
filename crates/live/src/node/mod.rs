@@ -564,7 +564,8 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if shutdown fails.
+    /// Returns an error if shutdown fails or retained submissions remain unresolved at the end
+    /// of `delay_post_stop`. Teardown still completes; subsequent events cannot clear this result.
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         if !self.state().is_running() {
             anyhow::bail!("Not running");
@@ -1070,7 +1071,8 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if the node fails to start or encounters a runtime error.
+    /// Returns an error if the node fails to start, encounters a runtime error, or shuts down
+    /// with retained submissions unresolved at the end of `delay_post_stop`.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         self.run_with_mode(NodeRunMode::Owned).await
     }
@@ -1083,7 +1085,8 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if the node fails to start or encounters a runtime error.
+    /// Returns an error if the node fails to start, encounters a runtime error, or shuts down
+    /// with retained submissions unresolved at the end of `delay_post_stop`.
     pub async fn run_with_mode(&mut self, mode: NodeRunMode) -> anyhow::Result<()> {
         if self.state().is_running() {
             anyhow::bail!("Already running");
@@ -1974,6 +1977,9 @@ impl LiveNode {
         if let Err(e) = dispatch_result {
             if let Err(stop_err) = stop_result {
                 log::error!("Failed to finalize node after callback failure: {stop_err}");
+                // Python converts the outer display message, so preserve both diagnostics there.
+                let diagnostic = format!("{e}; {stop_err}");
+                return Err(anyhow::Error::new(e).context(diagnostic));
             }
 
             return Err(e.into());
@@ -2508,6 +2514,9 @@ impl LiveNode {
     }
 
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
+        // Capture recovery at the grace-period boundary, before disconnection can queue more
+        // evidence. A later drain must not turn incomplete recovery into a successful shutdown.
+        let unresolved_submissions = self.exec_manager.unresolved_submission_ids();
         self.close_external_ingress();
 
         let timeout = self.config.timeout_disconnection;
@@ -2531,6 +2540,12 @@ impl LiveNode {
         self.handle.set_stopped();
 
         let mut errors = Vec::new();
+
+        if !unresolved_submissions.is_empty() {
+            errors.push(format!(
+                "Submission recovery incomplete at shutdown: unresolved client order IDs {unresolved_submissions:?}"
+            ));
+        }
 
         if let Err(e) = disconnect_result {
             errors.push(e.to_string());
@@ -3410,6 +3425,8 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod shutdown;
+
     use std::{
         cell::{Cell, RefCell},
         fmt::Debug,
@@ -3782,13 +3799,17 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_callback_failure_stops_later_live_events() {
+    async fn test_callback_failure_stops_later_live_events(
+        #[values(false, true)] incomplete_submission: bool,
+    ) {
         actor::clear_callbacks().unwrap();
 
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
+                submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
                 ..Default::default()
             },
             timeout_connection: Duration::ZERO,
@@ -3801,6 +3822,16 @@ mod tests {
         };
 
         let mut node = LiveNode::build("CallbackFailureNode".to_string(), Some(config)).unwrap();
+
+        if incomplete_submission {
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .client_order_id(ClientOrderId::from("O-CALLBACK-UNRESOLVED"))
+                .instrument_id(InstrumentId::from("EUR/USD.SIM"))
+                .quantity(Quantity::from("1"))
+                .build();
+            node.exec_manager
+                .register_submission(order.init_event(), None);
+        }
         let received = Rc::new(RefCell::new(Vec::new()));
         node.add_actor(FailingTimerActor {
             core: DataActorCore::new(DataActorConfig {
@@ -3814,6 +3845,10 @@ mod tests {
         let result = node.run_with_mode(NodeRunMode::Hosted).await;
 
         let error = result.unwrap_err();
+        assert!(error.to_string().contains("Callback delivery unwound"));
+        if incomplete_submission {
+            assert!(error.to_string().contains("O-CALLBACK-UNRESOLVED"));
+        }
         let state = node.state();
         let trader_stopped = node.kernel.trader.borrow().is_stopped();
         let failure = actor::callback_failure();
