@@ -1994,6 +1994,47 @@ async fn test_request_order_status_report_triggered_order() {
 
 #[rstest]
 #[tokio::test]
+async fn test_request_order_status_report_frontend_trigger_label() {
+    let state = TestServerState::default();
+    // Venue shape: `frontendOpenOrders` rows carry `orderType` / `isTrigger`,
+    // not the WebSocket `tpsl` / `isMarket` fields
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "90000.0",
+        "sz": "0.1",
+        "oid": 77777,
+        "timestamp": 1700000000000u64,
+        "triggerCondition": "Price below 91000",
+        "isTrigger": true,
+        "triggerPx": "91000.0",
+        "children": [],
+        "isPositionTpsl": false,
+        "reduceOnly": true,
+        "orderType": "Stop Market",
+        "origSz": "0.1",
+        "tif": null,
+        "cloid": null
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 77777)
+        .await
+        .unwrap()
+        .expect("should find open stop order");
+
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert!(report.trigger_price.is_some());
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_order_status_report_closed_order_fallback() {
     let state = TestServerState::default();
     // frontendOpenOrders returns empty (order no longer open)
