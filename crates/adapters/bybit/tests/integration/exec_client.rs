@@ -110,6 +110,11 @@ struct TestServerState {
     cancel_all_requests: Arc<AtomicUsize>,
     position_requests: Arc<AtomicUsize>,
     wallet_balance_requests: Arc<AtomicUsize>,
+    history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    fill_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    history_rows: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    fill_rows: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    paginate_reports: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
     switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -138,6 +143,11 @@ impl Default for TestServerState {
             cancel_all_requests: Arc::new(AtomicUsize::new(0)),
             position_requests: Arc::new(AtomicUsize::new(0)),
             wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
+            history_queries: Default::default(),
+            fill_queries: Default::default(),
+            history_rows: Default::default(),
+            fill_rows: Default::default(),
+            paginate_reports: Default::default(),
             ping_count: Arc::new(AtomicUsize::new(0)),
             switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -244,7 +254,11 @@ async fn handle_get_positions(
     Json(positions).into_response()
 }
 
-async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_history(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -257,18 +271,72 @@ async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+    state.history_queries.lock().await.push(query.clone());
+    report_page(&state, &query, &state.history_rows)
+        .await
+        .into_response()
+}
+
+async fn handle_get_fills(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+    state.fill_queries.lock().await.push(query.clone());
+    report_page(&state, &query, &state.fill_rows)
+        .await
+        .into_response()
+}
+
+async fn report_page(
+    state: &TestServerState,
+    query: &HashMap<String, String>,
+    rows: &tokio::sync::Mutex<Vec<Value>>,
+) -> Json<Value> {
+    let next_page = state.paginate_reports.load(Ordering::Relaxed) && !query.contains_key("cursor");
+    let mut list = if query.contains_key("cursor") {
+        Vec::new()
+    } else {
+        rows.lock().await.clone()
+    };
+
+    for row in &mut list {
+        for field in ["createdTime", "updatedTime", "execTime"] {
+            let (bound, offset) = match row[field].as_str() {
+                Some("before-start") => ("startTime", -1),
+                Some("at-start") => ("startTime", 0),
+                Some("in-window") => ("startTime", 1),
+                Some("after-end") => ("endTime", 1),
+                _ => continue,
+            };
+            let bound_ms = query[bound].parse::<i64>().unwrap();
+            row[field] = json!((bound_ms + offset).to_string());
+        }
+    }
 
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
         "result": {
-            "list": [],
-            "nextPageCursor": ""
+            "category": query.get("category"),
+            "list": list,
+            "nextPageCursor": if next_page { "page-2" } else { "" }
         },
         "retExtInfo": {},
         "time": 1704470400123i64
     }))
-    .into_response()
 }
 
 async fn handle_get_orders_realtime(
@@ -741,8 +809,8 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
-        .route("/v5/order/history", get(handle_get_empty_report_list))
-        .route("/v5/execution/list", get(handle_get_empty_report_list))
+        .route("/v5/order/history", get(handle_get_history))
+        .route("/v5/execution/list", get(handle_get_fills))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/order/cancel-all", post(handle_cancel_all_orders))
@@ -1035,6 +1103,227 @@ async fn test_exec_client_mass_status_omits_spot_and_preserves_derivative_positi
             .contains_key(&InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
     );
     assert_eq!(state.wallet_balance_requests.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::default_window(None, false, false)]
+#[case::bounded(Some(60), false, true)]
+#[case::zero(Some(0), false, true)]
+#[case::venue_limit(Some(10_080), false, true)]
+#[case::clamped(Some(10_081), false, false)]
+#[case::spot(Some(60), true, false)]
+#[tokio::test]
+async fn test_exec_client_mass_status_report_window(
+    #[case] lookback_mins: Option<u64>,
+    #[case] spot: bool,
+    #[case] complete: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    if spot {
+        config.product_types.push(BybitProductType::Spot);
+    }
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state.paginate_reports.store(true, Ordering::Relaxed);
+
+    let mass = client
+        .generate_mass_status(lookback_mins)
+        .await
+        .unwrap()
+        .unwrap();
+    let end_ms = mass.ts_init.as_millis();
+    let start_ms = end_ms.saturating_sub(lookback_mins.unwrap_or(10_080).min(10_080) * 60_000);
+    let history = state.history_queries.lock().await;
+    let fills = state.fill_queries.lock().await;
+    assert_eq!(history.len(), if spot { 12 } else { 8 });
+    assert_eq!(fills.len(), if spot { 4 } else { 2 });
+    for query in history.iter().chain(fills.iter()) {
+        assert_eq!(query.get("startTime"), Some(&start_ms.to_string()));
+        assert_eq!(query.get("endTime"), Some(&end_ms.to_string()));
+    }
+    assert_eq!(
+        mass.lookback_start(),
+        Some(UnixNanos::from_millis(start_ms))
+    );
+    assert_eq!(mass.reports_complete(), complete);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mass_status_preserves_old_open_order() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let orders = mass.order_reports();
+    let old = orders
+        .get(&VenueOrderId::from("open-order-1"))
+        .expect("old open order retained");
+    assert!(old.ts_last < UnixNanos::from_millis(mass.ts_init.as_millis() - 60 * 60_000));
+    assert_eq!(old.order_status, OrderStatus::Accepted);
+    client.disconnect().await.unwrap();
+}
+
+fn mass_status_history_order(order_id: &str, timestamp: &str) -> Value {
+    let mut row = load_test_data("http_get_orders_realtime.json")["result"]["list"][0].clone();
+    row["orderId"] = json!(order_id);
+    row["orderStatus"] = json!("Filled");
+    row["cumExecQty"] = row["qty"].clone();
+    row["leavesQty"] = json!("0");
+    row["createdTime"] = json!("before-start");
+    row["updatedTime"] = json!(timestamp);
+    row
+}
+
+fn mass_status_history_fill(order_id: &str) -> Value {
+    let mut row = load_test_data("http_get_executions.json")["result"]["list"][0].clone();
+    row["orderId"] = json!(order_id);
+    row["symbol"] = json!("ETHUSDT");
+    row["execQty"] = json!("0.010");
+    row["execPrice"] = json!("3930.41");
+    row["execTime"] = json!("in-window");
+    row
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mass_status_closed_order_retention() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state.empty_orders_realtime.store(true, Ordering::Relaxed);
+    *state.history_rows.lock().await = vec![
+        mass_status_history_order("before-start-order", "before-start"),
+        mass_status_history_order("at-start-order", "at-start"),
+        mass_status_history_order("after-end-order", "after-end"),
+    ];
+    state
+        .fill_rows
+        .lock()
+        .await
+        .push(mass_status_history_fill("after-end-order"));
+
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let start = mass.lookback_start().unwrap();
+    let end = UnixNanos::from_millis(mass.ts_init.as_millis());
+    let fills = mass.fill_reports();
+    let fill = &fills[&VenueOrderId::from("after-end-order")];
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fill.len(), 1);
+    assert_eq!(
+        fill[0].ts_event,
+        UnixNanos::from_millis(start.as_millis() + 1)
+    );
+    assert!(fill[0].ts_event < end);
+    let orders = mass.order_reports();
+    assert!(!orders.contains_key(&VenueOrderId::from("before-start-order")));
+    let at_start = orders
+        .get(&VenueOrderId::from("at-start-order"))
+        .expect("closed order at lower boundary retained");
+    assert_eq!(at_start.order_status, OrderStatus::Filled);
+    assert_eq!(at_start.ts_last, start);
+    let after_end = orders
+        .get(&VenueOrderId::from("after-end-order"))
+        .expect("order closing during collection retained");
+    assert_eq!(after_end.order_status, OrderStatus::Filled);
+    assert_eq!(
+        after_end.ts_last,
+        UnixNanos::from_millis(end.as_millis() + 1)
+    );
+    assert_eq!(orders.len(), 2);
+    assert!(fill[0].ts_event < after_end.ts_last);
+    assert!(mass.reports_complete());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::missing_order_instrument(false, "symbol", "UNKNOWN")]
+#[case::empty_order_symbol(false, "symbol", "")]
+#[case::order_parse(false, "qty", "invalid")]
+#[case::missing_fill_instrument(true, "symbol", "UNKNOWN")]
+#[case::fill_parse(true, "execQty", "invalid")]
+#[case::fill_commission(true, "execFee", "invalid")]
+#[tokio::test]
+async fn test_exec_client_mass_status_dropped_row(
+    #[case] fill: bool,
+    #[case] field: &str,
+    #[case] value: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state.empty_orders_realtime.store(true, Ordering::Relaxed);
+    let valid = if fill {
+        mass_status_history_fill("valid-order")
+    } else {
+        mass_status_history_order("valid-order", "in-window")
+    };
+    let mut bad = valid.clone();
+    bad["orderId"] = json!("dropped-order");
+    bad[field] = json!(value);
+
+    if fill {
+        *state.fill_rows.lock().await = vec![bad, valid];
+    } else {
+        *state.history_rows.lock().await = vec![bad, valid];
+    }
+
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !mass.reports_complete(),
+        "dropped {field} row must make history incomplete"
+    );
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("dropped-order"))
+    );
+    let start = mass.lookback_start().unwrap();
+    let end = UnixNanos::from_millis(mass.ts_init.as_millis());
+    let expected_timestamp = UnixNanos::from_millis(start.as_millis() + 1);
+    let orders = mass.order_reports();
+    let fills = mass.fill_reports();
+    assert!(!fills.contains_key(&VenueOrderId::from("dropped-order")));
+
+    if fill {
+        let valid = fills
+            .get(&VenueOrderId::from("valid-order"))
+            .expect("valid fill beside dropped row retained");
+        assert_eq!(fills.len(), 1);
+        assert_eq!(valid.len(), 1);
+        assert_eq!(valid[0].ts_event, expected_timestamp);
+        assert!(valid[0].ts_event < end);
+        assert!(orders.is_empty());
+    } else {
+        let valid = orders
+            .get(&VenueOrderId::from("valid-order"))
+            .expect("valid order beside dropped row retained");
+        assert_eq!(orders.len(), 1);
+        assert_eq!(valid.order_status, OrderStatus::Filled);
+        assert_eq!(valid.ts_last, expected_timestamp);
+        assert!(valid.ts_last < end);
+        assert!(fills.is_empty());
+    }
 
     client.disconnect().await.unwrap();
 }

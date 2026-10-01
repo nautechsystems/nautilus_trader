@@ -39,3 +39,7 @@ pub(crate) const BYBIT_QUOTE_DEPTH: u32 = 1;
 
 // See <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>.
 pub(crate) const BYBIT_BOOK_DEPTHS: [u32; 4] = [1, 50, 200, 1000];
+
+// Maximum `startTime`..`endTime` span of the order and execution history endpoints.
+// See <https://bybit-exchange.github.io/docs/v5/order/execution>.
+pub(crate) const BYBIT_HISTORY_WINDOW_MINS: u64 = 10_080;
