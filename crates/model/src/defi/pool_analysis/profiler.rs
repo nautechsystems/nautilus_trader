@@ -210,10 +210,11 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     /// - Event contains invalid data (tick ranges, amounts).
     /// - Mathematical operations overflow.
+    /// - Swap replay cannot maintain the initialized tick partition.
     pub fn process(&mut self, event: &DexPoolData) -> anyhow::Result<()> {
         if self.check_if_already_processed(
             event.block_number(),
@@ -282,12 +283,11 @@ impl PoolProfiler {
     /// Processes a historical swap event from blockchain data.
     ///
     /// Replays the swap by simulating it through [`Self::simulate_swap_through_ticks`],
-    /// then verifies the simulation results against the actual event data. If mismatches
-    /// are detected (tick or liquidity), the pool state is corrected to match the event
-    /// values and warnings are logged.
-    ///
-    /// This self-healing approach ensures pool state stays synchronized with on-chain
-    /// reality even if simulation logic differs slightly from actual contract behavior.
+    /// then verifies the simulation results against the actual event data. Tick and
+    /// liquidity mismatches are corrected only when no simulated crossings occurred
+    /// and anchoring to the event tick preserves the initialized tick partition.
+    /// Otherwise, replay returns an error without changing the profiler. Sqrt price
+    /// mismatches are corrected to match the event.
     ///
     /// # Use Case
     ///
@@ -295,9 +295,11 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool initialization checks fail.
     /// - Swap simulation fails (see [`Self::simulate_swap_through_ticks`] errors).
+    /// - A structural mismatch involves simulated crossings or anchoring across an
+    ///   initialized tick ([`PoolProfilerError::SwapReplayMismatch`]).
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized(PoolEventKind::Swap)?;
 
@@ -323,22 +325,41 @@ impl PoolProfiler {
         );
         let swap_quote = self
             .simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96, true)
-            .map_err(|e| Self::wrap_liquidity_error(e, location))?;
+            .map_err(|e| Self::wrap_liquidity_error(e, location.clone()))?;
 
         let tick_mismatch = swap.tick != swap_quote.tick_after;
         let liquidity_mismatch = swap.liquidity != swap_quote.liquidity_after;
         let sqrt_mismatch = swap.sqrt_price_x96 != swap_quote.sqrt_price_after_x96;
         let structural_mismatch = tick_mismatch || liquidity_mismatch;
-        if structural_mismatch && !swap_quote.crossed_ticks.is_empty() {
-            log::warn!(
-                "Replay swap simulation diverged after crossing {} ticks on block {}; anchoring event state without simulated tick-cross mutations",
-                swap_quote.crossed_ticks.len(),
-                swap.block
-            );
-            self.apply_swap_quote_without_crossed_ticks(&swap_quote);
+        let anchoring_crossed_tick = if tick_mismatch {
+            self.tick_map
+                .get_all_ticks()
+                .keys()
+                .copied()
+                .filter(|&tick| {
+                    self.tick_map.is_tick_initialized(tick)
+                        && (swap_quote.tick_after >= tick) != (swap.tick >= tick)
+                })
+                .min()
         } else {
-            self.apply_swap_quote(&swap_quote);
+            None
+        };
+
+        if structural_mismatch
+            && (!swap_quote.crossed_ticks.is_empty() || anchoring_crossed_tick.is_some())
+        {
+            return Err(PoolProfilerError::SwapReplayMismatch {
+                location,
+                simulated_tick: swap_quote.tick_after,
+                event_tick: swap.tick,
+                simulated_liquidity: swap_quote.liquidity_after,
+                event_liquidity: swap.liquidity,
+                simulated_crossed_tick_count: swap_quote.crossed_ticks.len(),
+                anchoring_crossed_tick,
+            }
+            .into());
         }
+        self.apply_swap_quote(&swap_quote);
 
         // Verify simulation against event data - correct with event values if mismatch detected
         if tick_mismatch {
@@ -695,13 +716,6 @@ impl PoolProfiler {
             "Liquidity mismatch in apply_swap_quote: computed={}, quote={}",
             self.tick_map.liquidity, swap_quote.liquidity_after
         );
-    }
-
-    fn apply_swap_quote_without_crossed_ticks(&mut self, swap_quote: &SwapQuote) {
-        self.state.current_tick = swap_quote.tick_after;
-        self.state.price_sqrt_ratio_x96 = swap_quote.sqrt_price_after_x96;
-        self.apply_swap_quote_fee_state(swap_quote);
-        self.analytics.total_swaps += 1;
     }
 
     fn apply_swap_quote_fee_state(&mut self, swap_quote: &SwapQuote) {
