@@ -772,6 +772,13 @@ impl InstrumentClass {
         )
     }
 
+    /// Returns whether inverse valuation for this class divides by price, which holds for inverse
+    /// instruments unless the class is premium based.
+    #[must_use]
+    pub const fn divides_notional_by_price(&self, is_inverse: bool) -> bool {
+        is_inverse && !self.is_premium_based()
+    }
+
     /// Returns the [`InstrumentClass`] for the parent-symbol suffix, if recognized.
     ///
     /// Matches strict uppercase forms only. Both Databento-style abbreviations
@@ -2431,6 +2438,29 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(class.is_premium_based(), expected);
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Option, true, false)]
+    #[case(InstrumentClass::OptionSpread, true, false)]
+    #[case(InstrumentClass::BinaryOption, true, false)]
+    #[case(InstrumentClass::Warrant, true, false)]
+    #[case(InstrumentClass::Spot, true, true)]
+    #[case(InstrumentClass::Swap, true, true)]
+    #[case(InstrumentClass::Future, true, true)]
+    #[case(InstrumentClass::FuturesSpread, true, true)]
+    #[case(InstrumentClass::Forward, true, true)]
+    #[case(InstrumentClass::Cfd, true, true)]
+    #[case(InstrumentClass::Bond, true, true)]
+    #[case(InstrumentClass::SportsBetting, true, true)]
+    #[case(InstrumentClass::Future, false, false)]
+    #[case(InstrumentClass::Option, false, false)]
+    fn test_instrument_class_divides_notional_by_price(
+        #[case] class: InstrumentClass,
+        #[case] is_inverse: bool,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(class.divides_notional_by_price(is_inverse), expected);
     }
 
     #[rstest]

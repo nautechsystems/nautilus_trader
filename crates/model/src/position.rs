@@ -1381,7 +1381,10 @@ impl Position {
     ) -> anyhow::Result<f64> {
         let quantity = quantity.min(self.signed_qty.abs());
 
-        let result = if self.is_inverse && !self.instrument_class.is_premium_based() {
+        let result = if self
+            .instrument_class
+            .divides_notional_by_price(self.is_inverse)
+        {
             anyhow::ensure!(
                 self.base_currency.is_some(),
                 "inverse position {} has no base currency",
