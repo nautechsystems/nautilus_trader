@@ -604,8 +604,8 @@ mod tests {
         weth.decimals = 0;
         usdc.decimals = 18;
         let raw_data = RawSwapData::new(
-            I256::from_str("1").unwrap(),
-            I256::from_str("-100").unwrap(),
+            I256::from_str("4").unwrap(),
+            I256::from_str("-400").unwrap(),
             Q96_U160,
         );
 

@@ -50,7 +50,9 @@ use crate::defi::{
             expand_to_18_decimals, get_amounts_for_liquidity,
         },
         tick::PoolTick,
-        tick_math::{get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio},
+        tick_math::{
+            MAX_SQRT_RATIO, MIN_SQRT_RATIO, get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio,
+        },
     },
 };
 
@@ -3108,6 +3110,157 @@ fn pool_high_fee_1on1_price_2e18_max_liquidity() -> PoolTestCase {
                     tick_after: -8043,
                 },
             ),
+            (
+                swap_exact_1_for_0_1e18(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("-662207357859531772").unwrap(),
+                    amount1_delta: I256::from_str("1000000000000000000").unwrap(),
+                    execution_price: "1.5101".to_string(),
+                    fee_growth_global_0: U256::ZERO,
+                    fee_growth_global_1: U256::from_str("1701411834604692317316873037158841057")
+                        .unwrap(),
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "2.2350".to_string(),
+                    tick_before: 0,
+                    tick_after: 8042,
+                },
+            ),
+            (
+                swap_0_for_exact_1_1e18(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("2020202020202020203").unwrap(),
+                    amount1_delta: I256::from_str("-1000000000000000000").unwrap(),
+                    execution_price: "0.49499".to_string(),
+                    fee_growth_global_0: U256::from_str("3437195625464025050172418213103875650")
+                        .unwrap(),
+                    fee_growth_global_1: U256::ZERO,
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "0.2500".to_string(),
+                    tick_before: 0,
+                    tick_after: -13864,
+                },
+            ),
+            (
+                swap_1_for_exact_0_1e18(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("-1000000000000000000").unwrap(),
+                    amount1_delta: I256::from_str("2020202020202020203").unwrap(),
+                    execution_price: "2.0202".to_string(),
+                    fee_growth_global_0: U256::ZERO,
+                    fee_growth_global_1: U256::from_str("3437195625464025050172418213103875650")
+                        .unwrap(),
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "4.0000".to_string(),
+                    tick_before: 0,
+                    tick_after: 13863,
+                },
+            ),
+            (
+                swap_exact_0_for_1_1e18_to_price_0_5(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("836795075501202120").unwrap(),
+                    amount1_delta: I256::from_str("-585786437626904951").unwrap(),
+                    execution_price: "0.70003".to_string(),
+                    fee_growth_global_0: U256::from_str("1423733044596672457631004491657125052")
+                        .unwrap(),
+                    fee_growth_global_1: U256::ZERO,
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "0.5000".to_string(),
+                    tick_before: 0,
+                    tick_after: -6932,
+                },
+            ),
+            (
+                swap_exact_1_for_0_1e18_to_price_2(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("-585786437626904951").unwrap(),
+                    amount1_delta: I256::from_str("836795075501202120").unwrap(),
+                    execution_price: "1.42849".to_string(),
+                    fee_growth_global_0: U256::ZERO,
+                    fee_growth_global_1: U256::from_str("1423733044596672457631004491657125052")
+                        .unwrap(),
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "2.0000".to_string(),
+                    tick_before: 0,
+                    tick_after: 6931,
+                },
+            ),
+            (
+                swap_0_for_exact_1_small_amount(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("1012").unwrap(),
+                    amount1_delta: I256::from_str("-1000").unwrap(),
+                    execution_price: "0.98814".to_string(),
+                    fee_growth_global_0: U256::from_str("1871553018065161549048").unwrap(),
+                    fee_growth_global_1: U256::ZERO,
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "1.0000".to_string(),
+                    tick_before: 0,
+                    tick_after: -1,
+                },
+            ),
+            (
+                swap_1_for_exact_0_small_amount(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("-1000").unwrap(),
+                    amount1_delta: I256::from_str("1012").unwrap(),
+                    execution_price: "1.012".to_string(),
+                    fee_growth_global_0: U256::ZERO,
+                    fee_growth_global_1: U256::from_str("1871553018065161549048").unwrap(),
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "1.0000".to_string(),
+                    tick_before: 0,
+                    tick_after: 0,
+                },
+            ),
+            (
+                swap_to_lower_price_0_4(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("1174017838553918518").unwrap(),
+                    amount1_delta: I256::from_str("-735088935932648267").unwrap(),
+                    execution_price: "0.62613".to_string(),
+                    fee_growth_global_0: U256::from_str("1997487844552658120479227965844634309")
+                        .unwrap(),
+                    fee_growth_global_1: U256::ZERO,
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "0.4000".to_string(),
+                    tick_before: 0,
+                    tick_after: -9164,
+                },
+            ),
+            (
+                swap_to_higher_price_2_5(),
+                ExpectedSwapResult {
+                    amount0_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount1_before: U256::from_str("2000000000000000000").unwrap(),
+                    amount0_delta: I256::from_str("-735088935932648267").unwrap(),
+                    amount1_delta: I256::from_str("1174017838553918518").unwrap(),
+                    execution_price: "1.5971".to_string(),
+                    fee_growth_global_0: U256::ZERO,
+                    fee_growth_global_1: U256::from_str("1997487844552658120479227965844634309")
+                        .unwrap(),
+                    pool_price_before: "1.0000".to_string(),
+                    pool_price_after: "2.5000".to_string(),
+                    tick_before: 0,
+                    tick_after: 9163,
+                },
+            ),
         ],
     }
 }
@@ -3133,6 +3286,76 @@ fn swap_exact_1_for_0_small_amount() -> SwapTestCase {
     SwapTestCase::SwapExact1For0 {
         amount1: U256::from(1000),
         sqrt_price_limit: None,
+    }
+}
+
+/// Swap exactly 1.0000 token1 for token0
+fn swap_exact_1_for_0_1e18() -> SwapTestCase {
+    SwapTestCase::SwapExact1For0 {
+        amount1: U256::from(expand_to_18_decimals(1)),
+        sqrt_price_limit: None,
+    }
+}
+
+/// Swap token0 for exactly 1.0000 token1
+fn swap_0_for_exact_1_1e18() -> SwapTestCase {
+    SwapTestCase::Swap0ForExact1 {
+        amount1: U256::from(expand_to_18_decimals(1)),
+        sqrt_price_limit: None,
+    }
+}
+
+/// Swap token1 for exactly 1.0000 token0
+fn swap_1_for_exact_0_1e18() -> SwapTestCase {
+    SwapTestCase::Swap1ForExact0 {
+        amount0: U256::from(expand_to_18_decimals(1)),
+        sqrt_price_limit: None,
+    }
+}
+
+/// Swap exactly 1.0000 token0 for token1 to price 0.50000
+fn swap_exact_0_for_1_1e18_to_price_0_5() -> SwapTestCase {
+    SwapTestCase::SwapExact0For1 {
+        amount0: U256::from(expand_to_18_decimals(1)),
+        sqrt_price_limit: Some(encode_sqrt_ratio_x96(50, 100)),
+    }
+}
+
+/// Swap exactly 1.0000 token1 for token0 to price 2.0000
+fn swap_exact_1_for_0_1e18_to_price_2() -> SwapTestCase {
+    SwapTestCase::SwapExact1For0 {
+        amount1: U256::from(expand_to_18_decimals(1)),
+        sqrt_price_limit: Some(encode_sqrt_ratio_x96(200, 100)),
+    }
+}
+
+/// Swap token0 for exactly 0.0000000000000010000 token1
+fn swap_0_for_exact_1_small_amount() -> SwapTestCase {
+    SwapTestCase::Swap0ForExact1 {
+        amount1: U256::from(1000),
+        sqrt_price_limit: None,
+    }
+}
+
+/// Swap token1 for exactly 0.0000000000000010000 token0
+fn swap_1_for_exact_0_small_amount() -> SwapTestCase {
+    SwapTestCase::Swap1ForExact0 {
+        amount0: U256::from(1000),
+        sqrt_price_limit: None,
+    }
+}
+
+/// Swap token0 for token1 to price 0.40000
+fn swap_to_lower_price_0_4() -> SwapTestCase {
+    SwapTestCase::SwapToLowerPrice {
+        sqrt_price_limit: encode_sqrt_ratio_x96(2, 5),
+    }
+}
+
+/// Swap token1 for token0 to price 2.5000
+fn swap_to_higher_price_2_5() -> SwapTestCase {
+    SwapTestCase::SwapToHigherPrice {
+        sqrt_price_limit: encode_sqrt_ratio_x96(5, 2),
     }
 }
 
@@ -3256,6 +3479,108 @@ fn test_swaps_for_pool_high_fee_1on1_price_2e18_max_liquidity() {
 }
 
 #[rstest]
+#[case::zero_for_one(
+    true,
+    encode_sqrt_ratio_x96(50, 100),
+    "836795075501202120",
+    "-585786437626904951"
+)]
+#[case::one_for_zero(
+    false,
+    encode_sqrt_ratio_x96(200, 100),
+    "-585786437626904951",
+    "836795075501202120"
+)]
+fn test_exact_output_stopped_by_price_limit_quotes_partial_fill_and_rejects_exact_out(
+    #[case] zero_for_one: bool,
+    #[case] sqrt_price_limit: U160,
+    #[case] expected_amount0: &str,
+    #[case] expected_amount1: &str,
+) {
+    // Uniswap swaps.spec "high fee, 1:1 price, 2e18 max range liquidity": exact output of 1.0000
+    // stops at the price limit and fills only part of the requested amount.
+    let pool_test_case = pool_high_fee_1on1_price_2e18_max_liquidity();
+    let pool_definition = pool_definition(
+        Some(pool_test_case.fee_amount),
+        Some(pool_test_case.tick_spacing),
+        Some(pool_test_case.starting_price),
+    );
+    let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
+    profiler.initialize(pool_test_case.starting_price).unwrap();
+    for mint in &pool_test_case.positions {
+        profiler
+            .execute_mint(
+                lp_address(),
+                create_block_position(),
+                mint.tick_lower,
+                mint.tick_upper,
+                mint.liquidity,
+            )
+            .unwrap();
+    }
+
+    let amount_out = U256::from(expand_to_18_decimals(1));
+
+    let quote = profiler
+        .quote_swap(
+            -I256::from(amount_out),
+            zero_for_one,
+            Some(sqrt_price_limit),
+        )
+        .unwrap();
+    let error = profiler
+        .swap_exact_out(amount_out, zero_for_one, Some(sqrt_price_limit))
+        .unwrap_err();
+
+    assert_eq!(quote.amount0, I256::from_str(expected_amount0).unwrap());
+    assert_eq!(quote.amount1, I256::from_str(expected_amount1).unwrap());
+    assert_eq!(quote.sqrt_price_after_x96, sqrt_price_limit);
+    assert_eq!(
+        error.to_string(),
+        "Insufficient liquidity: requested 1000000000000000000, available 585786437626904951"
+    );
+}
+
+#[rstest]
+#[case::zero_for_one_limit_above_price(
+    true,
+    encode_sqrt_ratio_x96(5, 2),
+    "Price limit must be less than current price for zero_for_one swaps"
+)]
+#[case::one_for_zero_limit_below_price(
+    false,
+    encode_sqrt_ratio_x96(2, 5),
+    "Price limit must be greater than current price for one_for_zero swaps"
+)]
+#[case::zero_for_one_limit_at_min_ratio(
+    true,
+    MIN_SQRT_RATIO,
+    "Price limit 4295128739 must be greater than MIN_SQRT_RATIO 4295128739"
+)]
+#[case::zero_for_one_limit_below_min_ratio(
+    true,
+    U160::from(1),
+    "Price limit 1 must be greater than MIN_SQRT_RATIO 4295128739"
+)]
+#[case::one_for_zero_limit_at_max_ratio(
+    false,
+    MAX_SQRT_RATIO,
+    "Price limit 1461446703485210103287273052203988822378723970342 must be less than MAX_SQRT_RATIO 1461446703485210103287273052203988822378723970342"
+)]
+fn test_quote_swap_rejects_invalid_price_limit(
+    medium_fee_pool_profiler: PoolProfiler,
+    #[case] zero_for_one: bool,
+    #[case] sqrt_price_limit: U160,
+    #[case] expected_error: &str,
+) {
+    let error = medium_fee_pool_profiler
+        .quote_swap(I256::MAX, zero_for_one, Some(sqrt_price_limit))
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+}
+
+#[rstest]
 fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
     // Test a subset of BPS values that work with 2e18 liquidity
     let bps_test_values = vec![100, 500, 1000];
@@ -3331,6 +3656,47 @@ fn test_slippage_for_size_bps_propagates_zero_spot_price_error() {
         error.to_string(),
         "Cannot calculate slippage, the spot price before is zero"
     );
+}
+
+#[rstest]
+#[case::same_position(100_000, 2, 5, 1)]
+#[case::earlier_block(99_999, 9, 9, 1)]
+#[case::same_block_earlier_transaction(100_000, 1, 9, 1)]
+#[case::same_transaction_earlier_log(100_000, 2, 4, 1)]
+#[case::same_transaction_later_log(100_000, 2, 6, 2)]
+#[case::same_block_later_transaction(100_000, 3, 0, 2)]
+#[case::later_block(100_001, 0, 0, 2)]
+fn test_process_skips_events_at_or_before_last_processed_position(
+    mut profiler: PoolProfiler,
+    #[case] block: u64,
+    #[case] transaction_index: u32,
+    #[case] log_index: u32,
+    #[case] expected_mints: u64,
+) {
+    let tick_lower = -600;
+    let tick_upper = 600;
+    let liquidity: u128 = 1_000_000;
+    let mut first = create_mint_event(lp_address(), tick_lower, tick_upper, liquidity);
+    first.block = 100_000;
+    first.transaction_index = 2;
+    first.log_index = 5;
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(first))
+        .unwrap();
+    let mut replayed = create_mint_event(lp_address(), tick_lower, tick_upper, liquidity);
+    replayed.block = block;
+    replayed.transaction_index = transaction_index;
+    replayed.log_index = log_index;
+
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(replayed))
+        .unwrap();
+
+    let position = profiler
+        .get_position(&lp_address(), tick_lower, tick_upper)
+        .unwrap();
+    assert_eq!(position.liquidity, liquidity * u128::from(expected_mints));
+    assert_eq!(profiler.analytics.total_mints, expected_mints);
 }
 
 #[rstest]
@@ -3831,6 +4197,51 @@ fn test_swap_protocol_fee_split_matches_fee_protocol(mut medium_fee_pool_profile
         total_fee - total_fee / U256::from(4u8)
     );
     assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
+}
+
+#[rstest]
+fn test_swap_protocol_fee_uses_token1_nibble_for_one_for_zero(
+    mut medium_fee_pool_profiler: PoolProfiler,
+) {
+    // SetFeeProtocol(4, 5) packs to 0x54: token0-in swaps use 1/4 and token1-in swaps use 1/5.
+    let amount = I256::from_str("1000000000").unwrap();
+    let total_fee_0 = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap()
+        .lp_fee;
+    let total_fee_1 = medium_fee_pool_profiler
+        .quote_swap(amount, false, None)
+        .unwrap()
+        .lp_fee;
+    medium_fee_pool_profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 5,
+        )))
+        .unwrap();
+
+    let zero_for_one = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap();
+    let one_for_zero = medium_fee_pool_profiler
+        .quote_swap(amount, false, None)
+        .unwrap();
+    medium_fee_pool_profiler.apply_swap_quote(&one_for_zero);
+
+    assert_eq!(medium_fee_pool_profiler.state.fee_protocol, 0x54);
+    assert_eq!(zero_for_one.protocol_fee, total_fee_0 / U256::from(4u8));
+    assert_eq!(one_for_zero.protocol_fee, total_fee_1 / U256::from(5u8));
+    assert_eq!(
+        one_for_zero.lp_fee,
+        total_fee_1 - total_fee_1 / U256::from(5u8)
+    );
+    assert_eq!(
+        medium_fee_pool_profiler.state.protocol_fees_token1,
+        total_fee_1 / U256::from(5u8)
+    );
+    assert_eq!(
+        medium_fee_pool_profiler.state.protocol_fees_token0,
+        U256::ZERO
+    );
 }
 
 #[rstest]

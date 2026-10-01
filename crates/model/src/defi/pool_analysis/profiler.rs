@@ -879,10 +879,11 @@ impl PoolProfiler {
         size_estimator::size_for_impact_bps_detailed(self, impact_bps, zero_for_one, &config)
     }
 
-    /// Validates that the price limit is in the correct direction for the swap.
+    /// Validates that the price limit is in the correct direction for the swap and strictly
+    /// inside the `(MIN_SQRT_RATIO, MAX_SQRT_RATIO)` range, matching the Uniswap V3 `SPL` check.
     ///
     /// # Errors
-    /// Returns error if price limit violates swap direction constraints.
+    /// Returns error if price limit violates swap direction or range constraints.
     fn validate_price_limit(
         &self,
         limit_price_sqrt: U160,
@@ -893,11 +894,23 @@ impl PoolProfiler {
             if limit_price_sqrt >= self.state.price_sqrt_ratio_x96 {
                 anyhow::bail!("Price limit must be less than current price for zero_for_one swaps");
             }
+
+            if limit_price_sqrt <= MIN_SQRT_RATIO {
+                anyhow::bail!(
+                    "Price limit {limit_price_sqrt} must be greater than MIN_SQRT_RATIO {MIN_SQRT_RATIO}"
+                );
+            }
         } else {
             // Swapping token1 for token0: price must increase
             if limit_price_sqrt <= self.state.price_sqrt_ratio_x96 {
                 anyhow::bail!(
                     "Price limit must be greater than current price for one_for_zero swaps"
+                );
+            }
+
+            if limit_price_sqrt >= MAX_SQRT_RATIO {
+                anyhow::bail!(
+                    "Price limit {limit_price_sqrt} must be less than MAX_SQRT_RATIO {MAX_SQRT_RATIO}"
                 );
             }
         }
