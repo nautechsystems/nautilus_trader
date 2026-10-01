@@ -1529,4 +1529,8 @@ async fn test_data_client_request_bar_timestamp(#[case] on_close: bool, #[case] 
     assert_eq!(response.bar_type, bar_type);
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].ts_event, UnixNanos::from(expected));
+    assert_eq!(
+        response.data[0].ts_init,
+        UnixNanos::from(1_709_891_979_000_000_000)
+    );
 }
