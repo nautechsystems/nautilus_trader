@@ -67,11 +67,11 @@ use crate::{
             KrakenOrderSide, KrakenProductType, KrakenSendStatus, KrakenTriggerSignal,
         },
         parse::{
-            bar_type_to_futures_resolution, parse_bar, parse_futures_fill_report,
-            parse_futures_instrument, parse_futures_order_event_status_report,
-            parse_futures_order_status_details_report, parse_futures_order_status_report,
-            parse_futures_position_status_report, parse_futures_public_execution,
-            truncate_cl_ord_id,
+            bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
+            parse_futures_fill_report, parse_futures_instrument,
+            parse_futures_order_event_status_report, parse_futures_order_status_details_report,
+            parse_futures_order_status_report, parse_futures_position_status_report,
+            parse_futures_public_execution, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -2903,13 +2903,9 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Vec<
             continue;
         }
 
-        let currency = Currency::new(
-            currency_code.as_str(),
-            8,
-            0,
-            currency_code.as_str(),
-            CurrencyType::Crypto,
-        );
+        // The venue keys these by its own spelling and casing, so map to the standard code.
+        let code = normalize_asset_key(currency_code.as_str());
+        let currency = Currency::new(&code, 8, 0, &code, CurrencyType::Crypto);
 
         let total_amount = currency_info.quantity;
         let available_amount = currency_info.available.unwrap_or(total_amount);
@@ -2972,13 +2968,9 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Vec<Ac
             continue;
         }
 
-        let currency = Currency::new(
-            currency_code.as_str(),
-            8,
-            0,
-            currency_code.as_str(),
-            CurrencyType::Crypto,
-        );
+        // The venue keys these by its own spelling and casing, so map to the standard code.
+        let code = normalize_asset_key(currency_code.as_str());
+        let currency = Currency::new(&code, 8, 0, &code, CurrencyType::Crypto);
 
         let available = account
             .auxiliary
@@ -3026,13 +3018,9 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut Vec<Acco
             continue;
         }
 
-        let currency = Currency::new(
-            currency_code.as_str(),
-            8,
-            0,
-            currency_code.as_str(),
-            CurrencyType::Crypto,
-        );
+        // The venue keys these by its own spelling and casing, so map to the standard code.
+        let code = normalize_asset_key(currency_code.as_str());
+        let currency = Currency::new(&code, 8, 0, &code, CurrencyType::Crypto);
 
         push_balance(balances, amount, Decimal::ZERO, currency, currency_code);
     }

@@ -3415,9 +3415,9 @@ fn optional_credit_amount(value: Option<&str>) -> Option<Decimal> {
 
 /// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
 ///
-/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This strips
-/// Kraken's legacy `X`/`Z` prefixes and falls back to a 2dp fiat currency for unknown
-/// codes so unusual collateral assets still produce a tagged `MarginBalance`.
+/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This maps Kraken's
+/// legacy asset codes to their standard equivalents and falls back to a 2dp fiat currency for
+/// unknown codes so unusual collateral assets still produce a tagged `MarginBalance`.
 fn trade_balance_currency(asset: Option<&str>) -> Currency {
     let raw = asset.unwrap_or("ZUSD");
     let normalized = normalize_currency_code(raw);

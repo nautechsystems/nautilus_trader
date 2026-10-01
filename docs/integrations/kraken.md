@@ -171,17 +171,19 @@ currency, which on an inverse contract is the base rather than the quote. Kraken
 instrument's quote currency.
 
 :::warning
-This changes the currency codes the adapter emits. An account state, fill, or position stored under
-`XXBT`, `ZEUR` or `ZUSD` before this change will not match one recorded after it, so a persisted
-cache or database from an earlier version needs migrating or rebuilding.
+This changes the currency codes the adapter emits. The previous mapping stripped one leading `X` or
+`Z`, so stored records carry `XBT` and `XDG` rather than `BTC` and `DOGE`, and the corrupted forms
+`TZ`, `RX` and `AUT` rather than `XTZ`, `ZRX` and `XAUT`. `KFEE` now becomes `FEE`. A cache or
+database written by an earlier version needs migrating or rebuilding.
 
 Configuration follows the same mapping and accepts either spelling, so
 `spot_positions_quote_currency="ZEUR"` and `"EUR"` both match a euro-quoted instrument.
 
-Money precision changes with the code. `ZEUR` and `ZUSD` were unknown to the platform and were
-registered as 8-decimal crypto currencies; `EUR` and `USD` are built-in fiat currencies with 2
-decimals. Balances and fees in those currencies are therefore rounded to cents, where they
-previously carried eight decimal places.
+Money precision changes where a code now resolves to a built-in currency. `ZEUR` and `ZUSD` were
+unknown to the platform and were registered as 8-decimal crypto; `EUR` and `USD` are built-in fiat
+with 2 decimals, and `JPY` with none. That affects the instrument quote currency, REST fill
+commissions and the PnL derived from them. Account balances are unaffected, because the balance
+parsers construct their own 8-decimal currency from the code rather than resolving a registered one.
 :::
 
 ### Spot markets

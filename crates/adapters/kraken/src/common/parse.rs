@@ -73,11 +73,25 @@ fn parse_rfc3339_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos
 /// Kraken uses legacy prefixes for some currencies (e.g., XXBT for Bitcoin, XETH for Ethereum,
 /// ZUSD for USD). This function strips those prefixes for consistent lookups.
 #[inline]
+/// Maps a Kraken asset code to the standard code the platform uses.
+///
+/// Kraken prefixes some legacy assets with `X` or `Z`, but the prefix is not a rule: `XTZ`, `ZRX`
+/// and `XAUT` legitimately begin with those letters. The mapping is therefore an explicit table,
+/// and a code it does not list is returned unchanged.
 pub fn normalize_currency_code(code: &str) -> &str {
     KRAKEN_ASSET_CODES
         .iter()
         .find(|(kraken, _)| *kraken == code)
         .map_or(code, |(_, standard)| *standard)
+}
+
+/// Normalizes a venue asset key whose casing is not guaranteed.
+///
+/// The Kraken Futures account endpoints key balances by their own spelling, which is not
+/// consistently upper case, so match on the upper-cased key and return the standard code.
+pub fn normalize_asset_key(code: &str) -> String {
+    let upper = code.to_uppercase();
+    normalize_currency_code(&upper).to_string()
 }
 
 /// Maps Kraken's asset codes to the standard code the platform uses.
@@ -2279,6 +2293,19 @@ mod tests {
     #[case("ZK", "ZK")]
     fn test_normalize_currency_code(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_currency_code(input), expected);
+    }
+
+    /// Kraken Futures keys account balances by its own spelling, which is not upper case.
+    #[rstest]
+    #[case("xbt", "BTC")]
+    #[case("XBT", "BTC")]
+    #[case("xxbt", "BTC")]
+    #[case("zeur", "EUR")]
+    #[case("usd", "USD")]
+    #[case("xtz", "XTZ")]
+    #[case("flr", "FLR")]
+    fn test_normalize_asset_key_is_case_tolerant(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalize_asset_key(input), expected);
     }
 
     #[rstest]
