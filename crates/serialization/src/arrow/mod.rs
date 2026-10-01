@@ -95,7 +95,7 @@ pub use self::legacy::{
     normalize_legacy_fixed_columns, normalized_legacy_data_type, normalized_timestamp_type,
 };
 
-// Define metadata key constants constants
+// Define metadata key constants
 pub const KEY_BAR_TYPE: &str = "bar_type";
 pub const KEY_IDENTIFIER: &str = "identifier";
 pub const KEY_INSTRUMENT_ID: &str = "instrument_id";

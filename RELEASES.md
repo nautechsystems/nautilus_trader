@@ -990,7 +990,6 @@ Released on 2nd September 2026 (UTC).
 - Documented OKX instrument cache reconciliation and WebSocket update behavior
 - Documented Polymarket quote sources and order book feed interaction
 - Documented Polymarket RTDS crypto TWAP delivery, reconnect, and conflict handling
-- Fixed broken OMS configuration link (#4877), thanks for reporting @aarushkandukoori
 
 ---
 
