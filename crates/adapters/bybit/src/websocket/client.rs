@@ -34,6 +34,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicMap, AtomicSet, UUID4, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
+    book::snapshot::SnapshotGate,
     task::{SharedTaskSlot, TaskJoinOutcome},
 };
 use nautilus_model::{
@@ -823,6 +824,27 @@ impl BybitWebSocketClient {
         }
         let _guard = self.subscription_guard.lock().await;
 
+        log::debug!("Subscribing to topics: {topics:?}");
+
+        let payloads = self.register_subscribe(topics)?;
+
+        if payloads.is_empty() {
+            return Ok(());
+        }
+
+        let cmd = HandlerCommand::Subscribe { topics: payloads };
+        self.cmd_tx
+            .read()
+            .await
+            .send(cmd)
+            .map_err(|e| BybitWsError::Send(format!("Failed to send subscribe command: {e}")))?;
+
+        Ok(())
+    }
+
+    // Adds a reference to each topic, returning subscribe payloads for topics no other
+    // subscription holds; the caller holds the subscription guard
+    fn register_subscribe(&self, topics: Vec<String>) -> BybitWsResult<Vec<String>> {
         if self.product_type == Some(BybitProductType::Option) {
             let occupied_topics = self
                 .subscriptions
@@ -843,8 +865,6 @@ impl BybitWebSocketClient {
             }
         }
 
-        log::debug!("Subscribing to topics: {topics:?}");
-
         // Use reference counting to deduplicate subscriptions
         let mut topics_to_send = Vec::new();
 
@@ -856,10 +876,6 @@ impl BybitWebSocketClient {
             } else {
                 log::debug!("Already subscribed to {topic}, skipping duplicate subscription");
             }
-        }
-
-        if topics_to_send.is_empty() {
-            return Ok(());
         }
 
         // Serialize subscription messages
@@ -876,14 +892,7 @@ impl BybitWebSocketClient {
             payloads.push(payload);
         }
 
-        let cmd = HandlerCommand::Subscribe { topics: payloads };
-        self.cmd_tx
-            .read()
-            .await
-            .send(cmd)
-            .map_err(|e| BybitWsError::Send(format!("Failed to send subscribe command: {e}")))?;
-
-        Ok(())
+        Ok(payloads)
     }
 
     /// Unsubscribe from the provided topics.
@@ -1062,12 +1071,86 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         depth: u32,
     ) -> BybitWsResult<()> {
-        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!(
-            "{}.{depth}.{raw_symbol}",
-            BybitWsPublicChannel::OrderBook.as_ref()
-        );
+        let topic = orderbook_topic(instrument_id, depth);
         self.subscribe(vec![topic]).await
+    }
+
+    /// Subscribes to an order book topic, opening `gate` once the connection confirms the
+    /// subscribe write.
+    ///
+    /// A topic another subscription already holds, such as the depth-1 topic quotes use, sends
+    /// nothing and opens `gate` at once. A failed write returns [`BybitWsError::Transport`]; any
+    /// other error means the request never reached the connection.
+    pub(crate) async fn subscribe_book(
+        &self,
+        instrument_id: InstrumentId,
+        depth: u32,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+    ) -> BybitWsResult<()> {
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+
+        {
+            let _guard = self.subscription_guard.lock().await;
+            let topic = orderbook_topic(instrument_id, depth);
+
+            let Some(payload) = self.register_subscribe(vec![topic])?.pop() else {
+                gate.open();
+                return Ok(());
+            };
+
+            let cmd = HandlerCommand::SubscribeBook {
+                payload,
+                gate,
+                completion,
+            };
+
+            self.cmd_tx.read().await.send(cmd).map_err(|e| {
+                BybitWsError::Send(format!("Failed to send subscribe command: {e}"))
+            })?;
+        }
+
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Ok(()),
+            result = receiver => result.map_err(|e| BybitWsError::Send(e.to_string()))?,
+        }
+    }
+
+    /// Requests a fresh snapshot by replacing an order book subscription on the current
+    /// connection.
+    pub(crate) async fn resubscribe_book(
+        &self,
+        instrument_id: InstrumentId,
+        depth: u32,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+    ) -> BybitWsResult<()> {
+        let topic = orderbook_topic(instrument_id, depth);
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let sender = self.cmd_tx.read().await;
+
+        if cancel.is_cancelled() {
+            return Err(BybitWsError::ClientError(
+                "Book recovery canceled".to_string(),
+            ));
+        }
+
+        let cmd = HandlerCommand::ResubscribeBook {
+            topic,
+            cancel,
+            gate,
+            completion,
+        };
+
+        sender
+            .send(cmd)
+            .map_err(|e| BybitWsError::Send(format!("Failed to send resubscribe command: {e}")))?;
+        drop(sender);
+
+        receiver
+            .await
+            .map_err(|e| BybitWsError::Send(e.to_string()))?
     }
 
     /// Unsubscribes from orderbook updates for a specific instrument.
@@ -1076,11 +1159,7 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         depth: u32,
     ) -> BybitWsResult<()> {
-        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!(
-            "{}.{depth}.{raw_symbol}",
-            BybitWsPublicChannel::OrderBook.as_ref()
-        );
+        let topic = orderbook_topic(instrument_id, depth);
         self.unsubscribe(vec![topic]).await
     }
 
@@ -2154,6 +2233,14 @@ impl Drop for BybitWebSocketClient {
     }
 }
 
+fn orderbook_topic(instrument_id: InstrumentId, depth: u32) -> String {
+    let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+    format!(
+        "{}.{depth}.{raw_symbol}",
+        BybitWsPublicChannel::OrderBook.as_ref()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -2180,6 +2267,50 @@ mod tests {
 
         assert!(!cancellation_token.is_cancelled());
         assert!(!client.task_handle.is_empty());
+    }
+
+    // An unconnected client rejects every command, so success proves nothing was sent
+    #[tokio::test]
+    async fn test_subscribe_book_opens_gate_for_held_topic_without_sending() {
+        let client = BybitWebSocketClient::new_public(None, 20);
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let topic = "orderbook.1.BTCUSDT";
+        assert!(client.subscriptions.add_reference(topic));
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+
+        let result = client
+            .subscribe_book(instrument_id, 1, CancellationToken::new(), gate.clone())
+            .await;
+
+        assert!(result.is_ok());
+        assert!(!gate.lock().is_closed());
+        assert_eq!(client.subscriptions.get_reference_count(topic), 2);
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_book_keeps_gate_closed_when_send_fails() {
+        let client = BybitWebSocketClient::new_public(None, 20);
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+
+        let error = client
+            .subscribe_book(instrument_id, 50, CancellationToken::new(), gate.clone())
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "WebSocket send error: Failed to send subscribe command: channel closed"
+        );
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            client
+                .subscriptions
+                .get_reference_count("orderbook.50.BTCUSDT"),
+            1
+        );
     }
 
     #[rstest]

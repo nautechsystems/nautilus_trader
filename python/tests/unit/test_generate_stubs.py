@@ -2753,7 +2753,10 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         stream_heartbeat_secs=43,
     )
     betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
-    bybit_config = BybitDataClientConfig(instrument_status_poll_secs=23)
+    bybit_config = BybitDataClientConfig(
+        instrument_status_poll_secs=23,
+        book_snapshot_timeout_secs=0,
+    )
     databento_config = DatabentoDataClientConfig(
         api_key="readback-api-key",
         publishers_filepath=tmp_path / "publishers.json",
@@ -2772,6 +2775,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
     assert bybit_config.instrument_status_poll_secs == 23
+    assert bybit_config.book_snapshot_timeout_secs == 0
     assert databento_config.publishers_filepath == tmp_path / "publishers.json"
     assert databento_config.use_exchange_as_venue is True
     assert databento_config.bars_timestamp_on_close is False

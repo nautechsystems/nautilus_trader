@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Added Binance `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added per-instrument `overrides` on maker/taker fee models
 - Added typed Parquet catalog round trips for Binance futures custom data
+- Added Bybit `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added `events.order_fill_declined.{instrument_id}` topic republishing fills and voids the engine declines
 - Added live binary option position settlement from `InstrumentClose` (#4963), thanks for reporting @seungpyoson
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
@@ -288,6 +289,8 @@ Released on TBD (UTC).
 - Fixed Binance Rust data clients not registering `BinanceBar` custom data for persistence
 - Fixed Bybit cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Bybit cursor pagination looping forever on repeated page cursors (#5019), thanks @Martingale42
+- Fixed Bybit book recovery after update ID gaps, missing snapshots, and reconnects
+- Fixed Bybit order book snapshots missing `F_SNAPSHOT` on their price levels
 - Fixed Coinbase trade aggressor side inverted by using the reported maker side
 - Fixed Databento live MBO subscriptions never emitting trades (#5095), thanks for reporting @invisiblebackhand
 - Fixed Deribit prices, sizes, balances, and fees losing digits through `f64` JSON parsing
@@ -347,6 +350,7 @@ Released on TBD (UTC).
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
 - Added Binance live book stress harness with fault injection and independent book oracles
+- Added Bybit live book stress harness with fault injection and an independent book oracle
 - Added Hyperliquid live book stress harness with fault injection and an independent book oracle
 - Added `OrderBook` filtered view property tests against a reference model
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
@@ -356,6 +360,7 @@ Released on TBD (UTC).
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Standardized adapter JSON decimal parsing on shared core parsers
 - Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
+- Standardized Bybit book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Hyperliquid book recovery on the shared recovery runner and 10s snapshot default
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
@@ -447,6 +452,7 @@ Released on TBD (UTC).
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Binance order book synchronization, recovery limits, and snapshot pacing
+- Documented Bybit order book recovery, retry limits, and live recovery validation
 - Documented Hyperliquid inferred-fill commissions as unset
 - Documented Hyperliquid order book recovery, stale stream escalation, and the book stress harness
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de

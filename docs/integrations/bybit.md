@@ -217,6 +217,92 @@ the depth-1 quote feed, so adding book deltas does not change the quote source. 
 come from the requested depth. Subscribe to one book depth per instrument; unsubscribe from the
 existing book before selecting another depth.
 
+## Order book recovery
+
+### Sequence validation
+
+Each delta must carry the update ID `u` that follows the book's last accepted frame. Any other delta
+suppresses book output and requests recovery, as does a delta that reaches a book before its first
+snapshot, such as an update the previous subscription sent before a quick resubscribe. A request
+starts recovery only when neither a running recovery nor a snapshot deadline already owns the book.
+
+Every snapshot replaces the book, as the
+[Bybit order book contract](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook)
+requires. The venue sends one after each subscribe and after a service restart, which can reset `u`
+to 1, and pushes only snapshots at depth 1. A replacement snapshot can carry an update ID below the
+book's last delta, since the venue serves it from an earlier state; deltas then continue from it.
+A snapshot that arrives while the book's subscription or replacement write is still in flight is
+discarded.
+
+### Snapshot deadlines
+
+Initial and recovery subscriptions wait up to `book_snapshot_timeout_secs` (default **10 seconds**)
+for a snapshot after the subscription write completes. Books on a reconnected socket wait the same
+time from the reconnect. A missing snapshot starts or retries recovery.
+
+Set `book_snapshot_timeout_secs` to `0` to disable snapshot deadlines. A gap still starts recovery,
+but a recovery attempt whose snapshot never arrives then waits until the 180-second retry budget
+ends.
+
+A depth-1 book shares its topic with quotes. When quotes already hold the topic, subscribing the book
+sends nothing, and the next depth-1 snapshot synchronizes it.
+
+### Retry limits and reconnects
+
+Recovery unsubscribes and resubscribes the book's topic on the same connection, and the venue
+answers with a fresh snapshot. Each recovery episode makes **up to eight attempts within 180
+seconds**, with exponential backoff and jitter, then continues at an interval that doubles from one
+minute to fifteen minutes until a snapshot is accepted. Recovery never ends in a failed state.
+Unsubscribe and shutdown cancel it.
+
+Recovering a depth-1 book also pauses quotes on the shared topic until the replacement snapshot
+arrives. A venue rejection of a replacement subscription is logged, and the attempt retries once
+its snapshot deadline passes.
+
+A reconnect resynchronizes every book on the reconnected product type's socket from the snapshot of
+its replayed subscription, and keeps a running recovery with its remaining budget. A recovery
+waiting between attempts after its budget retries at once on the new connection.
+
+When the client cannot queue the initial subscription, such as when it would exceed the option
+connection's topic limit, it logs an error and releases the book instead of recovering it. A queued
+initial subscription whose write fails starts recovery at once.
+
+See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
+for the shared recovery machinery and adapter responsibilities.
+
+### Live recovery validation
+
+The `bybit-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to Bybit mainnet public market data, submits no orders, and checks six linear
+books at the default depth of 50 against the book stream contract, including rising sequences within
+each snapshot episode, and against an independent reconstruction of the venue feed's best 50 levels.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-bybit --features examples --test bybit-book-stress -- --timeout 10 --rounds 21
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): checks recovery without reconnects, then rotates update ID gaps, dropped and
+  delayed snapshots, reconnects cut before their snapshots, unsubscribe during recovery, a restart
+  during recovery, and a 40-second traffic freeze.
+- `initial`: drops each book's first snapshot, once per round in a fresh session.
+- `turnover`: unsubscribes and resubscribes books during recovery.
+- `boundaries`: probes replacement cuts, retry exhaustion into the retry ceiling, and shutdown
+  during a reconnect. With a nonzero timeout, it also rejects a replacement and a replayed
+  subscription.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines. `--rounds`
+sets the number of rounds (21 by default) for `churn`, `initial`, and `turnover`; `boundaries` runs
+its sequence once.
+
+The harness requires the mainnet linear WebSocket stream and the public `instruments-info` REST API.
+See [Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared
+flags and output format.
+
 ## Orders capability
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
@@ -849,6 +935,7 @@ The product types for each client must be specified in the configurations.
 | `recv_window_ms`                   | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument catalog refreshes.                                                        |
 | `instrument_status_poll_secs`      | `60`       | Interval (seconds) between instrument and status polls; `0` disables polling.                                   |
+| `book_snapshot_timeout_secs`       | `10`       | Initial, reconnect, and recovery snapshot wait; `0` disables it.                                                |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                                                                    |
 
 ### Execution client configuration options

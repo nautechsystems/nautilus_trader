@@ -874,8 +874,8 @@ emissions are filtered to active subscriptions.
 ### Order book recovery ownership
 
 [`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Polymarket, Lighter, Binance, and Hyperliquid. Keep venue-specific book synchronization and recovery in each
-adapter's `src/book/`, with WebSocket handlers dispatching commands and frames.
+OKX, Polymarket, Lighter, Binance, Hyperliquid, and Bybit. Keep venue-specific book synchronization
+and recovery in each adapter's `src/book/`, with WebSocket handlers dispatching commands and frames.
 
 #### Per-book sync
 
@@ -890,7 +890,7 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-OKX, Polymarket, Binance, and Hyperliquid keep a `BookSync` per book. Lighter keeps a
+OKX, Polymarket, Binance, Hyperliquid, and Bybit keep a `BookSync` per book. Lighter keeps a
 `BookRecoveryState` per book inside its handler-owned tracker.
 
 #### Starting recovery
@@ -969,8 +969,8 @@ stream health monitor starts recovery for a stale delta book.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid): a replacement resubscribes, and the venue stream
-  delivers the snapshot.
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit): a replacement resubscribes, and the venue
+  stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 

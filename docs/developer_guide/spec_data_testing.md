@@ -264,7 +264,7 @@ traffic. The shared proxy, argument parsing, and wire book carry unit tests in t
 `book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
 Document the harness in the adapter's integration guide under a `Live recovery validation` heading
 that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
-endpoints it requires. OKX, Binance, Lighter, Polymarket, and Hyperliquid provide harnesses.
+endpoints it requires. OKX, Binance, Lighter, Polymarket, Hyperliquid, and Bybit provide harnesses.
 
 ### In-band verification
 
