@@ -519,6 +519,7 @@ fn handle_ws_message(
     option_greeks_subs: &Arc<AtomicSet<InstrumentId>>,
     liquidation_subs: &Arc<AtomicMap<InstrumentId, Arc<DataType>>>,
     bar_types_cache: &Arc<AtomicMap<String, BarType>>,
+    bars_timestamp_on_close: bool,
     quote_cache: &mut QuoteCache,
     funding_cache: &mut AHashMap<Ustr, FundingCacheEntry>,
     snapshot_timeout: Duration,
@@ -636,7 +637,13 @@ fn handle_ws_message(
                     continue;
                 }
 
-                match parse_ws_kline_bar(kline, instrument, bar_type, true, ts_init) {
+                match parse_ws_kline_bar(
+                    kline,
+                    instrument,
+                    bar_type,
+                    bars_timestamp_on_close,
+                    ts_init,
+                ) {
                     Ok(bar) => send_data(data_sender, Data::Bar(bar)),
                     Err(e) => log::error!("Failed to parse kline bar: {e}"),
                 }
@@ -1066,6 +1073,7 @@ impl DataClient for BybitDataClient {
                 let option_greeks_subs = self.option_greeks_subs.clone();
                 let liquidation_subs = self.liquidation_subs.clone();
                 let bar_types_cache = ws_client.bar_types_cache().clone();
+                let bars_timestamp_on_close = self.config.bars_timestamp_on_close;
                 let instruments = Arc::clone(&instruments_by_symbol);
                 let clock = self.clock;
                 let cancel = self.cancellation_token.clone();
@@ -1094,6 +1102,7 @@ impl DataClient for BybitDataClient {
                                     &option_greeks_subs,
                                     &liquidation_subs,
                                     &bar_types_cache,
+                                    bars_timestamp_on_close,
                                     &mut quote_cache,
                                     &mut funding_cache,
                                     snapshot_timeout,
@@ -2132,6 +2141,7 @@ impl DataClient for BybitDataClient {
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let bars_timestamp_on_close = self.config.bars_timestamp_on_close;
         let sender = self.data_sender.clone();
         let bar_type = request.bar_type;
         let start = request.start;
@@ -2150,7 +2160,14 @@ impl DataClient for BybitDataClient {
 
         self.spawn_command(async move {
             match http
-                .request_bars(product_type, bar_type, start, end, limit, true)
+                .request_bars(
+                    product_type,
+                    bar_type,
+                    start,
+                    end,
+                    limit,
+                    bars_timestamp_on_close,
+                )
                 .await
                 .context("failed to request bars from Bybit")
             {
@@ -2347,7 +2364,7 @@ mod tests {
         websocket::{
             client::BybitWebSocketClient,
             messages::{
-                BybitWsLiquidationMsg, BybitWsMessage, BybitWsOrderbookDepthMsg,
+                BybitWsKlineMsg, BybitWsLiquidationMsg, BybitWsMessage, BybitWsOrderbookDepthMsg,
                 BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
             },
         },
@@ -2480,6 +2497,7 @@ mod tests {
             &greeks_subs,
             liquidation_subs,
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -2737,6 +2755,62 @@ mod tests {
     }
 
     #[rstest]
+    #[case::open(false, true, Some(1_672_324_800_000_000_000))]
+    #[case::close(true, true, Some(1_672_325_100_000_000_000))]
+    #[case::unconfirmed_open(false, false, None)]
+    #[case::unconfirmed_close(true, false, None)]
+    fn test_handle_kline_bar_timestamp(
+        #[case] on_close: bool,
+        #[case] confirmed: bool,
+        #[case] expected: Option<u64>,
+    ) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+        let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
+        bar_types.insert("kline.5.BTCUSDT".to_string(), bar_type);
+        let mut msg: BybitWsKlineMsg =
+            serde_json::from_str(&load_test_json("ws_kline.json")).unwrap();
+        msg.data[0].confirm = confirmed;
+        let mut quote_cache = QuoteCache::new();
+        let mut funding_cache = AHashMap::new();
+        let clock = get_atomic_clock_realtime();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        handle_ws_message(
+            &BybitWsMessage::Kline(msg),
+            &tx.into(),
+            &instruments,
+            Some(BybitProductType::Linear),
+            &trade_subs,
+            &ticker_subs,
+            &quote_subs,
+            &book_depths,
+            &book_sync,
+            &ws_client,
+            &greeks_subs,
+            &Arc::new(AtomicMap::new()),
+            &bar_types,
+            on_close,
+            &mut quote_cache,
+            &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
+            clock,
+        );
+
+        if let Some(expected) = expected {
+            let DataEvent::Data(Data::Bar(bar)) = rx.try_recv().unwrap() else {
+                panic!("Expected bar event");
+            };
+            assert_eq!(bar.bar_type, bar_type);
+            assert_eq!(bar.ts_event, UnixNanos::from(expected));
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_trade_message_emits_trade_tick() {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
@@ -2768,6 +2842,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -2817,6 +2892,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3023,6 +3099,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3215,6 +3292,7 @@ mod tests {
                 &greeks_subs,
                 &Arc::new(AtomicMap::new()),
                 &bar_types,
+                true,
                 &mut quote_cache,
                 &mut funding_cache,
                 snapshot_timeout,
@@ -3300,6 +3378,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3347,6 +3426,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3395,6 +3475,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3421,6 +3502,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3469,6 +3551,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3531,6 +3614,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3584,6 +3668,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3626,6 +3711,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3671,6 +3757,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3694,6 +3781,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3735,6 +3823,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,
@@ -3759,6 +3848,7 @@ mod tests {
             &greeks_subs,
             &Arc::new(AtomicMap::new()),
             &bar_types,
+            true,
             &mut quote_cache,
             &mut funding_cache,
             Duration::ZERO,

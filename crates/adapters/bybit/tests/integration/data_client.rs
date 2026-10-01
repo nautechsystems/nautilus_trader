@@ -53,10 +53,10 @@ use nautilus_common::{
     messages::{
         DataEvent, SystemEvent,
         data::{
-            DataResponse, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice, SubscribeBookDeltas,
-            SubscribeCustomData, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeCustomData, UnsubscribeQuotes,
+            DataResponse, RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, SubscribeBars,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -65,7 +65,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{CustomData, Data, DataType, OrderBookDeltas, QuoteTick},
+    data::{BarType, CustomData, Data, DataType, OrderBookDeltas, QuoteTick},
     enums::{BookAction, BookType, PositionSide, RecordFlag},
     identifiers::{InstrumentId, OptionSeriesId},
     types::{Price, Quantity},
@@ -159,6 +159,13 @@ async fn handle_get_server_time() -> impl IntoResponse {
 async fn handle_get_orderbook() -> impl IntoResponse {
     let orderbook = load_test_data("http_get_orderbook.json");
     Json(orderbook).into_response()
+}
+
+async fn handle_get_klines(Query(query): Query<HashMap<String, String>>) -> impl IntoResponse {
+    assert_eq!(query.get("category").map(String::as_str), Some("linear"));
+    assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
+    assert_eq!(query.get("interval").map(String::as_str), Some("5"));
+    Json(load_test_data("http_get_klines_linear.json"))
 }
 
 async fn handle_get_funding_history() -> impl IntoResponse {
@@ -331,7 +338,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     break;
                                 }
                             } else if first_topic.contains("kline") {
-                                let kline_msg = load_test_data("ws_kline.json");
+                                let mut kline_msg = load_test_data("ws_kline.json");
+                                kline_msg["data"][0]["confirm"] = json!(true);
 
                                 if socket
                                     .send(Message::Text(kline_msg.to_string().into()))
@@ -412,6 +420,7 @@ fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/market/orderbook", get(handle_get_orderbook))
+        .route("/v5/market/kline", get(handle_get_klines))
         .route(
             "/v5/market/funding/history",
             get(handle_get_funding_history),
@@ -470,6 +479,7 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
         instrument_poll_interval_secs: None,
         book_snapshot_timeout_secs: 10,
         transport_backend: Default::default(),
+        bars_timestamp_on_close: true,
     }
 }
 
@@ -1531,6 +1541,89 @@ async fn test_data_client_book_quote_topic_lifetime(
     .await;
     assert!(state.subscriptions.lock().await.is_empty());
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::open(false, 1_672_324_800_000_000_000)]
+#[case::close(true, 1_672_325_100_000_000_000)]
+#[tokio::test]
+async fn test_data_client_live_bar_timestamp(#[case] on_close: bool, #[case] expected: u64) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.bars_timestamp_on_close = on_close;
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
+    client
+        .subscribe_bars(SubscribeBars::new(
+            bar_type,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    let bar = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Data(Data::Bar(bar))) = rx.recv().await {
+                break bar;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    client.disconnect().await.unwrap();
+    assert_eq!(bar.bar_type, bar_type);
+    assert_eq!(bar.ts_event, UnixNanos::from(expected));
+}
+
+#[rstest]
+#[case::open(false, 1_709_891_679_000_000_000)]
+#[case::close(true, 1_709_891_979_000_000_000)]
+#[tokio::test]
+async fn test_data_client_request_bar_timestamp(#[case] on_close: bool, #[case] expected: u64) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.bars_timestamp_on_close = on_close;
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
+    let request = RequestBars::new(
+        bar_type,
+        None,
+        None,
+        NonZeroUsize::new(1),
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let request_id = request.request_id;
+    client.request_bars(request).unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Response(DataResponse::Bars(response))) = rx.recv().await {
+                break response;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    client.disconnect().await.unwrap();
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.bar_type, bar_type);
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].ts_event, UnixNanos::from(expected));
+    assert_eq!(
+        response.data[0].ts_init,
+        UnixNanos::from(1_709_891_979_000_000_000)
+    );
 }
 
 #[rstest]

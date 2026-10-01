@@ -716,19 +716,22 @@ pub fn parse_ws_kline_bar(
     let close = parse_price_with_precision(&kline.close, price_precision, "kline.close")?;
     let volume = parse_quantity_with_precision(&kline.volume, size_precision, "kline.volume")?;
 
-    let mut ts_event = parse_millis_i64(kline.start, "kline.start")?;
+    let ts_open = parse_millis_i64(kline.start, "kline.start")?;
+    let interval_ns = bar_type.spec().timedelta().as_nanos();
+    let interval_ns = u64::try_from(interval_ns)
+        .context("bar interval overflowed the u64 range for nanoseconds")?;
+    let ts_close = ts_open
+        .as_u64()
+        .checked_add(interval_ns)
+        .map(UnixNanos::from)
+        .context("bar timestamp overflowed when adjusting to close time")?;
 
-    if timestamp_on_close {
-        let interval_ns = bar_type.spec().timedelta().as_nanos();
-        let interval_ns = u64::try_from(interval_ns)
-            .context("bar interval overflowed the u64 range for nanoseconds")?;
-        let updated = ts_event
-            .as_u64()
-            .checked_add(interval_ns)
-            .context("bar timestamp overflowed when adjusting to close time")?;
-        ts_event = UnixNanos::from(updated);
-    }
-    let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
+    let ts_event = if timestamp_on_close {
+        ts_close
+    } else {
+        ts_open
+    };
+    let ts_init = if ts_init.is_zero() { ts_close } else { ts_init };
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit WebSocket kline")
@@ -1453,6 +1456,36 @@ mod tests {
         assert_eq!(bar.volume, instrument.make_qty(2.081, None));
         assert_eq!(bar.ts_event, UnixNanos::new(expected_ts_event));
         assert_eq!(bar.ts_init, TS);
+    }
+
+    #[rstest]
+    #[case::timestamp_on_open(false)]
+    #[case::timestamp_on_close(true)]
+    fn parse_ws_kline_zero_ts_init_falls_back_to_close(#[case] timestamp_on_close: bool) {
+        use std::num::NonZero;
+
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_kline.json");
+        let msg: crate::websocket::messages::BybitWsKlineMsg = serde_json::from_str(&json).unwrap();
+        let kline = &msg.data[0];
+
+        let bar_spec = BarSpecification {
+            step: NonZero::new(5).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
+
+        let bar = parse_ws_kline_bar(
+            kline,
+            &instrument,
+            bar_type,
+            timestamp_on_close,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(bar.ts_init, UnixNanos::new(1_672_325_100_000_000_000));
     }
 
     #[rstest]
