@@ -225,6 +225,10 @@ earlier unfiltered result resolved. It has two observable behaviors:
 - When a venue goes flat (no open positions), its tracker entry is cleared so stale
   instruments do not remain flagged.
 
+`build_snapshot(account_id)` updates that account's scope. Snapshots recorded by the equity
+curve or `snapshot_interval_ms` do not update the tracker; they report unpriced positions in
+`unpriced_instruments`.
+
 Call `missing_price_instruments(venue)` to inspect the current set.
 
 :::tip

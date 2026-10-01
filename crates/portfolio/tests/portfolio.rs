@@ -9122,6 +9122,97 @@ fn test_missing_price_tracked_for_unpriced_margin_position(
 }
 
 #[rstest]
+fn test_missing_price_tracked_for_unpriced_cash_snapshot(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some(account_id.as_str())));
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::new(100.0, 0),
+        PositionId::new("P-CUP1"),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&Position::new(&instrument_audusd, fill), OmsType::Hedging)
+        .unwrap();
+
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+
+    assert_eq!(snapshot.unpriced_instruments, vec![instrument_audusd.id()]);
+    assert_eq!(
+        portfolio.missing_price_instruments(&Venue::test_default(), Some(&account_id)),
+        vec![instrument_audusd.id()],
+        "cash snapshot path must track unpriced open positions"
+    );
+}
+
+// Positions restored before the first account state (for example from a database
+// cache) are unpriced when the equity curve takes its registration snapshot
+#[rstest]
+#[case::margin(get_margin_account(Some("SIM-001")))]
+#[case::cash(get_cash_account(Some("SIM-001")))]
+fn test_equity_curve_snapshot_does_not_latch_missing_prices(
+    #[case] state: AccountState,
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    instrument_gbpusd: InstrumentAny,
+) {
+    let account_id = state.account_id;
+    let venue = Venue::test_default();
+
+    for (instrument, position_id) in [
+        (&instrument_audusd, PositionId::new("P-RESTORED-1")),
+        (&instrument_gbpusd, PositionId::new("P-RESTORED-2")),
+    ] {
+        let fill = make_fill_for_account(
+            instrument,
+            account_id,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::new(100.0, 0),
+            position_id,
+        );
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&Position::new(instrument, fill), OmsType::Hedging)
+            .unwrap();
+    }
+
+    portfolio.update_account(&state);
+
+    let snapshots = portfolio.snapshots(&account_id);
+    assert_eq!(snapshots.len(), 1);
+    assert!(snapshots[0].is_stale);
+    assert_eq!(
+        snapshots[0].unpriced_instruments,
+        vec![instrument_audusd.id(), instrument_gbpusd.id()],
+    );
+    assert!(portfolio.missing_price_instruments(&venue, None).is_empty());
+
+    for instrument in [&instrument_audusd, &instrument_gbpusd] {
+        let quote = get_quote_tick(instrument, 100.0, 101.0, 1.0, 1.0);
+        portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+        portfolio.update_quote_tick(&quote);
+    }
+
+    assert!(portfolio.unrealized_pnls(&venue, None, None).is_some());
+    assert!(portfolio.missing_price_instruments(&venue, None).is_empty());
+    assert!(
+        portfolio
+            .missing_price_instruments(&venue, Some(&account_id))
+            .is_empty()
+    );
+}
+
+#[rstest]
 fn test_margin_snapshot_keeps_priced_pnl_when_another_instrument_is_unpriced(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
