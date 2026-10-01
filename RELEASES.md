@@ -234,6 +234,7 @@ Released on TBD (UTC).
 - Fixed `filter_files` matching bar types by name prefix instead of instrument ID
 - Fixed period consolidation panicking on a zero `period_nanos`
 - Fixed catalog queries applying time bounds to only one side of an `OR` where clause
+- Fixed catalog queries failing on directories whose files differ in precision (#5166), thanks @faysou
 - Fixed `write_batches_to_object_store` panicking on an empty batch list
 - Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo

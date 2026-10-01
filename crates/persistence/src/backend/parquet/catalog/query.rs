@@ -321,7 +321,9 @@ impl ParquetDataCatalog {
     /// - `files`: Optional list of catalog files to read in place of the files matching the filters.
     /// - `optimize_file_loading`: Whether to register each parent directory as one table rather
     ///   than each file as its own table. When `true`, every file in those directories is read,
-    ///   including files not listed in `files`.
+    ///   including files not listed in `files`. A directory whose files cannot merge into one
+    ///   schema, such as one instrument written at two precisions, instead registers only the
+    ///   files selected by `files` or the filters, each as its own table.
     ///
     /// # Returns
     ///
@@ -440,47 +442,20 @@ impl ParquetDataCatalog {
             )?
         };
 
+        let table_prefix = make_sql_safe_identifier(path_prefix.as_ref());
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
         let mut all_records = Vec::new();
 
-        if optimize_file_loading {
-            for directory in parent_directories(&files_list) {
-                let identifier = dir_identifier(&directory);
-                let safe_sql_identifier = make_sql_safe_identifier(&identifier);
-                let table_name = format!("{}_{}", path_prefix.as_ref(), safe_sql_identifier);
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_directory_for_datafusion(&directory);
-                let batches = self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?;
+        for table in tables {
+            let query = build_query(&table.name, start, end, where_clause);
+            let batches = self.session.collect_parquet_files_batches(
+                &table.name,
+                vec![table.path],
+                Some(&query),
+            )?;
 
-                all_records.extend(self.convert_record_batches_to_typed::<T>(batches)?);
-            }
-        } else {
-            for file_uri in &files_list {
-                let identifier = extract_identifier_from_path(file_uri).ok_or_else(|| {
-                    anyhow::anyhow!("Cannot extract identifier from path '{file_uri}'")
-                })?;
-
-                let safe_sql_identifier = make_sql_safe_identifier(identifier);
-                let safe_filename = extract_sql_safe_filename(file_uri);
-                let table_name = format!(
-                    "{}_{}_{}",
-                    path_prefix.as_ref(),
-                    safe_sql_identifier,
-                    safe_filename
-                );
-                let query = build_query(&table_name, start, end, where_clause);
-                let resolved_path = self.resolve_path_for_datafusion(file_uri);
-                let batches = self.session.collect_parquet_files_batches(
-                    &table_name,
-                    vec![resolved_path],
-                    Some(&query),
-                )?;
-
-                all_records.extend(self.convert_record_batches_to_typed::<T>(batches)?);
-            }
+            all_records.extend(self.convert_record_batches_to_typed::<T>(batches)?);
         }
 
         if !is_monotonically_increasing_by_init(&all_records) {
@@ -511,14 +486,16 @@ impl ParquetDataCatalog {
             None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
         };
 
-        let paths = self.resolve_paths_for_datafusion(&files, optimize_file_loading);
-        let mut sources = Vec::with_capacity(paths.len());
-        for (index, path) in paths.into_iter().enumerate() {
-            let table = format!("parquet_{index}");
-            let sql = build_query(&table, start, end, where_clause);
-            let stream = self
-                .session
-                .parquet_files_batch_stream(&table, vec![path], Some(&sql))?;
+        let tables =
+            self.resolve_tables_for_datafusion("parquet", &files, optimize_file_loading)?;
+        let mut sources = Vec::with_capacity(tables.len());
+        for table in tables {
+            let sql = build_query(&table.name, start, end, where_clause);
+            let stream = self.session.parquet_files_batch_stream(
+                &table.name,
+                vec![table.path],
+                Some(&sql),
+            )?;
             let pages = decode_typed_pages::<T>(stream);
             sources.push(
                 Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
@@ -554,38 +531,19 @@ impl ParquetDataCatalog {
         let table_prefix =
             make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
 
-        let paths = self.resolve_paths_for_datafusion(&files_list, optimize_file_loading);
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
 
-        for (index, resolved_path) in paths.into_iter().enumerate() {
-            let table_name = format!("{table_prefix}_{index}");
-            let query = build_query(&table_name, start, end, where_clause);
+        for table in tables {
+            let query = build_query(&table.name, start, end, where_clause);
             record_batches.extend(self.session.collect_parquet_files_batches(
-                &table_name,
-                vec![resolved_path],
+                &table.name,
+                vec![table.path],
                 Some(&query),
             )?);
         }
 
         Ok(record_batches)
-    }
-
-    fn resolve_paths_for_datafusion(
-        &self,
-        files: &[String],
-        optimize_file_loading: bool,
-    ) -> Vec<String> {
-        if optimize_file_loading {
-            // Deterministic registration order so equal-ts_init tie order is reproducible.
-            parent_directories(files)
-                .into_iter()
-                .map(|directory| self.resolve_directory_for_datafusion(&directory))
-                .collect()
-        } else {
-            files
-                .iter()
-                .map(|file| self.resolve_path_for_datafusion(file))
-                .collect()
-        }
     }
 
     /// Queries raw catalog batches and converts them to display-friendly Arrow batches.
@@ -615,39 +573,15 @@ impl ParquetDataCatalog {
         )?;
         let mut display_batches = Vec::new();
         let table_prefix = make_sql_safe_identifier(data_path_prefix.as_ref());
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
 
-        let sources = if optimize_file_loading {
-            // Deterministic registration order so equal-ts_init tie order is reproducible.
-            parent_directories(&files_list)
-                .into_iter()
-                .map(|directory| {
-                    let resolved_path = self.resolve_directory_for_datafusion(&directory);
-                    (display_identifier(data_type, &directory), resolved_path)
-                })
-                .collect::<Vec<_>>()
-        } else {
-            files_list
-                .iter()
-                .map(|file_uri| {
-                    let directory = Path::new(file_uri)
-                        .parent()
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("Cannot extract directory from '{file_uri}'")
-                        })?
-                        .to_string_lossy();
-
-                    let resolved_path = self.resolve_path_for_datafusion(file_uri);
-                    Ok((display_identifier(data_type, &directory), resolved_path))
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?
-        };
-
-        for (index, (path_identifier, resolved_path)) in sources.into_iter().enumerate() {
-            let table_name = format!("{table_prefix}_{index}");
-            let query = build_query(&table_name, start, end, where_clause);
+        for table in tables {
+            let path_identifier = display_identifier(data_type, &table.directory);
+            let query = build_query(&table.name, start, end, where_clause);
             let batches = self.session.collect_parquet_files_batches(
-                &table_name,
-                vec![resolved_path],
+                &table.name,
+                vec![table.path],
                 Some(&query),
             )?;
 
@@ -685,19 +619,18 @@ impl ParquetDataCatalog {
         let files_list = self.query_files(data_type, identifiers, start, end)?;
         let table_prefix =
             make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
+        let tables = self.resolve_tables_for_datafusion(&table_prefix, &files_list, true)?;
         let mut identifiers = Vec::new();
 
-        for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
-            let identifier = dir_identifier(&directory);
-            let table_name = format!("{table_prefix}_{index}_identifier_check");
+        for table in tables {
+            let identifier = dir_identifier(&table.directory);
             let query = format!(
                 "{} LIMIT 1",
-                build_query(&table_name, start, end, where_clause)
+                build_query(&table.name, start, end, where_clause)
             );
-            let resolved_path = self.resolve_directory_for_datafusion(&directory);
             let batches = self.session.collect_parquet_files_batches(
-                &table_name,
-                vec![resolved_path],
+                &table.name,
+                vec![table.path],
                 Some(&query),
             )?;
 
@@ -709,6 +642,65 @@ impl ParquetDataCatalog {
         identifiers.sort();
         identifiers.dedup();
         Ok(identifiers)
+    }
+
+    // Registers each directory table up front, so a directory whose file schemas cannot merge
+    // (such as one instrument written at two precisions) falls back to one table per listed file.
+    // File tables register when queried.
+    fn resolve_tables_for_datafusion(
+        &mut self,
+        table_prefix: &str,
+        files: &[String],
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<DataFusionTable>> {
+        let table_name = |index: usize| format!("{table_prefix}_{index}");
+        let mut tables = Vec::new();
+
+        if !optimize_file_loading {
+            for file in files {
+                tables.push(self.file_table(table_name(tables.len()), file)?);
+            }
+            return Ok(tables);
+        }
+
+        // Deterministic registration order so equal-ts_init tie order is reproducible.
+        for directory in parent_directories(files) {
+            let name = table_name(tables.len());
+            let path = self.resolve_directory_for_datafusion(&directory);
+
+            if self
+                .session
+                .try_register_parquet_files_table(&name, vec![path.clone()])?
+            {
+                tables.push(DataFusionTable {
+                    name,
+                    directory,
+                    path,
+                });
+                continue;
+            }
+
+            for file in files
+                .iter()
+                .filter(|file| parent_directory(file).as_ref() == Some(&directory))
+            {
+                tables.push(self.file_table(table_name(tables.len()), file)?);
+            }
+        }
+
+        Ok(tables)
+    }
+
+    fn file_table(&self, name: String, file: &str) -> anyhow::Result<DataFusionTable> {
+        let directory = parent_directory(file)
+            .ok_or_else(|| anyhow::anyhow!("Cannot extract directory from '{file}'"))?;
+        let path = self.resolve_path_for_datafusion(file);
+
+        Ok(DataFusionTable {
+            name,
+            directory,
+            path,
+        })
     }
 
     /// Queries custom data dynamically by type name.
@@ -1226,21 +1218,31 @@ fn identifier_directory(file_path: &str) -> Option<String> {
     segments.next().map(decode_object_store_segment)
 }
 
+// A table over a parent directory or one of its files, with `path` resolved for DataFusion and
+// `directory` naming the parent directory in either case.
+struct DataFusionTable {
+    name: String,
+    directory: String,
+    path: String,
+}
+
 /// Returns the sorted, deduplicated parent directories (everything except the filename)
 /// of the given file URIs.
 fn parent_directories(files: &[String]) -> Vec<String> {
     let mut directories: Vec<String> = files
         .iter()
-        .filter_map(|file_uri| {
-            Path::new(file_uri)
-                .parent()
-                .map(|path| path.to_string_lossy().to_string())
-        })
+        .filter_map(|file_uri| parent_directory(file_uri))
         .collect();
 
     directories.sort();
     directories.dedup();
     directories
+}
+
+fn parent_directory(file_uri: &str) -> Option<String> {
+    Path::new(file_uri)
+        .parent()
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 /// Extracts the identifier from a directory path (last component).

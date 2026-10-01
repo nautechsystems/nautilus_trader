@@ -7679,6 +7679,221 @@ fn test_query_directory_based_vs_file_based() {
 }
 
 #[rstest]
+#[case::directory_registration(true)]
+#[case::file_registration(false)]
+fn test_query_directory_with_files_at_different_precisions(#[case] optimize_file_loading: bool) {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let mixed = write_quotes_at_two_precisions(&catalog);
+    let uniform = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
+    catalog
+        .write_to_parquet(&uniform, None, None, None)
+        .unwrap();
+
+    let quotes = catalog
+        .query::<QuoteTick>(None, None, None, None, None, optimize_file_loading)
+        .unwrap();
+
+    assert_eq!(
+        quotes,
+        vec![
+            mixed[0], uniform[0], mixed[1], uniform[1], mixed[2], mixed[3]
+        ]
+    );
+    assert_eq!(
+        quote_precisions(&quotes),
+        vec![(2, 2), (4, 4), (2, 2), (4, 4), (3, 3), (3, 3)]
+    );
+}
+
+#[rstest]
+fn test_query_directory_with_files_at_different_precisions_reads_only_listed_files() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let expected = write_quotes_at_two_precisions(&catalog);
+    let files = catalog
+        .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+        .unwrap();
+
+    let quotes = catalog
+        .query::<QuoteTick>(None, None, None, None, Some(vec![files[0].clone()]), true)
+        .unwrap();
+
+    assert_eq!(quotes, expected[..2]);
+    assert_eq!(quote_precisions(&quotes), vec![(2, 2), (2, 2)]);
+}
+
+#[rstest]
+fn test_query_directory_registration_reads_unlisted_files() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let first = create_quote_ticks_for_instrument("EUR/USD.SIM", 1_000, 2);
+    let second = create_quote_ticks_for_instrument("EUR/USD.SIM", 10_000, 2);
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+    let files = catalog
+        .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+        .unwrap();
+
+    let quotes = catalog
+        .query::<QuoteTick>(None, None, None, None, Some(vec![files[0].clone()]), true)
+        .unwrap();
+
+    assert_eq!(quotes, [first, second].concat());
+}
+
+#[rstest]
+fn test_query_rejects_listed_file_without_directory() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let error = catalog
+        .query::<QuoteTick>(None, None, None, None, Some(vec![String::new()]), false)
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "Cannot extract directory from ''");
+}
+
+#[rstest]
+fn test_query_batch_session_directory_with_files_at_different_precisions() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let mixed = write_quotes_at_two_precisions(&catalog);
+    let uniform = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
+    catalog
+        .write_to_parquet(&uniform, None, None, None)
+        .unwrap();
+    let query = CatalogQuery::new(NautilusDataType::QuoteTick);
+    let mut session = CatalogReader::query_batch_session(&mut catalog, &query, None).unwrap();
+    let mut quotes = Vec::new();
+
+    while let Some(batch) = session.next_batch().unwrap() {
+        let DataBatch::Quote(rows) = batch else {
+            panic!("expected quote batch");
+        };
+        quotes.extend_from_slice(rows.as_ref());
+    }
+
+    assert_eq!(
+        quotes,
+        vec![
+            mixed[0], uniform[0], mixed[1], uniform[1], mixed[2], mixed[3]
+        ]
+    );
+    assert_eq!(
+        quote_precisions(&quotes),
+        vec![(2, 2), (4, 4), (2, 2), (4, 4), (3, 3), (3, 3)]
+    );
+}
+
+#[rstest]
+fn test_query_record_batches_directory_with_files_at_different_precisions() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    write_quotes_at_two_precisions(&catalog);
+
+    let batches = catalog
+        .query_record_batches(
+            &NautilusDataType::QuoteTick.into(),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    let precisions_and_rows: Vec<_> = batches
+        .iter()
+        .map(|batch| {
+            let precision = batch.schema().metadata()[KEY_PRICE_PRECISION].clone();
+            (precision, batch.num_rows())
+        })
+        .collect();
+    assert_eq!(
+        precisions_and_rows,
+        vec![("2".to_string(), 2), ("3".to_string(), 2)]
+    );
+}
+
+#[rstest]
+fn test_query_display_directory_with_files_at_different_precisions() {
+    use arrow::array::Float64Array;
+
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    write_quotes_at_two_precisions(&catalog);
+
+    let batches = catalog
+        .query_display_record_batches(&NautilusDataType::QuoteTick, None, None, None, None, true)
+        .unwrap();
+    let mut bid_prices = Vec::new();
+
+    for batch in batches {
+        let prices = batch
+            .column_by_name("bid_price")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap();
+        bid_prices.extend(prices.values().iter().copied());
+    }
+
+    assert_eq!(bid_prices, vec![1.10, 1.12, 1.101, 1.103]);
+}
+
+#[rstest]
+fn test_query_identifiers_directory_with_files_at_different_precisions() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    write_quotes_at_two_precisions(&catalog);
+
+    let identifiers = catalog
+        .query_identifiers(
+            &NautilusDataType::QuoteTick.into(),
+            None,
+            None,
+            None,
+            Some("bid_price > 1.102"),
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(identifiers, vec!["AUDUSD.SIM"]);
+}
+
+// Writes quotes for one instrument at price precision 2 and then 3, as two files in one directory
+fn write_quotes_at_two_precisions(catalog: &ParquetDataCatalog) -> Vec<QuoteTick> {
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+    let quote = |bid: &str, ask: &str, bid_size: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from(bid_size),
+            Quantity::from("200"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts + 1),
+        )
+    };
+    let quotes_2dp = vec![
+        quote("1.10", "1.11", "100", 1_000),
+        quote("1.12", "1.13", "101", 2_000),
+    ];
+    let quotes_3dp = vec![
+        quote("1.101", "1.102", "102", 10_000),
+        quote("1.103", "1.104", "103", 11_000),
+    ];
+    catalog
+        .write_to_parquet(&quotes_2dp, None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&quotes_3dp, None, None, None)
+        .unwrap();
+
+    [quotes_2dp, quotes_3dp].concat()
+}
+
+fn quote_precisions(quotes: &[QuoteTick]) -> Vec<(u8, u8)> {
+    quotes
+        .iter()
+        .map(|quote| (quote.bid_price.precision, quote.ask_price.precision))
+        .collect()
+}
+
+#[rstest]
 fn test_data_catalog_query_custom_data_applies_where_clause() {
     ensure_test_custom_data_registered();
     let (_temp_dir, mut catalog) = create_temp_catalog();
