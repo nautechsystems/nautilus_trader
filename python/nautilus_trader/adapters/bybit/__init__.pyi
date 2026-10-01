@@ -67,6 +67,8 @@ class BybitDataClientConfig:
     def book_snapshot_timeout_secs(self) -> int: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def bars_timestamp_on_close(self) -> bool: ...
     def __init__(
         self,
         product_types: typing.Sequence[BybitProductType] | None = None,
@@ -87,6 +89,7 @@ class BybitDataClientConfig:
         instrument_status_poll_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         book_snapshot_timeout_secs: int | None = None,
+        bars_timestamp_on_close: bool | None = None,
     ) -> None: ...
     @property
     def instrument_status_poll_secs(self) -> int | None: ...

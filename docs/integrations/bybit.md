@@ -937,6 +937,7 @@ The product types for each client must be specified in the configurations.
 | `instrument_status_poll_secs`      | `60`       | Interval (seconds) between instrument and status polls; `0` disables polling.                                   |
 | `book_snapshot_timeout_secs`       | `10`       | Initial, reconnect, and recovery snapshot wait; `0` disables it.                                                |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                                                                    |
+| `bars_timestamp_on_close`          | `True`     | Timestamp bars on the interval close; `False` timestamps them on the interval open.                             |
 
 ### Execution client configuration options
 

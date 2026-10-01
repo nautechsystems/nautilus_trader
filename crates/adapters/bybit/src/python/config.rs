@@ -52,6 +52,7 @@ impl BybitDataClientConfig {
         instrument_status_poll_secs = None,
         transport_backend = None,
         book_snapshot_timeout_secs = None,
+        bars_timestamp_on_close = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -73,6 +74,7 @@ impl BybitDataClientConfig {
         instrument_status_poll_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         book_snapshot_timeout_secs: Option<u64>,
+        bars_timestamp_on_close: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -99,6 +101,8 @@ impl BybitDataClientConfig {
             book_snapshot_timeout_secs: book_snapshot_timeout_secs
                 .unwrap_or(defaults.book_snapshot_timeout_secs),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            bars_timestamp_on_close: bars_timestamp_on_close
+                .unwrap_or(defaults.bars_timestamp_on_close),
         }
     }
 

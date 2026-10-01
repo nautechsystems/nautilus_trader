@@ -945,19 +945,22 @@ pub fn parse_kline_bar(
     let close = parse_price_with_precision(&kline.close, price_precision, "kline.close")?;
     let volume = parse_quantity_with_precision(&kline.volume, size_precision, "kline.volume")?;
 
-    let mut ts_event = parse_millis_timestamp(&kline.start, "kline.start")?;
+    let ts_open = parse_millis_timestamp(&kline.start, "kline.start")?;
+    let interval_ns = bar_type.spec().timedelta().as_nanos();
+    let interval_ns = u64::try_from(interval_ns)
+        .context("bar interval overflowed the u64 range for nanoseconds")?;
+    let ts_close = ts_open
+        .as_u64()
+        .checked_add(interval_ns)
+        .map(UnixNanos::from)
+        .context("bar timestamp overflowed when adjusting to close time")?;
 
-    if timestamp_on_close {
-        let interval_ns = bar_type.spec().timedelta().as_nanos();
-        let interval_ns = u64::try_from(interval_ns)
-            .context("bar interval overflowed the u64 range for nanoseconds")?;
-        let updated = ts_event
-            .as_u64()
-            .checked_add(interval_ns)
-            .context("bar timestamp overflowed when adjusting to close time")?;
-        ts_event = UnixNanos::from(updated);
-    }
-    let ts_init = ts_init.unwrap_or(ts_event);
+    let ts_event = if timestamp_on_close {
+        ts_close
+    } else {
+        ts_open
+    };
+    let ts_init = ts_init.unwrap_or(ts_close); // Received time or close time
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit kline entry")
@@ -1702,7 +1705,7 @@ pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
         "canceltaker" => Ok(BybitOrderSmpType::CancelTaker),
         "cancelboth" => Ok(BybitOrderSmpType::CancelBoth),
         _ => anyhow::bail!(
-            "invalid Bybit smp_type: '{s}', expected None, CancelMaker, CancelTaker or CancelBoth"
+            "invalid Bybit smp_type: '{s}', expected None, CancelMaker, CancelTaker, or CancelBoth"
         ),
     }
 }

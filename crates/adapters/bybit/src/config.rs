@@ -94,6 +94,9 @@ pub struct BybitDataClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Whether bar timestamps use the close time instead of the open time.
+    #[builder(default = true)]
+    pub bars_timestamp_on_close: bool,
 }
 
 #[cfg(feature = "python")]
@@ -112,6 +115,7 @@ nautilus_core::impl_pyo3_config_getters!(BybitDataClientConfig {
     update_instruments_interval_mins: Option<u64>,
     book_snapshot_timeout_secs: u64,
     transport_backend: TransportBackend,
+    bars_timestamp_on_close: bool,
 });
 
 impl Default for BybitDataClientConfig {
@@ -402,11 +406,33 @@ mod tests {
     fn test_data_config_default() {
         let config = BybitDataClientConfig::default();
 
+        assert!(config.bars_timestamp_on_close);
         assert!(!config.has_api_credentials());
         assert_eq!(config.product_types, vec![BybitProductType::Linear]);
         assert_eq!(config.http_timeout_secs, 60);
         assert_eq!(config.heartbeat_interval_secs, 20);
         assert_eq!(config.book_snapshot_timeout_secs, 10);
+    }
+
+    #[rstest]
+    fn test_data_config_bar_timestamp_builder() {
+        assert!(
+            BybitDataClientConfig::builder()
+                .build()
+                .bars_timestamp_on_close
+        );
+        assert!(
+            serde_json::from_str::<BybitDataClientConfig>("{}")
+                .unwrap()
+                .bars_timestamp_on_close
+        );
+        let config = BybitDataClientConfig::builder()
+            .bars_timestamp_on_close(false)
+            .build();
+        assert!(!config.bars_timestamp_on_close);
+        let config: BybitDataClientConfig =
+            serde_json::from_str(r#"{"bars_timestamp_on_close":false}"#).unwrap();
+        assert!(!config.bars_timestamp_on_close);
     }
 
     #[rstest]

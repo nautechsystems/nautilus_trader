@@ -121,7 +121,6 @@ pub struct BybitWebSocketClient {
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     trade_subs: Arc<AtomicSet<InstrumentId>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
-    bars_timestamp_on_close: Arc<AtomicBool>,
     transport_backend: TransportBackend,
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
     proxy_url: Option<SecretString>,
@@ -200,7 +199,6 @@ impl Clone for BybitWebSocketClient {
             instruments_cache: Arc::clone(&self.instruments_cache),
             trade_subs: Arc::clone(&self.trade_subs),
             option_greeks_subs: Arc::clone(&self.option_greeks_subs),
-            bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
             transport_backend: self.transport_backend,
             cancellation_token: Arc::clone(&self.cancellation_token),
             proxy_url: self.proxy_url.clone(),
@@ -285,7 +283,6 @@ impl BybitWebSocketClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
-            bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -355,7 +352,6 @@ impl BybitWebSocketClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
-            bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -418,7 +414,6 @@ impl BybitWebSocketClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
-            bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -1016,17 +1011,6 @@ impl BybitWebSocketClient {
     #[must_use]
     pub fn instruments_snapshot(&self) -> ahash::AHashMap<Ustr, InstrumentAny> {
         (**self.instruments_cache.load()).clone()
-    }
-
-    /// Sets whether bar timestamps use the close time.
-    pub fn set_bars_timestamp_on_close(&self, value: bool) {
-        self.bars_timestamp_on_close.store(value, Ordering::Relaxed);
-    }
-
-    /// Returns whether bar timestamps use the close time.
-    #[must_use]
-    pub fn bars_timestamp_on_close(&self) -> bool {
-        self.bars_timestamp_on_close.load(Ordering::Relaxed)
     }
 
     /// Adds an instrument ID to the option greeks subscription set.
