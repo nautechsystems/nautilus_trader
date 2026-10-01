@@ -119,6 +119,8 @@ Released on TBD (UTC).
 - Changed `ParquetDataCatalog` to reject LZO and unknown `compression` codes, not use Snappy (#5166), thanks @faysou
 - Changed catalog `lz4` compression and code `5` to write `LZ4_RAW`, with `lz4_raw` as an alias (#5166), thanks @faysou
 - Changed Rust `DataCatalogConfig` builder to return `ConfigResult` and reject zero counts (#5166), thanks @faysou
+- Changed catalog storage options to reject unknown keys, including GCS `project_id` (#5166), thanks @faysou
+- Changed Rust `DataCatalogConfig` and `BacktestDataConfig` storage option values to `SecretString`
 - Changed `StreamingConfig` type selectors and `record_filters` keys to take enums only (#5115), thanks @faysou
 - Changed `ParquetDataCatalog.query_custom_data` to take a `NautilusDataType` (#5115), thanks @faysou
 - Changed `ParquetDataCatalog.list_data_types` to return type enums in place of names (#5115), thanks @faysou
@@ -177,6 +179,7 @@ Released on TBD (UTC).
 - Fixed Python float conversions of precision 17 and 18 prices, quantities, and money aborting release builds
 - Fixed `Cache.price` mid prices of precision 16 quotes aborting greeks calculations in release builds
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
+- Hardened `DataCatalogConfig` and `BacktestDataConfig` `repr()` and `Debug` against storage option leaks
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
 - Hardened TLS `certs_dir` loading to fail on unreadable files instead of silently skipping them
 - Hardened WebSocket transport client close-reason logging against server-injected line breaks and terminal escapes
@@ -246,6 +249,7 @@ Released on TBD (UTC).
 - Fixed period consolidation panicking on a zero `period_nanos`
 - Fixed catalog queries applying time bounds to only one side of an `OR` where clause
 - Fixed catalog queries failing on directories whose files differ in precision (#5166), thanks @faysou
+- Fixed HTTP catalogs ignoring storage options, which blocked plain `http://` catalogs (#5166), thanks @faysou
 - Fixed `write_batches_to_object_store` panicking on an empty batch list
 - Fixed OrderBook warnings after sequence counter resets (#5015), thanks @dnouri
 - Fixed AroonOscillator `MAX_PERIOD` window dropping the oldest extreme before rollover (#5037), thanks @wbizmo

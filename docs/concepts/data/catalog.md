@@ -43,7 +43,16 @@ The catalog accepts the storage protocols supported by its Rust object-store bac
 | Amazon S3            | `s3`               | `region`, `access_key_id`, `secret_access_key`, `endpoint_url`.           |
 | Google Cloud Storage | `gs`, `gcs`        | `service_account_path`, `service_account_key`, `application_credentials`. |
 | Azure Blob Storage   | `az`, `abfs`       | `account_name`, `account_key`, `sas_token`.                               |
-| HTTP or WebDAV       | `http`, `https`    | None.                                                                     |
+| HTTP or WebDAV       | `http`, `https`    | `timeout`, `connect_timeout`, `proxy_url`.                                |
+
+Option keys are `object_store` configuration keys for the URI scheme:
+
+- S3, GCS, and Azure keys also take a prefixed form, such as `aws_region`,
+  `google_application_credentials`, or `azure_storage_sas_token`.
+- Client options such as `timeout` apply to every remote scheme. Set `allow_http` to `true` to
+  connect over plain `http://`.
+- S3 also accepts the legacy `key` and `secret` names.
+- An unknown key fails with an error that names it.
 
 Pass credentials and other backend settings through `storage_options`:
 

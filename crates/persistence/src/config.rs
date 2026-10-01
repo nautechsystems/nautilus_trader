@@ -18,7 +18,9 @@
 use std::fmt::Display;
 
 use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
-use nautilus_core::{DurationNanos, Params, UnixNanos, datetime::get_timezone};
+use nautilus_core::{
+    DurationNanos, Params, UnixNanos, datetime::get_timezone, string::secret::SecretString,
+};
 use nautilus_model::{
     data::{NautilusDataType, NautilusRecordType},
     instruments::NautilusInstrumentType,
@@ -105,7 +107,7 @@ pub struct DataCatalogConfig {
     /// Backend-specific catalog parameters.
     params: Option<Params>,
     #[serde(default)]
-    fs_rust_storage_options: Option<ahash::AHashMap<String, String>>,
+    fs_rust_storage_options: Option<ahash::AHashMap<String, SecretString>>,
     /// Whether the catalog rejects response write-back.
     #[serde(default)]
     #[builder(default)]
@@ -161,7 +163,7 @@ impl DataCatalogConfig {
     #[must_use]
     pub fn with_storage_options(
         mut self,
-        options: Option<ahash::AHashMap<String, String>>,
+        options: Option<ahash::AHashMap<String, SecretString>>,
     ) -> Self {
         self.fs_rust_storage_options = options;
         self
@@ -169,17 +171,23 @@ impl DataCatalogConfig {
 
     /// Returns native object-store options.
     #[must_use]
-    pub fn fs_rust_storage_options(&self) -> Option<&ahash::AHashMap<String, String>> {
+    pub fn fs_rust_storage_options(&self) -> Option<&ahash::AHashMap<String, SecretString>> {
         self.fs_rust_storage_options.as_ref()
     }
 
     /// Returns the connection settings catalog and writer factories open this catalog with.
     #[must_use]
     pub fn connect_config(&self) -> CatalogConnectConfig {
+        let storage_options = self.fs_rust_storage_options.as_ref().map(|options| {
+            options
+                .iter()
+                .map(|(key, value)| (key.clone(), value.expose_secret().to_string()))
+                .collect()
+        });
         let mut connect = CatalogConnectConfig::from_path_and_protocol(
             &self.path,
             Some(&self.fs_protocol),
-            self.fs_rust_storage_options.clone(),
+            storage_options,
         );
         connect.batch_size = self.batch_size;
         connect.compression = self.compression;
@@ -687,6 +695,7 @@ pub(crate) fn default_fs_protocol() -> String {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use serde_json::json;
 
@@ -911,7 +920,6 @@ read_only = true
     fn data_catalog_config_connect_config_carries_protocol_options_settings_and_params() {
         let mut params = Params::new();
         params.insert("snapshot_id".to_string(), json!(1024));
-        let options = ahash::AHashMap::from([("region".to_string(), "eu-west-1".to_string())]);
         let config = DataCatalogConfig::builder()
             .path("bucket/catalog".to_string())
             .fs_protocol("s3".to_string())
@@ -919,18 +927,46 @@ read_only = true
             .compression(CatalogCompression::Brotli)
             .max_row_group_size(2048)
             .params(params.clone())
-            .fs_rust_storage_options(options.clone())
+            .fs_rust_storage_options(ahash::AHashMap::from([(
+                "region".to_string(),
+                SecretString::from("eu-west-1"),
+            )]))
             .build()
             .unwrap();
 
         let connect = config.connect_config();
 
         assert_eq!(connect.uri, "s3://bucket/catalog");
-        assert_eq!(connect.storage_options, Some(options));
+        assert_eq!(
+            connect.storage_options,
+            Some(ahash::AHashMap::from([(
+                "region".to_string(),
+                "eu-west-1".to_string()
+            )]))
+        );
         assert_eq!(connect.batch_size, Some(512));
         assert_eq!(connect.compression, Some(CatalogCompression::Brotli));
         assert_eq!(connect.max_row_group_size, Some(2048));
         assert_eq!(connect.params, Some(params));
+    }
+
+    #[rstest]
+    fn data_catalog_config_debug_redacts_storage_option_values() {
+        let config = DataCatalogConfig::builder()
+            .path("bucket/catalog".to_string())
+            .fs_rust_storage_options(ahash::AHashMap::from([(
+                "aws_secret_access_key".to_string(),
+                SecretString::from("catalog-secret-sentinel"),
+            )]))
+            .build()
+            .unwrap();
+
+        let debug_output = format!("{config:?}");
+
+        assert!(!debug_output.contains("catalog-secret-sentinel"));
+        assert!(debug_output.contains(&format!(
+            "fs_rust_storage_options: Some({{\"aws_secret_access_key\": {REDACTED}}})"
+        )));
     }
 
     #[rstest]

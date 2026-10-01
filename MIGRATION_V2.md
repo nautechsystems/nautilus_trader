@@ -478,6 +478,13 @@ takes the Parquet codec codes `0` (uncompressed), `1` (Snappy), `2` (gzip), `4` 
 and `6` (zstd), and rejects LZO (`3`) and unknown codes. Both `lz4` and code `5` write Parquet
 `LZ4_RAW`; see [compression and row groups](docs/concepts/data/catalog.md#compression-and-row-groups).
 
+Catalog storage options are `object_store` configuration keys. V1's Rust backend logged and ignored
+an unknown key, such as GCS `project_id`; v2 fails with an error that names the key.
+`BacktestDataConfig` passes `catalog_fs_storage_options` to the same backend when
+`catalog_fs_rust_storage_options` is unset, so translate fsspec-only options to `object_store`
+keys, such as `anon` to `skip_signature`. See
+[storage options](docs/concepts/data/catalog.md#filesystem-protocols-and-storage-options).
+
 Custom Rust cache database adapters used with live orders must implement the batch
 `index_order_clients` operation. The default trait implementation rejects non-empty claims.
 

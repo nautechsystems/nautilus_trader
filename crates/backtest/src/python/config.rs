@@ -724,12 +724,16 @@ impl BacktestDataConfig {
                     .unwrap_or_default(),
             )
             .maybe_catalog_fs_protocol(catalog_fs_protocol)
-            .maybe_catalog_fs_storage_options(
-                catalog_fs_storage_options.map(|m| m.into_iter().collect()),
-            )
-            .maybe_catalog_fs_rust_storage_options(
-                catalog_fs_rust_storage_options.map(|m| m.into_iter().collect()),
-            )
+            .maybe_catalog_fs_storage_options(catalog_fs_storage_options.map(|m| {
+                m.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }))
+            .maybe_catalog_fs_rust_storage_options(catalog_fs_rust_storage_options.map(|m| {
+                m.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }))
             .maybe_instrument_id(instrument_id)
             .maybe_instrument_ids(instrument_ids)
             .maybe_start_time(start_time)
@@ -1003,5 +1007,62 @@ fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyRes
     match model {
         MarginModelAny::Standard(model) => (*model).into_py_any(py),
         MarginModelAny::Leveraged(model) => (*model).into_py_any(py),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ahash::AHashMap;
+    use nautilus_core::string::secret::SecretString;
+    use nautilus_model::data::NautilusDataType;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_py_new_keeps_storage_option_values() {
+        Python::initialize();
+
+        let config = Python::attach(|py| {
+            let data_type =
+                Bound::new(py, PyNautilusDataType::new(NautilusDataType::QuoteTick)).unwrap();
+            BacktestDataConfig::py_new(
+                data_type.as_any(),
+                "bucket/catalog".to_string(),
+                Some("s3".to_string()),
+                Some(HashMap::from([("key".to_string(), "fs-key".to_string())])),
+                Some(HashMap::from([(
+                    "aws_secret_access_key".to_string(),
+                    "rust-secret".to_string(),
+                )])),
+                Some(InstrumentId::from("EUR/USD.SIM")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        });
+
+        assert_eq!(
+            config.catalog_fs_storage_options(),
+            Some(&AHashMap::from([(
+                "key".to_string(),
+                SecretString::from("fs-key"),
+            )]))
+        );
+        assert_eq!(
+            config.catalog_fs_rust_storage_options(),
+            Some(&AHashMap::from([(
+                "aws_secret_access_key".to_string(),
+                SecretString::from("rust-secret"),
+            )]))
+        );
     }
 }

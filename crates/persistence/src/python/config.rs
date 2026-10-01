@@ -539,9 +539,12 @@ impl DataCatalogConfig {
             .maybe_compression(compression)
             .maybe_max_row_group_size(max_row_group_size)
             .maybe_params(params)
-            .maybe_fs_rust_storage_options(
-                fs_rust_storage_options.map(|options| options.into_iter().collect()),
-            )
+            .maybe_fs_rust_storage_options(fs_rust_storage_options.map(|options| {
+                options
+                    .into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }))
             .read_only(read_only)
             .build()
             .map_err(config_error_to_pyvalue_err)
@@ -745,4 +748,42 @@ fn py_record_filters_from_any(
     }
 
     Ok((!filters.is_empty()).then_some(filters))
+}
+
+#[cfg(test)]
+mod tests {
+    use ahash::AHashMap;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_catalog_config_py_new_keeps_storage_option_values() {
+        Python::initialize();
+
+        let config = DataCatalogConfig::py_new(
+            "bucket/catalog".to_string(),
+            Some("s3".to_string()),
+            None,
+            None,
+            None,
+            false,
+            Some(std::collections::HashMap::from([(
+                "aws_secret_access_key".to_string(),
+                "catalog-secret".to_string(),
+            )])),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.connect_config().storage_options,
+            Some(AHashMap::from([(
+                "aws_secret_access_key".to_string(),
+                "catalog-secret".to_string(),
+            )]))
+        );
+    }
 }

@@ -25,7 +25,7 @@ use nautilus_common::{
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
@@ -816,9 +816,9 @@ pub struct BacktestDataConfig {
     /// The `fsspec` filesystem protocol for the catalog.
     catalog_fs_protocol: Option<String>,
     /// The filesystem storage options for the catalog (e.g. cloud auth credentials).
-    catalog_fs_storage_options: Option<AHashMap<String, String>>,
+    catalog_fs_storage_options: Option<AHashMap<String, SecretString>>,
     /// Rust-specific storage options for the catalog backend.
-    catalog_fs_rust_storage_options: Option<AHashMap<String, String>>,
+    catalog_fs_rust_storage_options: Option<AHashMap<String, SecretString>>,
     /// The instrument ID for the data configuration (single).
     instrument_id: Option<InstrumentId>,
     /// Multiple instrument IDs for the data configuration.
@@ -939,12 +939,12 @@ impl BacktestDataConfig {
     }
 
     #[must_use]
-    pub fn catalog_fs_storage_options(&self) -> Option<&AHashMap<String, String>> {
+    pub fn catalog_fs_storage_options(&self) -> Option<&AHashMap<String, SecretString>> {
         self.catalog_fs_storage_options.as_ref()
     }
 
     #[must_use]
-    pub fn catalog_fs_rust_storage_options(&self) -> Option<&AHashMap<String, String>> {
+    pub fn catalog_fs_rust_storage_options(&self) -> Option<&AHashMap<String, SecretString>> {
         self.catalog_fs_rust_storage_options.as_ref()
     }
 
@@ -1216,6 +1216,7 @@ impl BacktestRunConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use nautilus_execution::models::fee::MakerTakerFeeModel;
     use rstest::rstest;
 
@@ -1517,6 +1518,35 @@ mod tests {
             panic!("expected ConfigError::Multiple");
         };
         assert_eq!(errors.len(), 3);
+    }
+
+    #[rstest]
+    fn test_data_config_debug_redacts_storage_option_values() {
+        let config = BacktestDataConfig::builder()
+            .data_type(NautilusDataType::QuoteTick)
+            .catalog_path("/tmp/catalog".to_string())
+            .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
+            .catalog_fs_storage_options(AHashMap::from([(
+                "key".to_string(),
+                SecretString::from("fs-key-sentinel"),
+            )]))
+            .catalog_fs_rust_storage_options(AHashMap::from([(
+                "aws_secret_access_key".to_string(),
+                SecretString::from("rust-secret-sentinel"),
+            )]))
+            .build()
+            .unwrap();
+
+        let debug_output = format!("{config:?}");
+
+        assert!(!debug_output.contains("fs-key-sentinel"));
+        assert!(!debug_output.contains("rust-secret-sentinel"));
+        assert!(debug_output.contains(&format!(
+            "catalog_fs_storage_options: Some({{\"key\": {REDACTED}}})"
+        )));
+        assert!(debug_output.contains(&format!(
+            "catalog_fs_rust_storage_options: Some({{\"aws_secret_access_key\": {REDACTED}}})"
+        )));
     }
 
     macro_rules! minimal_sim_builder {

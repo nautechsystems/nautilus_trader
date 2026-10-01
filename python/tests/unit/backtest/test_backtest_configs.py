@@ -241,6 +241,22 @@ def test_data_catalog_config_defaults_typed_settings_to_none() -> None:
     assert config.max_row_group_size is None
 
 
+def test_data_catalog_config_repr_redacts_storage_option_values() -> None:
+    """
+    Test data catalog config repr shows storage option keys with redacted values.
+    """
+    config = DataCatalogConfig(
+        path="bucket/catalog",
+        fs_protocol="s3",
+        fs_rust_storage_options={"aws_secret_access_key": "catalog-secret-sentinel"},
+    )
+
+    result = repr(config)
+
+    assert "catalog-secret-sentinel" not in result
+    assert 'fs_rust_storage_options: Some({"aws_secret_access_key": <redacted>})' in result
+
+
 @pytest.mark.parametrize("compression", ["lzo", "zip"])
 def test_data_catalog_config_rejects_unsupported_compression(compression: str) -> None:
     """
@@ -848,6 +864,26 @@ def test_data_config_repr() -> None:
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     assert "BacktestDataConfig" in repr(config)
+
+
+def test_data_config_repr_redacts_storage_option_values() -> None:
+    """
+    Test data config repr shows storage option keys with redacted values.
+    """
+    config = BacktestDataConfig(
+        data_type=NautilusDataType.TradeTick,
+        catalog_path="/data/catalog",
+        catalog_fs_storage_options={"key": "fs-key-sentinel"},
+        catalog_fs_rust_storage_options={"aws_secret_access_key": "rust-secret-sentinel"},
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    )
+
+    result = repr(config)
+
+    assert "fs-key-sentinel" not in result
+    assert "rust-secret-sentinel" not in result
+    assert 'catalog_fs_storage_options: Some({"key": <redacted>})' in result
+    assert 'catalog_fs_rust_storage_options: Some({"aws_secret_access_key": <redacted>})' in result
 
 
 def test_run_config_auto_id() -> None:

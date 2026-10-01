@@ -335,9 +335,9 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `uri`: The URI for the data storage location.
-    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options:
+    /// - `storage_options`: Optional `HashMap` of `object_store` configuration keys for the scheme:
     ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
-    ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
+    ///   - For GCS: `service_account_path`, `service_account_key`, `application_credentials`, etc.
     ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
     /// - `batch_size`: Number of records to process in each batch (default: 10,000).
     /// - `compression`: Parquet compression algorithm (default: ZSTD level 1).
@@ -347,6 +347,7 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if:
     /// - The URI format is invalid or unsupported.
+    /// - A storage option key is unknown for the URI scheme.
     /// - The object store cannot be created or accessed.
     /// - Authentication fails for cloud storage backends.
     ///
