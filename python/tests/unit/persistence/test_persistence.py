@@ -143,7 +143,7 @@ def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(1), _make_bar(2)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals(data_type=NautilusDataType.Bar, instrument_id=bar_type_str)
+    intervals = catalog.get_intervals(data_type=NautilusDataType.Bar, identifier=bar_type_str)
     loaded = catalog.query_bars(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -346,6 +346,40 @@ def test_catalog_consolidate(tmp_path: Path) -> None:
     assert intervals == [(1, 3)]
 
 
+def test_catalog_file_operations_take_identifier_keyword(tmp_path: Path) -> None:
+    """
+    Test catalog file operations select data with the `identifier` keyword.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    bar_type = str(AUDUSD_1_MIN_BID)
+    catalog.write_bars([_make_bar(1), _make_bar(2)])
+    catalog.write_bars([_make_bar(5), _make_bar(6)])
+
+    catalog.extend_file_name(NautilusDataType.Bar, identifier=bar_type, start=7, end=7)
+    extended = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    catalog.reset_data_file_names(NautilusDataType.Bar, identifier=bar_type)
+    reset = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    catalog.consolidate_data(NautilusDataType.Bar, identifier=bar_type)
+    consolidated = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    missing = catalog.get_missing_intervals_for_request(
+        0,
+        10,
+        NautilusDataType.Bar,
+        identifier=bar_type,
+    )
+    files = catalog.list_parquet_files(NautilusDataType.Bar, identifier=bar_type)
+
+    assert extended == [(1, 2), (5, 7)]
+    assert reset == [(1, 2), (5, 6)]
+    assert consolidated == [(1, 6)]
+    assert missing == [(0, 0), (7, 10)]
+    assert len(files) == 1
+    with pytest.raises(TypeError, match="instrument_id"):
+        catalog.get_intervals(NautilusDataType.Bar, instrument_id=bar_type)  # type: ignore[call-arg]
+
+
 def test_catalog_instrument_roundtrip(tmp_path: Path) -> None:
     """
     Test catalog instrument roundtrip.
@@ -413,10 +447,8 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
-    assert (
-        catalog.query_first_timestamp(data_type=NautilusDataType.Bar, instrument_id=bar_type) == 1
-    )
-    assert catalog.query_last_timestamp(data_type=NautilusDataType.Bar, instrument_id=bar_type) == 6
+    assert catalog.query_first_timestamp(data_type=NautilusDataType.Bar, identifier=bar_type) == 1
+    assert catalog.query_last_timestamp(data_type=NautilusDataType.Bar, identifier=bar_type) == 6
     assert catalog.get_missing_intervals_for_request(0, 10, NautilusDataType.Bar, bar_type) == [
         (0, 0),
         (3, 4),

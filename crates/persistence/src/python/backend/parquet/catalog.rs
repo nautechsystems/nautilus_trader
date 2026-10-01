@@ -649,15 +649,15 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
-    #[pyo3(signature = (data_type, instrument_id=None, *, start, end))]
+    #[pyo3(signature = (data_type, identifier=None, *, start, end))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
         start: u64,
         end: u64,
     ) -> PyResult<()> {
@@ -666,7 +666,7 @@ impl PyParquetDataCatalog {
         let end_nanos = UnixNanos::from(end);
 
         self.inner
-            .extend_file_name(&data_type, instrument_id.as_deref(), start_nanos, end_nanos)
+            .extend_file_name(&data_type, identifier.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to extend file name: {e}")))
     }
 
@@ -699,17 +699,17 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
-    #[pyo3(signature = (data_type, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
+    #[pyo3(signature = (data_type, identifier=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &mut self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
@@ -722,7 +722,7 @@ impl PyParquetDataCatalog {
         self.inner
             .consolidate_data(
                 &data_type,
-                instrument_id.as_deref(),
+                identifier.as_deref(),
                 start_nanos,
                 end_nanos,
                 ensure_contiguous_files,
@@ -822,17 +822,17 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    /// - `identifier`: Optional instrument ID or bar type filter
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<()> {
         let data_type = data_type.into_inner();
         self.inner
-            .reset_data_file_names(&data_type, instrument_id.as_deref())
+            .reset_data_file_names(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
@@ -960,17 +960,17 @@ impl PyParquetDataCatalog {
             .map_err(|e| PyIOError::new_err(format!("Failed to list instruments: {e}")))
     }
 
-    /// List all Parquet files in the catalog for a given data type and instrument.
+    /// List all Parquet files in the catalog for a given data type and identifier.
     pub fn list_parquet_files(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: &str,
+        identifier: &str,
     ) -> PyResult<Vec<String>> {
         let data_type = data_type.into_inner();
         let list_files = |prefix: &str| -> PyResult<Vec<String>> {
             let directory = self
                 .inner
-                .make_path(prefix, Some(instrument_id))
+                .make_path(prefix, Some(identifier))
                 .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))?;
             self.inner
                 .list_parquet_files(&directory)
@@ -1285,23 +1285,23 @@ impl PyParquetDataCatalog {
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
-    #[pyo3(signature = (start, end, data_type, instrument_id=None))]
+    #[pyo3(signature = (start, end, data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
         end: u64,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         let data_type = data_type.into_inner();
         self.inner
-            .get_missing_intervals_for_request(start, end, &data_type, instrument_id.as_deref())
+            .get_missing_intervals_for_request(start, end, &data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
     }
 
@@ -1310,21 +1310,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Option<u64>> {
         let data_type = data_type.into_inner();
         self.inner
-            .query_first_timestamp(&data_type, instrument_id.as_deref())
+            .query_first_timestamp(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
@@ -1333,21 +1333,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Option<u64>> {
         let data_type = data_type.into_inner();
         self.inner
-            .query_last_timestamp(&data_type, instrument_id.as_deref())
+            .query_last_timestamp(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query last timestamp: {e}")))
     }
 
@@ -1356,21 +1356,21 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_type`: The stored family to target (data type, record type, or instrument type).
-    /// - `instrument_id`: Optional instrument ID filter
+    /// - `identifier`: Optional instrument ID or bar type filter
     ///
     /// # Returns
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
-    #[pyo3(signature = (data_type, instrument_id=None))]
+    #[pyo3(signature = (data_type, identifier=None))]
     #[expect(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
         data_type: PyCatalogDataType,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         let data_type = data_type.into_inner();
         self.inner
-            .get_intervals(&data_type, instrument_id.as_deref())
+            .get_intervals(&data_type, identifier.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get intervals: {e}")))
     }
 

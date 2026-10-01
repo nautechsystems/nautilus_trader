@@ -1477,6 +1477,78 @@ fn test_rust_extend_overlap_recovery_via_reset_file_names() {
 }
 
 #[rstest]
+fn test_rust_reset_file_names_rejects_overlapping_content_without_renaming() {
+    let (temp_dir, catalog) = create_temp_catalog();
+    catalog
+        .write_to_parquet(&[create_bar(1), create_bar(3)], None, None, None)
+        .unwrap();
+    let bar_type = create_bar(1).bar_type.to_string();
+
+    // A stale name lets a second file with the same content range be written beside it
+    let first = snapshot_catalog_files(&temp_dir);
+    let old_path = temp_dir.path().join(&first[0].0);
+    let stale_name = timestamps_to_filename(UnixNanos::from(50), UnixNanos::from(50));
+    fs::rename(&old_path, old_path.parent().unwrap().join(stale_name)).unwrap();
+    catalog
+        .write_to_parquet(
+            &[create_bar(1), create_bar(2), create_bar(3)],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .reset_data_file_names(&NautilusDataType::Bar.into(), Some(&bar_type))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(before.len(), 2);
+    assert!(
+        error.ends_with("content intervals are not disjoint: [(1, 3), (1, 3)]"),
+        "{error}",
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+fn test_rust_reset_file_names_rejects_new_name_held_by_another_file() {
+    let (temp_dir, catalog) = create_temp_catalog();
+    catalog
+        .write_to_parquet(&[create_bar(1)], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&[create_bar(10)], None, None, None)
+        .unwrap();
+    let bar_type = create_bar(1).bar_type.to_string();
+
+    // Swap the two names, so each file's new name is held by the other file
+    let files = snapshot_catalog_files(&temp_dir);
+    let first = temp_dir.path().join(&files[0].0);
+    let second = temp_dir.path().join(&files[1].0);
+    let swap = first.with_extension("swap");
+    fs::rename(&first, &swap).unwrap();
+    fs::rename(&second, &first).unwrap();
+    fs::rename(&swap, &second).unwrap();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .reset_data_file_names(&NautilusDataType::Bar.into(), Some(&bar_type))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(before.len(), 2);
+    assert!(
+        error.ends_with(
+            "is held by another file; rename that file to an unused interval name and retry"
+        ),
+        "{error}",
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
 fn test_rust_write_quote_ticks() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
@@ -5813,9 +5885,12 @@ fn test_list_backtest_runs() {
     let mut file = fs::File::create(&dummy_file).unwrap();
     file.write_all(b"test").unwrap();
 
+    // A stray file beside the run directories is not a run
+    fs::write(temp_dir.path().join("backtest").join("stray.txt"), b"test").unwrap();
+
     // Now should list the run
     let runs = catalog.list_backtest_runs().unwrap();
-    assert!(runs.contains(&"test_run_123".to_string()));
+    assert_eq!(runs, vec!["test_run_123".to_string()]);
 }
 
 #[rstest]
@@ -5838,6 +5913,17 @@ fn test_list_live_runs() {
     // Now should list the run
     let runs = catalog.list_live_runs().unwrap();
     assert!(runs.contains(&"test_live_456".to_string()));
+}
+
+#[rstest]
+fn test_list_backtest_runs_returns_listing_errors() {
+    let (temp_dir, catalog) = create_temp_catalog();
+    fs::write(temp_dir.path().join("backtest"), b"not a directory").unwrap();
+
+    let error = catalog.list_backtest_runs().unwrap_err().to_string();
+
+    assert!(error.starts_with("failed to list "), "{error}");
+    assert!(error.ends_with("backtest"), "{error}");
 }
 
 #[rstest]

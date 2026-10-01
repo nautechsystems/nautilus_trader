@@ -20,6 +20,7 @@
     reason = "catalog store functions forward object-store errors"
 )]
 
+use anyhow::Context;
 use nautilus_common::live::block_on_nautilus_with;
 use nautilus_model::data::NautilusDataType;
 use object_store::ObjectMeta;
@@ -853,24 +854,29 @@ impl ParquetDataCatalog {
         if !self.is_remote_uri() {
             let directory = PathBuf::from(self.native_base_path_string()).join(subdirectory);
 
-            // Check if directory exists
-            if !directory.exists() {
-                return Ok(Vec::new());
-            }
+            let entries = match std::fs::read_dir(&directory) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+                Err(e) => {
+                    return Err(e)
+                        .with_context(|| format!("failed to list {}", directory.display()));
+                }
+            };
 
-            // List all entries in the directory
             let mut directories = Vec::new();
 
-            if let Ok(entries) = std::fs::read_dir(&directory) {
-                for entry in entries.flatten() {
-                    if let Ok(file_type) = entry.file_type()
-                        && file_type.is_dir()
-                    {
-                        // Use file_name() to get the directory name (not file_stem which removes extension)
-                        if let Some(name) = entry.path().file_name() {
-                            directories.push(name.to_string_lossy().to_string());
-                        }
-                    }
+            for entry in entries {
+                let entry =
+                    entry.with_context(|| format!("failed to list {}", directory.display()))?;
+                let file_type = entry
+                    .file_type()
+                    .with_context(|| format!("failed to read {}", entry.path().display()))?;
+
+                // Use file_name() to get the directory name (not file_stem which removes extension)
+                if file_type.is_dir()
+                    && let Some(name) = entry.path().file_name()
+                {
+                    directories.push(name.to_string_lossy().to_string());
                 }
             }
 

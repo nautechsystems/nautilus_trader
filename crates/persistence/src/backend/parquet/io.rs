@@ -33,7 +33,7 @@ use parquet::{
         ArrowSchemaConverter, ArrowWriter, ParquetRecordBatchStreamBuilder,
         arrow_reader::ParquetRecordBatchReaderBuilder,
     },
-    basic::{Compression, ZstdLevel},
+    basic::{Compression, Encoding, ZstdLevel},
     file::{
         metadata::{KeyValue, SortingColumn},
         properties::WriterProperties,
@@ -220,6 +220,15 @@ async fn write_batches_to_object_store_with_mode(
     if schema.index_of(KEY_IDENTIFIER).is_ok() {
         props_builder =
             props_builder.set_column_bloom_filter_enabled(ColumnPath::from(KEY_IDENTIFIER), true);
+    }
+
+    // Delta encoding stores near-unique timestamps more compactly than a dictionary
+    for name in ["ts_event", "ts_init"] {
+        if schema.index_of(name).is_ok() {
+            props_builder = props_builder
+                .set_column_dictionary_enabled(ColumnPath::from(name), false)
+                .set_column_encoding(ColumnPath::from(name), Encoding::DELTA_BINARY_PACKED);
+        }
     }
 
     let writer_props = props_builder.build();
@@ -1099,10 +1108,10 @@ mod tests {
     #[cfg(feature = "cloud")]
     use ahash::AHashMap;
     use arrow::{
-        array::{ArrayRef, StringArray, UInt64Array},
+        array::{Array, ArrayRef, StringArray, TimestampNanosecondArray, UInt64Array},
         datatypes::{DataType, Field, Schema},
     };
-    use nautilus_serialization::arrow::json_string_field;
+    use nautilus_serialization::arrow::{json_string_field, timestamp_data_type};
     use parquet::file::{properties::ReaderProperties, serialized_reader::ReadOptionsBuilder};
     use rstest::rstest;
 
@@ -1547,6 +1556,89 @@ mod tests {
                 .get_column_bloom_filter(0)
                 .is_some(),
         );
+    }
+
+    #[tokio::test]
+    async fn default_writer_delta_encodes_timestamps_without_dictionary() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("timestamps.parquet");
+
+        let object_store = Arc::new(
+            object_store::local::LocalFileSystem::new_with_prefix(directory.path()).unwrap(),
+        );
+        let object_path = ObjectPath::from("timestamps.parquet");
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("identifier", DataType::Utf8, false),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
+        ]));
+        let identifiers = StringArray::from(vec!["AUD/USD.SIM", "AUD/USD.SIM", "AUD/USD.SIM"]);
+        let ts_event = TimestampNanosecondArray::from(vec![
+            1_700_000_000_123_456_001_i64,
+            1_700_000_000_123_456_789,
+            1_700_000_001_000_000_000,
+        ])
+        .with_timezone("UTC");
+        let ts_init = TimestampNanosecondArray::from(vec![
+            1_700_000_000_123_457_000_i64,
+            1_700_000_000_123_458_000,
+            1_700_000_001_000_001_000,
+        ])
+        .with_timezone("UTC");
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(identifiers.clone()) as ArrayRef,
+                Arc::new(ts_event.clone()) as ArrayRef,
+                Arc::new(ts_init.clone()) as ArrayRef,
+            ],
+        )
+        .unwrap();
+
+        write_batches_to_object_store(&[batch], object_store, &object_path, None, None, None)
+            .await
+            .unwrap();
+
+        let reader = SerializedFileReader::new(std::fs::File::open(&path).unwrap()).unwrap();
+        let columns = reader.metadata().row_group(0).columns();
+        let timestamp_encodings = columns[1..]
+            .iter()
+            .map(|column| {
+                (
+                    column.column_path().string(),
+                    column.dictionary_page_offset(),
+                    column.encodings().collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let read = ParquetRecordBatchReaderBuilder::try_new(std::fs::File::open(&path).unwrap())
+            .unwrap()
+            .build()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns[0].dictionary_page_offset().is_some());
+        assert_eq!(
+            timestamp_encodings,
+            vec![
+                (
+                    "ts_event".to_string(),
+                    None,
+                    vec![Encoding::RLE, Encoding::DELTA_BINARY_PACKED],
+                ),
+                (
+                    "ts_init".to_string(),
+                    None,
+                    vec![Encoding::RLE, Encoding::DELTA_BINARY_PACKED],
+                ),
+            ],
+        );
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].column(0).as_ref(), &identifiers as &dyn Array);
+        assert_eq!(read[0].column(1).as_ref(), &ts_event as &dyn Array);
+        assert_eq!(read[0].column(2).as_ref(), &ts_init as &dyn Array);
     }
 
     #[rstest]

@@ -25,6 +25,7 @@ macro_rules! backend_type {
     ) => {
         $(#[$meta])*
         #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+        #[non_exhaustive]
         pub enum $name {
             #[default]
             $default,

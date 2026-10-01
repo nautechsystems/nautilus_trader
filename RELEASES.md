@@ -113,6 +113,7 @@ Released on TBD (UTC).
 - Changed `ParquetDataCatalog.list_data_types` to return type enums in place of names (#5115), thanks @faysou
 - Changed `RotationConfig.mode` to return a `RotationMode` enum (#5115), thanks @faysou
 - Changed Rust `CatalogCoverageRow.data_type` to a `CatalogDataType` (#5115), thanks @faysou
+- Changed Rust `CatalogBackendType` and `WriterBackendType` to `#[non_exhaustive]`
 - Changed Postgres cache connect to require a trader ID and flush only that trader's rows (#5070), thanks @utx0
 - Changed Postgres cache connect to fail until old account events are assigned (#5070), thanks @utx0
 - Changed `Cache.flush_db` to return errors, so a failing `flush_on_start` stops node startup (#5070), thanks @utx0
@@ -135,6 +136,7 @@ Released on TBD (UTC).
 - Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
 - Renamed live `SubscribeBookDepth10`/`UnsubscribeBookDepth10` commands to `SubscribeBookDepth`/`UnsubscribeBookDepth`, with matching `_subscribe_book_depth`/`_unsubscribe_book_depth` data client hooks
 - Renamed Python persistence `NautilusDataType.OrderBookDepth10` to `NautilusDataType.OrderBookDepth`
+- Renamed `ParquetDataCatalog` method `instrument_id` parameters to `identifier`, matching v1
 - Renamed Databento `load_order_book_depth10` to `load_order_book_depth` and `get_order_book_depth10` to `get_order_book_depth`
 - Renamed the Databento publisher 142 venue from `DEF` to `CDEF`
 - Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
@@ -210,6 +212,8 @@ Released on TBD (UTC).
 - Fixed unqueryable Python custom-data writes (#4984), thanks for reporting @shanezilla
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
 - Fixed catalog interval-filename validation renaming files before rejecting them (#4647)
+- Fixed catalog file-name resets overwriting files before validating the new names
+- Fixed local catalog run and data-type listings treating directory read errors as empty
 - Fixed HTTP client omitting configured `User-Agent` from proxy `CONNECT` requests for HTTPS URLs
 - Fixed HTTP client adaptive HTTP/2 flow control triggering Cloudflare resets of large response bodies
 - Fixed TLS client config panicking on first use when ring is also enabled
@@ -374,6 +378,7 @@ Released on TBD (UTC).
 - Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
 - Optimized live reconciliation fill recovery and portfolio order-event updates (#5063), thanks for reporting @ligl
 - Optimized staged Feather files to one dictionary-encoded record batch per flush (#5115), thanks @faysou
+- Optimized Parquet catalog `ts_event` and `ts_init` columns with delta encoding, thanks @Martingale42
 - Optimized HTTP client construction by reusing loaded platform TLS roots across clients
 - Optimized position replay duplicate-fill checks to use the trade ID set (#5096), thanks @mirooon
 - Optimized per-order overhead in account balance updates, order matching, and event publishing

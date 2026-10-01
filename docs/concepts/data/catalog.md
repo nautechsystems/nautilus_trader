@@ -344,19 +344,24 @@ renames files, so overlap points to an earlier rename, a manual move, or a concu
 the file contents are still disjoint, recover the directory with a filename reset:
 
 1. Stop all writers to the catalog.
-1. Back up the affected directory.
-1. Inspect the actual `ts_init` range of each file and confirm the content ranges are disjoint.
-1. On a copy of the directory, map each file to its content-derived name and confirm no
-   two files share a destination and no destination equals another file's current name. Then run
-   `reset_data_file_names(...)` for the affected path and confirm each renamed file matches its
-   content range. For custom data types, use `reset_all_file_names()` instead, which
-   covers every leaf directory including custom layouts.
-1. Replace the damaged directory with the repaired copy, then write a later disjoint interval to
+1. Back up the affected directory. The reset renames files one at a time, so an I/O failure
+   partway through can leave some files renamed. On object stores that rename by copying then
+   deleting, a failure can also leave a file under both names.
+1. Run `reset_data_file_names(...)` for the affected path. For custom data types, use
+   `reset_all_file_names()` instead, which covers every leaf directory including custom layouts.
+1. If the reset reports that a new name is held by another file, rename that file to an unused
+   interval name outside the data range, then run the reset again. Repeat until it succeeds.
+1. Confirm each renamed file matches its content range, then write a later disjoint interval to
    confirm the directory accepts writes again.
 
+The reset processes one directory at a time. Before renaming any file in a directory, it reads
+each file's `ts_init` range. It fails when the content ranges overlap or when a file's new name is
+the current name of another file, and it then leaves every file name in that directory unchanged.
+Directories reset before the failing one keep their new names.
+
 Use filename reset only for filename-only damage. When file contents overlap, resetting names
-cannot reconcile the data; rebuild the affected range from source through a separately validated
-process instead.
+cannot reconcile the data, so the reset fails; rebuild the affected range from source through a
+separately validated process instead.
 
 ### Consolidate catalog
 
@@ -376,7 +381,7 @@ catalog.consolidate_catalog(
 
 catalog.consolidate_data(
     NautilusDataType.QuoteTick,
-    instrument_id="EUR/USD.SIM",
+    identifier="EUR/USD.SIM",
     start=1704067200000000000,
     end=1706745600000000000,
 )
