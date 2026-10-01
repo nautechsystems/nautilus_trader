@@ -1077,17 +1077,22 @@ fn build_position_report_from_reportable_position(
             return None;
         }
     };
-    Some(PositionStatusReport::new(
-        account_id,
-        instrument_id,
-        PositionSide::Long,
-        quantity,
-        ts_init,
-        ts_init,
-        None,
-        None,
-        position.avg_price,
-    ))
+
+    // The Data API reports average cost to four decimal places
+    Some(
+        PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            quantity,
+            ts_init,
+            ts_init,
+            None,
+            None,
+            position.avg_price,
+        )
+        .with_avg_px_open_precision(4),
+    )
 }
 
 /// Cached execution state that decides which resolved Data API balances to omit.
@@ -1896,6 +1901,7 @@ mod tests {
 
         assert!(report.is_long());
         assert_eq!(report.avg_px_open, Some(expected_avg_price));
+        assert_eq!(report.avg_px_open_precision, Some(4));
         assert_eq!(report.quantity.precision, USDC_DECIMALS as u8);
     }
 
@@ -2516,6 +2522,7 @@ mod tests {
             None,
             Some(avg_px),
         )
+        .with_avg_px_open_precision(4)
     }
 
     #[rstest]
@@ -2714,6 +2721,10 @@ mod tests {
         assert_eq!(report.quantity.precision, 6);
         assert_eq!(report.signed_decimal_qty, expected_qty);
         assert_eq!(report.avg_px_open, Some(expected_avg_px));
+        assert_eq!(
+            report.avg_px_open_precision,
+            if is_aligned { None } else { Some(4) }
+        );
         assert_eq!(report.report_id, report_id);
         assert_eq!(report.ts_last, UnixNanos::from(100));
         assert_eq!(report.ts_init, UnixNanos::from(100));

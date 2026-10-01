@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added `submission_recovery_policy` config for exhausted submission recovery (#5028), thanks @silarin
 - Added a live submission registry and exhaustion diagnostics for unresolved submissions (#5036), thanks @silarin
 - Added a startup reconciliation warning for fills dropped without an order report or cached order
+- Added position report metadata for FIFO and truncated venue entry averages (#5064), thanks for reporting @zhaow-de
 - Added `type_name` inference to `migrate-parquet` for legacy custom catalogs
 - Added `deserialize_decimal_token` and `deserialize_optional_decimal_token` to `nautilus_core`
 - Added Rust `new_generic_spread_id` and `parse_generic_spread_id_legs` identifier functions (#5041), thanks @faysou
@@ -102,6 +103,7 @@ Released on TBD (UTC).
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed live node startup to fail when in-scope nonzero venue positions remain unrecovered
+- Changed Rust `calculate_reconciliation_price` and `position_prices_match` to take report average metadata
 - Changed same-thread `LiveNode` replacement to require dropping the previous node, even after `dispose()`
 - Changed `RiskEngine` to reject orders when accounts, prices, or required funding cannot be established
 - Changed `list_parquet_files` and `convert_stream_to_data` to take typed selectors in place of strings
@@ -194,6 +196,7 @@ Released on TBD (UTC).
 - Fixed venue account lookups depending on add order and index rebuilds when accounts share an issuer
 - Fixed Python portfolio queries rejecting an explicit account when another account shares its issuer
 - Fixed Python `AccountBalance` and `MarginBalance` `to_dict` amounts losing digits through float formatting
+- Fixed Python `PositionStatusReport.to_dict` omitting `avg_px_open`
 - Fixed `RiskEngine` using the venue account, not the routed client's (#4946), thanks for reporting @Artur-Sulej
 - Fixed `RiskEngine` position-reducing checks counting positions and open orders of other accounts
 - Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
@@ -361,6 +364,7 @@ Released on TBD (UTC).
 - Fixed Polymarket commissions rounding instead of flooring to five decimals like the venue charge
 - Fixed Polymarket order quantity updates after a modify dropping fills from earlier venue orders
 - Fixed Polymarket restarts replacing fills of closed orders with synthetic fills that lack commission
+- Fixed Polymarket restarts failing for retained positions whose fills fall outside a bounded lookback
 - Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp

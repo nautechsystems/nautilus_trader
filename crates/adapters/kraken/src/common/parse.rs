@@ -23,8 +23,8 @@ use nautilus_core::{Params, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNan
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AggressorSide, AssetClass, BarAggregation, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, PositionSide, TimeInForce, TriggerType,
+        AggressorSide, AssetClass, AvgPxReconciliation, BarAggregation, LiquiditySide, OrderSide,
+        OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{
@@ -1241,6 +1241,8 @@ pub fn parse_futures_position_status_report(
         ts_init,
         venue_position_id: None,
         avg_px_open,
+        avg_px_open_reconciliation: AvgPxReconciliation::default(),
+        avg_px_open_precision: None,
     })
 }
 

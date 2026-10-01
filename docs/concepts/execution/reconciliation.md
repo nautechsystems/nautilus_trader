@@ -537,6 +537,9 @@ Reconciliation generates synthetic MARKET order reports and fills with a known p
 - Closing to flat uses the cached entry average.
 - Reversing direction closes the cached position, then opens the reported position at its entry average.
 
+A report that marks its average changes some of these prices; see
+[reported entry averages](#reported-entry-averages).
+
 The engine skips quantity differences that round to zero at instrument size precision. Startup
 validation still checks the remaining difference against the account's quantity tolerance.
 
@@ -592,13 +595,44 @@ For an open position with a reported `avg_px_open`, startup also checks the entr
 the fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument
 price ticks; the comparison does not round them to instrument price precision. NETTING reports
 use quantity-weighted entry averages for each reported side. If a side spans several reports,
-all contributing reports must supply an average to establish that side's price target.
+all contributing reports must supply an average to establish that side's price target. A report
+can skip this check or widen its tolerance, as described in
+[reported entry averages](#reported-entry-averages).
 
 Matching quantity alone does not resolve a reported entry-price mismatch. When quantities already
 match, position reconciliation does not generate a correction solely to change the entry average;
 the remaining price mismatch fails startup. When it corrects quantity, startup still fails if the
 resulting average remains outside tolerance. Synthetic recovery does not establish historical
 realized PnL.
+
+#### Reported entry averages
+
+Two `PositionStatusReport` fields tell reconciliation how to read `avg_px_open`. Their defaults
+keep the behavior described above.
+
+- `avg_px_open_reconciliation`: `MATCH` (default) compares the average with the cached entry
+  average and prices synthetic fills from it. `OPENING_ONLY` marks an average computed by a
+  different method, such as the remaining FIFO lots, which legitimately differs from the cached
+  quantity-weighted average once a position has been reduced.
+- `avg_px_open_precision`: the decimal places the venue kept when it rounds or truncates the
+  average. When unset, comparisons add no allowance.
+
+| Use of the average                | `OPENING_ONLY`                                         | `avg_px_open_precision` set                                              |
+| --------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Startup entry-price check         | Skipped for the side; quantity checks still apply.     | Passes within 0.01% plus one unit at the coarsest precision on the side. |
+| Fill adjustment match             | Quantity only, so a price difference keeps real fills. | Uses the same price allowance; quantity must still match exactly.        |
+| Opening from flat or reversing    | Uses the reported average.                             | Uses the reported average.                                               |
+| Increasing or reducing a position | Uses the cached average.                               | Uses the cached average when it already matches the report.              |
+
+For `OPENING_ONLY`, opening from flat includes the synthetic opening fill that
+[fill adjustment](#fill-adjustment) adds before a partial window. A precision-marked report prices
+that fill at the window fills' average when the window position has the same side as the report
+and its average already matches the report, and at the default price otherwise.
+
+One `OPENING_ONLY` report makes its whole side incomparable, because the side's weighted average
+would mix methods. Pricing a change to an existing position at the cached average keeps its entry
+average and books no synthetic trading PnL on a reduction. When no cached average exists, synthetic
+fills fall back to the reported average.
 
 #### Recovery prerequisites and filters
 
@@ -835,7 +869,8 @@ The reconciliation path preserves these invariants for the reports and positions
    order state only, without changing positions or portfolio economics.
 1. **Position quantity**: reconciled positions match authoritative venue reports within the applicable
    quantity tolerance.
-1. **Entry price**: reported entry averages match within relative tolerance before startup proceeds.
+1. **Entry price**: reported entry averages match within tolerance before startup proceeds, except
+   averages a report marks `OPENING_ONLY`.
    Synthetic fills use reported or calculated prices; they do not reconstruct missing historical PnL.
 1. **ID determinism**: synthetic `trade_id` and `venue_order_id` values are deterministic functions
    of the logical event, so replay deduplicates them across restarts.
@@ -861,7 +896,7 @@ Concepts:
 - **Zero-crossing**: position quantity crosses through zero (FLAT), marking a lifecycle boundary.
 - **Lifecycle**: a sequence of fills between zero-crossings representing one open-close cycle.
 - **Synthetic fill**: a calculated fill report representing missing activity, priced to achieve the correct average position.
-- **Tolerance**: fill adjustment uses a relative entry-price tolerance of 0.0001 (0.01%) to absorb minor calculation differences. Startup validation uses the same price tolerance and the account's separate quantity tolerance.
+- **Tolerance**: fill adjustment uses a relative entry-price tolerance of 0.0001 (0.01%) to absorb minor calculation differences. Startup validation uses the same price tolerance and the account's separate quantity tolerance. A report that sets `avg_px_open_precision` adds one unit at that precision to the price tolerance.
 
 ## Bounded history scenarios
 

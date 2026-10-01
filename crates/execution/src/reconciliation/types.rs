@@ -17,7 +17,7 @@
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_model::{
-    enums::{OrderSide, PositionSide},
+    enums::{AvgPxReconciliation, OrderSide, PositionSide},
     identifiers::VenueOrderId,
     reports::{FillReport, OrderStatusReport},
 };
@@ -47,6 +47,21 @@ pub(super) struct VenuePositionSnapshot {
     pub qty: Decimal,
     /// The average entry price (can be zero for Flat positions).
     pub avg_px: Decimal,
+    /// How reconciliation may use the average entry price.
+    pub avg_px_reconciliation: AvgPxReconciliation,
+    /// The decimal places the venue kept for the average entry price, if it rounds or truncates.
+    pub avg_px_precision: Option<u8>,
+}
+
+impl VenuePositionSnapshot {
+    /// Returns the quantity signed by position side.
+    pub(super) fn signed_qty(&self) -> Decimal {
+        match self.side {
+            PositionSide::Long => self.qty,
+            PositionSide::Short => -self.qty,
+            PositionSide::Flat => Decimal::ZERO,
+        }
+    }
 }
 
 /// Result of the fill adjustment process.

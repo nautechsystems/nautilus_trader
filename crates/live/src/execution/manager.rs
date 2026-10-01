@@ -73,7 +73,7 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    enums::{OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AvgPxReconciliation, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
@@ -1539,7 +1539,11 @@ impl ExecutionManager {
                 })
                 .collect();
 
-            if !reports.iter().any(|report| report.avg_px_open.is_some()) {
+            if !reports.iter().any(|report| report.avg_px_open.is_some())
+                || reports.iter().any(|report| {
+                    report.avg_px_open_reconciliation == AvgPxReconciliation::OpeningOnly
+                })
+            {
                 continue;
             }
 
@@ -1577,7 +1581,18 @@ impl ExecutionManager {
                 return false;
             };
 
-            if !position_prices_match(cached_avg_px, venue_value / venue_qty, None) {
+            // The coarsest reported precision bounds the rounding in the side's weighted average
+            let venue_precision = reports
+                .iter()
+                .filter_map(|report| report.avg_px_open_precision)
+                .min();
+
+            if !position_prices_match(
+                cached_avg_px,
+                venue_value / venue_qty,
+                None,
+                venue_precision,
+            ) {
                 return false;
             }
         }
@@ -3241,7 +3256,7 @@ impl ExecutionManager {
     pub fn observe_execution_report(&mut self, report: &ExecutionReport) {
         match report {
             ExecutionReport::Order(order_report) => {
-                self.observe_order_status_report(order_report);
+                self.observe_order_report(order_report);
             }
             ExecutionReport::Fill(fill_report) => {
                 let client_order_id = fill_report.client_order_id.or_else(|| {
@@ -3258,7 +3273,7 @@ impl ExecutionManager {
                 self.record_position_activity(fill_report.instrument_id, fill_report.account_id);
             }
             ExecutionReport::OrderWithFills(order_report, fills) => {
-                self.observe_order_status_report(order_report);
+                self.observe_order_report(order_report);
 
                 for fill_report in fills {
                     self.record_position_activity(
@@ -3320,7 +3335,7 @@ impl ExecutionManager {
         false
     }
 
-    fn observe_order_status_report(&mut self, report: &OrderStatusReport) {
+    fn observe_order_report(&mut self, report: &OrderStatusReport) {
         let Some(client_order_id) = report.client_order_id else {
             return;
         };
@@ -3811,6 +3826,13 @@ impl ExecutionManager {
                 cached_avg_px,
                 venue_signed_qty,
                 venue_avg_px,
+                venue_report
+                    .as_ref()
+                    .map(|report| report.avg_px_open_reconciliation)
+                    .unwrap_or_default(),
+                venue_report
+                    .as_ref()
+                    .and_then(|report| report.avg_px_open_precision),
             );
 
             match reconciliation_px.or(venue_avg_px).or(cached_avg_px) {
@@ -4408,6 +4430,8 @@ impl ExecutionManager {
             current_avg_px,
             venue_signed_qty,
             report.avg_px_open,
+            report.avg_px_open_reconciliation,
+            report.avg_px_open_precision,
         );
 
         let fill_px = reconciliation_px

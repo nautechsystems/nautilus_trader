@@ -24,7 +24,10 @@ use indexmap::{IndexMap, IndexSet};
 use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{
+        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     identifiers::{AccountId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -226,12 +229,7 @@ pub(super) fn adjust_fills_for_partial_window(
     }
 
     let zero_crossings = detect_zero_crossings(fills);
-
-    let venue_qty_signed = match venue_position.side {
-        PositionSide::Long => venue_position.qty,
-        PositionSide::Short => -venue_position.qty,
-        PositionSide::Flat => Decimal::ZERO,
-    };
+    let venue_qty_signed = venue_position.signed_qty();
 
     // Case 1: Has zero-crossings - focus on current lifecycle after last zero-crossing
     if !zero_crossings.is_empty() {
@@ -265,13 +263,7 @@ pub(super) fn adjust_fills_for_partial_window(
 
         let (current_qty, current_value) = simulate_position(&current_lifecycle_fills);
 
-        if check_position_match(
-            current_qty,
-            current_value,
-            venue_qty_signed,
-            venue_position.avg_px,
-            tolerance,
-        ) {
+        if check_position_match(current_qty, current_value, venue_position, tolerance) {
             // Current lifecycle matches - filter out old lifecycles
             return FillAdjustmentResult::FilterToCurrentLifecycle {
                 last_zero_crossing_ts: lifecycle_boundary_ts,
@@ -318,13 +310,7 @@ pub(super) fn adjust_fills_for_partial_window(
 
     // If single lifecycle (no zero-crossings)
     if zero_crossings.is_empty() {
-        if check_position_match(
-            oldest_qty,
-            oldest_value,
-            venue_qty_signed,
-            venue_position.avg_px,
-            tolerance,
-        ) {
+        if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
             return FillAdjustmentResult::NoAdjustment;
         }
 
@@ -337,12 +323,8 @@ pub(super) fn adjust_fills_for_partial_window(
                 Some(oldest_value / oldest_qty.abs())
             };
 
-            let reconciliation_price = calculate_reconciliation_price(
-                oldest_qty,
-                oldest_avg_px,
-                venue_qty_signed,
-                Some(venue_position.avg_px),
-            );
+            let reconciliation_price =
+                synthetic_opening_price(oldest_qty, oldest_avg_px, venue_position);
 
             if let Some(opening_px) = reconciliation_price {
                 // Calculate opening quantity needed
@@ -415,6 +397,25 @@ pub(super) fn adjust_fills_for_partial_window(
     }
 
     FillAdjustmentResult::NoAdjustment
+}
+
+fn synthetic_opening_price(
+    window_qty: Decimal,
+    window_avg_px: Option<Decimal>,
+    venue_position: &VenuePositionSnapshot,
+) -> Option<Decimal> {
+    match venue_position.avg_px_reconciliation {
+        // The synthetic fill opens the position before the window's fills
+        AvgPxReconciliation::OpeningOnly => Some(venue_position.avg_px),
+        AvgPxReconciliation::Match => calculate_reconciliation_price(
+            window_qty,
+            window_avg_px,
+            venue_position.signed_qty(),
+            Some(venue_position.avg_px),
+            AvgPxReconciliation::Match,
+            venue_position.avg_px_precision,
+        ),
+    }
 }
 
 /// Check if a cached position matches the venue position report within tolerance.
@@ -603,6 +604,8 @@ fn position_report_to_snapshot(report: &PositionStatusReport) -> VenuePositionSn
         side: report.position_side,
         qty: report.quantity.into(),
         avg_px: report.avg_px_open.unwrap_or(Decimal::ZERO),
+        avg_px_reconciliation: report.avg_px_open_reconciliation,
+        avg_px_precision: report.avg_px_open_precision,
     }
 }
 
@@ -817,6 +820,9 @@ pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
 
 /// Check if simulated position matches venue position within tolerance.
 ///
+/// An [`AvgPxReconciliation::OpeningOnly`] venue average is not comparable, so only
+/// quantities must match.
+///
 /// # Returns
 ///
 /// Returns true if quantities and average prices match within tolerance.
@@ -824,16 +830,19 @@ pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
 pub(super) fn check_position_match(
     simulated_qty: Decimal,
     simulated_value: Decimal,
-    venue_qty: Decimal,
-    venue_avg_px: Decimal,
+    venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
 ) -> bool {
-    if simulated_qty != venue_qty {
+    if simulated_qty != venue_position.signed_qty() {
         return false;
     }
 
     if simulated_qty == Decimal::ZERO {
         return true; // Both FLAT
+    }
+
+    if venue_position.avg_px_reconciliation == AvgPxReconciliation::OpeningOnly {
+        return true;
     }
 
     // Guard against division by zero
@@ -844,33 +853,57 @@ pub(super) fn check_position_match(
 
     let simulated_avg_px = simulated_value / abs_qty;
 
-    position_prices_match(simulated_avg_px, venue_avg_px, Some(tolerance))
+    position_prices_match(
+        simulated_avg_px,
+        venue_position.avg_px,
+        Some(tolerance),
+        venue_position.avg_px_precision,
+    )
 }
 
 /// Compares average entry prices using relative tolerance (default 0.01%).
 ///
 /// Average entry prices need not fall on instrument price ticks. A zero reported
-/// average cannot establish a relative comparison and returns `false`.
+/// average cannot establish a relative comparison and returns `false`. When the venue
+/// rounds or truncates its average to `venue_precision` decimal places, the difference may
+/// also span one unit at that precision on top of the relative tolerance; a precision above
+/// 28 adds no allowance.
 #[must_use]
 pub fn position_prices_match(
     cached_avg_px: Decimal,
     venue_avg_px: Decimal,
     tolerance: Option<Decimal>,
+    venue_precision: Option<u8>,
 ) -> bool {
     if venue_avg_px.is_zero() {
         return false;
     }
 
-    let relative_diff = (cached_avg_px - venue_avg_px).abs() / venue_avg_px.abs();
+    let tolerance = tolerance.unwrap_or(DEFAULT_TOLERANCE);
+    let diff = (cached_avg_px - venue_avg_px).abs();
 
-    relative_diff <= tolerance.unwrap_or(DEFAULT_TOLERANCE)
+    if diff / venue_avg_px.abs() <= tolerance {
+        return true;
+    }
+
+    venue_precision.is_some_and(|precision| {
+        let unit = Decimal::try_new(1, u32::from(precision)).unwrap_or(Decimal::ZERO);
+        diff <= tolerance * venue_avg_px.abs() + unit
+    })
 }
 
 /// Calculate the price needed for a reconciliation order to achieve target position.
 ///
 /// This is a pure function that calculates what price a fill would need to have
-/// to move from the current position state to the target position state. A reduction
-/// uses the reported average price but cannot change the remaining position's entry average.
+/// to move from the current position state to the target position state. By default, a
+/// reduction uses the reported average price but cannot change the remaining position's entry
+/// average.
+///
+/// A same-side reduction or accumulation instead keeps the current average as its price when the
+/// target average is [`AvgPxReconciliation::OpeningOnly`], or when the target average carries a
+/// precision and already matches the current average, so neither a different averaging method
+/// nor venue rounding fabricates a fill price. This override takes precedence over scenarios 4
+/// and 5 below.
 ///
 /// # Returns
 ///
@@ -882,18 +915,36 @@ pub fn position_prices_match(
 /// 1. Position to flat: `reconciliation_px` = `current_avg_px` (close at current average)
 /// 2. Flat to position: `reconciliation_px` = `target_avg_px`
 /// 3. Position flip (sign change): `reconciliation_px` = `target_avg_px` (due to value reset in simulation)
-/// 4. Reduction: target average price (remaining entry average is unchanged)
-/// 5. Accumulation: weighted average formula
+/// 4. Reduction: target average price by default (remaining entry average is unchanged)
+/// 5. Accumulation: weighted average formula by default
 pub fn calculate_reconciliation_price(
     current_position_qty: Decimal,
     current_position_avg_px: Option<Decimal>,
     target_position_qty: Decimal,
     target_position_avg_px: Option<Decimal>,
+    target_avg_px_reconciliation: AvgPxReconciliation,
+    target_avg_px_precision: Option<u8>,
 ) -> Option<Decimal> {
     let qty_diff = target_position_qty - current_position_qty;
 
     if qty_diff == Decimal::ZERO {
         return None; // No reconciliation needed
+    }
+
+    let is_same_side = current_position_qty != Decimal::ZERO
+        && target_position_qty != Decimal::ZERO
+        && (current_position_qty > Decimal::ZERO) == (target_position_qty > Decimal::ZERO);
+
+    if is_same_side
+        && let Some(current_avg_px) = current_position_avg_px
+        && keeps_current_avg_px(
+            current_avg_px,
+            target_position_avg_px,
+            target_avg_px_reconciliation,
+            target_avg_px_precision,
+        )
+    {
+        return Some(current_avg_px);
     }
 
     // Special case: closing to flat (target_position_qty == 0)
@@ -943,6 +994,28 @@ pub fn calculate_reconciliation_price(
     }
 
     None
+}
+
+fn keeps_current_avg_px(
+    current_avg_px: Decimal,
+    target_avg_px: Option<Decimal>,
+    target_avg_px_reconciliation: AvgPxReconciliation,
+    target_avg_px_precision: Option<u8>,
+) -> bool {
+    match target_avg_px_reconciliation {
+        AvgPxReconciliation::OpeningOnly => true,
+        AvgPxReconciliation::Match => {
+            target_avg_px_precision.is_some()
+                && target_avg_px.is_some_and(|target_avg_px| {
+                    position_prices_match(
+                        current_avg_px,
+                        target_avg_px,
+                        None,
+                        target_avg_px_precision,
+                    )
+                })
+        }
+    }
 }
 
 /// Checks if two decimal values are within a single unit of tolerance for the given precision.

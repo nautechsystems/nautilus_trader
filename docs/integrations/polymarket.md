@@ -1363,6 +1363,8 @@ qualify, because their order is ambiguous.
 
 Otherwise, including when the cache retains an open position that other trades built, the report
 keeps the Data API values, and the fills of closed orders in that instrument are not reported.
+These reports set `avg_px_open_precision` to 4, so a retained position whose fills fell outside a
+bounded lookback still passes the startup entry-price check against the truncated average. See [reported entry averages](../concepts/execution/reconciliation.md#reported-entry-averages).
 
 #### Resolved balances
 

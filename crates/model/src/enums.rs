@@ -243,6 +243,52 @@ impl FromU8 for AssetClass {
     }
 }
 
+/// How position reconciliation may use a venue-reported average entry price.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
+pub enum AvgPxReconciliation {
+    /// The average must match the cached position average within tolerance, and prices
+    /// reconciliation fills.
+    #[default]
+    Match = 1,
+    /// The average prices only positions opened from flat, and is never compared.
+    ///
+    /// For venue averages computed by a different method, such as FIFO lots.
+    OpeningOnly = 2,
+}
+
 /// The aggregation method through which a bar is generated and closed.
 #[repr(C)]
 #[derive(
@@ -2114,6 +2160,7 @@ enum_strum_serde!(AccountType);
 enum_strum_serde!(AggregationSource);
 enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
+enum_strum_serde!(AvgPxReconciliation);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BarIntervalType);
 enum_strum_serde!(BetSide);
@@ -2569,6 +2616,7 @@ mod tests {
             AggregationSource,
             AggressorSide,
             AssetClass,
+            AvgPxReconciliation,
             BarAggregation,
             BarIntervalType,
             BetSide,
@@ -2621,6 +2669,8 @@ mod tests {
         "AssetClass::Equity=EQUITY",
         "AssetClass::FX=FX",
         "AssetClass::Index=INDEX",
+        "AvgPxReconciliation::Match=MATCH",
+        "AvgPxReconciliation::OpeningOnly=OPENING_ONLY",
         "BarAggregation::Day=DAY",
         "BarAggregation::Hour=HOUR",
         "BarAggregation::Millisecond=MILLISECOND",
@@ -2791,6 +2841,7 @@ mod tests {
             AggregationSource,
             AggressorSide,
             AssetClass,
+            AvgPxReconciliation,
             BarAggregation,
             BarIntervalType,
             BetSide,

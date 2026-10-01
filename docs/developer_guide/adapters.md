@@ -1070,6 +1070,23 @@ or a block-trade or settlement fill, build a `FILLED` order report from its fill
 fills instead when applying them would misstate a position, for example when they miss balance
 changes made without a trade.
 
+##### Position report entry averages
+
+Pass the venue's average entry price through unrounded as `avg_px_open`, and state how
+reconciliation may use it:
+
+- Keep the defaults when the venue average is the quantity-weighted average of opening fills,
+  unchanged by reductions and reset on reversal, as Nautilus computes it.
+- Call `with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)` when the venue computes
+  the average another way, such as over FIFO lots. Reconciliation then uses it only to open a
+  position from flat and never compares it with the cached average.
+- Call `with_avg_px_open_precision(precision)` when the venue rounds or truncates the average.
+  Comparisons then allow one unit at that precision; quantity matching is unchanged. Drop the
+  marker when the adapter replaces the average with an exact value.
+
+[Reported entry averages](../concepts/execution/reconciliation.md#reported-entry-averages) describes
+each effect.
+
 ##### Mass-status timestamp contract
 
 `ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,

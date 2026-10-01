@@ -90,6 +90,8 @@ const POSITION_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::utf8("venue_position_id", true),
     JsonFieldSpec::utf8("avg_px_open", true),
+    JsonFieldSpec::utf8("avg_px_open_reconciliation", true),
+    JsonFieldSpec::u64("avg_px_open_precision", true),
 ];
 
 const EXECUTION_MASS_STATUS_FIELDS: &[JsonFieldSpec] = &[
@@ -111,6 +113,9 @@ fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<
 
 macro_rules! impl_report_arrow {
     ($type:ty, $type_name:expr, $fields:expr) => {
+        impl_report_arrow!($type, $type_name, $fields, |_: &RecordBatch| $fields);
+    };
+    ($type:ty, $type_name:expr, $fields:expr, $decode_fields:expr) => {
         impl ArrowSchemaProvider for $type {
             fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
                 schema_for_type($type_name, metadata, $fields)
@@ -143,7 +148,8 @@ macro_rules! impl_report_arrow {
                 metadata: &HashMap<String, String>,
                 record_batch: RecordBatch,
             ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+                let fields = ($decode_fields)(&record_batch);
+                decode_batch(metadata, &record_batch, fields, Some($type_name))
             }
         }
     };
@@ -158,8 +164,22 @@ impl_report_arrow!(FillReport, "FillReport", FILL_REPORT_FIELDS);
 impl_report_arrow!(
     PositionStatusReport,
     "PositionStatusReport",
-    POSITION_STATUS_REPORT_FIELDS
+    POSITION_STATUS_REPORT_FIELDS,
+    position_status_report_decode_fields
 );
+
+// Files written before the average reconciliation fields lack their two trailing columns
+fn position_status_report_decode_fields(record_batch: &RecordBatch) -> &'static [JsonFieldSpec] {
+    if record_batch
+        .schema()
+        .index_of("avg_px_open_reconciliation")
+        .is_ok()
+    {
+        POSITION_STATUS_REPORT_FIELDS
+    } else {
+        &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 2]
+    }
+}
 
 impl ArrowSchemaProvider for ExecutionMassStatus {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -212,7 +232,9 @@ mod tests {
 
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+        enums::{
+            AvgPxReconciliation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        },
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
         reports::{OrderStatusReport, PositionStatusReport},
         types::{Price, Quantity},
@@ -271,10 +293,62 @@ mod tests {
             ts_init: UnixNanos::from(2_000_000_000),
             venue_position_id: Some(PositionId::from("P-001")),
             avg_px_open: Some(Decimal::from_str("1.23456789123456789").unwrap()),
+            avg_px_open_reconciliation: AvgPxReconciliation::OpeningOnly,
+            avg_px_open_precision: Some(4),
         };
         let metadata = report.metadata();
         let batch =
             PositionStatusReport::encode_batch(&metadata, std::slice::from_ref(&report)).unwrap();
+        let decoded =
+            PositionStatusReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![report]);
+    }
+
+    #[rstest]
+    #[case::missing_columns(true)]
+    #[case::null_values(false)]
+    fn test_position_status_report_decodes_without_avg_px_open_metadata(
+        #[case] omit_columns: bool,
+    ) {
+        let report = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSide::Short,
+            Quantity::from("100.25"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            Some(Decimal::from_str("1.2345").unwrap()),
+        );
+        let metadata = report.metadata();
+
+        let batch = if omit_columns {
+            encode_batch(
+                "PositionStatusReport",
+                &metadata,
+                [&report],
+                &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 2],
+            )
+            .unwrap()
+        } else {
+            let mut row = serde_json::to_value(&report).unwrap();
+            let object = row.as_object_mut().unwrap();
+            object.insert(
+                "avg_px_open_reconciliation".to_string(),
+                serde_json::Value::Null,
+            );
+            object.insert("avg_px_open_precision".to_string(), serde_json::Value::Null);
+            encode_batch(
+                "PositionStatusReport",
+                &metadata,
+                [&row],
+                POSITION_STATUS_REPORT_FIELDS,
+            )
+            .unwrap()
+        };
+
         let decoded =
             PositionStatusReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
