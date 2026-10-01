@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Architect AX bounded mass-status window declaration for reconciliation lookbacks
 - Added Architect AX post-only repricing metadata to HTTP and WebSocket order models
 - Added Architect AX instrument schedules and estimated funding metadata to response models
+- Added Architect AX `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Betfair `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Binance `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added per-instrument `overrides` on maker/taker fee models
@@ -285,6 +286,8 @@ Released on TBD (UTC).
 - Fixed Architect AX order report parsing of post-only flags, timestamps, and terminal states
 - Fixed Architect AX position entry prices to use cost basis when available
 - Fixed Architect AX fills being dropped for unknown sibling order states
+- Fixed Architect AX book recovery after missing snapshots, invalid frames, and reconnects
+- Fixed Architect AX resubscribes racing an earlier unsubscribe and leaving the stream unsubscribed
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
@@ -369,6 +372,7 @@ Released on TBD (UTC).
 
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
+- Added Architect AX live book stress harness with fault injection and an independent book oracle
 - Added Betfair live book stress harness with fault injection and an independent book oracle
 - Added CRLF line relay routes to the shared book stress fault proxy
 - Added Binance live book stress harness with fault injection and independent book oracles
@@ -381,6 +385,7 @@ Released on TBD (UTC).
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Standardized adapter JSON decimal parsing on shared core parsers
+- Standardized Architect AX book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Betfair book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
 - Standardized Bybit book recovery on the shared recovery runner and 10s snapshot default
@@ -472,6 +477,7 @@ Released on TBD (UTC).
 - Documented v1 `StreamingConfig` migration to `writer_path`, `catalog`, and `RotationConfig` (#5115), thanks @faysou
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out
 - Documented Architect AX repricing metadata, replacement recovery limits, and market data limitations
+- Documented Architect AX order book recovery, snapshot deadlines, and the book stress harness
 - Documented Betfair order book recovery, retry limits, and live recovery validation
 - Documented Binance custom data catalog persistence
 - Documented Binance side-filtered cancel-all selecting open orders only

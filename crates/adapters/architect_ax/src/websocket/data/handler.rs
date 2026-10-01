@@ -24,11 +24,13 @@ use std::{
 };
 
 use ahash::AHashMap;
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::websocket::{SubscriptionState, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::AxMdSubscriptionSpec;
+use super::{AxMdSubscriptionSpec, AxWsClientError};
 use crate::{
     common::enums::{AxCandleWidth, AxMdRequestType},
     websocket::{
@@ -57,6 +59,28 @@ pub enum HandlerCommand {
         symbol: Ustr,
         /// Market data subscription options.
         spec: AxMdSubscriptionSpec,
+    },
+    /// Writes a book subscription on the current connection, opening `gate` once written.
+    ///
+    /// With an unsubscribe request ID, first unsubscribes the symbol so the venue restarts its
+    /// stream with a snapshot. That acknowledgement stays untracked, keeping the topic desired for
+    /// reconnect replay. The write always runs, since the subscription state already counts it;
+    /// `cancel` only keeps the gate closed.
+    WriteBook {
+        /// Request ID for correlation.
+        request_id: i64,
+        /// Request ID of the unsubscribe that replaces an open stream.
+        unsubscribe_request_id: Option<i64>,
+        /// Instrument symbol.
+        symbol: Ustr,
+        /// Market data subscription options.
+        spec: AxMdSubscriptionSpec,
+        /// Keeps the gate closed once cancelled.
+        cancel: CancellationToken,
+        /// Snapshot gate opened once the write completes.
+        gate: SnapshotGate,
+        /// Receives the write result.
+        completion: tokio::sync::oneshot::Sender<Result<(), AxWsClientError>>,
     },
     /// Unsubscribe from market data for a symbol.
     Unsubscribe {
@@ -279,6 +303,28 @@ impl AxMdWsFeedHandler {
                     .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
                 self.send_subscribe(request_id, symbol, spec).await;
             }
+            HandlerCommand::WriteBook {
+                request_id,
+                unsubscribe_request_id,
+                symbol,
+                spec,
+                cancel,
+                gate,
+                completion,
+            } => {
+                log::debug!(
+                    "WriteBook command received: request_id={request_id}, symbol={symbol}, spec={spec:?}"
+                );
+                let result = self
+                    .write_book(request_id, unsubscribe_request_id, symbol, spec)
+                    .await;
+
+                if result.is_ok() && !cancel.is_cancelled() {
+                    gate.open();
+                }
+
+                let _ = completion.send(result);
+            }
             HandlerCommand::Unsubscribe {
                 request_id,
                 symbol,
@@ -337,6 +383,55 @@ impl AxMdWsFeedHandler {
             self.pending_subscription_requests.remove(&request_id);
             log::error!("Failed to send subscribe message: {e}");
         }
+    }
+
+    async fn write_book(
+        &mut self,
+        request_id: i64,
+        unsubscribe_request_id: Option<i64>,
+        symbol: Ustr,
+        spec: AxMdSubscriptionSpec,
+    ) -> Result<(), AxWsClientError> {
+        let Some(client) = self.inner.as_ref() else {
+            return Err(AxWsClientError::Transport(
+                "No WebSocket client available".to_string(),
+            ));
+        };
+
+        let epoch = client.connection_epoch();
+        let topic = spec.topic(symbol.as_str());
+
+        if let Some(rid) = unsubscribe_request_id {
+            // Keeps the topic desired for reconnect replay, so its subscribe ack confirms it again
+            self.subscriptions.mark_failure(&topic);
+
+            let msg = AxMdUnsubscribe {
+                rid,
+                msg_type: AxMdRequestType::Unsubscribe,
+                symbol,
+            };
+
+            send_json_on_connection(client, &msg, epoch).await?;
+        }
+
+        let msg = AxMdSubscribe {
+            rid: request_id,
+            msg_type: AxMdRequestType::Subscribe,
+            symbol,
+            level: spec.level,
+            trades: spec.trades,
+            ticker: spec.ticker,
+        };
+
+        self.pending_subscription_requests
+            .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
+
+        if let Err(e) = send_json_on_connection(client, &msg, epoch).await {
+            self.pending_subscription_requests.remove(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     async fn send_unsubscribe(&mut self, request_id: i64, symbol: Ustr) {
@@ -507,13 +602,31 @@ enum PendingSubscriptionRequest {
     Unsubscribe(String),
 }
 
+// Sends once on the connection identified by `epoch`, never replaying on a replacement
+async fn send_json_on_connection<T: serde::Serialize>(
+    client: &WebSocketClient,
+    msg: &T,
+    epoch: u64,
+) -> Result<(), AxWsClientError> {
+    let payload =
+        serde_json::to_string(msg).map_err(|e| AxWsClientError::ClientError(e.to_string()))?;
+
+    client
+        .send_text_on_connection(payload, None, epoch)
+        .await
+        .map_err(|e| AxWsClientError::Transport(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_network::websocket::SubscriptionState;
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::messages::{AxMdSubscriptionResponse, AxMdSubscriptionResult, AxWsError};
+    use crate::{
+        common::enums::AxMarketDataLevel,
+        websocket::messages::{AxMdSubscriptionResponse, AxMdSubscriptionResult, AxWsError},
+    };
 
     const TOPIC: &str = "EURUSD-PERP:Level2:false:false";
 
@@ -663,6 +776,41 @@ mod tests {
         assert!(subscriptions.all_topics().is_empty());
         assert!(subscriptions.pending_subscribe_topics().is_empty());
         assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(handler.pending_subscription_requests.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_write_book_failure_keeps_gate_closed() {
+        let mut handler = create_handler(SubscriptionState::new(':'));
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+
+        // No client is set, so the write fails before any send
+        handler
+            .handle_command(HandlerCommand::WriteBook {
+                request_id: 7,
+                unsubscribe_request_id: Some(8),
+                symbol: Ustr::from("EURUSD-PERP"),
+                spec: AxMdSubscriptionSpec::new(
+                    AxMarketDataLevel::Level2,
+                    Some(false),
+                    Some(false),
+                ),
+                cancel: CancellationToken::new(),
+                gate: gate.clone(),
+                completion,
+            })
+            .await;
+
+        let result = receiver.await.unwrap();
+
+        assert!(matches!(
+            result,
+            Err(AxWsClientError::Transport(message)) if message == "No WebSocket client available"
+        ));
+        assert!(gate.lock().is_closed());
         assert!(handler.pending_subscription_requests.is_empty());
     }
 

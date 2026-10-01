@@ -874,8 +874,8 @@ emissions are filtered to active subscriptions.
 ### Order book recovery ownership
 
 [`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Polymarket, Lighter, Binance, Hyperliquid, Bybit, and Betfair. Keep venue-specific book
-synchronization and recovery in each adapter's `src/book/`, with stream handlers dispatching
+OKX, Polymarket, Lighter, Binance, Hyperliquid, Bybit, Betfair, and AX Exchange. Keep venue-specific
+book synchronization and recovery in each adapter's `src/book/`, with stream handlers dispatching
 commands and frames.
 
 #### Per-book sync
@@ -891,9 +891,9 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-OKX, Polymarket, Binance, Hyperliquid, and Bybit keep a `BookSync` per book. Betfair keeps one per
-market, since it images whole markets. Lighter keeps a `BookRecoveryState` per book inside its
-handler-owned tracker.
+OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book. Betfair
+keeps one per market, since it images whole markets. Lighter keeps a `BookRecoveryState` per book
+inside its handler-owned tracker.
 
 #### Starting recovery
 
@@ -970,12 +970,13 @@ Hyperliquid accepts every `l2Book` frame as a snapshot, and with stale stream re
 stream health monitor starts recovery for a stale delta book. Betfair carries one market
 subscription per connection, so a replacement re-images every market; recoveries join a pending
 image request rather than writing competing subscriptions, and a reconnect resumes synced books from
-the subscription's clocks.
+the subscription's clocks. AX Exchange accepts every L2 and L3 frame as a snapshot and keeps its
+books across client reconnects, since its WebSocket client replays subscriptions on connect.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair): a replacement resubscribes, and the
-  venue stream delivers the snapshot.
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange): a replacement
+  resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 
