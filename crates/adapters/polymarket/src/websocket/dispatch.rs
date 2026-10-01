@@ -2511,6 +2511,58 @@ mod tests {
     }
 
     #[rstest]
+    #[case::settlement_rounding("0.4200001023529231", "1.758621", Some(dec!(0.42)))]
+    #[case::beyond_settlement_rounding("0.42001", "5", None)]
+    fn test_admit_maker_price_snaps_settlement_rounding_on_both_paths(
+        #[case] wire_price: &str,
+        #[case] matched_amount: &str,
+        #[case] snapped: Option<Decimal>,
+    ) {
+        let wire_price = Decimal::from_str_exact(wire_price).unwrap();
+        let matched_amount = Decimal::from_str_exact(matched_amount).unwrap();
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.maker_orders[0].price = wire_price;
+        trade.maker_orders[0].matched_amount = matched_amount;
+        let mut rest: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
+                .expect("REST trade fixture");
+        rest.trader_side = PolymarketLiquiditySide::Maker;
+        rest.maker_orders[0].price = wire_price;
+        rest.maker_orders[0].matched_amount = matched_amount;
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument_for_trade(&trade));
+        let maker_address = trade.maker_orders[0].maker_address.clone();
+        let ctx = AdmissionContext {
+            signer_type: PolymarketSignerType::Owner,
+            user_address: &maker_address,
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: get_pusd_currency(),
+            instruments: &token_instruments,
+        };
+
+        let stream = admit_trade_evidence(TradeEvidence::Stream(&trade), &ctx);
+        let rest =
+            admit_trade_evidence(TradeEvidence::Rest(&rest), &ctx).expect("REST evidence admits");
+
+        if let Some(snapped) = snapped {
+            let stream = stream.expect("stream evidence admits");
+            assert_eq!(stream.legs[0].last_px.as_decimal(), snapped);
+            assert_eq!(stream.legs[0].last_px.precision, 4);
+            assert_eq!(rest.legs[0].last_px, stream.legs[0].last_px);
+        } else {
+            let Err(AdmissionError::Invalid(e)) = stream else {
+                panic!("expected invalid stream evidence, was {stream:?}");
+            };
+            assert!(
+                format!("{e:#}").contains("not exactly representable"),
+                "unexpected error: {e:#}"
+            );
+            assert_eq!(rest.legs[0].last_px.as_decimal(), wire_price);
+        }
+    }
+
+    #[rstest]
     #[case::taker_order_id(false, "invalid venue order ID")]
     #[case::maker_trade_id(true, "invalid trade ID source")]
     fn test_admit_stream_rejects_invalid_identifiers_without_panicking(
@@ -2781,6 +2833,49 @@ mod tests {
         for fill in fills {
             assert_eq!(fill.venue_order_id, venue_order_id);
         }
+    }
+
+    #[rstest]
+    fn test_dispatch_maker_fill_with_settlement_rounded_price_applies_without_quarantine() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.status = PolymarketTradeStatus::Matched;
+        trade.maker_orders[0].price = dec!(0.4200001023529231);
+        trade.maker_orders[0].matched_amount = dec!(1.758621);
+        let configured_address = trade.maker_orders[0].maker_address.clone();
+
+        let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.maker_orders[0].asset_id, instrument_for_trade(&trade));
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        let emitter = test_emitter();
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.mark_live();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: &configured_address,
+            user_api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        };
+        let mut state = WsDispatchState::default();
+
+        let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let fills = fill_tracker.pending_fills_for(&venue_order_id);
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_px, Price::from("0.4200"));
+        assert_eq!(fills[0].last_qty, Quantity::from("1.758621"));
     }
 
     #[rstest]
