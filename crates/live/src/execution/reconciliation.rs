@@ -42,9 +42,9 @@ use nautilus_execution::reconciliation::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderEventAny, OrderFilled},
+    events::{OrderCanceled, OrderEventAny, OrderFilled},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
         VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
@@ -199,7 +199,7 @@ pub enum PositionFillReportPreparation {
 }
 
 /// Cached and venue position quantities and report shape for comparison.
-pub(crate) struct PositionQuantityComparison {
+pub(super) struct PositionQuantityComparison {
     pub(super) cached_positions: Vec<Position>,
     pub(super) cached_signed_qty: Decimal,
     pub(super) cached_long_qty: Decimal,
@@ -214,7 +214,7 @@ pub(crate) struct PositionQuantityComparison {
 
 impl PositionQuantityComparison {
     /// Checks net quantities and, when both venue sides are reported, side quantities.
-    pub(crate) fn quantities_match(&self, tolerance: Decimal) -> bool {
+    pub(super) fn quantities_match(&self, tolerance: Decimal) -> bool {
         let net_qty_matches = (self.cached_signed_qty - self.venue_signed_qty).abs() <= tolerance;
         let side_qty_matches = (self.cached_long_qty - self.venue_long_qty).abs() <= tolerance
             && (self.cached_short_qty - self.venue_short_qty).abs() <= tolerance;
@@ -223,7 +223,7 @@ impl PositionQuantityComparison {
     }
 
     /// Classifies venue reports as a single unambiguous position or multiple legs.
-    pub(crate) fn report_shape(&self) -> PositionReportShape {
+    pub(super) fn report_shape(&self) -> PositionReportShape {
         if self.nonflat_count > 1 || self.venue_has_side_reports {
             PositionReportShape::MultiLeg
         } else {
@@ -234,7 +234,7 @@ impl PositionQuantityComparison {
 
 /// Cached fill identities, missing orders, and netting lifecycle boundaries.
 pub(super) struct RetainedFillState {
-    pub(super) fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
+    pub(super) fill_keys: IndexSet<FillKey>,
     pub(super) missing_order_ids: IndexSet<(AccountId, InstrumentId, ClientOrderId)>,
     pub(super) missing_venue_order_ids: IndexSet<(AccountId, InstrumentId, VenueOrderId)>,
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
@@ -272,7 +272,7 @@ pub(super) struct InflightCheck {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PositionReportShape {
+pub(super) enum PositionReportShape {
     Unambiguous,
     MultiLeg,
 }
@@ -727,47 +727,52 @@ pub(crate) fn resolve_position_report_client_coverage(
     key: InstrumentAccountKey,
     clients: &[&dyn ExecutionClient],
 ) -> ReportClientCoverage {
-    let account_clients = clients
-        .iter()
-        .filter(|client| client.account_id() == key.1)
-        .map(|client| client.client_id())
-        .collect::<IndexSet<_>>();
+    let client_ids = responsible_client_ids(Some(key.1), key.0.venue, clients);
 
-    if !account_clients.is_empty() {
-        return if clients.iter().any(|client| {
-            account_clients.contains(&client.client_id())
-                && !client.provides_bulk_position_coverage(key.0)
-        }) {
-            ReportClientCoverage::Unavailable(account_clients)
-        } else {
-            ReportClientCoverage::Resolved(account_clients)
-        };
-    }
-
-    let venue_clients = clients
-        .iter()
-        .filter(|client| client.handles_order_venue(key.0.venue))
-        .map(|client| client.client_id())
-        .collect::<IndexSet<_>>();
-
-    if venue_clients.is_empty() {
+    if client_ids.is_empty() {
         ReportClientCoverage::Unresolved
     } else if clients.iter().any(|client| {
-        venue_clients.contains(&client.client_id())
-            && !client.provides_bulk_position_coverage(key.0)
+        client_ids.contains(&client.client_id()) && !client.provides_bulk_position_coverage(key.0)
     }) {
-        ReportClientCoverage::Unavailable(venue_clients)
+        ReportClientCoverage::Unavailable(client_ids)
     } else {
-        ReportClientCoverage::Resolved(venue_clients)
+        ReportClientCoverage::Resolved(client_ids)
     }
 }
 
+/// Returns the account's clients, falling back to clients handling the venue.
+pub(super) fn responsible_client_ids(
+    account_id: Option<AccountId>,
+    venue: Venue,
+    clients: &[&dyn ExecutionClient],
+) -> IndexSet<ClientId> {
+    if let Some(account_id) = account_id {
+        let account_clients = clients
+            .iter()
+            .filter(|client| client.account_id() == account_id)
+            .map(|client| client.client_id())
+            .collect::<IndexSet<_>>();
+
+        if !account_clients.is_empty() {
+            return account_clients;
+        }
+    }
+
+    clients
+        .iter()
+        .filter(|client| client.handles_order_venue(venue))
+        .map(|client| client.client_id())
+        .collect()
+}
+
 /// Returns the quantity-weighted average of positive position entry prices.
-pub(super) fn position_avg_px(cached_positions: &[Position]) -> Option<Decimal> {
+pub(super) fn position_avg_px<'a>(
+    positions: impl IntoIterator<Item = &'a Position>,
+) -> Option<Decimal> {
     let mut total_value = Decimal::ZERO;
     let mut total_qty = Decimal::ZERO;
 
-    for position in cached_positions {
+    for position in positions {
         let qty = position.signed_decimal_qty().abs();
         if position.avg_px_open > 0.0
             && qty > Decimal::ZERO
@@ -829,33 +834,30 @@ pub(super) fn distinct_position_reports(
     distinct_reports
 }
 
-/// Builds a filled market-order report for one leg of a position reversal.
-///
-/// Returns `None` if the quantity cannot be represented at instrument precision.
+/// Builds a filled market-order report that moves a position by `quantity` on `order_side`.
 #[expect(clippy::too_many_arguments)]
-pub(super) fn create_cross_zero_leg_report(
+pub(super) fn create_position_reconciliation_report(
     instrument: &InstrumentAny,
     account_id: AccountId,
-    instrument_id: InstrumentId,
     order_side: OrderSide,
-    quantity: Decimal,
+    quantity: Quantity,
     avg_px: Decimal,
     venue_position_id: Option<PositionId>,
-    tag: &str,
+    tag: Option<&str>,
     ts_now: UnixNanos,
     venue_ts_last: UnixNanos,
-) -> Option<OrderStatusReport> {
-    let order_qty = Quantity::from_decimal_dp(quantity, instrument.size_precision()).ok()?;
+) -> OrderStatusReport {
+    let instrument_id = instrument.id();
     let fill_price = Price::from_decimal_dp(avg_px, instrument.price_precision()).ok();
     let venue_order_id = create_position_reconciliation_venue_order_id(
         account_id,
         instrument_id,
         order_side,
         OrderType::Market,
-        order_qty,
+        quantity,
         fill_price,
         venue_position_id,
-        Some(tag),
+        tag,
         venue_ts_last,
     );
 
@@ -868,8 +870,8 @@ pub(super) fn create_cross_zero_leg_report(
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
-        order_qty,
-        order_qty,
+        quantity,
+        quantity,
         ts_now,
         ts_now,
         ts_now,
@@ -881,7 +883,24 @@ pub(super) fn create_cross_zero_leg_report(
         report = report.with_venue_position_id(venue_position_id);
     }
 
-    Some(report)
+    report
+}
+
+/// Builds a reconciliation cancel for an order resolved without a venue status report.
+pub(super) fn create_reconciliation_canceled(order: &OrderAny, ts_now: UnixNanos) -> OrderEventAny {
+    OrderEventAny::Canceled(OrderCanceled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        UUID4::new(),
+        ts_now,
+        ts_now,
+        true, // reconciliation
+        order.venue_order_id(),
+        order.account_id(),
+        None,
+    ))
 }
 
 #[cfg(test)]

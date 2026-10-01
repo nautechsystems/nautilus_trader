@@ -84,18 +84,6 @@ impl LiveExecutionClient {
         }
     }
 
-    pub(crate) const fn client_id(&self) -> ClientId {
-        self.client_id
-    }
-
-    pub(crate) const fn venue(&self) -> Venue {
-        self.venue
-    }
-
-    pub(crate) fn position_reconciliation_tolerance(&self) -> Decimal {
-        self.client.borrow().position_reconciliation_tolerance()
-    }
-
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"

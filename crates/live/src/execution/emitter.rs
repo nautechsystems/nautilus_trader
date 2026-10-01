@@ -436,48 +436,36 @@ impl ExecutionEventEmitter {
     ///
     /// Returns an error if the sender is uninitialized or its receiver is closed.
     pub fn try_send_order_event(&self, event: OrderEventAny) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-        let sender = sender
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Cannot send order event: sender not initialized"))?;
-        sender
-            .send(ExecutionEvent::Order(event))
-            .map_err(|e| anyhow::anyhow!("Failed to send order event: {e}"))
+        self.try_send(ExecutionEvent::Order(event), "order event")
     }
 
     /// Emits a batch of order submitted events as a single channel message.
     pub fn send_order_submitted_batch(&self, batch: OrderSubmittedBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderSubmittedBatch(batch)) {
-                log::warn!("Failed to send order submitted batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order submitted batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderSubmittedBatch(batch),
+            "order submitted batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
     /// Emits a batch of order accepted events as a single channel message.
     pub fn send_order_accepted_batch(&self, batch: OrderAcceptedBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderAcceptedBatch(batch)) {
-                log::warn!("Failed to send order accepted batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order accepted batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderAcceptedBatch(batch),
+            "order accepted batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
     /// Emits a batch of order canceled events as a single channel message.
     pub fn send_order_canceled_batch(&self, batch: OrderCanceledBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderCanceledBatch(batch)) {
-                log::warn!("Failed to send order canceled batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order canceled batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderCanceledBatch(batch),
+            "order canceled batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
@@ -494,13 +482,7 @@ impl ExecutionEventEmitter {
     ///
     /// Returns an error if the sender is uninitialized or its receiver is closed.
     pub fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-        let sender = sender
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Cannot send account state: sender not initialized"))?;
-        sender
-            .send(ExecutionEvent::Account(state))
-            .map_err(|e| anyhow::anyhow!("Failed to send account state: {e}"))
+        self.try_send(ExecutionEvent::Account(state), "account state")
     }
 
     /// Emits an execution report.
@@ -516,15 +498,7 @@ impl ExecutionEventEmitter {
     ///
     /// Returns an error if the sender is not initialized or the receiving channel is closed.
     pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-
-        let sender = sender.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("Cannot send execution report: sender not initialized")
-        })?;
-
-        sender
-            .send(ExecutionEvent::Report(report))
-            .map_err(|e| anyhow::anyhow!("Failed to send execution report: {e}"))
+        self.try_send(ExecutionEvent::Report(report), "execution report")
     }
 
     /// Emits an order status report.
@@ -545,6 +519,16 @@ impl ExecutionEventEmitter {
     /// Emits a position status report.
     pub fn send_position_report(&self, report: PositionStatusReport) {
         self.send_execution_report(ExecutionReport::Position(Box::new(report)));
+    }
+
+    fn try_send(&self, event: ExecutionEvent, kind: &str) -> anyhow::Result<()> {
+        let sender = self.sender.load();
+        let sender = sender
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cannot send {kind}: sender not initialized"))?;
+        sender
+            .send(event)
+            .map_err(|e| anyhow::anyhow!("Failed to send {kind}: {e}"))
     }
 }
 
