@@ -248,9 +248,10 @@ fn admit_owned_legs(
 /// Normalized trade fields common to the WebSocket and REST payloads.
 ///
 /// `from_rest` marks REST evidence, whose maker orders always carry a side and whose prices keep
-/// their exact wire precision rather than the instrument precision. `match_time_source` keeps the
-/// raw `match_time` for validation messages, and `ts_event` is the venue match timestamp parsed
-/// from it, with the WebSocket `timestamp` as fallback.
+/// their exact wire precision rather than the instrument precision. A price off the instrument
+/// precision only by settlement rounding snaps to it on both transports. `match_time_source`
+/// keeps the raw `match_time` for validation messages, and `ts_event` is the venue match
+/// timestamp parsed from it, with the WebSocket `timestamp` as fallback.
 struct NormalizedTrade<'a> {
     id: &'a str,
     status: PolymarketTradeStatus,
@@ -512,7 +513,7 @@ fn validate_price(
         .with_context(|| format!("{field} {value} overflow"))
 }
 
-// Venue fill prices are ratios of 6-decimal settlement amounts, e.g. 0.42 as 0.4200001023529231
+// Some venue fill prices are ratios of 6-decimal settlement amounts (0.42 as 0.4200001023529231)
 fn snap_settlement_price(value: Decimal, size: Decimal, precision: u8) -> Decimal {
     let snapped = value.round_dp(u32::from(precision));
     if snapped == value || snapped <= Decimal::ZERO || snapped >= Decimal::ONE {

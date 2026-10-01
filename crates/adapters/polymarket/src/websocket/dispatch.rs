@@ -2869,6 +2869,7 @@ mod tests {
             user_api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
         };
         let mut state = WsDispatchState::default();
+        let trade_id = trade.id.clone();
 
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
@@ -2876,6 +2877,10 @@ mod tests {
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].last_px, Price::from("0.4200"));
         assert_eq!(fills[0].last_qty, Quantity::from("1.758621"));
+        assert_eq!(
+            settlement_state(&settlement, &trade_id),
+            Some(SettlementState::Provisional)
+        );
     }
 
     #[rstest]
