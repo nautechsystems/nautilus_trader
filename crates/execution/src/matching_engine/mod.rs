@@ -6941,7 +6941,9 @@ impl OrderMatchingEngine {
     /// children have filled between them: the parent's quantity while it works, and its filled
     /// quantity once it closes. Children only grow when the parent's quantity increases. A closing
     /// parent cancels any child left with nothing to cover or still waiting for release, except
-    /// that reducing it to its filled quantity releases those children, as that completes it.
+    /// that under the full trigger reducing it to its filled quantity releases those children, as
+    /// that completes it. Without the full trigger, once the parent has fills a child out of the
+    /// book is already closing and is left alone.
     fn update_oto_children(
         &mut self,
         parent: &OrderAny,
@@ -6994,7 +6996,13 @@ impl OrderMatchingEngine {
 
             // A released child is in the book even before its deferred acceptance applies
             let released = self.core.order_exists(*client_order_id);
-            let release = !released && reduced_to_filled;
+
+            // Without the full trigger the parent's first fill released every child, so one out
+            // of the book is already closing, though the cache may not show it yet
+            if !released && !self.config.oto_full_trigger && !parent_filled_qty.is_zero() {
+                continue;
+            }
+            let release = !released && reduced_to_filled && self.config.oto_full_trigger;
             if parent_closed && ((!released && !release) || remaining.is_zero()) {
                 self.cancel_order(&child_order, Some(false));
                 continue;
