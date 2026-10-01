@@ -51,9 +51,9 @@ use nautilus_model::{
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
-            audusd_sim, betting, binary_option, btcusd_bybit, crypto_futures_spread_btc_deribit,
-            crypto_option_btc_deribit, currency_pair_btcusdt, default_fx_ccy, equity_aapl,
-            ethusd_bybit, futures_spread_es,
+            audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
+            crypto_futures_spread_btc_deribit, crypto_option_btc_deribit, currency_pair_btcusdt,
+            default_fx_ccy, equity_aapl, ethusd_bybit, futures_spread_es,
         },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
@@ -10782,19 +10782,20 @@ fn set_quote(
 }
 
 #[rstest]
-#[case::negative(-5.0, -4.9, 5.0)]
-#[case::zero(0.0, 0.1, 10.0)]
+#[case::futures_spread_negative(InstrumentAny::FuturesSpread(futures_spread_es()), -5.0, -4.9, 5.0)]
+#[case::futures_spread_zero(InstrumentAny::FuturesSpread(futures_spread_es()), 0.0, 0.1, 10.0)]
+#[case::spot_commodity_negative(InstrumentAny::Commodity(commodity_gold()), -5.0, -4.9, 5.0)]
 fn test_unrealized_pnl_values_negative_price_instrument_at_non_positive_quote(
     mut portfolio: Portfolio,
+    #[case] instrument: InstrumentAny,
     #[case] bid: f64,
     #[case] ask: f64,
     #[case] expected_pnl: f64,
 ) {
     let account_id = AccountId::new("SIM-001");
-    let spread = InstrumentAny::FuturesSpread(futures_spread_es());
     let instrument = open_position_at(
         &mut portfolio,
-        spread,
+        instrument,
         account_id,
         OrderSide::Buy,
         -10.0,
