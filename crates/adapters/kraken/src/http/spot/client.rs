@@ -2480,14 +2480,18 @@ impl KrakenSpotHttpClient {
 
         let ts_init = self.generate_ts_init();
 
-        // Aggregate individual lot entries by pair into a signed net quantity.
-        // Kraken returns one entry per order lot (keyed by ordertxid); buy lots add to net
-        // quantity and sell lots subtract. A single signed value per pair is correct for a
-        // NETTING account and avoids emitting conflicting long+short reports for the same
-        // instrument when opposing lots exist on the same pair. Aggregation uses `Decimal`
-        // so opposing lots cancel exactly and partial-close noise does not leave residual
-        // float dust in the reported quantity.
-        let mut agg: IndexMap<String, (Decimal, InstrumentId)> = IndexMap::new();
+        // Aggregate individual lot entries by pair into a signed net quantity and the
+        // matching signed notional, so each report carries `avg_px_open` derived from the
+        // venue-supplied cost basis. Kraken returns one entry per order lot (keyed by
+        // ordertxid); buy lots add to net quantity and sell lots subtract. A single signed
+        // value per pair is correct for a NETTING account and avoids emitting conflicting
+        // long+short reports for the same instrument when opposing lots exist on the same
+        // pair. Aggregation uses `Decimal` so opposing lots cancel exactly and partial-close
+        // noise does not leave residual float dust in the reported quantity or price.
+        //
+        // Per-lot remaining notional is prorated as `cost * (lot_net / vol)` so partially
+        // closed lots contribute only their open portion to the weighted average.
+        let mut agg: IndexMap<String, (Decimal, Decimal, InstrumentId)> = IndexMap::new();
 
         let target_pair: Option<Ustr> = match &instrument_id {
             Some(target_id) => match self.get_cached_instrument(&target_id.symbol.inner()) {
@@ -2528,6 +2532,8 @@ impl KrakenSpotHttpClient {
             let vol_closed = Decimal::from_str_exact(&pos.vol_closed).with_context(|| {
                 format!("OpenPositions: failed to parse vol_closed for {}", pos.pair)
             })?;
+            let cost = Decimal::from_str_exact(&pos.cost)
+                .with_context(|| format!("OpenPositions: failed to parse cost for {}", pos.pair))?;
 
             let lot_net = (vol - vol_closed).max(Decimal::ZERO);
             let signed_lot = match pos.side {
@@ -2535,15 +2541,31 @@ impl KrakenSpotHttpClient {
                 KrakenOrderSide::Sell => -lot_net,
             };
 
-            let entry = agg
-                .entry(pos.pair.clone())
-                .or_insert((Decimal::ZERO, instrument.id()));
+            // Prorate the opening notional by the lot's remaining-open fraction so
+            // partially closed lots contribute only their open portion. A zero `vol`
+            // can only pair with a zero `lot_net`, so skip the division in that case.
+            let lot_notional = if vol.is_zero() {
+                Decimal::ZERO
+            } else {
+                cost * (lot_net / vol)
+            };
+            let signed_notional = match pos.side {
+                KrakenOrderSide::Buy => lot_notional,
+                KrakenOrderSide::Sell => -lot_notional,
+            };
+
+            let entry = agg.entry(pos.pair.clone()).or_insert((
+                Decimal::ZERO,
+                Decimal::ZERO,
+                instrument.id(),
+            ));
             entry.0 += signed_lot;
+            entry.1 += signed_notional;
         }
 
         let mut reports = Vec::new();
 
-        for (_, (signed_qty, inst_id)) in agg {
+        for (_, (signed_qty, signed_notional, inst_id)) in agg {
             let instrument = self
                 .get_cached_instrument(&inst_id.symbol.inner())
                 .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
@@ -2559,8 +2581,23 @@ impl KrakenSpotHttpClient {
                 .map_err(|e| {
                     anyhow::anyhow!("OpenPositions: failed to build Quantity for {inst_id}: {e:?}")
                 })?;
+            // Flat positions carry no entry price; opposing lots that cancel exactly also
+            // produce no meaningful average, so only report `avg_px_open` for a non-zero net.
+            let avg_px_open = if signed_qty.is_zero() {
+                None
+            } else {
+                Some((signed_notional / signed_qty).abs())
+            };
             let report = PositionStatusReport::new(
-                account_id, inst_id, side, quantity, ts_init, ts_init, None, None, None,
+                account_id,
+                inst_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                avg_px_open,
             );
             reports.push(report);
         }

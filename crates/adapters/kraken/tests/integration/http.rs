@@ -4744,6 +4744,18 @@ fn make_open_positions_json(lots: &[(&str, &str, Decimal, Decimal)]) -> String {
     format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
 }
 
+fn make_open_positions_json_with_cost(lots: &[(&str, &str, Decimal, Decimal, Decimal)]) -> String {
+    let entries: Vec<String> = lots
+        .iter()
+        .map(|(pos_id, side, vol, vol_closed, cost)| {
+            format!(
+                r#""{pos_id}": {{"ordertxid": "O-{pos_id}", "pair": "XXBTZUSD", "time": 1714500000.0, "type": "{side}", "ordertype": "market", "cost": "{cost}", "fee": "75.00", "vol": "{vol}", "vol_closed": "{vol_closed}", "margin": "10000.00"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
+}
+
 async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, InstrumentId) {
     let state = Arc::new(TestServerState::default());
     *state.open_positions_json.lock().await = Some(json);
@@ -4953,4 +4965,138 @@ async fn test_spot_margin_position_bails_on_unparsable_volume() {
         "expected Err for unparsable volume, received Ok({:?})",
         result.ok()
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_single_lot_reports_avg_px_open() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
+    // A single buy lot of 1 unit at cost=50000 implies avg_px_open=50000.
+    let json =
+        make_open_positions_json_with_cost(&[("LOT1", "buy", dec!(1), Decimal::ZERO, dec!(50000))]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Long);
+    assert_eq!(r.quantity, Quantity::from("1"));
+    assert_eq!(r.avg_px_open, Some(dec!(50000)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_weighted_avg_px_open_across_lots() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
+    // Two buy lots: 1 unit at 50000 and 1 unit at 60000. Net 2 units long, weighted avg 55000.
+    let json = make_open_positions_json_with_cost(&[
+        ("LOT1", "buy", dec!(1), Decimal::ZERO, dec!(50000)),
+        ("LOT2", "buy", dec!(1), Decimal::ZERO, dec!(60000)),
+    ]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Long);
+    assert_eq!(r.quantity, Quantity::from("2"));
+    assert_eq!(r.avg_px_open, Some(dec!(55000)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_prorates_cost_by_closed_fraction() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+    use rust_decimal_macros::dec;
+
+    // A single buy lot of 2 units at cost=100000 that is half closed should contribute
+    // 1 unit of open size at 50000 of open notional, so avg_px_open=50000.
+    let json =
+        make_open_positions_json_with_cost(&[("LOT1", "buy", dec!(2), dec!(1), dec!(100000))]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Long);
+    assert_eq!(r.quantity, Quantity::from("1"));
+    assert_eq!(r.avg_px_open, Some(dec!(50000)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_flat_omits_avg_px_open() {
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
+    // Buy 0.5 at 50000 and sell 0.5 at 60000 nets to flat. avg_px_open must be None
+    // since there is no net position for an entry price to describe.
+    let json = make_open_positions_json_with_cost(&[
+        ("LOT1", "buy", dec!(0.5), Decimal::ZERO, dec!(25000)),
+        ("LOT2", "sell", dec!(0.5), Decimal::ZERO, dec!(30000)),
+    ]);
+    let (client, _) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    assert!(reports[0].avg_px_open.is_none());
 }
