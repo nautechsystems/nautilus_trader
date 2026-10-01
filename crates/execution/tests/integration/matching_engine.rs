@@ -22730,3 +22730,77 @@ fn test_deferred_fill_then_cancel_keeps_released_oto_exits(
     assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
     assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
 }
+
+#[rstest]
+#[case::reduce_to_filled(Some("4.000"), None, true, "4.000")]
+#[case::complete_by_price_modify(None, Some("1505.00"), true, "10.000")]
+#[case::reduce_working(Some("6.000"), None, false, "4.000")]
+#[case::increase_working(Some("12.000"), None, false, "4.000")]
+fn test_deferred_exit_cancel_then_entry_modify_leaves_exits_canceled(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] entry_closed: bool,
+    #[case] entry_filled: &str,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let ask = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Sell,
+        "1502.00",
+        "6.000",
+        2,
+    );
+    engine.process_order_book_delta(&ask).unwrap();
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let cancel_tp = CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        tp_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // The strategy cancels the take-profit, which cancels its OUO stop-loss, and modifies the
+    // entry before any of those events are applied
+    run_with_dispatch(&mut engine, true, |engine| {
+        engine.process_cancel(&cancel_tp, account_id);
+        let modify = modify_bracket_entry(&instrument_eth_usdt, quantity, price);
+        engine.process_modify(&modify, account_id);
+
+        for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+            assert!(!engine.order_exists(ClientOrderId::from(id)), "{id}");
+        }
+    });
+
+    let cache = cache.borrow();
+    let entry = cache.order(&ClientOrderId::from(BRACKET_ENTRY_ID)).unwrap();
+    assert_eq!(entry.is_closed(), entry_closed);
+    assert_eq!(entry.filled_qty(), Quantity::from(entry_filled));
+    let summary = event_summary(&handler);
+
+    for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+        let count = |event_type: OrderEventType| {
+            let event = format!("{event_type:?}:{id}");
+            summary.iter().filter(|e| **e == event).count()
+        };
+        assert_eq!(count(OrderEventType::Canceled), 1, "{id}: {summary:?}");
+        assert_eq!(count(OrderEventType::Updated), 0, "{id}: {summary:?}");
+        let exit = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(exit.status(), OrderStatus::Canceled, "{id}: {summary:?}");
+    }
+}
