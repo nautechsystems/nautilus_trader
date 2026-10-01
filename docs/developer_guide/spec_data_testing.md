@@ -112,8 +112,8 @@ never receives data.
   is an empty snapshot.
 - An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
 - Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic
-  within a snapshot episode. OKX `seqId` can reset and Polymarket books carry no sequence, so their
-  checkers skip this rule and rely on the oracle.
+  within a snapshot episode. OKX `seqId` can reset, and Polymarket and Hyperliquid books carry no
+  sequence, so their checkers skip this rule and rely on the oracle.
 - A book emits nothing after its unsubscribe settles.
 
 ### Validation levels
@@ -164,7 +164,7 @@ in-flight subscribe), not by message count.
 | Serial repetition of the race scenario                                      | Scheduler sensitivity                                                | 5+ consecutive live passes; 100x repetition for deterministic harnesses                 | Flakes that pass once and fail rarely                                     |
 
 Route each venue through a network location it serves: Polymarket restricts access by region, while
-OKX, Lighter, and Binance validate direct. Confirm the route delivers venue data before a long run:
+OKX, Lighter, Binance, and Hyperliquid validate direct. Confirm the route delivers venue data before a long run:
 sockets can connect while the venue stays silent. Branches the venue never produces live belong in
 a captured-wire deterministic harness, not in the live run.
 
@@ -264,7 +264,7 @@ traffic. The shared proxy, argument parsing, and wire book carry unit tests in t
 `book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
 Document the harness in the adapter's integration guide under a `Live recovery validation` heading
 that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
-endpoints it requires. OKX, Binance, Lighter, and Polymarket provide harnesses.
+endpoints it requires. OKX, Binance, Lighter, Polymarket, and Hyperliquid provide harnesses.
 
 ### In-band verification
 

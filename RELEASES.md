@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Added `events.order_fill_declined.{instrument_id}` topic republishing fills and voids the engine declines
 - Added live binary option position settlement from `InstrumentClose` (#4963), thanks for reporting @seungpyoson
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
+- Added Hyperliquid `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Kraken bounded mass-status window declaration for reconciliation lookbacks (#5043), thanks @zhaow-de
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
@@ -123,6 +124,7 @@ Released on TBD (UTC).
 - Changed Deribit `DeribitWebSocketClient::modify_order` to take `DeribitEditParams`
 - Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
+- Changed Hyperliquid stale book-delta recovery to shared book recovery, which never requests a reconnect
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 - Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
 - Changed Polymarket fills on orders from before a reconnect or restart to wait for a terminal REST result
@@ -298,6 +300,9 @@ Released on TBD (UTC).
 - Fixed Derive instrument `info` dropping fields from the venue response
 - Fixed Hyperliquid fill reconciliation failing for accounts with fills on settled HIP-4 outcomes
 - Fixed Hyperliquid mass status failing on `outcomeSettledCanceled` historical orders
+- Fixed Hyperliquid book recovery after missing snapshots, invalid frames, and reconnects
+- Fixed Hyperliquid order book snapshots missing `F_SNAPSHOT` and closing every level with `F_LAST`
+- Fixed Hyperliquid depth-only book subscriptions emitting order book deltas
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
@@ -342,6 +347,7 @@ Released on TBD (UTC).
 - Added shared catalog and streaming writer factories for backtest and live nodes (#4959), thanks @faysou
 - Added `LiveNode` Feather streaming tests for typed routes, size rotation, and auto-flush
 - Added Binance live book stress harness with fault injection and independent book oracles
+- Added Hyperliquid live book stress harness with fault injection and an independent book oracle
 - Added `OrderBook` filtered view property tests against a reference model
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
@@ -350,6 +356,7 @@ Released on TBD (UTC).
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Standardized adapter JSON decimal parsing on shared core parsers
 - Standardized Binance book recovery on the shared recovery runner and 10s snapshot default
+- Standardized Hyperliquid book recovery on the shared recovery runner and 10s snapshot default
 - Improved cache order query benchmark coverage
 - Improved live and backtest callback drains at runtime-owned loop boundaries
 - Improved Parquet catalog regression coverage for consolidation, promotion, and identifier matching
@@ -441,6 +448,7 @@ Released on TBD (UTC).
 - Documented Binance side-filtered cancel-all selecting open orders only
 - Documented Binance order book synchronization, recovery limits, and snapshot pacing
 - Documented Hyperliquid inferred-fill commissions as unset
+- Documented Hyperliquid order book recovery, stale stream escalation, and the book stress harness
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented that Kraken spot report requests warn at the page cap without marking incomplete (#5091), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence

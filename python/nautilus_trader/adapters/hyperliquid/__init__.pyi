@@ -92,6 +92,8 @@ class HyperliquidDataClientConfig:
     def stale_stream_recovery_cooldown_secs(self) -> int: ...
     @property
     def stale_stream_max_targeted_resubscribes(self) -> int: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
     def __init__(
         self,
         environment: HyperliquidEnvironment | None = None,
@@ -109,6 +111,7 @@ class HyperliquidDataClientConfig:
         stale_stream_recovery_enabled: bool | None = None,
         stale_stream_recovery_cooldown_secs: int | None = None,
         stale_stream_max_targeted_resubscribes: int | None = None,
+        book_snapshot_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

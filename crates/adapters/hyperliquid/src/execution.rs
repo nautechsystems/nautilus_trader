@@ -2500,6 +2500,7 @@ impl HyperliquidExecutionClient {
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
                         | NautilusWsMessage::Depth(_)
+                        | NautilusWsMessage::BookInvalid(_)
                         | NautilusWsMessage::Candle(_)
                         | NautilusWsMessage::MarkPrice(_)
                         | NautilusWsMessage::IndexPrice(_)

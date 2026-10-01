@@ -733,7 +733,7 @@ self.subscribe_book_deltas(
 )
 ```
 
-Omitting both params subscribes to the full-depth book.
+Omitting both params subscribes at full price precision.
 
 Book deltas and depth snapshots for the same instrument share one venue
 `l2Book` stream:
@@ -1283,13 +1283,90 @@ requires additional design work (retired-VOI tracking or drain on modify-failure
 
 ## Order books
 
-Order books are maintained via L2 WebSocket subscription. Each message delivers a full-depth
-snapshot (clear + rebuild), not incremental deltas.
+Order books are maintained via L2 WebSocket subscription. Each message delivers a snapshot of up to
+20 price levels per side (clear + rebuild), not incremental deltas. The adapter emits each snapshot
+as one event group: a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`, with `F_LAST` on
+the final delta.
 
 :::note
 A trader instance maintains one order book per instrument, so all subscribers to an instrument
 share the same book and the same venue-side precision options.
 :::
+
+### Order book recovery
+
+The data client tracks each order book delta subscription with the
+[shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
+`l2Book` messages carry no sequence numbers, so the client accepts every message as a snapshot. It
+suppresses book output while a subscription write is in flight and resumes on the next snapshot.
+
+Recovery replaces the `l2Book` subscription with an unsubscribe and a subscribe on the same
+connection, echoing the stream's precision options. It starts when:
+
+- An initial subscription write fails.
+- No snapshot arrives within `book_snapshot_timeout_secs` (default 10 seconds) after the initial
+  subscription write completes or the connection reconnects.
+- A decoded `l2Book` frame is invalid because its prices, sizes, or timestamp cannot be converted.
+  The book stops emitting until a replacement snapshot arrives, and a running recovery's current
+  attempt fails without waiting for its snapshot deadline. A message that fails JSON decoding names
+  no book, so the client logs and drops it.
+- The stream health monitor reports the book stale while `stale_stream_recovery_enabled` is set.
+  See [Stream health and recovery](#stream-health-and-recovery).
+
+A rejected subscription delivers no snapshot, so its snapshot deadline starts recovery. A
+subscription the client rejects before sending, such as one beyond the 1,000-subscription limit,
+starts no recovery, and its book emits nothing.
+
+Each recovery makes up to eight attempts within 180 seconds, with exponential backoff, then
+continues at an interval that doubles from one minute to fifteen minutes until a snapshot is
+accepted. A running recovery continues across reconnects with its remaining budget, and
+unsubscribe or shutdown cancels it. A recovery waiting between attempts after its budget retries at
+once on the new connection. Recovery never ends in a failed state.
+
+Deltas and depth for an instrument share one `l2Book` stream, so recovering the delta book also
+refreshes depth snapshots. Subscribing to deltas while depth already holds the stream replaces the
+stream, so the book starts from a fresh snapshot. A depth-only stream emits no deltas.
+
+The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
+queued before a replacement can complete recovery once the replacement write finishes.
+
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only
+from a failed initial write, an invalid frame, or a stale-stream report. Within the retry budget,
+a replacement that delivers no snapshot leaves its attempt waiting until a snapshot is accepted, an
+invalid frame fails it, recovery is cancelled, or the 180-second initial budget ends.
+
+### Live recovery validation
+
+The `hyperliquid-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It uses Hyperliquid mainnet public market data, submits no orders, and checks six
+perpetual books against the book stream contract and against the book in each raw `l2Book` frame
+the harness relays, best 20 levels per side.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-hyperliquid --features examples --test hyperliquid-book-stress -- --timeout 10 --rounds 12
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): checks recovery from invalid frames without reconnects, then rotates dead
+  streams that the stale monitor recovers, dropped and delayed snapshots, rejected replacements,
+  reconnects, and a restart during recovery.
+- `initial`: drops each book's first snapshot and silences its stream, in a fresh session per
+  round.
+- `boundaries`: rejects every attempt in the retry budget, then checks the retry ceiling, a
+  reconnect that ends the ceiling wait, unsubscribe during recovery, and shutdown during a
+  reconnect. It requires a nonzero `--timeout`, since snapshot deadlines end each rejected attempt.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (12 by default). The harness enables stale stream recovery
+with a 20-second threshold, since the venue pushes `l2Book` about every five seconds.
+
+The harness requires the mainnet WebSocket stream and the public info API. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
 
 ## Account and position management
 
@@ -1348,7 +1425,9 @@ Upstream references:
 The adapter automatically reconnects on WebSocket disconnection using exponential backoff
 (starting at 250ms, up to 5s). On reconnect, all active subscriptions are resubscribed
 automatically, order book snapshots are rebuilt, and a `Reconnected` event is forwarded after
-those resubscription commands are queued. No manual intervention is required.
+those resubscription commands are queued. Each order book then waits up to
+`book_snapshot_timeout_secs` for its snapshot before [recovery](#order-book-recovery) starts. No
+manual intervention is required.
 
 A heartbeat ping is sent every 30 seconds to keep the connection alive (Hyperliquid closes
 idle connections after 60 seconds). The shared transport treats 90 seconds without any inbound
@@ -1371,11 +1450,14 @@ quotes:
 Recovery is off by default. When `stale_stream_recovery_enabled` is set:
 
 - The first stale check always warns.
-- A still-stale stream receives one targeted resubscribe per
-  `stale_stream_recovery_cooldown_secs`.
-- `l2Book` resubscribes preserve the original precision options.
-- After `stale_stream_max_targeted_resubscribes` attempts, the client requests a full WebSocket
-  reconnect.
+- A still-stale stream is acted on once per `stale_stream_recovery_cooldown_secs`.
+- A stale order book delta stream, or a depth stream that shares one, starts
+  [order book recovery](#order-book-recovery), which resubscribes until a fresh snapshot arrives
+  and never requests a reconnect.
+- A stale depth-only or BBO stream receives a targeted resubscribe. `l2Book` resubscribes preserve
+  the original precision options.
+- After `stale_stream_max_targeted_resubscribes` targeted resubscribes of a depth-only or BBO
+  stream, the client requests a full WebSocket reconnect.
 - Fresh data resets the stream's recovery ladder.
 
 ## API credentials
@@ -1587,23 +1669,24 @@ separate weights and request limits therefore remain outside this adapter's limi
 
 ### Data client configuration options
 
-| Option                                   | Default   | Description                                                                                                             |
-| ---------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `private_key`                            | `None`    | Optional EVM private key for authenticated endpoints.                                                                   |
-| `base_url_ws`                            | `None`    | Override for the WebSocket base URL.                                                                                    |
-| `base_url_http`                          | `None`    | Override for the HTTP info URL.                                                                                         |
-| `proxy_url`                              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                   |
-| `environment`                            | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.                                            |
-| `http_timeout_secs`                      | `60`      | Timeout (seconds) applied to REST calls.                                                                                |
-| `ws_timeout_secs`                        | `30`      | Timeout (seconds) applied to WebSocket connections.                                                                     |
-| `stale_stream_receive_timeout_secs`      | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor. |
-| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor.           |
-| `stale_stream_warning_cooldown_secs`     | `60`      | Cooldown (seconds) between stale warnings for the same market data stream.                                              |
-| `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect).                          |
-| `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.      |
-| `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect.                       |
-| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Set to `0` to disable the refresh.                             |
-| `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                            |
+| Option                                   | Default   | Description                                                                                                                                     |
+| ---------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `private_key`                            | `None`    | Optional EVM private key for authenticated endpoints.                                                                                           |
+| `base_url_ws`                            | `None`    | Override for the WebSocket base URL.                                                                                                            |
+| `base_url_http`                          | `None`    | Override for the HTTP info URL.                                                                                                                 |
+| `proxy_url`                              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                           |
+| `environment`                            | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.                                                                    |
+| `http_timeout_secs`                      | `60`      | Timeout (seconds) applied to REST calls.                                                                                                        |
+| `ws_timeout_secs`                        | `30`      | Timeout (seconds) applied to WebSocket connections.                                                                                             |
+| `stale_stream_receive_timeout_secs`      | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor.                         |
+| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor.                                   |
+| `stale_stream_warning_cooldown_secs`     | `60`      | Cooldown (seconds) between stale warnings for the same market data stream.                                                                      |
+| `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (book recovery for deltas; targeted resubscribe, then reconnect for depth-only and BBO). |
+| `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.                              |
+| `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale depth-only or BBO stream before escalating to a full WebSocket reconnect.                             |
+| `book_snapshot_timeout_secs`             | `10`      | Initial, reconnect, and recovery order book snapshot wait (seconds). Set to `0` to disable snapshot deadlines.                                  |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Set to `0` to disable the refresh.                                                     |
+| `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                                                    |
 
 ### Execution client configuration options
 

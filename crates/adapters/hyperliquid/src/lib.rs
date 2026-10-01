@@ -64,6 +64,8 @@ pub mod outcome_settlement;
 pub mod signing;
 pub mod websocket;
 
+mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
 
