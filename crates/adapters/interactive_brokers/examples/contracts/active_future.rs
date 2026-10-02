@@ -22,7 +22,8 @@ use jiff::{
     civil::{Date, Weekday},
     tz::TimeZone,
 };
-use nautilus_model::identifiers::{InstrumentId, format_futures_symbol, futures_month_code};
+use nautilus_interactive_brokers::common::futures::{format_futures_symbol, futures_month_code};
+use nautilus_model::identifiers::InstrumentId;
 
 const QUARTERLY_CONTRACT_MONTHS: [i8; 4] = [3, 6, 9, 12];
 // Roll to the next contract this many days before expiry, so a run never lands in expiry week.
