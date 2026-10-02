@@ -489,6 +489,7 @@ Released on TBD (UTC).
 - Fixed `get_avg_px_qty_for_exposure` docstring to name the last-touched price return value
 - Fixed `own_books_audit_interval_secs` description to state which own-book orders the audit removes
 - Fixed `ParquetDataCatalog` docs to state the 10,000 batch size and ZSTD level 1 defaults (#5111), thanks @Martingale42
+- Fixed `ParquetDataCatalog::list_parquet_files` docs, which said subdirectories are not scanned
 - Fixed OKX USDC activation guidance to call `activate_feature` only after a `54109` order rejection
 - Documented the adapter config field layout convention in the developer guide
 - Documented declined fill notification in the execution concepts guide

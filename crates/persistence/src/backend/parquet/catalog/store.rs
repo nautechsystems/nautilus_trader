@@ -218,7 +218,7 @@ impl ParquetDataCatalog {
         self.move_file(&old_object_path, &new_object_path)
     }
 
-    /// Lists all Parquet files in a specified directory.
+    /// Lists all Parquet files under a directory, including its subdirectories.
     ///
     /// This method scans a directory and returns the full paths of all files with the `.parquet`
     /// extension. It works with both local filesystems and remote object stores, making it
@@ -226,12 +226,14 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `directory`: The directory path to scan for Parquet files.
+    /// - `directory`: The directory path to scan for Parquet files, unencoded as
+    ///   [`Self::make_path`] returns it.
     ///
     /// # Returns
     ///
-    /// Returns a vector of full file paths (as strings) for all Parquet files found in the directory.
-    /// The paths are relative to the object store root and suitable for use with object store operations.
+    /// Returns a vector of full file paths (as strings) for all Parquet files under the directory.
+    /// The paths are percent-encoded object-store keys relative to the store root; convert one with
+    /// [`Self::to_object_path_parsed`].
     /// Returns an empty vector if the directory doesn't exist or contains no Parquet files.
     ///
     /// # Errors
@@ -244,7 +246,8 @@ impl ParquetDataCatalog {
     /// # Notes
     ///
     /// - Only files ending with `.parquet` are included.
-    /// - Subdirectories are not recursively scanned.
+    /// - Subdirectories are scanned recursively, so a type directory such as `data/quotes`
+    ///   returns the files of every identifier under it.
     /// - File paths are returned in the order provided by the object store.
     /// - Works with all supported object store backends (local, S3, GCS, Azure, etc.).
     ///
@@ -268,20 +271,14 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn list_parquet_files(&self, directory: &str) -> anyhow::Result<Vec<String>> {
-        self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("{directory}/"));
-            let mut stream = self.object_store.list(Some(&prefix));
-            let mut files = Vec::new();
+        let files = self
+            .list_objects(directory)?
+            .into_iter()
+            .filter(|object| object.location.as_ref().ends_with(".parquet"))
+            .map(|object| object.location.to_string())
+            .collect();
 
-            while let Some(object) = stream.next().await {
-                let object = object?;
-                if object.location.as_ref().ends_with(".parquet") {
-                    files.push(object.location.to_string());
-                }
-            }
-
-            Ok::<Vec<String>, anyhow::Error>(files)
-        })
+        Ok(files)
     }
 
     /// Lists all instrument identifiers for a specific data type.
@@ -315,30 +312,25 @@ impl ParquetDataCatalog {
     }
 
     fn list_prefix_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
-        let prefix = ObjectPath::from(self.make_path(data_type, None)?);
+        let directory = self.make_path(data_type, None)?;
+        let prefix = ObjectPath::from(directory.as_str());
+        let mut instruments = HashSet::new();
 
-        self.execute_async(|| async {
-            let mut stream = self.object_store.list(Some(&prefix));
-            let mut instruments = HashSet::new();
+        for object in self.list_objects(&directory)? {
+            // Relative to the prefix a datum is `{identifier}/{filename}.parquet`
+            let Some(relative) = object.location.prefix_match(&prefix) else {
+                continue;
+            };
+            let segments: Vec<_> = relative.collect();
 
-            while let Some(object) = stream.next().await {
-                let object = object?;
-
-                // Relative to the prefix a datum is `{identifier}/{filename}.parquet`
-                let Some(relative) = object.location.prefix_match(&prefix) else {
-                    continue;
-                };
-                let segments: Vec<_> = relative.collect();
-
-                if let [identifier, filename] = segments.as_slice()
-                    && filename.as_ref().ends_with(".parquet")
-                {
-                    instruments.insert(decode_object_store_segment(identifier.as_ref()));
-                }
+            if let [identifier, filename] = segments.as_slice()
+                && filename.as_ref().ends_with(".parquet")
+            {
+                instruments.insert(decode_object_store_segment(identifier.as_ref()));
             }
+        }
 
-            Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
-        })
+        Ok(instruments.into_iter().collect())
     }
 
     /// Lists Parquet files matching specific criteria (data type, identifiers, time range).
@@ -394,12 +386,7 @@ impl ParquetDataCatalog {
         let base_dir = self.make_path(data_cls, None)?;
 
         // Use recursive listing to match Python's glob behavior
-        let mut all_files = self
-            .list_objects(&base_dir)?
-            .into_iter()
-            .map(|object| object.location.to_string())
-            .filter(|path| path.ends_with(".parquet"))
-            .collect::<Vec<_>>();
+        let mut all_files = self.list_parquet_files(&base_dir)?;
 
         if let Some(identifiers) = identifiers {
             all_files =
@@ -1100,6 +1087,36 @@ mod tests {
                 .list_instruments(&NautilusDataType::QuoteTick.into())
                 .unwrap(),
             ["EURUSD.SIM", "GBPUSD.SIM"]
+        );
+    }
+
+    #[rstest]
+    #[case("nautilus-data", "nautilus-data/")]
+    #[case("", "")]
+    fn list_parquet_files_lists_type_directory_recursively(
+        #[case] base_path: &str,
+        #[case] key_prefix: &str,
+    ) {
+        let catalog = memory_catalog(base_path);
+        let keys = [
+            "data/quotes/EURUSD.SIM/0-1.parquet",
+            "data/quotes/EURUSD.SIM/0-1.json",
+            "data/quotes/BTC€.SIM/2-3.parquet",
+            "data/trades/AUDUSD.SIM/0-1.parquet",
+        ]
+        .map(|key| format!("{key_prefix}{key}"));
+        seed(&catalog, &keys.each_ref().map(String::as_str));
+
+        let directory = catalog.make_path("quotes", None).unwrap();
+        let mut files = catalog.list_parquet_files(&directory).unwrap();
+        files.sort();
+
+        assert_eq!(
+            files,
+            [
+                format!("{key_prefix}data/quotes/BTC%E2%82%AC.SIM/2-3.parquet"),
+                format!("{key_prefix}data/quotes/EURUSD.SIM/0-1.parquet"),
+            ]
         );
     }
 
