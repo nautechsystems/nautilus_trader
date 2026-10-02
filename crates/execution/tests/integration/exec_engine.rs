@@ -17855,6 +17855,175 @@ thread_local! {
     static RECONCILIATION_LOGS: RefCell<Vec<(Level, String)>> = const { RefCell::new(Vec::new()) };
 }
 
+#[rstest]
+fn test_open_position_failure_is_logged() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    capture_reconciliation_logs();
+
+    let (database, control) = FailNthAddOrderDatabase::create();
+    control.set_fail_add_position(true);
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut execution_engine =
+        ExecutionEngine::new(Rc::new(RefCell::new(VirtualClock::new())), cache, None);
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    register_stub_client(
+        &mut execution_engine,
+        account_id,
+        &instrument,
+        OmsType::Netting,
+    );
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-OPEN-FAIL"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    process_position_fill(
+        &mut execution_engine,
+        &order,
+        &instrument,
+        account_id,
+        "V-OPEN-FAIL",
+        "T-OPEN-FAIL",
+        position_id,
+    );
+
+    let logs = take_reconciliation_logs();
+    assert!(
+        logs.iter().any(|(level, message)| {
+            *level == Level::Error
+                && message.contains("Failed to open position")
+                && message.contains(position_id.as_str())
+                && message.contains("T-OPEN-FAIL")
+        }),
+        "expected open failure log, was {logs:?}"
+    );
+}
+
+#[rstest]
+fn test_reopen_position_failure_is_logged() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    capture_reconciliation_logs();
+
+    let (database, control) = FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut execution_engine =
+        ExecutionEngine::new(Rc::new(RefCell::new(VirtualClock::new())), cache, None);
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    register_stub_client(
+        &mut execution_engine,
+        account_id,
+        &instrument,
+        OmsType::Netting,
+    );
+
+    let open_order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-REOPEN-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    process_position_fill(
+        &mut execution_engine,
+        &open_order,
+        &instrument,
+        account_id,
+        "V-REOPEN-1",
+        "T-REOPEN-1",
+        position_id,
+    );
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-REOPEN-2"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+    process_position_fill(
+        &mut execution_engine,
+        &close_order,
+        &instrument,
+        account_id,
+        "V-REOPEN-2",
+        "T-REOPEN-2",
+        position_id,
+    );
+    control.set_fail_add_position(true);
+    capture_reconciliation_logs();
+
+    let reopen_order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-REOPEN-3"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    process_position_fill(
+        &mut execution_engine,
+        &reopen_order,
+        &instrument,
+        account_id,
+        "V-REOPEN-3",
+        "T-REOPEN-3",
+        position_id,
+    );
+
+    let logs = take_reconciliation_logs();
+    assert!(
+        logs.iter().any(|(level, message)| {
+            *level == Level::Error
+                && message.contains("Failed to reopen position")
+                && message.contains(position_id.as_str())
+                && message.contains("T-REOPEN-3")
+        }),
+        "expected reopen failure log, was {logs:?}"
+    );
+}
+
+fn process_position_fill(
+    execution_engine: &mut ExecutionEngine,
+    order: &OrderAny,
+    instrument: &CurrencyPair,
+    account_id: AccountId,
+    venue_order_id: &str,
+    trade_id: &str,
+    position_id: PositionId,
+) {
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(order, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        order,
+        account_id,
+        VenueOrderId::from(venue_order_id),
+    ));
+    let cached_order = cached_order_or(execution_engine, order);
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &cached_order,
+        &instrument.clone().into(),
+        Some(TradeId::new(trade_id)),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(account_id),
+    ));
+}
+
 fn capture_reconciliation_logs() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {

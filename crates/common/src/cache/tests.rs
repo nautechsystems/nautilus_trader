@@ -3287,6 +3287,16 @@ fn test_add_general_when_value(mut cache: Cache) {
     assert_eq!(result, Some(&value));
 }
 
+// Snapshot keys embed the position ID, so general keys must accept UTF-8
+#[rstest]
+fn test_add_and_get_general_when_key_is_non_ascii(mut cache: Cache) {
+    let key = "cache://position-snapshots/\u{9f99}\u{867e}USDT-PERP.BINANCE-ALEX-000/0";
+    let value = Bytes::from_static(&[0_u8]);
+    cache.add(key, value.clone()).unwrap();
+    let result = cache.get(key).unwrap();
+    assert_eq!(result, Some(&value));
+}
+
 #[rstest]
 fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -3559,6 +3569,44 @@ fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_
             PositionId::new("POS-303"),
         ],
     );
+}
+
+#[rstest]
+fn test_add_position_with_non_ascii_symbol(mut cache: Cache) {
+    // The OMS key embeds the instrument ID, so an ASCII check rejected these symbols
+    let mut perp = crypto_perpetual_ethusdt();
+    perp.id = InstrumentId::from("\u{9f99}\u{867e}USDT-PERP.BINANCE");
+    let instrument = InstrumentAny::CryptoPerpetual(perp);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let position_id = PositionId::new(format!("{}-{}", instrument.id(), StrategyId::from("S-001")));
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill_event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-OPEN-1")),
+        Some(position_id),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        None,
+    );
+
+    let fill = match fill_event {
+        OrderEventAny::Filled(f) => f,
+        _ => unreachable!(),
+    };
+
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    assert!(cache.position(&position_id).is_some());
 }
 
 #[rstest]

@@ -45,6 +45,7 @@ use ustr::Ustr;
 #[derive(Debug, Default)]
 struct FailNthAddOrderState {
     fail_add_order_on: Option<usize>,
+    fail_add_position: bool,
     fail_index_order_position: bool,
     add_order_calls: usize,
     accounts: AHashMap<AccountId, AccountAny>,
@@ -68,6 +69,10 @@ impl FailNthAddOrderDatabaseControl {
 
     pub(super) fn set_fail_index_order_position(&self, fail: bool) {
         self.state.lock().fail_index_order_position = fail;
+    }
+
+    pub(super) fn set_fail_add_position(&self, fail: bool) {
+        self.state.lock().fail_add_position = fail;
     }
 
     pub(super) fn set_accounts(&self, accounts: impl IntoIterator<Item = AccountAny>) {
@@ -297,6 +302,10 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     fn add_position(&self, _position: &Position) -> anyhow::Result<()> {
+        if self.control.state.lock().fail_add_position {
+            anyhow::bail!("test add position failure");
+        }
+
         Ok(())
     }
 

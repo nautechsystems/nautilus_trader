@@ -303,6 +303,7 @@ Released on TBD (UTC).
 - Fixed DeFi price impact and slippage reporting 0 bps beyond the `u32` range
 - Fixed DeFi chain IDs and HyperSync URLs for 12 chains, including Unichain, Ink, and Hyperliquid
 - Fixed DeFi `Pool` display repeating the fee label
+- Fixed non-ASCII symbols silently dropping positions (#5143), thanks @Yize9
 - Fixed adapters logging routine events as warnings and duplicate failures twice
 - Fixed Architect AX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Architect AX order status reports dropping venue reject reasons
