@@ -642,8 +642,8 @@ flag.
 - No synthetic FLAT cleanup: `OpenPositions` reports leveraged positions only, so an
   unleveraged spot holding never appears there and its absence is not evidence that the
   position is closed. The bulk read therefore reports only what the venue returns, and
-  a leveraged position closed while the node was down is reconciled from fills rather
-  than from a fabricated FLAT.
+  a leveraged position closed while the node was down is reconciled from the order and fill
+  reports in the startup mass status rather than from a fabricated FLAT.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
   account-state refresh; used margin populates `MarginBalance.initial`, while
   equity and free margin populate the summary balance (see Spot margin trading).
@@ -689,6 +689,8 @@ trading).
 - When enabled, wallet balances are converted to `PositionStatusReport` objects.
 - Positive balances are reported as `LONG` positions.
 - Only instruments matching the configured quote currency are reported (default: `USDT`).
+  The same filter decides which instruments the client declares bulk position coverage for,
+  so an instrument quoted in anything else is never reconciled to flat from a missing report.
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
 
@@ -793,12 +795,13 @@ Open spot margin positions are surfaced via `POST /0/private/OpenPositions`
 on each `position_check_interval_secs` tick. This path is independent of
 `use_spot_position_reports` (which is wallet-derived, cash-mode-only).
 
-The spot client declares bulk position coverage only when the reports enumerate every
-holding, which is cash mode with `use_spot_position_reports=True`. Under
-`spot_account_type=Margin` the source is `OpenPositions`, which omits unleveraged lots,
-and cash mode without wallet-derived reports returns nothing at all. In both of those
-configurations an absent report leaves the cached position untouched instead of closing
-it.
+The spot client declares bulk position coverage per instrument, and only for instruments the
+read would actually enumerate: cash mode with `use_spot_position_reports=True`, and the
+instrument quoted in `spot_positions_quote_currency` (see Spot position reports, which applies
+the same filter). Under `spot_account_type=Margin` the source is `OpenPositions`, which omits
+unleveraged lots, and cash mode without wallet-derived reports returns nothing at all. Wherever
+coverage is not declared, an absent report leaves the cached position untouched instead of
+closing it.
 
 ## Funding rates
 
@@ -905,7 +908,7 @@ The product type for each client is specified via the `product_type` option.
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
 | `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
-| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.               |
+| `spot_positions_quote_currency` | `"USDT"`  | Quote filter for spot wallet position reports and their coverage.     |
 | `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.          |
 | `use_ws_trade`                  | `True`    | Use Spot WebSocket v2 for order operations when active.               |
 | `ws_request_timeout_secs`       | `5`       | Spot WebSocket order response timeout.                                |

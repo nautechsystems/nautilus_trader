@@ -1054,11 +1054,15 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         self.core.oms_type
     }
 
-    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
-        // Only wallet-derived reports enumerate every spot holding. `OpenPositions` (margin mode)
-        // reports leveraged positions only, and cash mode without `use_spot_position_reports`
-        // reports nothing, so an absent report is not evidence of a flat position.
-        self.config.spot_account_type == AccountType::Cash && self.config.use_spot_position_reports
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        // Deferred to the HTTP client so the answer is derived from the read that produces the
+        // reports, rather than restated here where it could drift.
+        self.http.covers_bulk_position_reports(
+            instrument_id,
+            self.config.spot_account_type,
+            self.config.use_spot_position_reports,
+            Ustr::from(self.config.spot_positions_quote_currency.as_str()),
+        )
     }
 
     fn get_account(&self) -> Option<AccountAny> {

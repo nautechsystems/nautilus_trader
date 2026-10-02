@@ -888,6 +888,39 @@ fn unstarted_spot_client(
     KrakenSpotExecutionClient::new(core, config).unwrap()
 }
 
+/// Builds a started spot client that derives position reports from wallet balances.
+fn create_test_spot_wallet_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        cache.clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        use_spot_position_reports: true,
+        ..create_test_spot_exec_config(addr)
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
 fn xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
     let instrument = InstrumentAny::CurrencyPair(
@@ -1083,37 +1116,48 @@ async fn test_spot_margin_bulk_reports_leave_an_unleveraged_cached_position_alon
     );
 }
 
-/// Bulk position coverage must follow the report source, not the venue.
+/// Bulk position coverage must follow what the wallet read can actually report.
 ///
-/// Only the wallet-derived path enumerates every spot holding, so it is the only configuration in
-/// which an absent report is evidence of a flat position.
+/// The read enumerates only pairs quoted in `spot_positions_quote_currency`, so coverage is
+/// per-instrument rather than per-mode. Claiming it for every instrument would let an absent
+/// report force-close a holding the read could never have reported.
 #[rstest]
 #[tokio::test]
-async fn test_spot_bulk_position_coverage_reflects_the_report_source() {
+async fn test_spot_bulk_position_coverage_follows_the_wallet_read() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let (instrument_id, _instrument) = xbtusd_spot_instrument();
 
+    // Connected, so the instruments cache holds the listing the read would enumerate.
+    let (mut wallet, _rx, cache) = create_test_spot_wallet_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    wallet.connect().await.unwrap();
+
+    assert!(
+        wallet.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
+        "a pair quoted in the configured currency is enumerated by the read"
+    );
+    assert!(
+        !wallet.provides_bulk_position_coverage(InstrumentId::from("AAPLx/USD.KRAKEN")),
+        "a pair quoted in anything else is skipped by the read, so its absence proves nothing"
+    );
+    assert!(
+        !wallet.provides_bulk_position_coverage(InstrumentId::from("SOL/USDT.KRAKEN")),
+        "an instrument the listing does not hold cannot be reported either"
+    );
+
+    // The two modes that report nothing the engine could read as flat.
     let margin = unstarted_spot_client(addr, AccountType::Margin, |config| {
         config.spot_account_type = AccountType::Margin;
         config.default_leverage = None;
     });
     assert!(
-        !margin.provides_bulk_position_coverage(instrument_id),
+        !margin.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
         "margin mode reads `OpenPositions`, which omits unleveraged holdings"
     );
 
     let cash = unstarted_spot_client(addr, AccountType::Cash, |_| {});
     assert!(
-        !cash.provides_bulk_position_coverage(instrument_id),
+        !cash.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
         "cash mode without `use_spot_position_reports` reports no positions at all"
-    );
-
-    let wallet = unstarted_spot_client(addr, AccountType::Cash, |config| {
-        config.use_spot_position_reports = true;
-    });
-    assert!(
-        wallet.provides_bulk_position_coverage(instrument_id),
-        "wallet-derived reports enumerate every spot holding"
     );
 }
 
