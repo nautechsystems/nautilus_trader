@@ -48,8 +48,13 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 | `VolumeSensitiveFillModel`   | Places 25% of its internal volume at best.              |
 | `MarketHoursFillModel`       | Uses a normal or one-tick-wider synthetic spread.       |
 
+`BestPriceFillModel` also fills a limit order at or inside the spread at the order's own price.
+
 The tier sizes are model constants expressed in instrument quantity units. Confirm that they suit
 the scale of the instrument before using a tiered model.
+
+Synthetic books omit any level outside the instrument's `min_price` and `max_price`, or at a zero or
+negative price for an instrument that does not allow one.
 
 `CompetitionAwareFillModel` accepts `liquidity_factor` values in `[0.0, 1.0]`, defaults to `0.3`,
 and clamps the calculated size to at least one instrument quantity unit.
@@ -162,7 +167,9 @@ For L1 books, this value controls a one-tick adverse move on each fill:
 - `0.5`: Add one tick on half of fills on average.
 - `1.0`: Add one tick to every fill.
 
-The draw applies to maker and taker fills. It does not apply to L2 or L3 books.
+The draw applies to maker and taker fills. It does not apply to L2 or L3 books. A slip that would
+cross the instrument's `min_price` or `max_price`, or reach a zero or negative price where the
+instrument does not allow one, keeps the original fill price.
 
 ## Synthetic order books
 

@@ -82,10 +82,10 @@ use crate::{
     matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     models::{
         fee::{FeeModel, FeeModelHandle},
-        fill::{FillModel, FillModelHandle},
+        fill::{FillModel, FillModelHandle, is_price_tradable},
     },
     protection::protection_price_calculate,
-    trailing::trailing_stop_calculate,
+    trailing::{store_trailing_stop_activation, trailing_stop_calculate},
 };
 
 /// An order matching engine for a single market.
@@ -1974,7 +1974,6 @@ impl OrderMatchingEngine {
             ) {
                 return;
             }
-            self.core.set_last_raw(bar.open);
         } else if self.core.last.is_some_and(|last| bar.open != last) {
             // Gap between previous close and this bar's open
             self.fill_at_market = true;
@@ -1988,7 +1987,6 @@ impl OrderMatchingEngine {
             ) {
                 return;
             }
-            self.core.set_last_raw(bar.open);
         }
 
         // Determine high/low processing order.
@@ -2022,8 +2020,6 @@ impl OrderMatchingEngine {
             ) {
                 return;
             }
-
-            self.core.set_last_raw(bar.close);
         }
 
         self.fill_at_market = true;
@@ -2033,17 +2029,13 @@ impl OrderMatchingEngine {
         if self.core.last.is_some_and(|last| bar.high > last) {
             self.fill_at_market = false;
 
-            if !self.process_bar_trade_tick(
+            self.process_bar_trade_tick(
                 bar,
                 bar.high,
                 size,
                 AggressorSide::Buy,
                 "bar high trade tick",
-            ) {
-                return;
-            }
-
-            self.core.set_last_raw(bar.high);
+            );
         }
     }
 
@@ -2051,17 +2043,13 @@ impl OrderMatchingEngine {
         if self.core.last.is_some_and(|last| bar.low < last) {
             self.fill_at_market = false;
 
-            if !self.process_bar_trade_tick(
+            self.process_bar_trade_tick(
                 bar,
                 bar.low,
                 size,
                 AggressorSide::Sell,
                 "bar low trade tick",
-            ) {
-                return;
-            }
-
-            self.core.set_last_raw(bar.low);
+            );
         }
     }
 
@@ -2074,6 +2062,7 @@ impl OrderMatchingEngine {
         context: &str,
     ) -> bool {
         if size.is_zero() {
+            self.core.set_last_raw(price);
             return true;
         }
 
@@ -2091,6 +2080,8 @@ impl OrderMatchingEngine {
             return false;
         }
 
+        // Set last before matching so last-price triggers see this leg, as for trade ticks
+        self.core.set_last_raw(price);
         self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
         true
     }
@@ -3044,7 +3035,7 @@ impl OrderMatchingEngine {
                     };
                     let parent_filled_qty = parent_order.filled_qty();
 
-                    if parent_order.status() == OrderStatus::Rejected && order.is_open() {
+                    if parent_order.status() == OrderStatus::Rejected {
                         break 'validate Some(
                             format!("Rejected OTO order from {parent_order_id}").into(),
                         );
@@ -3114,39 +3105,19 @@ impl OrderMatchingEngine {
                 );
             }
 
-            // Check for valid order price precision
-            if let Some(price) = order.price()
-                && !order_precision_valid(price.precision, self.instrument.price_precision())
+            // Check order prices for precision and the price increment, off-tick prices never fill
+            if let Some(reason) = order
+                .price()
+                .and_then(|price| self.order_price_rejection(order, "price", price))
             {
-                break 'validate Some(
-                    format!(
-                        "Invalid order price precision for order {}, was {} when {} price precision is {}",
-                        order.client_order_id(),
-                        price.precision,
-                        self.instrument.id(),
-                        self.instrument.price_precision()
-                    )
-                    .into(),
-                );
+                break 'validate Some(reason);
             }
 
-            // Check for valid order trigger price precision
-            if let Some(trigger_price) = order.trigger_price()
-                && !order_precision_valid(
-                    trigger_price.precision,
-                    self.instrument.price_precision(),
-                )
+            if let Some(reason) = order
+                .trigger_price()
+                .and_then(|price| self.order_price_rejection(order, "trigger price", price))
             {
-                break 'validate Some(
-                    format!(
-                        "Invalid order trigger price precision for order {}, was {} when {} price precision is {}",
-                        order.client_order_id(),
-                        trigger_price.precision,
-                        self.instrument.id(),
-                        self.instrument.price_precision()
-                    )
-                    .into(),
-                );
+                break 'validate Some(reason);
             }
 
             if order.is_reduce_only() && !self.config.use_reduce_only {
@@ -3239,6 +3210,35 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
+    }
+
+    fn order_price_rejection(&self, order: &OrderAny, field: &str, price: Price) -> Option<Ustr> {
+        let price_precision = self.instrument.price_precision();
+        if !order_precision_valid(price.precision, price_precision) {
+            return Some(
+                format!(
+                    "Invalid order {field} precision for order {}, was {} when {} price precision is {price_precision}",
+                    order.client_order_id(),
+                    price.precision,
+                    self.instrument.id(),
+                )
+                .into(),
+            );
+        }
+
+        let price_increment = self.instrument.price_increment();
+        if !Self::price_matches_tick(price, price_increment) {
+            return Some(
+                format!(
+                    "Invalid order {field} {price} for order {}, not a multiple of {} price increment {price_increment}",
+                    order.client_order_id(),
+                    self.instrument.id(),
+                )
+                .into(),
+            );
+        }
+
+        None
     }
 
     fn convert_quote_to_base_quantity(&self, order: &mut OrderAny) -> bool {
@@ -3418,6 +3418,22 @@ impl OrderMatchingEngine {
     /// Processes an order cancel command.
     pub fn process_cancel(&mut self, command: &CancelOrder, account_id: AccountId) {
         if !self.core.order_exists(command.client_order_id) {
+            // Live orders of this account that the core does not hold, such as pending OTO
+            // children and market order remainders, cancel from the cache as in
+            // `process_cancel_all`.
+            let order = self
+                .order_snapshot(command.client_order_id)
+                .filter(|order| {
+                    order.account_id() == Some(account_id)
+                        && (order.is_inflight() || order.is_open())
+                        && !self.inflight_orders.contains(order.client_order_id())
+                });
+
+            if let Some(order) = order {
+                self.cancel_order(&order, None);
+                return;
+            }
+
             self.generate_order_cancel_rejected(
                 command.trader_id,
                 command.strategy_id,
@@ -4269,9 +4285,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
-                            log::error!("Failed to update order: {e}");
-                        }
+                        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
                         return true;
                     }
                     return false;
@@ -4286,9 +4300,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
-                        log::error!("Failed to update order: {e}");
-                    }
+                    store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
                 }
                 hit
             }
@@ -4310,9 +4322,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
-                            log::error!("Failed to update order: {e}");
-                        }
+                        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
                         return true;
                     }
                     return false;
@@ -4327,9 +4337,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
-                        log::error!("Failed to update order: {e}");
-                    }
+                    store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
                 }
                 hit
             }
@@ -5092,11 +5100,11 @@ impl OrderMatchingEngine {
                 initial_market_to_limit_fill = true;
             }
 
-            if self.book_type == BookType::L1_MBP && self.fill_model.is_slipped()? {
-                fill_px = match order.order_side() {
-                    OrderSide::Buy => fill_px.add(self.instrument.price_increment()),
-                    OrderSide::Sell => fill_px.sub(self.instrument.price_increment()),
-                }
+            if self.book_type == BookType::L1_MBP
+                && self.fill_model.is_slipped()?
+                && let Some(slipped_px) = self.slipped_price(fill_px, order.order_side())
+            {
+                fill_px = slipped_px;
             }
 
             let mut effective_fill_qty = fill_qty;
@@ -5204,9 +5212,9 @@ impl OrderMatchingEngine {
             };
 
             let side = order.order_side();
-            let slip_fill_px = match side {
-                OrderSide::Buy => last_fill_px.add(self.instrument.price_increment()),
-                OrderSide::Sell => last_fill_px.sub(self.instrument.price_increment()),
+
+            let Some(slip_fill_px) = self.slipped_price(last_fill_px, side) else {
+                return Ok(());
             };
 
             if let Some(protection_price) = protection_price {
@@ -5262,6 +5270,18 @@ impl OrderMatchingEngine {
         }
 
         Ok(())
+    }
+
+    // One tick worse than `price` for `side`, or `None` when that leaves the instrument's limits
+    fn slipped_price(&self, price: Price, side: OrderSide) -> Option<Price> {
+        let price_increment = self.instrument.price_increment();
+
+        let slipped = match side {
+            OrderSide::Buy => price.add(price_increment),
+            OrderSide::Sell => price.sub(price_increment),
+        };
+
+        is_price_tradable(&self.instrument, slipped).then_some(slipped)
     }
 
     fn normalize_fill_price(
@@ -6135,10 +6155,20 @@ impl OrderMatchingEngine {
     }
 
     fn matching_core_entry(order: &OrderAny) -> RestingOrder {
-        let triggered_limit_style = matches!(
+        let is_limit_style_stop = matches!(
             order.order_type(),
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit
-        ) && order.is_triggered().is_some_and(|triggered| triggered);
+        );
+        let is_triggered = order.is_triggered().is_some_and(|triggered| triggered);
+        let triggered_limit_style = is_limit_style_stop && is_triggered;
+
+        // A trailing stop limit awaiting its first trigger price must not rest as a plain limit
+        let limit_price = if is_limit_style_stop && !is_triggered && order.trigger_price().is_none()
+        {
+            None
+        } else {
+            order.price()
+        };
 
         RestingOrder::new_with_trigger_type(
             order.client_order_id(),
@@ -6150,7 +6180,7 @@ impl OrderMatchingEngine {
             } else {
                 order.trigger_price()
             },
-            order.price(),
+            limit_price,
             match order {
                 OrderAny::TrailingStopMarket(o) => o.is_activated,
                 OrderAny::TrailingStopLimit(o) => o.is_activated,
@@ -6237,7 +6267,6 @@ impl OrderMatchingEngine {
         let update_contingencies = update_contingencies.unwrap_or(true);
         let quantity = quantity.unwrap_or(order.quantity());
 
-        let price_prec = self.instrument.price_precision();
         let size_prec = self.instrument.size_precision();
         let instrument_id = self.instrument.id();
 
@@ -6257,36 +6286,24 @@ impl OrderMatchingEngine {
             return false;
         }
 
-        if let Some(px) = price
-            && !order_precision_valid(px.precision, price_prec)
-        {
-            self.generate_order_modify_rejected(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                Ustr::from(&format!(
-                    "Invalid update price precision {}, expected {price_prec} for {instrument_id}",
-                    px.precision
-                )),
-                order.venue_order_id(),
-                order.account_id(),
-            );
-            return false;
-        }
+        // Validate only the prices this update changes: internal quantity syncs pass back current
+        // prices, which a trailing calculation may have left off the price increment.
+        let price_rejection = price
+            .filter(|px| Some(*px) != order.price())
+            .and_then(|px| self.update_price_rejection("price", px))
+            .or_else(|| {
+                trigger_price
+                    .filter(|tp| Some(*tp) != order.trigger_price())
+                    .and_then(|tp| self.update_price_rejection("trigger_price", tp))
+            });
 
-        if let Some(tp) = trigger_price
-            && !order_precision_valid(tp.precision, price_prec)
-        {
+        if let Some(reason) = price_rejection {
             self.generate_order_modify_rejected(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                Ustr::from(&format!(
-                    "Invalid update trigger_price precision {}, expected {price_prec} for {instrument_id}",
-                    tp.precision
-                )),
+                Ustr::from(&reason),
                 order.venue_order_id(),
                 order.account_id(),
             );
@@ -6400,6 +6417,27 @@ impl OrderMatchingEngine {
         }
 
         true
+    }
+
+    fn update_price_rejection(&self, field: &str, price: Price) -> Option<String> {
+        let price_precision = self.instrument.price_precision();
+        let instrument_id = self.instrument.id();
+
+        if !order_precision_valid(price.precision, price_precision) {
+            return Some(format!(
+                "Invalid update {field} precision {}, expected {price_precision} for {instrument_id}",
+                price.precision
+            ));
+        }
+
+        let price_increment = self.instrument.price_increment();
+        if !Self::price_matches_tick(price, price_increment) {
+            return Some(format!(
+                "Invalid update {field} {price}, not a multiple of {instrument_id} price increment {price_increment}"
+            ));
+        }
+
+        None
     }
 
     /// Triggers a stop order, converting it to an active market or limit order.

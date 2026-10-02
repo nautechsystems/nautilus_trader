@@ -48,6 +48,8 @@ With an L1 book, the recorded market exposes only the best bid and ask:
 
 The one-tick residual fill applies after the eligible market-style orders exhaust displayed L1
 size. Price protection can prevent that residual fill if it would cross the configured boundary.
+The residual fill also does not occur when one tick worse would cross the instrument's `min_price`
+or `max_price`, or reach a zero or negative price where the instrument does not allow one.
 This deterministic residual rule is separate from probabilistic fill-model slippage.
 
 Trade-driven matching has one additional rule. If a trade provides fill evidence at a price absent

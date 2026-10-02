@@ -206,7 +206,22 @@ Released on TBD (UTC).
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed `OrderEmulator` panic releasing a trailing stop limit before its limit price is calculated
+- Fixed `OrderEmulator` panic modifying an emulated order from an order or position event handler
+- Fixed `OrderEmulator` panic releasing a GTD order as a market order
+- Fixed `OrderEmulator` stranding an order whose limit release fails
+- Fixed `OrderEmulator` triggering `LAST_PRICE` orders on quotes
+- Fixed trailing-stop activation duplicating order events in the cache database
+- Fixed OUO order updates resizing the sibling to the leg's total instead of remaining quantity
 - Fixed custom fill books falling back to historical liquidity or exceeding their available quantity
+- Fixed `BestPriceFillModel` never filling limit orders at or inside the spread
+- Fixed fill model panic on probabilities within rounding error of 0 or 1
+- Fixed Python `FillModel` subclasses rejecting constructor arguments
+- Fixed simulated slippage moving fill prices outside instrument price limits
+- Fixed simulated trailing stop limits with a price filling before they trigger
+- Fixed simulated cancels rejected for pending OTO children and partially filled market orders
+- Fixed simulated venues accepting off-tick prices that could never fill
+- Fixed simulated OTO children left submitted after their parent is rejected
+- Fixed simulated bar execution evaluating last-price triggers against the previous bar leg
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed oversized futures delivery in simulated physical option settlement, thanks for reporting @zakkvald
 - Fixed simulated physical option exercise double counting intrinsic value from `InstrumentClose`

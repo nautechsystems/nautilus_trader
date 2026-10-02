@@ -49,6 +49,7 @@ struct FailNthAddOrderState {
     add_order_calls: usize,
     accounts: AHashMap<AccountId, AccountAny>,
     orders: AHashMap<ClientOrderId, OrderAny>,
+    order_events: Vec<OrderEventAny>,
     order_snapshots: Vec<OrderSnapshot>,
     position_snapshots: Vec<PositionSnapshot>,
 }
@@ -81,6 +82,10 @@ impl FailNthAddOrderDatabaseControl {
             .into_iter()
             .map(|order| (order.client_order_id(), order))
             .collect();
+    }
+
+    pub(super) fn order_events(&self) -> Vec<OrderEventAny> {
+        self.state.lock().order_events.clone()
     }
 
     #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
@@ -395,7 +400,12 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         Ok(())
     }
 
-    fn update_order(&self, _order_event: &OrderEventAny) -> anyhow::Result<()> {
+    fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
+        self.control
+            .state
+            .lock()
+            .order_events
+            .push(order_event.clone());
         Ok(())
     }
 
