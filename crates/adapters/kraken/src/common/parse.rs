@@ -68,16 +68,12 @@ fn parse_rfc3339_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
-/// Normalizes a Kraken currency code by stripping the legacy X/Z prefix.
-///
-/// Kraken uses legacy prefixes for some currencies (e.g., XXBT for Bitcoin, XETH for Ethereum,
-/// ZUSD for USD). This function strips those prefixes for consistent lookups.
-#[inline]
 /// Maps a Kraken asset code to the standard code the platform uses.
 ///
 /// Kraken prefixes some legacy assets with `X` or `Z`, but the prefix is not a rule: `XTZ`, `ZRX`
 /// and `XAUT` legitimately begin with those letters. The mapping is therefore an explicit table,
 /// and a code it does not list is returned unchanged.
+#[inline]
 pub fn normalize_currency_code(code: &str) -> &str {
     KRAKEN_ASSET_CODES
         .iter()

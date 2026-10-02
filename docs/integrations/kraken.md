@@ -138,17 +138,18 @@ trades and aggregating bars locally) rather than `EXTERNAL` exchange-provided ba
 
 Kraken uses different Bitcoin symbol conventions across their APIs:
 
-| Market  | Symbol Format | Example            | Notes                                       |
-| ------- | ------------- | ------------------ | ------------------------------------------- |
-| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time. |
-| Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
+| Market  | Symbol Format | Example            | Notes                                        |
+| ------- | ------------- | ------------------ | -------------------------------------------- |
+| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time.  |
+| Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Instrument symbols keep Kraken's native XBT. |
 
 :::note
 Kraken's REST API can return `XBT` for Bitcoin, while its WebSocket v2 API
 requires `BTC`. The adapter normalizes Spot symbols to `BTC` when loading
 instruments, whether `XBT` appears as the base currency (for example, `XBT/USD`
 to `BTC/USD`) or quote currency (for example, `ETH/XBT` to `ETH/BTC`). Futures
-retain Kraken's native `XBT` format.
+instrument symbols retain Kraken's native `XBT` format; futures currency codes do
+not, and are mapped like every other code (see Currency codes).
 :::
 
 Kraken also uses `XDG` for Dogecoin in some Spot responses. The adapter
@@ -171,10 +172,21 @@ currency, which on an inverse contract is the base rather than the quote. Kraken
 instrument's quote currency.
 
 :::warning
-This changes the currency codes the adapter emits. The previous mapping stripped one leading `X` or
-`Z`, so stored records carry `XBT` and `XDG` rather than `BTC` and `DOGE`, and the corrupted forms
-`TZ`, `RX` and `AUT` rather than `XTZ`, `ZRX` and `XAUT`. `KFEE` now becomes `FEE`. A cache or
-database written by an earlier version needs migrating or rebuilding.
+This changes the currency codes the adapter emits, in three places that previously disagreed with
+each other.
+
+Instruments carried Kraken's codes unchanged, so stored instruments were denominated in `XXBT`,
+`XETH`, `XXDG`, `ZUSD` and `ZEUR`, and so were the fills and positions that reference them. Those
+become `BTC`, `ETH`, `DOGE`, `USD` and `EUR`.
+
+Spot balances and the margin balance asset stripped one leading `X` or `Z`, so stored records carry
+`XBT` and `XDG` rather than `BTC` and `DOGE`, and the corrupted forms `TZ`, `RX` and `AUT` rather
+than `XTZ`, `ZRX` and `XAUT`. `KFEE` becomes `FEE`.
+
+Futures balances used the venue's own spelling, which differs per wallet: cash and margin wallets
+key an asset `xbt` while the flex wallet keys it `XBT`. Both become `BTC`, and `usd` becomes `USD`.
+
+A cache or database written by an earlier version needs migrating or rebuilding.
 
 Configuration follows the same mapping and accepts either spelling, so
 `spot_positions_quote_currency="ZEUR"` and `"EUR"` both match a euro-quoted instrument.
