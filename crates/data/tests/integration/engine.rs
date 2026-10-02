@@ -119,6 +119,8 @@ use rstest::*;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
+#[cfg(feature = "defi")]
+use crate::common::defi::make_initialized_pool_and_swap;
 use crate::common::mocks::{FailingMockDataClient, MockDataClient, MockSubscribeFailure};
 
 #[fixture]
@@ -14270,74 +14272,6 @@ fn test_reset_clears_pool_updater_state(
             .pool_profiler(&instrument_id)
             .is_some()
     );
-}
-
-#[cfg(feature = "defi")]
-fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
-    let chain = Arc::new(chains::ETHEREUM.clone());
-
-    let dex = Arc::new(Dex::new(
-        chains::ETHEREUM.clone(),
-        DexType::UniswapV3,
-        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-        0,
-        AmmType::CLAMM,
-        "PoolCreated",
-        "Swap",
-        "Mint",
-        "Burn",
-        "Collect",
-    ));
-    let token0 = Token::new(
-        chain.clone(),
-        Address::from([0x11; 20]),
-        "WETH".to_string(),
-        "WETH".to_string(),
-        18,
-    );
-    let token1 = Token::new(
-        chain.clone(),
-        Address::from([0x22; 20]),
-        "USDC".to_string(),
-        "USDC".to_string(),
-        6,
-    );
-
-    let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
-        Address::from([0x12; 20]),
-        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
-        token0,
-        token1,
-        Some(500u32),
-        Some(10u32),
-        UnixNanos::from(1),
-    );
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
-
-    let swap = PoolSwap::new(
-        chain,
-        dex,
-        pool.instrument_id,
-        pool.pool_identifier,
-        1000u64,
-        "0x123".to_string(),
-        0,
-        0,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        Address::from([0x12; 20]),
-        Address::from([0x12; 20]),
-        I256::from_str("1000000000000000000").unwrap(),
-        I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
-        1000000,
-        100,
-    );
-    (pool, swap)
 }
 
 #[cfg(feature = "defi")]

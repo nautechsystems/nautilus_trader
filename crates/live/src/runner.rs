@@ -539,6 +539,10 @@ impl AsyncRunner {
             DataEvent::DeFi(data) => {
                 msgbus::send_defi_data(MessagingSwitchboard::data_engine_process_defi_data(), data);
             }
+            #[cfg(feature = "defi")]
+            DataEvent::PoolSnapshotResponse(response) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &response);
+            }
             #[cfg(not(feature = "defi"))]
             #[allow(
                 unreachable_patterns,
@@ -2866,5 +2870,46 @@ mod tests {
             }
             _ => panic!("Expected OrderCanceledBatch event"),
         }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_handle_data_event_routes_pool_snapshot_response_to_data_engine() {
+        use nautilus_common::{
+            messages::defi::PoolSnapshotResponse, msgbus::ShareableMessageHandler,
+        };
+        use nautilus_model::defi::{
+            data::block::BlockPosition,
+            pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        };
+
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let sink = received.clone();
+        msgbus::register_any(
+            MessagingSwitchboard::data_engine_process(),
+            ShareableMessageHandler::from_typed(move |response: &PoolSnapshotResponse| {
+                sink.borrow_mut().push(response.correlation_id);
+            }),
+        );
+
+        let correlation_id = UUID4::new();
+
+        let snapshot = PoolSnapshot::new(
+            InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3"),
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(1000, "0x0".to_string(), 0, 0),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        AsyncRunner::handle_data_event(DataEvent::PoolSnapshotResponse(PoolSnapshotResponse::new(
+            correlation_id,
+            snapshot,
+        )));
+
+        assert_eq!(*received.borrow(), vec![correlation_id]);
     }
 }

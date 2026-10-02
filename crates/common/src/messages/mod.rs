@@ -56,6 +56,8 @@ pub enum DataEvent {
     // nautilus-import-ok: conditional compilation import
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),
+    #[cfg(feature = "defi")]
+    PoolSnapshotResponse(defi::PoolSnapshotResponse),
 }
 
 /// System command variants routed to a live node.

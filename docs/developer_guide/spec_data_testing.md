@@ -1052,6 +1052,8 @@ Test actor lifecycle behavior: unsubscribe handling, retirement cleanup, and cus
 | TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.       | N/A.              |
 | TC-D72 | Custom request params   | Adapter-specific request parameters.            | N/A.              |
 | TC-D73 | Retirement cleanup      | Release an actor's retained data subscriptions. | N/A.              |
+| TC-D74 | DeFi shared pool demand | Keep shared pool feeds until the final owner.   | No DeFi support.  |
+| TC-D75 | DeFi bootstrap cancel   | Discard snapshots for canceled pool bootstraps. | No DeFi support.  |
 
 ### TC-D70: Unsubscribe on stop
 
@@ -1173,6 +1175,48 @@ retires.
   retirement can release them without invoking the failed hook again.
 - A failed `on_stop` or `on_fault` must not block retirement: disposal and deregistration must still
   complete from the corresponding transitional state.
+
+### TC-D74: DeFi shared pool demand
+
+| Field              | Value                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A DeFi data client; two actors subscribe to the same pool, through the same or overlapping subscription types.             |
+| **Action**         | Retire or unsubscribe one actor, then the other, in each order.                                                            |
+| **Event sequence** | The first release sends no client unsubscribe for shared types; the final release unsubscribes and stops the pool updater. |
+| **Pass criteria**  | Pool events keep reaching the remaining actor and the profiler until the final release; none flow afterwards.              |
+| **Skip when**      | Adapter does not provide DeFi pool subscriptions.                                                                          |
+
+Cover these overlaps:
+
+- Two actors with the same subscription type, retired in either order.
+- `SubscribePool` with each narrower type (swaps, liquidity updates, fee collects, flash events),
+  unsubscribed in both orders. The narrower event filters must stay active while either
+  subscription remains.
+- The same pool on two data clients. Each client keeps its own demand, and the pool updater stays
+  active until both release.
+
+**Considerations:**
+
+- `DataTesterConfig` does not cover DeFi pool subscriptions. Create the actors manually.
+- A duplicate unsubscribe from one actor must not release another actor's demand.
+
+### TC-D75: DeFi bootstrap cancel
+
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A DeFi data client; the pool is absent from the cache, so a subscription requests a pool snapshot.    |
+| **Action**         | Subscribe, release the final owner before the pool definition arrives, then subscribe again.          |
+| **Event sequence** | Two snapshot requests are sent; the response to the first arrives after the second subscription.      |
+| **Pass criteria**  | The engine discards the first response; only the response to the current request installs a profiler. |
+| **Skip when**      | Adapter does not provide pool snapshots.                                                              |
+
+**Considerations:**
+
+- The second subscription requests a new snapshot only while the pool is absent from the cache. Once
+  the first request's pool definition arrives, a later subscription builds the profiler from the
+  cached pool instead, so the case needs a delayed response.
+- An engine reset or disconnect also cancels pending bootstraps. A response that arrives afterwards
+  must not install a profiler.
 
 ---
 

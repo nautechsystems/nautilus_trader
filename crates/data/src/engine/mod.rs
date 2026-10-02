@@ -70,6 +70,8 @@ use handlers::{
     BAR_AGGREGATOR_PRIORITY, BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler,
 };
 use indexmap::IndexMap;
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::PoolSnapshotResponse;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -210,9 +212,7 @@ pub struct DataEngine {
     #[cfg(feature = "defi")]
     pub(crate) pool_updaters: AHashMap<InstrumentId, Rc<PoolUpdater>>,
     #[cfg(feature = "defi")]
-    pub(crate) pool_updaters_pending: AHashSet<InstrumentId>,
-    #[cfg(feature = "defi")]
-    pub(crate) pool_snapshot_pending: AHashSet<InstrumentId>,
+    pub(crate) pool_snapshot_pending: AHashMap<InstrumentId, UUID4>,
     #[cfg(feature = "defi")]
     pub(crate) pool_event_buffers: AHashMap<InstrumentId, Vec<DefiData>>,
 }
@@ -289,9 +289,7 @@ impl DataEngine {
             #[cfg(feature = "defi")]
             pool_updaters: AHashMap::new(),
             #[cfg(feature = "defi")]
-            pool_updaters_pending: AHashSet::new(),
-            #[cfg(feature = "defi")]
-            pool_snapshot_pending: AHashSet::new(),
+            pool_snapshot_pending: AHashMap::new(),
             #[cfg(feature = "defi")]
             pool_event_buffers: AHashMap::new(),
         }
@@ -783,6 +781,11 @@ impl DataEngine {
             .collect();
 
         let results = join_all(futures).await;
+
+        // A closed session cannot answer, so discard its pending bootstraps
+        #[cfg(feature = "defi")]
+        self.abandon_pool_snapshots();
+
         let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
 
         if errors.is_empty() {
@@ -1834,6 +1837,12 @@ impl DataEngine {
         } else if let Some(custom) = data.downcast_ref::<CustomData>() {
             self.handle_custom_data(custom);
         } else {
+            #[cfg(feature = "defi")]
+            if let Some(response) = data.downcast_ref::<PoolSnapshotResponse>() {
+                self.handle_pool_snapshot_response(response);
+                return;
+            }
+
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
     }

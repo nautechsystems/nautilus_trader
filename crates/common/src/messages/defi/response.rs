@@ -13,10 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod client;
-mod common;
-mod engine;
-mod subscription;
+use nautilus_core::UUID4;
+use nautilus_model::defi::pool_analysis::PoolSnapshot;
 
-#[cfg(feature = "defi")]
-mod defi;
+/// Represents a pool snapshot sent in reply to a [`RequestPoolSnapshot`](super::RequestPoolSnapshot).
+#[derive(Clone, Debug)]
+pub struct PoolSnapshotResponse {
+    pub correlation_id: UUID4,
+    pub data: PoolSnapshot,
+}
+
+impl PoolSnapshotResponse {
+    /// Creates a new [`PoolSnapshotResponse`] instance.
+    #[must_use]
+    pub fn new(correlation_id: UUID4, data: PoolSnapshot) -> Self {
+        Self {
+            correlation_id,
+            data,
+        }
+    }
+}

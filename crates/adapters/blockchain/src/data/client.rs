@@ -23,10 +23,10 @@ use nautilus_common::{
         DataEvent,
         defi::{
             DefiDataCommand, DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand,
-            SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
-            SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
-            UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
-            UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+            PoolSnapshotResponse, SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects,
+            SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates, SubscribePoolSwaps,
+            UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+            UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
 };
@@ -567,28 +567,9 @@ impl BlockchainDataClient {
                             )
                         })?;
 
-                    // Subscribe to all pool event types
                     core_client
                         .subscription_manager
-                        .subscribe_swaps(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_burns(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_mints(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_collects(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_flashes(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_fee_protocol_updates(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_fee_protocol_collects(dex, pool_address);
+                        .subscribe_pool(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
                     Self::update_hypersync_pool_event_stream(core_client, dex).await?;
 
@@ -747,28 +728,9 @@ impl BlockchainDataClient {
                             anyhow::anyhow!("Invalid pool address: {}", cmd.instrument_id)
                         })?;
 
-                    // Unsubscribe from all pool event types
                     core_client
                         .subscription_manager
-                        .unsubscribe_swaps(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_burns(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_mints(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_collects(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_flashes(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_fee_protocol_updates(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_fee_protocol_collects(dex, pool_address);
+                        .unsubscribe_pool(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
                     Self::update_hypersync_pool_event_stream(core_client, dex).await?;
 
@@ -1161,9 +1123,10 @@ impl BlockchainDataClient {
                                         .await?
                                         .is_usable()
                                     {
-                                        let snapshot_data =
-                                            DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                        core_client.send_data(snapshot_data);
+                                        let response =
+                                            PoolSnapshotResponse::new(cmd.request_id, snapshot);
+                                        core_client
+                                            .send_data(DataEvent::PoolSnapshotResponse(response));
                                     }
                                 }
                                 Err(e) => log::error!(
