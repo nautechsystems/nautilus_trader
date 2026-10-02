@@ -26,6 +26,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+use super::time_range::TIME_RANGE_GENERATOR;
+
 pub(super) const CONTINUOUS_FUTURE_PARENT_REQUEST_ID: &str = "continuous_future_parent_request_id";
 
 const CONTINUOUS_FUTURE_TRANSITIONS: &str = "continuous_future_transitions";
@@ -198,6 +200,10 @@ impl ContinuousFutureRequest {
         child_params.shift_remove(LAST_POST_INSTRUMENT_ID);
         child_params.shift_remove(FIRST_PRE_INSTRUMENT_ID);
         child_params.shift_remove(BAR_TYPES);
+
+        // The parent consumes each segment as one response, so a segment must not fan out into
+        // time-range windows.
+        child_params.shift_remove(TIME_RANGE_GENERATOR);
         child_params.insert(
             CONTINUOUS_FUTURE_PARENT_REQUEST_ID.to_string(),
             Value::String(parent_id.to_string()),

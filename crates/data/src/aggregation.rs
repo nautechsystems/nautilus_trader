@@ -1419,6 +1419,7 @@ impl BarAggregator for RenkoBarAggregator {
 
         // Always update the builder with the current tick
         self.core.builder.update(price, size, ts_init);
+        let price = self.core.builder.apply_adjustment_to_price(price);
         self.build_bricks(price, ts_init);
     }
 
@@ -1429,7 +1430,8 @@ impl BarAggregator for RenkoBarAggregator {
 
         // Always update the builder with the current bar
         self.core.builder.update_bar(bar, volume, ts_init);
-        self.build_bricks(bar.close, ts_init);
+        let close = self.core.builder.apply_adjustment_to_price(bar.close);
+        self.build_bricks(close, ts_init);
     }
 }
 
@@ -1705,7 +1707,10 @@ impl TimeBarAggregator {
 
     fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
         if self.skip_first_non_full_bar && ts_init <= self.first_close_ns {
-            self.core.builder.reset();
+            // Carry the skipped close so a following empty interval can build a flat bar
+            let builder = &mut self.core.builder;
+            builder.last_close = builder.close.or(builder.last_close);
+            builder.reset();
         } else {
             // Clear for the transition from historical to live data; subsequent
             // bars always emit regardless of timestamp.
@@ -1782,23 +1787,38 @@ impl TimeBarAggregator {
             self.start_timer_internal(None);
         }
 
-        // Advance this aggregator's independent clock and collect timer events.
-        let events = {
-            let mut clock_borrow = self.clock.borrow_mut();
-            let test_clock = clock_borrow
-                .as_any_mut()
-                .downcast_mut::<VirtualClock>()
-                .expect("Expected VirtualClock in historical mode");
-            test_clock.advance_time(ts_init, true)
-        };
+        // Advance this aggregator's independent clock and collect timer events. Month and year
+        // alerts re-arm from each built event, so repeat until none fall at or before `ts_init`
+        // and only then move the clock, otherwise a re-armed alert is clamped to `ts_init`.
+        loop {
+            let events = {
+                let mut clock_borrow = self.clock.borrow_mut();
+                let test_clock = clock_borrow
+                    .as_any_mut()
+                    .downcast_mut::<VirtualClock>()
+                    .expect("Expected VirtualClock in historical mode");
+                test_clock.advance_time(ts_init, false)
+            };
 
-        for event in events {
-            if event.ts_event == ts_init {
-                self.historical_event_at_ts_init = Some(event);
-            } else {
-                self.build_bar(&event);
+            if events.is_empty() {
+                break;
+            }
+
+            for event in events {
+                if event.ts_event == ts_init {
+                    self.historical_event_at_ts_init = Some(event);
+                } else {
+                    self.build_bar(&event);
+                }
             }
         }
+
+        let mut clock_borrow = self.clock.borrow_mut();
+        let test_clock = clock_borrow
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .expect("Expected VirtualClock in historical mode");
+        test_clock.set_time(ts_init);
     }
 
     fn postprocess_historical_events(&mut self, _ts_init: UnixNanos) {
@@ -5249,6 +5269,98 @@ mod tests {
     }
 
     #[rstest]
+    fn test_renko_bar_aggregator_applies_continuous_future_adjustment(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            record,
+        );
+        aggregator.set_adjustment(Decimal::ONE, ContinuousFutureAdjustmentType::BackwardSpread);
+
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00010"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("2.00000"));
+        assert_eq!(bars[0].high, Price::from("2.00010"));
+        assert_eq!(bars[0].low, Price::from("2.00000"));
+        assert_eq!(bars[0].close, Price::from("2.00010"));
+        assert_eq!(bars[0].volume, Quantity::from(2));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(1000));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_applies_continuous_future_adjustment(
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+
+        let source_bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+            AggregationSource::Internal,
+        );
+        let (handler, record) = recording_handler();
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            record,
+        );
+        aggregator.set_adjustment(Decimal::ONE, ContinuousFutureAdjustmentType::BackwardSpread);
+
+        aggregator.handle_bar(Bar::new(
+            source_bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00005"),
+            Price::from("0.99995"),
+            Price::from("1.00000"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+        aggregator.handle_bar(Bar::new(
+            source_bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00015"),
+            Price::from("0.99995"),
+            Price::from("1.00010"),
+            Quantity::from(50),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(60_000_000_000),
+        ));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("2.00000"));
+        assert_eq!(bars[0].high, Price::from("2.00010"));
+        assert_eq!(bars[0].low, Price::from("2.00000"));
+        assert_eq!(bars[0].close, Price::from("2.00010"));
+        assert_eq!(bars[0].volume, Quantity::from(150));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(60_000_000_000));
+    }
+
+    #[rstest]
     fn test_renko_bar_aggregator_multiple_bricks_in_one_update(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid); // 10 pip brick size
@@ -7443,6 +7555,66 @@ mod tests {
     }
 
     #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_then_empty_interval_builds_flat_bar(
+        equity_aapl: Equity,
+    ) {
+        // The skipped partial bar's close seeds the flat bar for the following empty interval
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            record,
+            true, // build_with_no_updates
+            true, // timestamp_on_close
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            true, // skip_first_non_full_bar
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_500_000_000),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        ));
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        ));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("100.00"));
+        assert_eq!(bars[0].high, Price::from("100.00"));
+        assert_eq!(bars[0].low, Price::from("100.00"));
+        assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[0].volume, Quantity::from(0));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(3_000_000_000));
+        assert_eq!(bars[0].ts_init, UnixNanos::from(3_000_000_000));
+    }
+
+    #[rstest]
     fn test_time_bar_skip_first_non_full_bar_skips_every_call_before_first_close(
         equity_aapl: Equity,
     ) {
@@ -7938,6 +8110,57 @@ mod tests {
         assert_eq!(bars[0].ts_event, UnixNanos::from(FEB_01_2024));
         assert_eq!(bars[0].ts_init, UnixNanos::from(MAR_01_2024));
         assert_eq!(next_alert, Some(UnixNanos::from(MAR_01_2024)));
+    }
+
+    #[rstest]
+    fn test_time_bar_historical_month_keeps_calendar_alignment_across_gap(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Month, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let mut agg = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            record,
+            true, // build_with_no_updates
+            true, // timestamp_on_close
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+        agg.historical_mode = true;
+        agg.set_clock_internal(clock);
+        let boxed: Box<dyn BarAggregator> = Box::new(agg);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+
+        // The update after the gap crosses both the February and March alerts
+        for (price, ts) in [
+            ("100.00", JAN_15_2024),
+            ("101.00", MAR_10_2024),
+            ("102.00", APR_01_2024),
+        ] {
+            rc.borrow_mut()
+                .update(Price::from(price), Quantity::from(1), UnixNanos::from(ts));
+        }
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 3);
+        assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[0].volume, Quantity::from(1));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(FEB_01_2024));
+        assert_eq!(bars[1].close, Price::from("100.00"));
+        assert_eq!(bars[1].volume, Quantity::from(0));
+        assert_eq!(bars[1].ts_event, UnixNanos::from(MAR_01_2024));
+        assert_eq!(bars[2].open, Price::from("101.00"));
+        assert_eq!(bars[2].close, Price::from("102.00"));
+        assert_eq!(bars[2].volume, Quantity::from(2));
+        assert_eq!(bars[2].ts_event, UnixNanos::from(APR_01_2024));
     }
 
     #[rstest]

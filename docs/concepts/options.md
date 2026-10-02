@@ -139,6 +139,8 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
   active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
 
+The engine rejects `snapshot_interval_ms=0`; use `None` for raw mode.
+
 ## Backtesting option chains
 
 Option-chain backtests use the same `OptionChainManager` and `OptionChainAggregator`

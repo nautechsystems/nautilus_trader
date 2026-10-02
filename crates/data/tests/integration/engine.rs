@@ -2494,6 +2494,193 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
 }
 
 #[rstest]
+fn test_continuous_future_request_ignores_time_range_generator_for_segments(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    // Each segment child requests its whole window, so the parent never advances on a partial
+    // time-range window.
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(3));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let params = params_from_json(json!({
+        "time_range_generator": "",
+        "durations_seconds": [10],
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "95.00"
+            }
+        ]
+    }));
+
+    let request = RequestBars::new(
+        BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"),
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(3)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    assert_eq!(
+        child.start.map(|dt| dt.as_nanosecond()),
+        Some(i128::from(minute(1)))
+    );
+    assert_eq!(
+        child.end.map(|dt| dt.as_nanosecond()),
+        Some(i128::from(minute(2) - 1))
+    );
+    assert!(
+        child
+            .params
+            .as_ref()
+            .is_some_and(|params| !params.contains_key("time_range_generator"))
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_continuous_future_request_serves_segments_from_catalog(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    // With every segment covered by the catalog, the client is never asked and the parent
+    // response completes from catalog legs alone.
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(3));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let catalog_dir = CatalogTempDir::new("continuous-future-segments");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let esh_bar_type = BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL");
+    let esm_bar_type = BarType::from("ESM24.GLBX-1-MINUTE-LAST-EXTERNAL");
+
+    for bar in [
+        make_bar(
+            esh_bar_type,
+            "100.00",
+            "101.00",
+            "99.00",
+            "100.50",
+            1,
+            minute(1),
+        ),
+        make_bar(
+            esm_bar_type,
+            "96.00",
+            "97.00",
+            "95.50",
+            "96.50",
+            2,
+            minute(2),
+        ),
+    ] {
+        catalog
+            .write_to_parquet(
+                &[bar],
+                Some(UnixNanos::default()),
+                Some(UnixNanos::from(minute(10))),
+                None,
+            )
+            .unwrap();
+    }
+
+    data_engine.register_catalog(Box::new(catalog), None);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "95.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-catalog-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(3)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let cached_bar = cache
+        .borrow()
+        .bar(&target_bar_type.standard())
+        .copied()
+        .unwrap();
+    let responses = response_saver.get_messages();
+    assert!(recorder.borrow().is_empty());
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(2));
+    assert_eq!(cached_bar.open, Price::from("96.00"));
+    assert_eq!(cached_bar.close, Price::from("96.50"));
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
 fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -8455,6 +8642,110 @@ fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
 }
 
 #[rstest]
+#[case::two_levels(&[
+    "AUD/USD.SIM-5-MINUTE-BID-INTERNAL@1-MINUTE-EXTERNAL",
+    "AUD/USD.SIM-15-MINUTE-BID-INTERNAL@5-MINUTE-INTERNAL",
+])]
+#[case::three_levels(&[
+    "AUD/USD.SIM-5-MINUTE-BID-INTERNAL@1-MINUTE-EXTERNAL",
+    "AUD/USD.SIM-15-MINUTE-BID-INTERNAL@5-MINUTE-INTERNAL",
+    "AUD/USD.SIM-1-HOUR-BID-INTERNAL@15-MINUTE-INTERNAL",
+])]
+fn test_unsubscribe_chained_composite_bars_releases_retained_source(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] chain: &[&str],
+) {
+    // Releasing the top of the chain must walk down to the 5-minute source and free its
+    // external 1-minute feed, not the quote feed another owner holds.
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let instrument_id = audusd_sim.id;
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+        SubscribeQuotes::new(
+            instrument_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let bar_types: Vec<BarType> = chain
+        .iter()
+        .map(|bar_type| BarType::from(*bar_type))
+        .collect();
+
+    for bar_type in bar_types.iter().copied() {
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+            SubscribeBars::new(
+                bar_type,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        )));
+    }
+
+    recorder.borrow_mut().clear();
+
+    // Each lower release defers while the next aggregator up the chain still consumes its topic
+    for bar_type in bar_types.iter().copied() {
+        data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+            UnsubscribeBars::new(
+                bar_type,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        )));
+    }
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 1);
+
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Bars(command)) = &recorded[0] else {
+        panic!(
+            "expected external source bars unsubscribe, was {:?}",
+            recorded[0]
+        );
+    };
+
+    assert_eq!(
+        command.bar_type,
+        BarType::from("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL")
+    );
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(data_engine.subscribed_quotes(), vec![instrument_id]);
+    assert!(data_engine.subscribed_bars().is_empty());
+}
+
+#[rstest]
 fn test_external_client_internal_bar_subscription_skips_local_aggregator(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
@@ -13735,14 +14026,14 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
 
 #[cfg(feature = "defi")]
 #[rstest]
-fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
+fn test_pool_events_publish_while_snapshot_pending(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
     venue: Venue,
 ) {
-    let mut data_engine = data_engine.borrow_mut();
+    // The adapter publishes the pool, then its bootstrap fails and no snapshot follows
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
@@ -13751,12 +14042,242 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
         venue,
         None,
         &recorder,
-        &mut data_engine,
+        &mut data_engine.borrow_mut(),
+    );
+    let (pool, swap) = make_initialized_pool_and_swap();
+    let instrument_id = pool.instrument_id;
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(
+            SubscribePoolSwaps {
+                instrument_id,
+                client_id: Some(client_id),
+                command_id: UUID4::new(),
+                ts_init: UnixNanos::default(),
+                params: None,
+            },
+        )));
+
+    let update = PoolLiquidityUpdate::new(
+        pool.chain.clone(),
+        pool.dex.clone(),
+        instrument_id,
+        pool.pool_identifier,
+        PoolLiquidityUpdateType::Mint,
+        1001u64,
+        "0x124".to_string(),
+        0,
+        0,
+        None,
+        Address::from([0x12; 20]),
+        100u128,
+        U256::from(1000000u128),
+        U256::from(2000000u128),
+        -100,
+        100,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
-    let chain = Arc::new(chains::ARBITRUM.clone());
+    let collect = PoolFeeCollect::new(
+        pool.chain.clone(),
+        pool.dex.clone(),
+        instrument_id,
+        pool.pool_identifier,
+        1002u64,
+        "0x125".to_string(),
+        0,
+        0,
+        Address::from([0x12; 20]),
+        500000u128,
+        300000u128,
+        -100,
+        100,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let flash = PoolFlash::new(
+        pool.chain.clone(),
+        pool.dex.clone(),
+        instrument_id,
+        pool.pool_identifier,
+        1003u64,
+        "0x126".to_string(),
+        0,
+        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Address::from([0x12; 20]),
+        Address::from([0x34; 20]),
+        U256::from(1000000u128),
+        U256::from(500000u128),
+        U256::from(5000u128),
+        U256::from(2500u128),
+    );
+
+    let (swap_handler, swap_saver) = get_typed_message_saving_handler::<PoolSwap>(None);
+    let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
+    msgbus::subscribe_defi_swaps(swap_topic.into(), swap_handler, None);
+    let (liquidity_handler, liquidity_saver) =
+        get_typed_message_saving_handler::<PoolLiquidityUpdate>(None);
+    let liquidity_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
+    msgbus::subscribe_defi_liquidity(liquidity_topic.into(), liquidity_handler, None);
+    let (collect_handler, collect_saver) = get_typed_message_saving_handler::<PoolFeeCollect>(None);
+    let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
+    msgbus::subscribe_defi_collects(collect_topic.into(), collect_handler, None);
+    let (flash_handler, flash_saver) = get_typed_message_saving_handler::<PoolFlash>(None);
+    let flash_topic = defi::switchboard::get_defi_flash_topic(instrument_id);
+    msgbus::subscribe_defi_flash(flash_topic.into(), flash_handler, None);
+
+    data_engine
+        .borrow_mut()
+        .process_defi_data(DefiData::Pool(pool));
+
+    for event in [
+        DefiData::PoolSwap(swap.clone()),
+        DefiData::PoolLiquidityUpdate(update.clone()),
+        DefiData::PoolFeeCollect(collect.clone()),
+        DefiData::PoolFlash(flash.clone()),
+    ] {
+        data_engine.borrow_mut().process_defi_data(event);
+    }
+
+    assert!(matches!(
+        recorder.borrow().last(),
+        Some(DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(
+            _
+        )))
+    ));
+    assert_eq!(swap_saver.get_messages(), vec![swap]);
+    assert_eq!(liquidity_saver.get_messages(), vec![update]);
+    assert_eq!(collect_saver.get_messages(), vec![collect]);
+    assert_eq!(flash_saver.get_messages(), vec![flash]);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_snapshot_without_cached_pool_clears_pending_state(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // A snapshot the engine cannot install ends the pending state, so a later subscription
+    // requests a fresh snapshot rather than waiting on the abandoned one.
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let (pool, _) = make_initialized_pool_and_swap();
+    let instrument_id = pool.instrument_id;
+
+    let subscribe = || {
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        }))
+    };
+
+    data_engine.borrow_mut().execute(subscribe());
+
+    let snapshot = PoolSnapshot::new(
+        instrument_id,
+        PoolState::default(),
+        Vec::new(),
+        Vec::new(),
+        PoolAnalytics::default(),
+        BlockPosition::new(1000, "0x0".to_string(), 0, 0),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine
+        .borrow_mut()
+        .process_defi_data(DefiData::PoolSnapshot(snapshot));
+    data_engine.borrow_mut().execute(subscribe());
+
+    let snapshot_requests = recorder
+        .borrow()
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(request))
+                    if request.instrument_id == instrument_id
+            )
+        })
+        .count();
+
+    assert_eq!(snapshot_requests, 2);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_reset_clears_pool_updater_state(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // A reset followed by a cache reset (the backtest run boundary) must let the next
+    // subscription build a fresh profiler.
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let (pool, _) = make_initialized_pool_and_swap();
+    let instrument_id = pool.instrument_id;
+
+    let subscribe = || {
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+            instrument_id,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        }))
+    };
+
+    let engine_cache = data_engine.borrow().cache().clone();
+    engine_cache.borrow_mut().add_pool(pool.clone()).unwrap();
+    data_engine.borrow_mut().execute(subscribe());
+
+    data_engine.borrow_mut().reset();
+    engine_cache.borrow_mut().reset();
+    engine_cache.borrow_mut().add_pool(pool).unwrap();
+    data_engine.borrow_mut().execute(subscribe());
+
+    assert!(
+        engine_cache
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_some()
+    );
+}
+
+#[cfg(feature = "defi")]
+fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
+    let chain = Arc::new(chains::ETHEREUM.clone());
+
     let dex = Arc::new(Dex::new(
-        chains::ARBITRUM.clone(),
+        chains::ETHEREUM.clone(),
         DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
@@ -13781,6 +14302,96 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
         "USDC".to_string(),
         6,
     );
+
+    let mut pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
+
+    let swap = PoolSwap::new(
+        chain,
+        dex,
+        pool.instrument_id,
+        pool.pool_identifier,
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Address::from([0x12; 20]),
+        Address::from([0x12; 20]),
+        I256::from_str("1000000000000000000").unwrap(),
+        I256::from_str("400000000000000").unwrap(),
+        U160::from(59000000000000u128),
+        1000000,
+        100,
+    );
+    (pool, swap)
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+
     let mut pool = Pool::new(
         chain,
         dex,
@@ -15253,6 +15864,49 @@ fn test_subscribe_option_chain_fixed_range_creates_manager(
 }
 
 #[rstest]
+fn test_subscribe_option_chain_rejects_zero_snapshot_interval(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
+
+    let series_id = make_series_id();
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+            SubscribeOptionChain::new(
+                series_id,
+                StrikeRange::Fixed(vec![Price::from("50000.000")]),
+                Some(0),
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(client_id),
+                Some(venue),
+                None,
+            ),
+        )));
+
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(recorder.borrow().is_empty());
+}
+
+#[rstest]
 fn test_subscribe_option_chain_filters_by_underlying(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -15412,6 +16066,63 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     assert!(routed_recorder.borrow().is_empty());
 }
 
+#[rstest]
+fn test_option_chain_out_of_range_listing_is_not_subscribed(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
+
+    let series_id = make_series_id();
+    data_engine
+        .borrow_mut()
+        .execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(client_id),
+            Some(venue),
+        ));
+    recorder.borrow_mut().clear();
+
+    // A new listing outside the fixed strikes joins the series without venue feeds
+    data_engine
+        .borrow_mut()
+        .process(&make_btc_option("60000.000", OptionKind::Call));
+    assert!(recorder.borrow().is_empty());
+
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    let data_engine = data_engine.borrow();
+    assert!(data_engine.subscribed_quotes().is_empty());
+    assert!(data_engine.subscribed_instrument_status().is_empty());
+    assert!(
+        data_engine.get_clients()[0]
+            .subscriptions_option_greeks
+            .is_empty()
+    );
+}
 #[rstest]
 fn test_unsubscribe_option_chain_tears_down(
     clock: Rc<RefCell<VirtualClock>>,
@@ -17123,6 +17834,123 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
 
     assert_eq!(greeks.instrument_id, call_id);
     assert_eq!(greeks.delta, 0.55);
+}
+
+#[rstest]
+fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    for strike in ["45000.000", "50000.000", "55000.000"] {
+        let _ = cache
+            .borrow_mut()
+            .add_instrument(make_btc_option(strike, OptionKind::Call));
+        let _ = cache
+            .borrow_mut()
+            .add_instrument(make_btc_option(strike, OptionKind::Put));
+    }
+
+    let series_id = make_series_id();
+    let topic = switchboard::get_option_chain_topic(series_id);
+    let (handler, _saver) = get_typed_message_saving_handler::<OptionChainSlice>(None);
+    msgbus::subscribe_option_chain(topic.into(), handler.clone(), None);
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+            SubscribeOptionChain::new(
+                series_id,
+                StrikeRange::AtmRelative {
+                    strikes_above: 1,
+                    strikes_below: 1,
+                },
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(client_id),
+                Some(venue),
+                None,
+            ),
+        )));
+
+    let request_id = recorder
+        .borrow()
+        .iter()
+        .find_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::OptionChainReferencePrice(req)) => {
+                Some(req.request_id)
+            }
+            _ => None,
+        })
+        .expect("reference price request should be recorded");
+
+    data_engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                client_id,
+                series_id,
+                None,
+                UnixNanos::default(),
+                None,
+            ),
+        ));
+
+    // The bootstrap sample (45000-C) lands inside the active window
+    let sample_id = InstrumentId::from("BTC-20240101-45000.000-C.DERIBIT");
+    let call_id = InstrumentId::from("BTC-20240101-50000.000-C.DERIBIT");
+    data_engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            call_id, 50000.0,
+        )));
+
+    let greeks_unsubscribes = |recorder: &Rc<RefCell<Vec<DataCommand>>>| -> Vec<InstrumentId> {
+        recorder
+            .borrow()
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd)) => {
+                    Some(cmd.instrument_id)
+                }
+                _ => None,
+            })
+            .collect()
+    };
+
+    assert!(greeks_unsubscribes(&recorder).is_empty());
+
+    msgbus::unsubscribe_option_chain(topic.into(), &handler);
+    recorder.borrow_mut().clear();
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    assert!(greeks_unsubscribes(&recorder).contains(&sample_id));
+    assert!(
+        data_engine.borrow().get_clients()[0]
+            .subscriptions_option_greeks
+            .is_empty()
+    );
 }
 
 fn synthetic_instrument_id() -> InstrumentId {
@@ -23483,6 +24311,66 @@ fn test_request_instruments_catalog_applies_only_last(
         vec![(audusd_id, 2_000), (gbpusd_id, 3_000)]
     );
     assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::later_id_after_clock(3_000, 20_000_000_000)]
+#[case::earlier_id_after_clock(20_000_000_000, 3_000)]
+fn test_request_instruments_catalog_result_independent_of_id_order(
+    mut audusd_sim: CurrencyPair,
+    mut gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] audusd_ts_init: u64,
+    #[case] gbpusd_ts_init: u64,
+) {
+    // The query has no end bound, so a definition stamped after the clock is still returned
+    let _ = stub_msgbus;
+    audusd_sim.ts_init = UnixNanos::from(audusd_ts_init);
+    gbpusd_sim.ts_init = UnixNanos::from(gbpusd_ts_init);
+    let audusd_id = audusd_sim.id;
+    let gbpusd_id = gbpusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instruments-id-order",
+        vec![
+            InstrumentAny::CurrencyPair(audusd_sim),
+            InstrumentAny::CurrencyPair(gbpusd_sim),
+        ],
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentsResponse>(Some(Ustr::from("instruments-id-order")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let ids: Vec<InstrumentId> = received[0]
+        .data
+        .iter()
+        .map(|instrument| instrument.id())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(ids, vec![audusd_id, gbpusd_id]);
 }
 
 #[cfg(feature = "streaming")]

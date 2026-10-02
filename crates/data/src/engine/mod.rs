@@ -699,6 +699,9 @@ impl DataEngine {
 
         self.deferred_cmd_queue.borrow_mut().clear();
 
+        #[cfg(feature = "defi")]
+        self.clear_pool_updaters();
+
         self.clock.borrow_mut().cancel_timers();
 
         self.command_count = 0;
@@ -1085,6 +1088,12 @@ impl DataEngine {
                 if cmd.bar_type.is_internally_aggregated() {
                     return Ok(());
                 }
+            }
+            SubscribeCommand::OptionChain(cmd) if cmd.snapshot_interval_ms == Some(0) => {
+                anyhow::bail!(
+                    "Cannot subscribe option chain {} with a zero `snapshot_interval_ms`; use `None` for raw mode",
+                    cmd.series_id,
+                );
             }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
@@ -1572,7 +1581,7 @@ impl DataEngine {
             active.cursor_ns = UnixNanos::from(segment.end_ns.saturating_add(1));
         }
 
-        self.dispatch_request_to_client(child).map(|_| ())
+        self.execute_request(child)
     }
 
     fn apply_continuous_future_adjustment(
@@ -1930,7 +1939,10 @@ impl DataEngine {
         manager_rc.borrow_mut().handle_greeks(greeks);
 
         if manager_rc.borrow().is_bootstrapped() {
-            self.finish_option_chain_greeks_bootstrap(series_id, &manager_rc);
+            // Apply the chain's own subscribes before releasing the bootstrap owner, so a sample
+            // inside the active window keeps its feed without a physical unsubscribe.
+            self.drain_deferred_commands();
+            self.stop_option_chain_greeks_bootstrap(series_id);
         }
     }
 
@@ -2001,14 +2013,15 @@ impl DataEngine {
 
         resp.trim_to_bounds();
 
+        let Some(resp) = self.handle_request_pipeline_response(resp) else {
+            return;
+        };
+
+        // Catalog legs inherit the child's params, so route only the assembled segment
         if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
             self.handle_continuous_future_child_response(parent_id, &resp);
             return;
         }
-
-        let Some(resp) = self.handle_request_pipeline_response(resp) else {
-            return;
-        };
 
         if let Some(parent_id) = self
             .time_range_pipeline_parent_request_id
@@ -3635,31 +3648,24 @@ impl DataEngine {
             }
         }
 
-        // After stopping a composite, check if the source aggregator is now orphaned
-        if bar_type.is_composite() {
-            let source_type = bar_type.composite();
-            let source_topic = switchboard::get_bars_topic(source_type);
-            if msgbus::exact_subscriber_count_bars(source_topic) == 0
-                && self
-                    .bar_aggregators
-                    .contains_key(&bar_aggregator_key(source_type, None))
+        // After stopping a composite, release its source through `unsubscribe_bars`, which frees
+        // the client feed recorded in the source's retained command.
+        if command.bar_type.is_composite() {
+            let source_type = command.bar_type.composite();
+
+            if self
+                .bar_aggregators
+                .contains_key(&bar_aggregator_key(source_type, None))
             {
-                match self.stop_bar_aggregator(source_type, None) {
-                    // Release the underlying client subscription too, otherwise the
-                    // venue stream keeps flowing with no consumer
-                    Ok(()) => self.unsubscribe_bar_aggregator(&UnsubscribeBars::new(
-                        source_type,
-                        command.client_id,
-                        command.venue,
-                        UUID4::new(),
-                        command.ts_init,
-                        Some(command.command_id),
-                        command.params.clone(),
-                    )),
-                    Err(e) => {
-                        log::error!("Error stopping source bar aggregator for {source_type}: {e}");
-                    }
-                }
+                self.unsubscribe_bars(&UnsubscribeBars::new(
+                    source_type,
+                    command.client_id,
+                    command.venue,
+                    UUID4::new(),
+                    command.ts_init,
+                    Some(command.command_id),
+                    command.params.clone(),
+                ));
             }
         }
     }
@@ -3987,28 +3993,6 @@ impl DataEngine {
             )))
         {
             log::error!("Failed to subscribe option-chain bootstrap Greeks for {series_id}: {e}");
-        }
-    }
-
-    fn finish_option_chain_greeks_bootstrap(
-        &mut self,
-        series_id: OptionSeriesId,
-        manager: &Rc<RefCell<OptionChainManager>>,
-    ) {
-        let sample_is_active = self
-            .option_chain_greeks_bootstraps
-            .get(&series_id)
-            .is_some_and(|bootstrap| {
-                manager
-                    .borrow()
-                    .is_instrument_active(&bootstrap.instrument_id)
-            });
-        let Some(bootstrap) = self.remove_option_chain_greeks_bootstrap(series_id) else {
-            return;
-        };
-
-        if !sample_is_active {
-            self.release_option_chain_greeks_bootstrap(&bootstrap);
         }
     }
 
