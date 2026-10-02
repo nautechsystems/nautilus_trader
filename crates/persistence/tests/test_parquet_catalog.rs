@@ -8640,3 +8640,89 @@ fn test_list_backtest_runs_decodes_encoded_run_name(#[values(false, true)] remot
         vec!["run-é".to_string()]
     );
 }
+
+// Identifier ranges overlap, so the disjointness check must be per directory
+#[rstest]
+fn test_reset_data_file_names_without_identifier_renames_nothing_on_refusal(
+    #[values(false, true)] remote: bool,
+) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+    let valid = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 2);
+    catalog
+        .write_to_parquet(
+            &valid,
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(3_000)),
+            None,
+        )
+        .unwrap();
+
+    for start in [1_000, 1_500] {
+        let overlapping = create_quote_ticks_for_instrument("EUR/USD.SIM", start, 2);
+        catalog
+            .write_to_parquet(&overlapping, None, None, Some(true))
+            .unwrap();
+    }
+
+    let quotes_directory = catalog.make_path("quotes", None).unwrap();
+    let overlapping_directory =
+        ObjectPath::from(catalog.make_path("quotes", Some("EUR/USD.SIM")).unwrap());
+    let mut before = catalog.list_parquet_files(&quotes_directory).unwrap();
+    before.sort();
+
+    let error = catalog
+        .reset_data_file_names(&NautilusDataType::QuoteTick.into(), None)
+        .unwrap_err()
+        .to_string();
+
+    let mut after = catalog.list_parquet_files(&quotes_directory).unwrap();
+    after.sort();
+
+    assert!(
+        error.starts_with(&format!(
+            "Cannot reset file names in directory '{overlapping_directory}': content intervals \
+             are not disjoint"
+        )),
+        "{error}",
+    );
+    assert_eq!(before.len(), 3);
+    assert_eq!(after, before);
+}
+
+#[rstest]
+fn test_reset_data_file_names_without_identifier_keeps_identifier_directories(
+    #[values(false, true)] remote: bool,
+    #[values(1, 2)] identifier_count: usize,
+) {
+    let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
+    let identifiers = &["AUD/USD.SIM", "EUR/USD.SIM"][..identifier_count];
+    let mut expected = Vec::new();
+
+    for (index, identifier) in identifiers.iter().enumerate() {
+        let start = 1_000 + index as u64 * 500;
+        let quotes = create_quote_ticks_for_instrument(identifier, start, 2);
+        catalog
+            .write_to_parquet(
+                &quotes,
+                Some(UnixNanos::from(500)),
+                Some(UnixNanos::from(3_000)),
+                None,
+            )
+            .unwrap();
+
+        let identifier_directory = catalog.make_path("quotes", Some(identifier)).unwrap();
+        let filename =
+            timestamps_to_filename(UnixNanos::from(start), UnixNanos::from(start + 1_000));
+        expected.push(ObjectPath::from(format!("{identifier_directory}/{filename}")).to_string());
+    }
+
+    catalog
+        .reset_data_file_names(&NautilusDataType::QuoteTick.into(), None)
+        .unwrap();
+
+    let quotes_directory = catalog.make_path("quotes", None).unwrap();
+    let mut keys = catalog.list_parquet_files(&quotes_directory).unwrap();
+    keys.sort();
+
+    assert_eq!(keys, expected);
+}

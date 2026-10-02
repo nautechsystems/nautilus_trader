@@ -19,6 +19,7 @@ use std::{
 use arrow::record_batch::RecordBatch;
 use nautilus_common::live::block_on_nautilus_with;
 use nautilus_model::data::{CustomData, Data};
+use object_store::path::PathPart;
 
 use super::{
     feather::{
@@ -35,7 +36,8 @@ use super::{
 use crate::{
     catalog::types::CatalogDataType,
     common::{
-        conversion::FeatherConversionSummary, paths::local_writer_directory,
+        conversion::FeatherConversionSummary,
+        paths::{local_writer_directory, normalize_path_separators},
         storage::StorageBackend,
     },
 };
@@ -605,9 +607,25 @@ where
             anyhow::bail!("{} does not require a run session", B::NAME);
         }
 
-        super::promotion::PromotionSession::from_uri(uri).ok_or_else(|| {
+        let session = super::promotion::PromotionSession::from_uri(uri).ok_or_else(|| {
             anyhow::anyhow!("{uri_name} must end with /{{backtest|sandbox|live}}/{{run_id}}")
-        })
+        })?;
+
+        // Staged files keep the raw run directory name, but URL parsing and run listings change it
+        let normalized_uri = normalize_path_separators(uri);
+        let run_directory = normalized_uri
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        anyhow::ensure!(
+            run_directory == session.instance_id
+                && PathPart::from(session.instance_id.as_str()).as_ref() == session.instance_id,
+            "{uri_name} '{uri}' has a run ID that object-store paths percent-encode; use a run ID \
+             without spaces, non-ASCII, or reserved characters",
+        );
+
+        Ok(session)
     }
 }
 

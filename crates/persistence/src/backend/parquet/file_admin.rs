@@ -15,6 +15,8 @@
 
 //! File-level admin operations: existence checks, deletion, name resets, leaf-directory walk.
 
+use std::collections::BTreeMap;
+
 use ahash::AHashSet;
 use futures::StreamExt;
 use nautilus_core::UnixNanos;
@@ -202,7 +204,9 @@ impl ParquetDataCatalog {
     ///
     /// This internal method scans all Parquet files in a directory, reads their metadata to
     /// determine the actual timestamp range of their content, and renames the files accordingly.
-    /// This ensures that filenames accurately reflect the data they contain.
+    /// This ensures that filenames accurately reflect the data they contain. The listing includes
+    /// subdirectories, so each file keeps its own directory and is validated against the files
+    /// that share it.
     ///
     /// # Parameters
     ///
@@ -225,7 +229,7 @@ impl ParquetDataCatalog {
     /// Returns an error if:
     /// - Directory listing fails.
     /// - Metadata reading fails for any file.
-    /// - The content intervals are not disjoint.
+    /// - The content intervals within a file's directory are not disjoint.
     /// - A new name matches the current name of another file.
     /// - File move operations fail.
     /// - Object store operations fail.
@@ -238,7 +242,7 @@ impl ParquetDataCatalog {
     ///   delete, so a failure can leave a file under both names.
     fn reset_file_names(&self, directory: &str) -> anyhow::Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
-        let mut intervals = Vec::with_capacity(parquet_files.len());
+        let mut intervals_by_directory = BTreeMap::<ObjectPath, Vec<(u64, u64)>>::new();
         let mut moves = Vec::with_capacity(parquet_files.len());
 
         for file in parquet_files {
@@ -255,18 +259,23 @@ impl ParquetDataCatalog {
 
             let new_filename =
                 timestamps_to_filename(UnixNanos::from(first_ts), UnixNanos::from(last_ts));
-            let new_file_path = make_object_store_path(directory, [&new_filename]);
-            let new_object_path = ObjectPath::from(new_file_path);
+            let file_directory = object_path.parent().unwrap_or_default();
+            let new_object_path = file_directory.clone().join(new_filename.as_str());
 
-            intervals.push((first_ts, last_ts));
+            intervals_by_directory
+                .entry(file_directory)
+                .or_default()
+                .push((first_ts, last_ts));
             moves.push((object_path, new_object_path));
         }
 
-        anyhow::ensure!(
-            are_intervals_disjoint(&intervals),
-            "Cannot reset file names in directory '{directory}': content intervals are not \
-             disjoint: {intervals:?}",
-        );
+        for (file_directory, intervals) in &intervals_by_directory {
+            anyhow::ensure!(
+                are_intervals_disjoint(intervals),
+                "Cannot reset file names in directory '{file_directory}': content intervals are \
+                 not disjoint: {intervals:?}",
+            );
+        }
 
         // Moves overwrite, so a new name held by another file would replace that file
         let current_paths = moves

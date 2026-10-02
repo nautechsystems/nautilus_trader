@@ -234,6 +234,7 @@ Released on TBD (UTC).
 - Fixed streaming Feather writers sealing a new file on every flush (#5115), thanks @faysou
 - Fixed Parquet promotion precision for an empty order book depth staged with populated ones (#5115), thanks @faysou
 - Fixed a Feather writer panic when a mixed-instrument batch crossed the rotation size limit (#5115), thanks @faysou
+- Fixed Parquet writers accepting run IDs that object-store paths encode, which skipped promotion
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions
@@ -245,6 +246,8 @@ Released on TBD (UTC).
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
 - Fixed catalog interval-filename validation renaming files before rejecting them (#4647)
 - Fixed catalog file-name resets overwriting files before validating the new names
+- Fixed catalog file-name resets without an identifier moving files out of identifier directories
+- Fixed catalog `write_to_json` encoding Windows path separators into object keys
 - Fixed local catalog run and data-type listings treating directory read errors as empty
 - Fixed HTTP client omitting configured `User-Agent` from proxy `CONNECT` requests for HTTPS URLs
 - Fixed HTTP client adaptive HTTP/2 flow control triggering Cloudflare resets of large response bodies

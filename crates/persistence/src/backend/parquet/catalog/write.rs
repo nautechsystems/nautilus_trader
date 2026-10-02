@@ -27,9 +27,9 @@ use super::{
     Instrument, InstrumentAny, NautilusDataType, NautilusRecordType, ObjectPath, ObjectStoreExt,
     Params, ParquetDataCatalog, PathBuf, RecordBatch, Serialize, UnixNanos,
     WRITE_SKIP_DISJOINT_CHECK, are_intervals_disjoint, instrument_any_type, instrument_path_prefix,
-    parquet_data_path_prefix, prepare_custom_data_batch, record_batch_without_identifier_column,
-    record_path_prefix, timestamps_to_filename, to_snake_case, write_batches_to_object_store,
-    write_catalog_batch,
+    local_to_object_store_path, parquet_data_path_prefix, prepare_custom_data_batch,
+    record_batch_without_identifier_column, record_path_prefix, timestamps_to_filename,
+    to_snake_case, write_batches_to_object_store, write_catalog_batch,
 };
 use crate::{
     backend::parquet::{io::write_batches_to_object_store_create, paths::catalog_filename},
@@ -616,7 +616,7 @@ impl ParquetDataCatalog {
             log::info!("Writing metadata to {}", metadata_path.display());
 
             // Use object store for metadata file
-            let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());
+            let metadata_object_path = ObjectPath::from(local_to_object_store_path(&metadata_path));
             let metadata_json = serde_json::to_vec_pretty(&metadata)?;
             self.execute_async(|| async {
                 let _: object_store::PutResult = self
@@ -628,7 +628,7 @@ impl ParquetDataCatalog {
         }
 
         // Use object store for main JSON file
-        let json_object_path = ObjectPath::from(json_path.to_string_lossy().as_ref());
+        let json_object_path = ObjectPath::from(local_to_object_store_path(&json_path));
         let json_data = serde_json::to_vec_pretty(&serde_json::to_value(data)?)?;
         self.execute_async(|| async {
             let _: object_store::PutResult = self
@@ -716,7 +716,7 @@ mod tests {
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
-    use futures::{StreamExt, stream::BoxStream};
+    use futures::{StreamExt, TryStreamExt, stream::BoxStream};
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{
@@ -1213,5 +1213,53 @@ mod tests {
             "unexpected error: {error:#}"
         );
         assert_eq!(files.len(), 2);
+    }
+
+    #[rstest]
+    fn write_to_json_normalizes_windows_separators() {
+        let catalog = ParquetDataCatalog {
+            base_path: String::new(),
+            original_uri: "memory://".to_string(),
+            object_store: Arc::new(InMemory::new()),
+            session: DataBackendSession::new(5_000),
+            batch_size: 5_000,
+            compression: parquet::basic::Compression::SNAPPY,
+            max_row_group_size: 5_000,
+        };
+
+        let quote = QuoteTick::new(
+            InstrumentId::from("ETH/USDT.BINANCE"),
+            Price::from("1.0001"),
+            Price::from("1.0002"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+
+        catalog
+            .write_to_json(vec![quote], Some(r"data\quotes".into()), true)
+            .unwrap();
+
+        let mut keys = catalog
+            .execute_async(|| async {
+                Ok(catalog
+                    .object_store
+                    .list(None)
+                    .map_ok(|object| object.location.to_string())
+                    .try_collect::<Vec<_>>()
+                    .await?)
+            })
+            .unwrap();
+
+        keys.sort();
+
+        assert_eq!(
+            keys,
+            vec![
+                "data/quotes/1970-01-01T00-00-00-000000001Z_1970-01-01T00-00-00-000000001Z.json",
+                "data/quotes/1970-01-01T00-00-00-000000001Z_1970-01-01T00-00-00-000000001Z.metadata.json",
+            ]
+        );
     }
 }

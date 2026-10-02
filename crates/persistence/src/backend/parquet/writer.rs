@@ -866,6 +866,50 @@ mod tests {
     }
 
     #[rstest]
+    #[case::non_ascii("run-é")]
+    #[case::space("run 1")]
+    #[case::fragment("run#1")]
+    fn parquet_writer_rejects_run_id_that_paths_encode(#[case] run_id: &str) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join(run_id);
+        let config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+
+        let error = parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+            .unwrap_err();
+
+        let staging_uri = normalize_path_to_uri(&staging.to_string_lossy()).unwrap();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Parquet writer URI '{staging_uri}' has a run ID that object-store paths \
+                 percent-encode; use a run ID without spaces, non-ASCII, or reserved characters",
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::windows_separators(r"file:///C:\catalog\backtest\run-1", "file:///C:/catalog")]
+    #[case::windows_trailing_separator(r"file:///C:\catalog\backtest\run-1\", "file:///C:/catalog")]
+    #[case::trailing_separator("file:///tmp/catalog/backtest/run-1/", "file:///tmp/catalog")]
+    fn parquet_writer_session_accepts_separator_forms(#[case] uri: &str, #[case] root_uri: &str) {
+        let session = StagedFeatherWriter::<ParquetPromotionBackend>::required_session(
+            uri,
+            "Parquet writer URI",
+        )
+        .unwrap();
+
+        assert_eq!(
+            session,
+            PromotionSession {
+                root_uri: root_uri.to_string(),
+                environment: Environment::Backtest,
+                instance_id: "run-1".to_string(),
+            }
+        );
+    }
+
+    #[rstest]
     fn parquet_writer_requires_a_catalog() {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");

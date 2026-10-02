@@ -372,7 +372,8 @@ ranged deletes.
 Reset Parquet file names to match their content timestamps so filename-based filtering remains
 accurate. `reset_all_file_names()` processes the entire catalog; `reset_data_file_names(...)`
 targets a data path. Supply an instrument ID for data types partitioned by instrument. Without one,
-the operation recursively reads the type directory and moves the renamed files into that directory.
+the operation recursively reads the type directory and renames each file within its own instrument
+directory, checking every directory's intervals before renaming any file.
 
 ```python
 catalog.reset_all_file_names()

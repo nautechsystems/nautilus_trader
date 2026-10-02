@@ -30,7 +30,7 @@ use nautilus_core::time::nanos_since_unix_epoch;
 use object_store::{
     CopyOptions, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartUpload,
     ObjectMeta, ObjectStore, ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload,
-    PutResult, Result as ObjectStoreResult, path::Path as ObjectPath,
+    PutResult, RenameOptions, Result as ObjectStoreResult, path::Path as ObjectPath,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use url::Url;
@@ -513,14 +513,141 @@ impl ObjectStore for SortedListObjectStore {
     ) -> ObjectStoreResult<()> {
         self.inner.copy_opts(from, to, opts).await
     }
+
+    async fn rename_opts(
+        &self,
+        from: &ObjectPath,
+        to: &ObjectPath,
+        opts: RenameOptions,
+    ) -> ObjectStoreResult<()> {
+        self.inner.rename_opts(from, to, opts).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use object_store::memory::InMemory;
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
+
+    // Counts native renames so a forwarded rename is distinguishable from copy then delete
+    #[derive(Debug)]
+    struct RenameCountingStore {
+        inner: InMemory,
+        renames: AtomicUsize,
+    }
+
+    impl Display for RenameCountingStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("rename-counting")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for RenameCountingStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> ObjectStoreResult<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
+            self.inner.put_multipart_opts(location, opts).await
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> ObjectStoreResult<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> ObjectStoreResult<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            opts: CopyOptions,
+        ) -> ObjectStoreResult<()> {
+            self.inner.copy_opts(from, to, opts).await
+        }
+
+        async fn rename_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            opts: RenameOptions,
+        ) -> ObjectStoreResult<()> {
+            self.renames.fetch_add(1, Ordering::Relaxed);
+            self.inner.rename_opts(from, to, opts).await
+        }
+    }
+
+    #[rstest]
+    fn storage_backend_forwards_rename_to_inner_store() {
+        let inner = Arc::new(RenameCountingStore {
+            inner: InMemory::new(),
+            renames: AtomicUsize::new(0),
+        });
+
+        let storage = storage_backend(inner.clone(), String::new(), "memory://".to_string());
+        let from = ObjectPath::from("backtest/run-001/quotes.feather");
+        let to = ObjectPath::from("backtest/run-001/quotes-renamed.feather");
+
+        let (moved, source) = futures::executor::block_on(async {
+            storage
+                .object_store
+                .put(&from, b"quotes".to_vec().into())
+                .await
+                .unwrap();
+            storage.object_store.rename(&from, &to).await.unwrap();
+            let moved = storage
+                .object_store
+                .get(&to)
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap();
+            (moved, storage.object_store.head(&from).await)
+        });
+
+        assert_eq!(inner.renames.load(Ordering::Relaxed), 1);
+        assert_eq!(moved.as_ref(), b"quotes");
+        assert!(matches!(source, Err(ObjectStoreError::NotFound { .. })));
+    }
 
     #[rstest]
     fn storage_location_resolves_relative_file_uris() {
