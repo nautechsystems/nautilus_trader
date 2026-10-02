@@ -1373,6 +1373,9 @@ and output format.
 `AccountState` merges perp margin and spot balances. Perp margin and cross-margin
 usage come from `clearinghouseState`; non-zero spot tokens (USDC, USDH, HYPE,
 vault tokens, HIP-4 outcome side tokens, etc.) come from `spotClearinghouseState`.
+The adapter reads the account mode from the `userAbstraction` info request. Unified and
+portfolio margin accounts report every balance and hold in the spot state, so balances
+come from spot alone and spot USDC `hold` is the account-wide margin. In the other modes,
 USDC comes from the perp summary when it reflects non-zero collateral, margin, or
 withdrawable balance; when the perp summary is absent or zeroed, spot USDC is used
 instead.

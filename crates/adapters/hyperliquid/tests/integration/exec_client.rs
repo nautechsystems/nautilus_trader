@@ -128,6 +128,8 @@ struct TestServerState {
     /// Optional override for `spotClearinghouseState` info responses;
     /// defaults to `{"balances": []}` when unset.
     spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    /// Optional override for `userAbstraction` info responses; defaults to `"disabled"`.
+    user_abstraction_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `clearinghouseState` (perp) info responses.
     perp_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     perp_clearinghouse_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
@@ -168,6 +170,7 @@ impl Default for TestServerState {
             frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            user_abstraction_response: Arc::new(tokio::sync::Mutex::new(None)),
             perp_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             perp_clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_clearinghouse_user: Arc::new(tokio::sync::Mutex::new(None)),
@@ -468,6 +471,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             } else {
                 Json(json!({"balances": []})).into_response()
             }
+        }
+        "userAbstraction" => {
+            let custom = state.user_abstraction_response.lock().await.clone();
+            Json(custom.unwrap_or_else(|| json!("disabled"))).into_response()
         }
         _ => Json(json!({})).into_response(),
     }
@@ -2412,6 +2419,137 @@ async fn test_query_account_propagates_spot_endpoint_failure() {
         event.is_err(),
         "no AccountState must be emitted when spot state fails to parse; got {event:?}",
     );
+}
+
+async fn set_unified_account_state(state: &TestServerState) {
+    // Unified account: negative default-dex `totalRawUsd`, collateral in spot USDC
+    *state.user_abstraction_response.lock().await = Some(json!("unifiedAccount"));
+    *state.perp_clearinghouse_response.lock().await = Some(json!({
+        "marginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMarginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMaintenanceMarginUsed": "36.0",
+        "withdrawable": "30.5",
+        "assetPositions": []
+    }));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": [
+            {"coin": "USDC", "token": 0, "total": "512.25", "hold": "420.0", "entryNtl": "0.0"}
+        ]
+    }));
+}
+
+fn assert_unified_usdc(account_state: &AccountState) {
+    let usdc = account_state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "USDC")
+        .expect("USDC balance missing");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(512.25));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(92.25));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0)
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_account_unified_account_uses_spot_usdc() {
+    let state = TestServerState::default();
+    set_unified_account_state(&state).await;
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        AccountId::from("HYPERLIQUID-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for account event")
+        .expect("channel closed without event");
+
+    let ExecutionEvent::Account(account_state) = event else {
+        panic!("expected ExecutionEvent::Account, was {event:?}");
+    };
+    assert_unified_usdc(&account_state);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_account_propagates_user_abstraction_failure() {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!({"unexpected": "shape"}));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        AccountId::from("HYPERLIQUID-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+
+    assert!(
+        event.is_err(),
+        "no AccountState must be emitted when the account mode cannot be read; got {event:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_connect_unified_account_emits_spot_usdc() {
+    let state = TestServerState::default();
+    set_unified_account_state(&state).await;
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let account_state = loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for account event")
+            .expect("channel closed without event");
+        if let ExecutionEvent::Account(account_state) = event {
+            break account_state;
+        }
+    };
+    assert_unified_usdc(&account_state);
+
+    client.disconnect().await.unwrap();
 }
 
 const HYPERLIQUID_TEST_INSTRUMENT: &str = "BTC-USD-PERP.HYPERLIQUID";
