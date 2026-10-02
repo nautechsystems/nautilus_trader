@@ -602,8 +602,13 @@ flag.
 - Open orders: Fetches all currently active futures orders.
 - Historical orders: Fetches closed and filled orders when `open_only=False`.
 - Order events: Full order lifecycle history via `/api/history/v2/orders`
-  endpoint. The read follows the venue's continuation token and stops after 500 pages, leaving the
-  set incomplete when it does.
+  endpoint. The read follows the venue's continuation token and stops after 50 pages, leaving the
+  set incomplete when it does. Kraken meters `/history` with a pool of 100 tokens that replenishes
+  100 per 10 minutes, one per page, so the cap leaves half the pool for the targeted single-order
+  queries that follow. It bounds one read rather than metering a window, so a page the venue
+  refuses leaves the set incomplete instead of failing startup. A targeted query fails instead,
+  because its caller reads no completeness flag and apparent absence there can resolve a live
+  order as closed.
 - One report per order: several events can describe the same order, so the adapter keeps the latest
   by update time rather than the last one received. An order the venue still reports as open keeps
   the state from the open-order read, which a replayed event cannot displace.
@@ -612,8 +617,9 @@ flag.
 - Pricing safeguard: the fills endpoint returns a single page with no cursor, so an execution older
   than that page is absent. A terminal report from the history that executed without a covering
   fill is withheld from the mass status, because reconciliation would otherwise infer the fill at
-  the order's limit price. Withholding one marks the set incomplete, and a later cycle reports the
-  order once a fill can price it.
+  the order's limit price. Withholding one marks the set incomplete. The fills page only moves
+  forward, so the missing execution does not come back on a later read; the report stays withheld
+  and the incomplete flag is what reconciliation acts on.
 - Targeted queries: a single-order query reads one page of history rather than following the
   continuation token, so it stays within the reconciliation timeout and the shared request budget.
 

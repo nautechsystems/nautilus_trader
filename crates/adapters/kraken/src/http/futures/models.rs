@@ -359,6 +359,12 @@ pub struct FuturesOrderEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesOrderEventsResponse {
+    /// Body-level outcome, which the venue may report with a success status code.
+    #[serde(default)]
+    pub result: Option<KrakenApiResult>,
+    /// Body-level error message, which the venue may report with a success status code.
+    #[serde(default)]
+    pub error: Option<String>,
     #[serde(default)]
     pub server_time: Option<String>,
     #[serde(default)]

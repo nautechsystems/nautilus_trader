@@ -1171,6 +1171,17 @@ fn futures_fill_for_order(order_id: &str, price: &str) -> String {
     )
 }
 
+fn futures_fill_sized(order_id: &str, fill_id: &str, price: &str, size: &str) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"fill_id":"{fill_id}","symbol":"PI_XBTUSD","side":"buy","order_id":"{order_id}","fillTime":"{fill_time}","size":{size},"price":{price},"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}"#
+    )
+}
+
+fn futures_fills_response(fills: &[String]) -> String {
+    format!(r#"{{"result":"success","fills":[{}]}}"#, fills.join(","))
+}
+
 /// Paired control for the test below: a history execution the fill set covers must be kept.
 ///
 /// The fill prices it at 49000 while the history event carries a 27500.5 limit, so this also shows
@@ -1209,7 +1220,7 @@ async fn test_futures_mass_status_keeps_executed_history_order_with_a_fill() {
     assert!(snapshot.reports_complete());
 }
 
-/// A history order that executed without a covering fill must not reach mass status.
+/// A history order whose fills do not cover its filled quantity must not reach mass status.
 ///
 /// The futures fills endpoint returns one page with no cursor, so an execution older than that
 /// page is simply absent. Such a report carries no `avg_px`, and reconciliation would infer the
@@ -1217,7 +1228,7 @@ async fn test_futures_mass_status_keeps_executed_history_order_with_a_fill() {
 /// control above, which is identical but for the fill being present.
 #[rstest]
 #[tokio::test]
-async fn test_futures_mass_status_defers_executed_history_order_without_a_fill() {
+async fn test_futures_mass_status_withholds_an_execution_with_no_fill() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
     {
@@ -1244,11 +1255,207 @@ async fn test_futures_mass_status_defers_executed_history_order_without_a_fill()
         !snapshot
             .order_reports()
             .contains_key(&VenueOrderId::from("F-EXEC")),
-        "an execution with no covering fill must be deferred, not priced at the limit"
+        "an execution with no covering fill must be withheld, not priced at the limit"
     );
     assert!(
         !snapshot.reports_complete(),
-        "deferring a report leaves the set incomplete"
+        "withholding a report leaves the set incomplete"
+    );
+}
+
+/// Fills must cover the whole filled quantity, not merely exist.
+///
+/// An order's newer executions can be on the fills page while earlier ones fall outside it. If
+/// presence were enough, reconciliation would infer the uncovered remainder at the limit price.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_partially_covered_execution() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-PART",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    // Only 400 of the 1000 executed quantity is covered.
+    *state.fills_response.lock().await = Some(futures_fills_response(&[futures_fill_sized(
+        "F-PART", "f-part-1", "49000.0", "400",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-PART")),
+        "a partially covered execution must be withheld, not priced at the limit"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(
+        fills, 0,
+        "a withheld order's fills must go with it, or they materialize an order at the partial \
+         quantity"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "withholding a report leaves the set incomplete"
+    );
+}
+
+/// Paired control: coverage can be reached across several fills.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_execution_covered_across_two_fills() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-PART",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    *state.fills_response.lock().await = Some(futures_fills_response(&[
+        futures_fill_sized("F-PART", "f-part-1", "49000.0", "400"),
+        futures_fill_sized("F-PART", "f-part-2", "49100.0", "600"),
+    ]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-PART")),
+        "fills summing to the filled quantity must keep the report"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A partially filled order that was then cancelled is priced the same way as a fill.
+///
+/// This is why the predicate is the filled quantity rather than the `Filled` status.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_cancelled_partial_with_no_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-CANCEL",
+                "CANCEL",
+                "400.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    *state.fills_response.lock().await = Some(r#"{"result":"success","fills":[]}"#.to_string());
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-CANCEL")),
+        "a cancelled order with an uncovered partial must be withheld"
+    );
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open partially filled order must be kept even with no fill.
+///
+/// The venue still reports it, so dropping it would let reconciliation resolve it as missing.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_partial_with_no_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(
+        r#"{"result":"success","openOrders":[{"order_id":"F-OPEN","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":600.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"partiallyFilled","filledSize":400.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#
+            .to_string(),
+    );
+    *state.fills_response.lock().await = Some(r#"{"result":"success","fills":[]}"#.to_string());
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-OPEN")),
+        "an open partially filled order must be kept"
+    );
+}
+
+/// A refused history page must leave the set incomplete rather than fail startup.
+///
+/// Kraken meters `/history` with a token pool, so a large read can be refused partway through. A
+/// refusal can also arrive with a success status code and an error body, which would otherwise
+/// deserialize as an empty last page and end the read as complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_incomplete_when_a_history_page_is_refused() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        // First page carries a token, so a second page is requested.
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-FIRST",
+                "PLACE",
+                "0.0",
+                "2023-04-07T14:20:45.500Z",
+            )],
+            Some("tok"),
+        ));
+        pages.push_back(r#"{"result":"error","error":"requestLimitExceeded"}"#.to_string());
+    }
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("a refused page must not fail the read")
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FIRST")),
+        "the pages already read must be kept"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "a refused page must leave the set incomplete"
     );
 }
 
@@ -1357,7 +1564,7 @@ async fn test_futures_mass_status_incomplete_when_historical_fill_unresolved() {
 }
 
 /// Mirrors `MAX_ORDER_EVENT_PAGES` in the futures HTTP client, which is private to that crate.
-const FUTURES_ORDER_EVENT_PAGE_CAP: usize = 500;
+const FUTURES_ORDER_EVENT_PAGE_CAP: usize = 50;
 
 fn futures_order_event(
     order_id: &str,
@@ -1699,7 +1906,6 @@ async fn test_futures_open_order_survives_a_historical_event() {
     );
 }
 
-/// A bounded mass status must declare the cutoff it applied.
 /// Startup mass status must read closed orders, not open orders alone.
 ///
 /// An order that reached a terminal state while the node was down is only visible through

@@ -16,7 +16,7 @@
 //! Kraken Futures execution client implementation.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -981,22 +981,25 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             order_reports.push(report);
         }
 
-        let (fill_reports, fills_complete) = self
+        let (mut fill_reports, fills_complete) = self
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
 
         // Same safeguard as above, for the order-event history. The fills endpoint returns one
         // page with no cursor, so an execution older than that page is simply absent. A terminal
-        // report that executed without a covering fill carries no `avg_px`, and reconciliation
-        // would infer the fill at the order's limit price. Defer those until a later cycle can
-        // price them. The predicate is the filled quantity rather than `Filled`, because a
-        // partially filled order that was then cancelled or expired is priced the same way.
-        let priced: HashSet<VenueOrderId> = fill_reports
-            .iter()
-            .map(|report| report.venue_order_id)
-            .collect();
-        let mut deferred = 0usize;
+        // report whose fills do not cover its filled quantity carries no `avg_px` for the
+        // remainder, and reconciliation would infer that quantity at the order's limit price.
+        // Withhold those: the fills page only moves forward, so the covering fill does not come
+        // back, and the incomplete flag is what reconciliation acts on. The predicate is the
+        // filled quantity rather than `Filled`, because a partially filled order that was then
+        // cancelled or expired is priced the same way.
+        let mut covered: HashMap<VenueOrderId, Decimal> = HashMap::new();
+        for fill in &fill_reports {
+            *covered.entry(fill.venue_order_id).or_default() += fill.last_qty.as_decimal();
+        }
+
+        let mut withheld: HashSet<VenueOrderId> = HashSet::new();
         order_reports.retain(|report| {
             let terminal = matches!(
                 report.order_status,
@@ -1005,23 +1008,37 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                     | OrderStatus::Expired
                     | OrderStatus::Voided
             );
-            // Only terminal reports are deferred, so an open order is never withheld: the venue
+            // Only terminal reports are withheld, so an open order is never dropped: the venue
             // still reports it, and dropping it would let reconciliation resolve it as missing.
+            let covers = covered
+                .get(&report.venue_order_id)
+                .is_some_and(|qty| *qty >= report.filled_qty.as_decimal());
             let keep = !from_venue_read.contains(&report.venue_order_id)
                 || !terminal
                 || report.filled_qty.is_zero()
-                || priced.contains(&report.venue_order_id);
+                || covers;
             if !keep {
-                deferred += 1;
+                withheld.insert(report.venue_order_id);
                 log::debug!(
-                    "Deferring executed order {} from mass status: no fill covers it",
+                    "Withholding executed order {} from mass status: fills cover {} of {}",
                     report.venue_order_id,
+                    covered
+                        .get(&report.venue_order_id)
+                        .copied()
+                        .unwrap_or(Decimal::ZERO),
+                    report.filled_qty,
                 );
             }
             keep
         });
 
-        let orders_complete = orders_complete && deferred == 0;
+        // A withheld order's own fills must go with it. Unpaired, they do not sit idle: snapshot
+        // reconciliation materializes an external market order at the partial quantity bound to
+        // the real venue order ID, and the live path drops them instead, since Kraken futures
+        // fill reports carry no venue position ID.
+        fill_reports.retain(|fill| !withheld.contains(&fill.venue_order_id));
+
+        let orders_complete = orders_complete && withheld.is_empty();
 
         let position_reports = self
             .http

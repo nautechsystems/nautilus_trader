@@ -91,11 +91,32 @@ pub const KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND: u32 = 5;
 
 const KRAKEN_GLOBAL_RATE_KEY: &str = "kraken:futures:global";
 
-/// Caps the order-event pagination so a startup read cannot run unbounded.
+/// Caps the order-event pagination at the share of Kraken's `/history` allowance one read may
+/// spend.
 ///
-/// The loop below follows the venue's continuation token. A venue that kept returning one would
-/// otherwise leave a startup reconciliation read spinning. Mirrors `MAX_REPORT_PAGES` on spot.
-const MAX_ORDER_EVENT_PAGES: usize = 500;
+/// The loop below follows the venue's continuation token, so a venue that kept returning one
+/// would otherwise leave a startup read spinning. Kraken meters `/history` with a pool of 100
+/// tokens that replenishes 100 per 10 minutes, and each order-events page costs one, so half the
+/// pool is left for the reads that follow: the targeted single-order queries and the post-submit
+/// order-event lookup, one page each. The cap is also what the reconciliation timeout permits. At
+/// the client's default of [`KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND`] these pages take
+/// about ten seconds, inside the default 30s `timeout_reconciliation`, where 500 pages would take
+/// about 100 seconds and could not finish.
+///
+/// This bounds one read rather than metering a window: two non-open-only reads inside ten minutes
+/// still spend the whole pool, which is why a refused page leaves the set incomplete instead of
+/// failing startup.
+const MAX_ORDER_EVENT_PAGES: usize = 50;
+
+/// What a page the venue refuses means for the read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RejectedPagePolicy {
+    /// Keep the pages read so far and report the set incomplete.
+    MarkIncomplete,
+    /// Fail the call, so a caller that discards the completeness flag cannot read a truncated set
+    /// as the venue's full answer.
+    Fail,
+}
 
 /// Maximum orders per batch cancel request for Kraken Futures API.
 const BATCH_CANCEL_LIMIT: usize = 50;
@@ -801,7 +822,20 @@ impl KrakenFuturesRawHttpClient {
 
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
-        self.send_get_with_query(endpoint, url, &query_string).await
+        let response: FuturesOrderEventsResponse = self
+            .send_get_with_query(endpoint, url, &query_string)
+            .await?;
+
+        // A refused history page can arrive with a success status code and an error body, which
+        // would otherwise deserialize as an empty last page and end the read as complete.
+        if response.result == Some(KrakenApiResult::Error) || response.error.is_some() {
+            let message = response
+                .error
+                .unwrap_or_else(|| "Order events request refused".to_string());
+            return Err(KrakenHttpError::ApiError(vec![message]));
+        }
+
+        Ok(response)
     }
 
     /// Requests the status of specific orders (requires authentication).
@@ -1735,9 +1769,17 @@ impl KrakenFuturesHttpClient {
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        self.request_order_status_reports_bounded(account_id, instrument_id, None, None, false, 1)
-            .await
-            .map(|(reports, _)| reports)
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            None,
+            None,
+            false,
+            1,
+            RejectedPagePolicy::Fail,
+        )
+        .await
+        .map(|(reports, _)| reports)
     }
 
     /// Requests order status reports, also reporting whether the set is complete.
@@ -1759,11 +1801,17 @@ impl KrakenFuturesHttpClient {
             end,
             open_only,
             MAX_ORDER_EVENT_PAGES,
+            RejectedPagePolicy::MarkIncomplete,
         )
         .await
     }
 
     /// Requests order status reports, reading at most `max_event_pages` of order-event history.
+    ///
+    /// `rejected` decides what a page the venue refuses means. A caller that reads the
+    /// completeness flag can keep the pages it has; one that discards it must fail, so a
+    /// truncated set is never mistaken for the venue's full answer.
+    #[allow(clippy::too_many_arguments)]
     async fn request_order_status_reports_bounded(
         &self,
         account_id: AccountId,
@@ -1772,6 +1820,7 @@ impl KrakenFuturesHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
         max_event_pages: usize,
+        rejected: RejectedPagePolicy,
     ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         let mut complete = true;
 
@@ -1909,11 +1958,22 @@ impl KrakenFuturesHttpClient {
                     break;
                 }
 
-                let response = self
+                let response = match self
                     .inner
                     .get_order_events(end_ms, start_ms, continuation_token.as_deref())
                     .await
-                    .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
+                {
+                    Ok(response) => response,
+                    Err(e) if rejected == RejectedPagePolicy::MarkIncomplete => {
+                        log::warn!(
+                            "Order events page refused: {e}; keeping the pages read so far and \
+                             marking the set incomplete"
+                        );
+                        complete = false;
+                        break;
+                    }
+                    Err(e) => anyhow::bail!("get_order_events failed: {e}"),
+                };
                 pages += 1;
 
                 for event_wrapper in &response.order_events {
