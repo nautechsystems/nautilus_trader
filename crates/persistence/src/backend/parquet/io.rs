@@ -52,53 +52,6 @@ pub(crate) struct ObjectStoreLocation {
     pub original_uri: String,
 }
 
-/// Writes a `RecordBatch` to a Parquet file using object store, with optional compression.
-///
-/// # Errors
-///
-/// Returns an error if writing to Parquet fails or any I/O operation fails.
-pub async fn write_batch_to_parquet(
-    batch: RecordBatch,
-    path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-) -> anyhow::Result<()> {
-    write_batches_to_parquet(
-        &[batch],
-        path,
-        storage_options,
-        compression,
-        max_row_group_size,
-    )
-    .await
-}
-
-/// Writes multiple `RecordBatch` items to a Parquet file using object store, with optional compression, row group sizing, and storage options.
-///
-/// # Errors
-///
-/// Returns an error if `batches` is empty, writing to Parquet fails, or any I/O operation fails.
-pub async fn write_batches_to_parquet(
-    batches: &[RecordBatch],
-    path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-) -> anyhow::Result<()> {
-    let (object_store, base_path, _) = create_object_store_from_path(path, storage_options)?;
-
-    write_batches_to_object_store(
-        batches,
-        object_store,
-        &object_path_under_base(&base_path, path),
-        compression,
-        max_row_group_size,
-        None,
-    )
-    .await
-}
-
 /// Reads only the Arrow schema (including key/value metadata) of a Parquet object.
 ///
 /// Avoids decoding any record batches; use when only schema metadata is needed.
@@ -342,44 +295,6 @@ fn deduplicate_record_batches(batches: &[RecordBatch]) -> anyhow::Result<Vec<Rec
     Ok(result)
 }
 
-/// Combines multiple Parquet files using object store with storage options
-///
-/// # Errors
-///
-/// Returns an error if file reading or writing fails.
-pub async fn combine_parquet_files(
-    file_paths: Vec<&str>,
-    new_file_path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-    deduplicate: Option<bool>,
-) -> anyhow::Result<()> {
-    if file_paths.len() <= 1 {
-        return Ok(());
-    }
-
-    // Create object store from the first file path (assuming all files are in the same store)
-    let (object_store, base_path, _) =
-        create_object_store_from_path(file_paths[0], storage_options)?;
-
-    // Convert string paths to ObjectPath
-    let object_paths: Vec<ObjectPath> = file_paths
-        .iter()
-        .map(|path| object_path_under_base(&base_path, path))
-        .collect();
-
-    combine_parquet_files_from_object_store(
-        object_store,
-        object_paths,
-        &object_path_under_base(&base_path, new_file_path),
-        compression,
-        max_row_group_size,
-        deduplicate,
-    )
-    .await
-}
-
 /// Combines multiple Parquet files from object store
 ///
 /// # Errors
@@ -603,22 +518,6 @@ fn field_metadata_keys(schema: &Schema) -> impl Iterator<Item = (String, String)
     })
 }
 
-/// Extracts the minimum and maximum i64 values for the specified `column_name` from a Parquet file's metadata using object store with storage options.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read, metadata parsing fails, or the column is missing or has no statistics.
-pub async fn min_max_from_parquet_metadata(
-    file_path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    column_name: &str,
-) -> anyhow::Result<(u64, u64)> {
-    let (object_store, base_path, _) = create_object_store_from_path(file_path, storage_options)?;
-    let object_path = object_path_under_base(&base_path, file_path);
-
-    min_max_from_parquet_metadata_object_store(object_store, &object_path, column_name).await
-}
-
 /// Extracts the minimum and maximum i64 values for the specified `column_name` from a Parquet file's metadata in object store.
 ///
 /// # Errors
@@ -771,14 +670,6 @@ pub(crate) fn create_object_store_location_from_path(
         base_path,
         original_uri,
     })
-}
-
-fn object_path_under_base(base_path: &str, path: &str) -> ObjectPath {
-    if base_path.is_empty() {
-        ObjectPath::from(path)
-    } else {
-        ObjectPath::from(format!("{base_path}/{path}"))
-    }
 }
 
 pub(crate) fn is_remote_uri_scheme(scheme: &str) -> bool {

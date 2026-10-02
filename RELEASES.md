@@ -75,6 +75,8 @@ Released on TBD (UTC).
 - Removed Rust `nautilus_persistence::backend::session` - query through `ParquetDataCatalog` (#5115), thanks @faysou
 - Removed `to-json` and `to-parquet` binaries - use `nautilus catalog migrate-parquet` (#5115), thanks @faysou
 - Removed `nautilus_persistence::parquet` - use `backend::parquet::io` (#5115), thanks @faysou
+- Removed Rust `write_batch_to_parquet` and `write_batches_to_parquet` - use `write_batches_to_object_store`
+- Removed Rust `combine_parquet_files` and `min_max_from_parquet_metadata` - use their `_object_store` variants
 - Removed `nautilus_persistence::backend::feather` - use `writer::feather` (#5115), thanks @faysou
 - Removed `nautilus_persistence::python::catalog` - use `python::backend::parquet::catalog` (#5115), thanks @faysou
 - Removed `nautilus_persistence::python::feather` - use `python::backend::feather` (#5115), thanks @faysou
