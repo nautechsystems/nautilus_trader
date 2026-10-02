@@ -18,6 +18,7 @@
 pub mod consts;
 pub mod contracts;
 pub mod enums;
+pub mod futures;
 pub mod shared_client;
 pub mod spreads;
 pub mod symbology;

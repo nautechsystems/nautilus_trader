@@ -19,13 +19,16 @@ use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 use ibapi::contracts::{Contract, Currency, Exchange, OptionRight, SecurityType, Symbol};
 use jiff::{Timestamp, tz::Offset};
-use nautilus_model::identifiers::{
-    InstrumentId, Symbol as NautilusSymbol, Venue, format_futures_symbol, futures_month,
-    futures_month_code, parse_futures_symbol as parse_futures_code, resolve_futures_year,
-};
+use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue};
 
 use crate::{
-    common::enums::{IbOptionRight, IbSecurityType},
+    common::{
+        enums::{IbOptionRight, IbSecurityType},
+        futures::{
+            format_futures_symbol, futures_month, futures_month_code,
+            parse_futures_symbol as parse_futures_code, resolve_futures_year,
+        },
+    },
     config::SymbologyMethod,
 };
 
