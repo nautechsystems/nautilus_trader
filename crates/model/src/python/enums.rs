@@ -347,6 +347,9 @@ impl InstrumentClass {
     }
 
     /// Returns whether this instrument class allows negative prices.
+    ///
+    /// Futures allow negative prices, which occur as real settlement prices (e.g. WTI crude
+    /// oil in April 2020) and in back-adjusted continuous price series.
     #[pyo3(name = "allows_negative_price")]
     #[must_use]
     pub const fn py_allows_negative_price(&self) -> bool {
