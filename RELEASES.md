@@ -235,6 +235,8 @@ Released on TBD (UTC).
 - Fixed Parquet promotion precision for an empty order book depth staged with populated ones (#5115), thanks @faysou
 - Fixed a Feather writer panic when a mixed-instrument batch crossed the rotation size limit (#5115), thanks @faysou
 - Fixed Parquet writers accepting run IDs that object-store paths encode, which skipped promotion
+- Fixed Feather staging writes hanging when the staging worker panics
+- Fixed Parquet promotion and `convert_stream_to_data` of Feather files with non-ASCII identifiers
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions
@@ -249,6 +251,9 @@ Released on TBD (UTC).
 - Fixed catalog file-name resets without an identifier moving files out of identifier directories
 - Fixed catalog `write_to_json` encoding Windows path separators into object keys
 - Fixed local catalog run and data-type listings treating directory read errors as empty
+- Fixed catalog run and data-type listings returning percent-encoded names
+- Fixed catalog consolidation, deletes, name resets, intervals, and remote queries of non-ASCII identifiers
+- Fixed `ParquetDataCatalog` accepting a zero `batch_size` or `max_row_group_size`
 - Fixed HTTP client omitting configured `User-Agent` from proxy `CONNECT` requests for HTTPS URLs
 - Fixed HTTP client adaptive HTTP/2 flow control triggering Cloudflare resets of large response bodies
 - Fixed TLS client config panicking on first use when ring is also enabled
@@ -393,6 +398,7 @@ Released on TBD (UTC).
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit
+- Fixed Tardis options chain CSV conversion panicking on a missing catalog directory
 - Fixed Tardis Machine bar and option summary decoding with `serde_json/arbitrary_precision`
 - Fixed Tardis Machine prices, sizes, and funding rates losing digits through `f64` parsing
 
