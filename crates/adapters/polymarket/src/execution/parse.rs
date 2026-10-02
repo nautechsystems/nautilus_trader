@@ -209,7 +209,7 @@ pub(super) fn parse_validated_order_status_report(
 /// `None` for `"0"`, missing values, unparsable input, or values that
 /// overflow `u64` when scaled to nanoseconds (e.g. accidentally-passed
 /// millisecond timestamps that exceed Unix-seconds bounds).
-pub(super) fn parse_expiration_nanos(value: &str) -> Option<u64> {
+pub(crate) fn parse_expiration_nanos(value: &str) -> Option<u64> {
     let secs: u64 = value.parse().ok()?;
     if secs == 0 {
         return None;

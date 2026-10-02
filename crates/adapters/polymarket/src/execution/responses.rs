@@ -342,10 +342,12 @@ pub(super) fn confirm_modify_replacement(
         context.identity.order_side,
     );
     let buffered = fill_tracker.take_pending_reports(&promotion.venue_order_id);
-    for report in buffered
-        .iter()
-        .filter(|report| report.order_status == OrderStatus::Canceled)
-    {
+    for report in buffered.iter().filter(|report| {
+        matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired
+        )
+    }) {
         state.record_terminal_cancel_report(report.clone());
     }
 

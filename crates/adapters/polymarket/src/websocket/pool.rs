@@ -235,6 +235,16 @@ impl PolymarketMarketConnectionPool {
         }
     }
 
+    pub(crate) async fn prepare(&self) -> anyhow::Result<()> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            self.disconnect().await?;
+        }
+
+        let _wire = self.inner.wire_mutex.lock().await;
+        self.inner.prepare_channel();
+        Ok(())
+    }
+
     /// Opens the primary shard and prepares the merged message stream.
     ///
     /// # Errors
@@ -253,15 +263,7 @@ impl PolymarketMarketConnectionPool {
             return Ok(());
         }
 
-        {
-            let _state = self.inner.state.lock();
-            self.inner.closed.store(false, Ordering::Release);
-        }
-
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
-        *self.inner.out_tx.lock() = Some(out_tx);
-        *self.inner.out_rx.lock() = Some(out_rx);
-
+        self.inner.prepare_channel();
         self.inner.connect_new_shard(true).await?;
         Ok(())
     }
@@ -496,6 +498,21 @@ impl PoolInner {
         for shard in state.shards.values() {
             shard.client.begin_shutdown();
         }
+    }
+
+    fn prepare_channel(&self) {
+        {
+            let _state = self.state.lock();
+            self.closed.store(false, Ordering::Release);
+        }
+
+        if self.out_tx.lock().is_some() {
+            return;
+        }
+
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        *self.out_tx.lock() = Some(out_tx);
+        *self.out_rx.lock() = Some(out_rx);
     }
 
     fn ensure_open(&self) -> anyhow::Result<()> {

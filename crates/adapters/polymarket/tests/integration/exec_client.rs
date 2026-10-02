@@ -7407,7 +7407,7 @@ async fn test_modify_order_rejected_while_cancel_is_in_flight() {
     assert_eq!(*state.cancel_delete_count.lock().await, 1);
     assert_eq!(*state.order_post_count.lock().await, 0);
     state.cancel_request_gate.release();
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-MODIFY-CANCEL-IN-FLIGHT"]).await;
 }
 
 #[rstest]
@@ -10412,6 +10412,30 @@ async fn assert_no_execution_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver
     }
 }
 
+async fn assert_untracked_cancels(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    expected: &[&str],
+) {
+    let mut seen = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while seen.len() < expected.len() && tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(250), rx.recv()).await {
+            Ok(Some(event)) => {
+                let canceled = assert_order_event(event, "Canceled");
+                seen.push(canceled.client_order_id().to_string());
+            }
+            Ok(None) => panic!("Execution event channel closed"),
+            Err(_) => break,
+        }
+    }
+
+    seen.sort();
+    let mut expected_ids: Vec<_> = expected.iter().map(|id| (*id).to_string()).collect();
+    expected_ids.sort();
+    assert_eq!(seen, expected_ids);
+    assert_no_execution_event(rx).await;
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_submit_gtd_order_denied_below_expiry_buffer_before_post() {
@@ -10981,17 +11005,17 @@ async fn test_submit_order_accepts_price_at_tick_relative_bound(#[case] price: &
 #[case::ioc(TimeInForce::Ioc, "FAK")]
 #[case::fok(TimeInForce::Fok, "FOK")]
 #[tokio::test]
-async fn test_submit_immediate_limit_buy_denies_fractional_cent_maker_amount(
+async fn test_submit_immediate_limit_buy_quantizes_fractional_cent_maker_amount(
     #[case] time_in_force: TimeInForce,
     #[case] order_type: &str,
 ) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 6);
     let order = make_limit_order_at_price_and_quantity(
         "O-IOC-FRACTIONAL-CENT",
         instrument_id,
@@ -11011,18 +11035,29 @@ async fn test_submit_immediate_limit_buy_denies_fractional_cent_maker_amount(
     client
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
     assert_eq!(
-        order_event_reason(&denied),
-        OrderDeniedReason::ValidationFailed {
-            detail: format!(
-                "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
-            ),
-        }
-        .to_string(),
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some("4800000"),
     );
-    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some("4994800"),
+    );
+    assert_eq!(
+        body.get("orderType").and_then(Value::as_str),
+        Some(order_type)
+    );
 }
 
 #[rstest]
@@ -12187,14 +12222,14 @@ async fn test_submit_order_list_serializes_amount_matrix(
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_list_denies_unrepresentable_immediate_buys_before_post() {
+async fn test_submit_order_list_quantizes_immediate_buys_before_post() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 6);
     let orders = [
         make_limit_order_at_price_and_quantity(
             "O-LIST-FAK-FRACTIONAL-CENT",
@@ -12230,21 +12265,30 @@ async fn test_submit_order_list_denies_unrepresentable_immediate_buys_before_pos
     client
         .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
         .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.batch_order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    for order_type in ["FAK", "FOK"] {
-        let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    let body = state.last_body.lock().await.clone().unwrap();
+    let entries = body.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+
+    for entry in entries {
+        let signed_order = entry.get("order").unwrap();
         assert_eq!(
-            order_event_reason(&denied),
-            OrderDeniedReason::ValidationFailed {
-                detail: format!(
-                    "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
-                ),
-            }
-            .to_string(),
+            signed_order.get("makerAmount").and_then(Value::as_str),
+            Some("4800000"),
+        );
+        assert_eq!(
+            signed_order.get("takerAmount").and_then(Value::as_str),
+            Some("4994800"),
         );
     }
-    assert_eq!(*state.order_post_count.lock().await, 0);
-    assert_eq!(*state.batch_order_post_count.lock().await, 0);
 }
 
 #[rstest]
@@ -14012,7 +14056,8 @@ async fn test_cancel_order_success_no_rejection_event() {
         Duration::from_secs(5),
     )
     .await;
-    assert_no_execution_event(&mut rx).await;
+
+    assert_untracked_cancels(&mut rx, &["O-CANCEL-OK"]).await;
 }
 
 #[rstest]
@@ -14306,10 +14351,9 @@ async fn test_batch_cancel_orders_with_partial_failure() {
 
     client.batch_cancel_orders(cmd).unwrap();
 
-    // Order 3 has CANCEL_ALREADY_DONE, so it should be suppressed.
-    // No CancelRejected events expected.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(rx.try_recv().is_err());
+    // Order 3 is already canceled, so it stays silent. The listed orders have no
+    // stream context, so HTTP success closes them.
+    assert_untracked_cancels(&mut rx, &["O-BATCH-1", "O-BATCH-2"]).await;
 }
 
 #[rstest]
@@ -14426,7 +14470,7 @@ async fn test_cancel_all_without_side_proceeds_during_order_cancel() {
     assert_no_execution_event(&mut rx).await;
 
     state.cancel_request_gate.release();
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-OVERLAPPING-CANCEL-ALL"]).await;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -14655,10 +14699,10 @@ async fn test_cancel_all_with_side_skips_order_cancel_in_flight() {
         state.batch_cancel_bodies.lock().await.as_slice(),
         [json!([available_venue_order_id])]
     );
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-AVAILABLE-SIDE-CANCEL"]).await;
 
     state.cancel_request_gate.release();
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-PENDING-SIDE-CANCEL"]).await;
 }
 
 #[rstest]
@@ -14809,7 +14853,7 @@ async fn test_cancel_all_with_side_uses_cached_matching_orders(
     );
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
     assert_eq!(*state.market_cancel_delete_count.lock().await, 0);
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-MATCHING-SIDE"]).await;
 }
 
 #[rstest]
@@ -14865,7 +14909,7 @@ async fn test_session_cancel_all_without_side_uses_only_cached_ids() {
     );
     assert_eq!(*state.market_cancel_delete_count.lock().await, 0);
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-SESSION-CACHED"]).await;
 }
 
 #[rstest]
@@ -15124,6 +15168,59 @@ async fn test_cancel_all_market_definitive_failure_emits_rejection() {
 }
 
 #[rstest]
+#[case::listed(true)]
+#[case::omitted(false)]
+#[tokio::test]
+async fn test_cancel_all_terminal_event_follows_listed_untracked_order(#[case] listed: bool) {
+    let venue_order_id = "0xvenue-external-cancel";
+    let state = TestServerState::default();
+
+    let canceled_ids: Vec<&str> = if listed { vec![venue_order_id] } else { vec![] };
+    *state.market_cancel_response.lock().await = Some(json!({
+        "canceled": canceled_ids,
+        "not_canceled": {}
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let mut order = make_limit_order(
+        "O-EXTERNAL-CANCEL",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+
+    client
+        .cancel_all_orders(make_cancel_all_cmd(
+            StrategyId::from("S-001"),
+            instrument_id,
+            None,
+        ))
+        .unwrap();
+
+    if listed {
+        let canceled = assert_order_event(recv_execution_event(&mut rx).await, "Canceled");
+        assert_eq!(
+            canceled.client_order_id(),
+            ClientOrderId::from("O-EXTERNAL-CANCEL")
+        );
+    }
+
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_cancel_all_side_failure_rejects_only_cached_side_targets() {
     let state = TestServerState::default();
@@ -15232,7 +15329,7 @@ async fn test_cancel_all_with_side_uses_cached_order_without_instrument() {
     );
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
     assert_eq!(*state.market_cancel_delete_count.lock().await, 0);
-    assert_no_execution_event(&mut rx).await;
+    assert_untracked_cancels(&mut rx, &["O-MISSING-INSTRUMENT"]).await;
 }
 
 #[rstest]

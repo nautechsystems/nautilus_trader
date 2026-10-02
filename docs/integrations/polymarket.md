@@ -719,12 +719,22 @@ resting `LIMIT` orders only.
 
 #### GTD expiry
 
-Set `GTD` expiry at least three minutes after submission. The adapter denies shorter expiries before
-signing, using whole Unix seconds, and accepts the exact three-minute boundary. The venue reports expiry
-as an `OrderCanceled` event, not `OrderExpired`. Polymarket applies a one-minute security threshold
-before the supplied expiration timestamp, so the minimum effective lifetime is approximately two
-minutes. To request an effective lifetime of N seconds, supply `now + 60 + N`, subject to the
-three-minute minimum. See [GTD orders](https://docs.polymarket.com/trading/place-orders#limit-orders).
+Set `GTD` expiry at least three minutes after submission. The adapter denies a shorter expiry
+before signing. It uses whole Unix seconds and accepts the exact three-minute boundary.
+
+Polymarket reports both a user cancel and a GTD expiry as `CANCELED`. It expires the order one
+minute before the supplied expiration, so the minimum effective lifetime is about two minutes. To
+request an effective lifetime of N seconds, supply `now + 60 + N`, still subject to the
+three-minute minimum.
+
+On the user channel, a `CANCELED` event at or after that one-minute mark becomes `OrderExpired`.
+An earlier cancel stays `OrderCanceled`. A REST-recovered cancel also stays `OrderCanceled`. The
+open-order payload has an expiration, but no cancel time.
+
+Leave `manage_gtd_expiry` false. The strategy timer fires at the stated expiration and submits a
+cancel. It does not emit `OrderExpired`. A user-channel expiry already clears that timer. If the
+expiry message was missed, the late cancel does not close the order. Reconciliation still has to.
+See [GTD orders](https://docs.polymarket.com/trading/place-orders#limit-orders).
 
 ### Minimum order size
 
@@ -1014,11 +1024,16 @@ not for that market-order type.
 
 ##### Base-sized limit BUY orders
 
-`quantity` is the nominal share quantity at the limit price. With `FAK` or `FOK`, Polymarket spends the
-resulting pUSD maker budget, so price improvement can return more shares; the adapter updates the order
-quantity to the actual fill. The adapter denies the order before signing when `quantity * price` is not
-an exact cent amount. It does not round and recompute the nominal share quantity because that would
-change the signed price/amount ratio.
+`quantity` is the nominal share quantity at the limit price. With `FAK` or `FOK`, Polymarket spends
+a pUSD maker budget, so price improvement can return more shares.
+
+When `quantity * price` is not an exact cent amount, the adapter truncates that budget to two
+decimal places. It signs the share quantity derived from that budget, rounded up to the market
+amount precision, so the signed ratio does not exceed the limit price. It updates the local order
+to that signed quantity before posting. This applies to single and batch submissions.
+
+A later fill can still raise the quantity to the actual matched size. A budget that truncates to
+zero is denied before signing.
 
 ##### Collateral-sized limit BUY orders
 
@@ -1043,9 +1058,9 @@ Resting orders allow more flexible precision based on market tick size.
 
 #### Tick validation
 
-- The adapter validates tick size before signing. It also denies base-sized limit `FAK` or `FOK`
-  BUYs whose maker amount has more than two decimal places. This applies to single and batch
-  submissions.
+- The adapter validates tick size before signing. A base-sized limit `FAK` or `FOK` BUY whose cent
+  budget truncates to zero is denied before signing. See
+  [Base-sized limit BUY orders](#base-sized-limit-buy-orders).
 - The adapter requires instrument tick sizes to be exactly representable at four decimals. It
   rejects instrument definitions and tick-size events that do not meet this requirement; a rejected
   event leaves the current tick active.
@@ -1685,8 +1700,13 @@ venue reports.
 The data adapter opens `market` subscriptions dynamically as instruments are requested. It spreads
 those subscriptions across a pool of market WebSocket connections so that no single connection
 carries more than `ws_max_subscriptions` assets. The pool grows lazily (a universe below the cap
-stays on one connection) and closes a secondary connection once it owns no assets. Each connection
-replays only its own assets on reconnect. A shard reconnect also drops that shard's local books and
+stays on one connection) and closes a secondary connection once it owns no assets.
+
+The pool does not open a connection when the data client connects, unless `subscribe_new_markets`
+is set. That setting opens the primary connection for new-market discovery. Otherwise the first
+asset subscription opens a connection.
+
+Each connection replays only its own assets on reconnect. A shard reconnect also drops that shard's local books and
 gates its book deltas (and book-derived `best_bid_ask` tops) until fresh snapshots arrive; a
 one-shot monitor starts recovery if a snapshot is still missing after `book_snapshot_timeout_secs`.
 

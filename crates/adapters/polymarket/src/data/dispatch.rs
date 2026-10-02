@@ -6801,6 +6801,7 @@ mod tests {
         client.config.resolve_poll_grace_secs = 0;
         client.config.resolve_poll_max_wait_secs = 300;
         client.connect().await.unwrap();
+        assert_eq!(client.ws_client.connection_count(), 0);
         let instrument_ids = [
             fixture_yes_instrument_id(),
             fixture_instrument_id(TEST_CONDITION_ID, TEST_TOKEN_ID_NO),

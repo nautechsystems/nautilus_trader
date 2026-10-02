@@ -636,14 +636,19 @@ fn dispatch_order_update(
     // Track cancel reports so we can re-emit them after late-arriving fills.
     // Saved regardless of acceptance state so that cancels arriving during
     // the HTTP round-trip are available once the order is later accepted.
-    if report.order_status == OrderStatus::Canceled {
+    if matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired
+    ) {
         state
             .terminal_cancel_reports
             .insert(venue_order_id, report.clone());
     }
 
-    let suppress_cancel = report.order_status == OrderStatus::Canceled
-        && state.suppress_modify_cancel(venue_order_id);
+    let suppress_cancel = matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired
+    ) && state.suppress_modify_cancel(venue_order_id);
 
     // Tracked own orders route through order events; externally-managed orders
     // (no captured context) buffer until accepted or fall back to reports.
@@ -660,7 +665,10 @@ fn dispatch_order_update(
     }
 
     for buffered in promoted_reports {
-        if buffered.order_status == OrderStatus::Canceled {
+        if matches!(
+            buffered.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired
+        ) {
             state
                 .terminal_cancel_reports
                 .insert(venue_order_id, buffered.clone());
@@ -1398,7 +1406,10 @@ fn emit_promoted_ws_reports(
     let context = ctx.order_contexts.get(&venue_order_id);
 
     for report in buffered_reports {
-        if report.order_status == OrderStatus::Canceled {
+        if matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired
+        ) {
             state.record_terminal_cancel_report(report.clone());
         }
 
@@ -1446,7 +1457,15 @@ fn reemit_terminal_cancel(
         log::debug!("Re-emitting cancel for {venue_order_id} after fill to restore terminal state");
         match ctx.order_contexts.get(&venue_order_id) {
             Some(context) => {
-                emit_order_canceled(&context, venue_order_id, cancel_ts, ctx);
+                if state
+                    .terminal_cancel_reports
+                    .get(&venue_order_id)
+                    .is_some_and(|report| report.order_status == OrderStatus::Expired)
+                {
+                    emit_order_expired(&context, venue_order_id, cancel_ts, ctx);
+                } else {
+                    emit_order_canceled(&context, venue_order_id, cancel_ts, ctx);
+                }
             }
             None => {
                 if let Some(cancel_report) = state.terminal_cancel_reports.get(&venue_order_id) {
@@ -1467,8 +1486,12 @@ fn build_ws_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
-    let order_status =
-        crate::execution::parse::resolve_order_status(status.status, order.event_type);
+    let order_status = gtd_expiry_status(
+        crate::execution::parse::resolve_order_status(status.status, order.event_type),
+        order_type,
+        order.expiration.as_deref(),
+        ts_event,
+    );
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order_type);
     let size_precision = instrument.size_precision();
@@ -1513,12 +1536,46 @@ fn build_ws_order_status_report(
         None,
     );
     report.price = Some(price);
+    report.expire_time = order
+        .expiration
+        .as_deref()
+        .and_then(crate::execution::parse::parse_expiration_nanos)
+        .map(UnixNanos::from);
 
     if order_status == OrderStatus::Rejected {
         report.cancel_reason.clone_from(&status.reason);
     }
 
     Ok(report)
+}
+
+/// Maps a venue `CANCELED` on a GTD order to `Expired` once the cancel is in the expiry window.
+///
+/// Polymarket reports both a user cancel and a GTD expiry as `CANCELED`, and expires a GTD
+/// order one minute before its stated expiration. A cancel earlier than that window stays
+/// `Canceled`.
+fn gtd_expiry_status(
+    status: OrderStatus,
+    order_type: PolymarketOrderType,
+    expiration: Option<&str>,
+    ts_event: UnixNanos,
+) -> OrderStatus {
+    const SECURITY_THRESHOLD_NS: u64 = 60_000_000_000;
+
+    if status != OrderStatus::Canceled || order_type != PolymarketOrderType::GTD {
+        return status;
+    }
+
+    let Some(expire_ns) = expiration.and_then(crate::execution::parse::parse_expiration_nanos)
+    else {
+        return status;
+    };
+
+    if ts_event.as_u64().saturating_add(SECURITY_THRESHOLD_NS) >= expire_ns {
+        OrderStatus::Expired
+    } else {
+        status
+    }
 }
 
 /// Converts a venue-reported `original_size` on a user-channel order message into shares.
@@ -2157,6 +2214,139 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
+    }
+
+    #[rstest]
+    #[case::before_window(939_000_000_000, OrderStatus::Canceled)]
+    #[case::window_start(940_000_000_000, OrderStatus::Expired)]
+    #[case::security_threshold(999_000_000_000, OrderStatus::Expired)]
+    #[case::at_expiry(1_000_000_000_000, OrderStatus::Expired)]
+    #[case::after_expiry(1_000_000_001_000, OrderStatus::Expired)]
+    fn test_build_ws_order_status_report_gtd_expiry_maps_to_expired(
+        #[case] ts_event: u64,
+        #[case] expected: OrderStatus,
+    ) {
+        let mut order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        order.order_type = Some(PolymarketOrderType::GTD);
+        order.expiration = Some("1000".to_string());
+        let instrument = test_instrument();
+
+        let report = build_ws_order_status_report(
+            &order,
+            order.status.as_ref().unwrap(),
+            order.order_type.unwrap(),
+            &instrument,
+            AccountId::from("POLY-001"),
+            UnixNanos::from(ts_event),
+            UnixNanos::from(2_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected);
+        assert_eq!(
+            report.expire_time,
+            Some(UnixNanos::from(1_000_000_000_000u64))
+        );
+    }
+
+    #[rstest]
+    #[case::gtc_in_window(PolymarketOrderType::GTC, Some("1000"))]
+    #[case::gtd_zero_expiration(PolymarketOrderType::GTD, Some("0"))]
+    #[case::gtd_missing_expiration(PolymarketOrderType::GTD, None)]
+    fn test_build_ws_order_status_report_non_expiry_cancel_stays_canceled(
+        #[case] order_type: PolymarketOrderType,
+        #[case] expiration: Option<&str>,
+    ) {
+        let mut order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        order.order_type = Some(order_type);
+        order.expiration = expiration.map(str::to_string);
+        let instrument = test_instrument();
+
+        let report = build_ws_order_status_report(
+            &order,
+            order.status.as_ref().unwrap(),
+            order.order_type.unwrap(),
+            &instrument,
+            AccountId::from("POLY-001"),
+            UnixNanos::from(999_000_000_000u64),
+            UnixNanos::from(2_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+    }
+
+    #[rstest]
+    fn test_reemit_terminal_expiry_emits_expired() {
+        let mut order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        order.order_type = Some(PolymarketOrderType::GTD);
+        order.expiration = Some("1000".to_string());
+        let instrument = test_instrument();
+        let report = build_ws_order_status_report(
+            &order,
+            order.status.as_ref().unwrap(),
+            PolymarketOrderType::GTD,
+            &instrument,
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1_000_000_000_000u64),
+            UnixNanos::from(2_000_000_000u64),
+        )
+        .unwrap();
+        let venue_order_id = report.venue_order_id;
+        let mut state = WsDispatchState::default();
+        state.record_terminal_cancel_report(report);
+
+        let token_instruments = AtomicMap::new();
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+
+        let context = OrderContext {
+            identity: OrderIdentity {
+                client_order_id: ClientOrderId::from("O-GTD-EXPIRE"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+            quantity: Quantity::from("10"),
+            price: Some(Price::from("0.50")),
+            trigger_price: None,
+            trigger_type: None,
+            time_in_force: TimeInForce::Gtd,
+            is_post_only: false,
+            is_reduce_only: false,
+            is_quote_quantity: false,
+        };
+
+        order_contexts.register_context(venue_order_id, context);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+
+        reemit_terminal_cancel(venue_order_id, &state, &ctx);
+
+        match receiver.try_recv().expect("expected expired event") {
+            ExecutionEvent::Order(OrderEventAny::Expired(event)) => {
+                assert_eq!(event.client_order_id, ClientOrderId::from("O-GTD-EXPIRE"));
+            }
+            other => panic!("expected OrderExpired, was {other:?}"),
+        }
     }
 
     // A market-order-type BUY reports the signed pUSD maker amount, so shares come from
@@ -4493,6 +4683,152 @@ mod tests {
             }
             other => panic!("Expected canceled event, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_gtd_expiry_reemitted_after_late_fill() {
+        let mut cancel_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
+        cancel_order.order_type = Some(PolymarketOrderType::GTD);
+        cancel_order.expiration = Some("1703875265".to_string());
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = instrument_for_trade(&trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(cancel_order.asset_id, instrument.clone());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            venue_order_id,
+            instrument.id(),
+            "O-GTD-EXPIRE",
+        );
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.mark_live();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+
+        let mut state = WsDispatchState::default();
+
+        dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
+
+        match receiver.try_recv().expect("expected expired event") {
+            ExecutionEvent::Order(OrderEventAny::Expired(event)) => {
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected OrderExpired, was {other:?}"),
+        }
+
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        match receiver.try_recv().expect("expected fill") {
+            ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
+                assert_eq!(event.venue_order_id, venue_order_id);
+            }
+            other => panic!("expected fill, was {other:?}"),
+        }
+
+        match receiver.try_recv().expect("expected re-emitted expiry") {
+            ExecutionEvent::Order(OrderEventAny::Expired(event)) => {
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected re-emitted OrderExpired, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_modified_old_leg_suppresses_gtd_expiry() {
+        let mut cancel_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
+        cancel_order.order_type = Some(PolymarketOrderType::GTD);
+        cancel_order.expiration = Some("1703875265".to_string());
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = instrument_for_trade(&trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(cancel_order.asset_id, instrument.clone());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let old_venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
+        fill_tracker.register(
+            old_venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let client_order_id = ClientOrderId::from("O-MODIFIED-GTD-LEG");
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            old_venue_order_id,
+            instrument.id(),
+            client_order_id.as_str(),
+        );
+        order_contexts.mark_accepted(old_venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.note_order_submitted(old_venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(client_order_id, old_venue_order_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            client_order_id,
+            VenueOrderId::from("0xreplacement"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            Price::from("0.5"),
+        ));
+        assert!(
+            state
+                .claim_modify_replacement(VenueOrderId::from("0xreplacement"))
+                .is_some()
+        );
+
+        dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
+
+        assert!(receiver.try_recv().is_err());
     }
 
     #[rstest]

@@ -41,13 +41,11 @@ use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 const TRADER_ID: &str = "TESTER-001";
 const NODE_NAME: &str = "POLYMARKET-DATA-TESTER-001";
-const EVENT_SLUG: &str = "fed-decision-in-september-762";
+const EVENT_SLUG: &str = "presidential-election-winner-2028";
 
-// Fed Decision in September (Yes/No)
-// https://polymarket.com/event/fed-decision-in-september-762
-// These IDs select both outcomes; the provider loads their metadata at startup
-const INSTRUMENT_ID_YES: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-57748138085022719760345772310040703848567377822400132842014290209986511882046.POLYMARKET";
-const INSTRUMENT_ID_NO: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-28239418772633645184924651434956000849078365566842629564562475378531350731731.POLYMARKET";
+// 2028 US presidential election winner (JD Vance, Yes).
+// https://polymarket.com/event/presidential-election-winner-2028
+const INSTRUMENT_ID_YES: &str = "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-16040015440196279900485035793550429453516625694844857319147506590755961451627.POLYMARKET";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,10 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from(TRADER_ID);
     let node_name = NODE_NAME.to_string();
 
-    let instrument_ids = vec![
-        InstrumentId::from(INSTRUMENT_ID_YES),
-        InstrumentId::from(INSTRUMENT_ID_NO),
-    ];
+    let instrument_ids = vec![InstrumentId::from(INSTRUMENT_ID_YES)];
 
     let polymarket_config = PolymarketDataClientConfig {
         instrument_config: Some(PolymarketInstrumentProviderConfig {

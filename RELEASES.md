@@ -142,10 +142,22 @@ Released on TBD (UTC).
 - Changed Polymarket stream `FAILED` trades to quarantine until a targeted REST result voids applied fills
 - Changed Polymarket fills on orders from before a reconnect or restart to wait for a terminal REST result
 - Changed Polymarket reconciliation reports to fail while trade settlement evidence is unresolved
+- Changed Polymarket user-channel GTD expiry to `OrderExpired`; earlier and REST cancels stay `OrderCanceled`
 - Changed Polymarket fee curves to exact decimal arithmetic, rejecting fractional fee exponents
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
 - Changed Tardis derived trade IDs to hash decimal values, changing IDs for trades without venue IDs
 - Changed Tardis `replay` feature to opt-in (no longer a default); it now enables `arrow`
+- Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
+- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
+- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
+- Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
+- Changed catalog Arrow files to name their type in `type_name` metadata, replacing instrument `class`
+- Changed instrument status and option Greeks Arrow conversions to reject batches mixing instruments
+- Changed Polymarket taker fees to read `info.fee_schedule` instead of instrument `taker_fee`
+- Changed sandbox execution clients to require an explicit `fee_model`, including a zero-fee model
+- Changed backtests to fail when a cash, betting, or wallet fill is rejected (#5077), thanks @abhijeetvichare76
+- Changed MACD, Keltner, KVO, and RVI defaults to exponential averages, matching 1.x (#5098), thanks @nicoloangileri
+- Changed VIDYA's CMO default to simple and Pressure's ATR to use the previous close (#5108), thanks @nicoloangileri
 - Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
 - Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
 - Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
@@ -158,17 +170,6 @@ Released on TBD (UTC).
 - Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
 - Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
 - Renamed Rust `extract_column_by_name_or_index` to `extract_column_by_name`, dropping the positional fallback
-- Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
-- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
-- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
-- Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
-- Changed catalog Arrow files to name their type in `type_name` metadata, replacing instrument `class`
-- Changed instrument status and option Greeks Arrow conversions to reject batches mixing instruments
-- Changed Polymarket taker fees to read `info.fee_schedule` instead of instrument `taker_fee`
-- Changed sandbox execution clients to require an explicit `fee_model`, including a zero-fee model
-- Changed backtests to fail when a cash, betting, or wallet fill is rejected (#5077), thanks @abhijeetvichare76
-- Changed MACD, Keltner, KVO, and RVI defaults to exponential averages, matching 1.x (#5098), thanks @nicoloangileri
-- Changed VIDYA's CMO default to simple and Pressure's ATR to use the previous close (#5108), thanks @nicoloangileri
 
 ### Security
 
@@ -395,6 +396,9 @@ Released on TBD (UTC).
 - Fixed Polymarket order quantity updates after a modify dropping fills from earlier venue orders
 - Fixed Polymarket restarts replacing fills of closed orders with synthetic fills that lack commission
 - Fixed Polymarket restarts failing for retained positions whose fills fall outside a bounded lookback
+- Fixed Polymarket denying immediate FOK and FAK BUY orders whose maker amount is not an exact cent
+- Fixed Polymarket opening an idle market WebSocket on connect, which the venue closed with code 1008
+- Fixed Polymarket HTTP cancels emitting `OrderCanceled` for tracked orders or orders the response omits
 - Fixed Sandbox dropping `OrderAccepted` for an immediately marketable limit IOC (#5102), thanks @graceyangfan
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
@@ -524,6 +528,7 @@ Released on TBD (UTC).
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented that Kraken spot report requests warn at the page cap without marking incomplete (#5091), thanks @zhaow-de
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
+- Documented Polymarket GTD expiry mapping, immediate BUY cent budgets, and idle market sockets
 - Documented OKX rejection reason format with venue error codes
 - Updated Databento and Tardis integration guides with new URL overrides
 - Updated OKX Rust exec tester example to use cross margin

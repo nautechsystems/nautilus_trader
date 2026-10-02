@@ -167,6 +167,40 @@ async fn exec_tester_drives_submit_to_accepted() {
 
 #[rstest]
 #[tokio::test]
+async fn tracked_gtd_expiry_within_window_becomes_expired() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+
+    let mut message = load_json("ws_user_order_cancellation.json");
+    message["event_type"] = json!("order");
+    message["order_type"] = json!("GTD");
+    message["expiration"] = json!("1703875265");
+    h.mock_state.send_user(message).await;
+
+    let expired = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Expired)
+        })
+        .await;
+
+    assert!(expired, "in-window GTD cancel did not become Expired");
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Expired,
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn tracked_cancel_emits_event_and_shrinks_own_book() {
     let mut h = harness::Harness::build().await;
     let order = harness::limit_order(h.instrument_id(), "O-1");

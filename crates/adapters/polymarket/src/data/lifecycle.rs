@@ -575,7 +575,12 @@ impl PolymarketDataClient {
             self.instruments.load().len(),
         );
 
-        self.ws_client.connect().await?;
+        // The venue closes a market socket that receives no subscription
+        if self.config.subscribe_new_markets {
+            self.ws_client.connect().await?;
+        } else {
+            self.ws_client.prepare().await?;
+        }
 
         let session_result = async {
             if self.config.subscribe_new_markets {
