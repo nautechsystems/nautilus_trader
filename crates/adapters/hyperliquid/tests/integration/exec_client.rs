@@ -7898,6 +7898,7 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
     assert_eq!(stop_report.order_status, OrderStatus::Filled);
     assert_eq!(stop_report.order_type, OrderType::StopMarket);
     assert_eq!(stop_report.trigger_price, Some(Price::from("49950.0")));
+    assert_eq!(stop_report.trigger_type, Some(TriggerType::Default));
     assert_eq!(stop_report.price, None);
 
     client.disconnect().await.unwrap();

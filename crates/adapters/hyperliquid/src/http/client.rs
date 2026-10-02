@@ -144,10 +144,52 @@ fn deduplicate_historical_order_reports(reports: Vec<OrderStatusReport>) -> Vec<
             best.price = best.price.or(other.price);
         }
         best.trigger_price = best.trigger_price.or(other.trigger_price);
+        best.trigger_type = best.trigger_type.or(other.trigger_type);
         best_by_venue_order_id.insert(best.venue_order_id, best);
     }
 
-    best_by_venue_order_id.into_values().collect()
+    best_by_venue_order_id
+        .into_values()
+        .map(untrigger_closed_report_without_trigger_price)
+        .collect()
+}
+
+// The venue zeroes `triggerPx` on the final row of a triggered order that has filled, so when no
+// earlier row survives the order's trigger cannot be rebuilt and a conditional order type would
+// fail initialization. A closed order no longer needs its trigger: report it as the limit order it
+// executed as when a limit price survived, otherwise as a market order, so its fills reconcile.
+fn untrigger_closed_report_without_trigger_price(
+    mut report: OrderStatusReport,
+) -> OrderStatusReport {
+    let is_trigger_type = matches!(
+        report.order_type,
+        OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched
+    );
+
+    if !is_trigger_type || report.trigger_price.is_some() || !report.order_status.is_closed() {
+        return report;
+    }
+
+    let order_type = match report.order_type {
+        OrderType::StopLimit | OrderType::LimitIfTouched if report.price.is_some() => {
+            OrderType::Limit
+        }
+        _ => {
+            // A market order has no price; a leftover limit price would be used to infer fills
+            report.price = None;
+            OrderType::Market
+        }
+    };
+    log::debug!(
+        "Historical {} order {} has no trigger price, reconciling as {order_type}",
+        report.order_type,
+        report.venue_order_id,
+    );
+    report.order_type = order_type;
+    report
 }
 
 fn historical_report_is_more_advanced(
@@ -3936,12 +3978,17 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::{Params, time::get_atomic_clock_realtime};
+    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         currencies::CURRENCY_MAP,
-        enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
-        identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
+        enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+        events::{OrderEventAny, OrderInitialized},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+        },
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+        orders::OrderAny,
+        reports::OrderStatusReport,
         types::{Currency, Price, Quantity},
     };
     use nautilus_testkit::http::assert_http_redirect_rejected;
@@ -3959,7 +4006,10 @@ mod tests {
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
         http::{
-            models::{Cloid, HyperliquidExchangeResponse, PerpAsset, PerpDex, PerpMeta},
+            models::{
+                Cloid, HyperliquidExchangeResponse, HyperliquidOrderStatusEntry, PerpAsset,
+                PerpDex, PerpMeta,
+            },
             query::InfoRequest,
         },
     };
@@ -4796,5 +4846,290 @@ mod tests {
 
         assert_eq!(client.get_asset_index("NEW-USD-PERP"), Some(42));
         assert_eq!(client.get_asset_index("OTHER-USD-PERP"), None);
+    }
+
+    fn btc_history_client() -> HyperliquidHttpClient {
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+
+        let base = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+        let usd = Currency::new("USD", 8, 0, "USD", CurrencyType::Crypto);
+        let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let ts = get_atomic_clock_realtime().get_time_ns();
+        let perp = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("BTC-USD-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("BTC"))
+                .base_currency(base)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(5)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
+        client.cache_instrument(&perp);
+        client
+    }
+
+    fn history_rows(rows: Value) -> Vec<HyperliquidOrderStatusEntry> {
+        serde_json::from_value(rows).unwrap()
+    }
+
+    // Builds an order from the report the way reconciliation does for an external order
+    fn assert_initializes_order(report: &OrderStatusReport) -> OrderAny {
+        let initialized = OrderInitialized::new_checked(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("EXTERNAL"),
+            report.instrument_id,
+            ClientOrderId::from(report.venue_order_id.as_str()),
+            report.order_side.expect("report has an order side"),
+            report.order_type,
+            report.quantity,
+            report.time_in_force,
+            report.post_only,
+            report.reduce_only,
+            false,
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            report.price,
+            report.activation_price,
+            report.trigger_price,
+            report.trigger_type,
+            report.limit_offset,
+            report.trailing_offset,
+            report.trailing_offset_type,
+            report.expire_time,
+            report.display_qty,
+            None,
+            None,
+            report.contingency_type,
+            report.order_list_id,
+            report.linked_order_ids.clone(),
+            report.parent_order_id,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("report must initialize an order");
+        OrderAny::from_events(vec![OrderEventAny::Initialized(initialized)])
+            .expect("order must replay from its initialization")
+    }
+
+    // `historicalOrders` rows for a position stop that triggered and filled: once filled, the
+    // venue zeroes `triggerPx` and clears `isTrigger`, so only the earlier rows carry the trigger
+    fn triggered_stop_rows() -> Value {
+        let trigger_row = |status: &str, ts: u64| {
+            json!({
+                "order": {
+                    "coin": "BTC", "side": "A", "limitPx": "58800.0", "sz": "0.0",
+                    "oid": 900000001_u64, "timestamp": 1700000000000_u64,
+                    "triggerCondition": "Price below 59500", "isTrigger": true,
+                    "triggerPx": "59500.0", "children": [], "isPositionTpsl": true,
+                    "reduceOnly": true, "orderType": "Stop Market", "origSz": "0.0", "tif": null,
+                    "cloid": "0x00000000000000000000000000000a01"
+                },
+                "status": status,
+                "statusTimestamp": ts
+            })
+        };
+        json!([
+            filled_stop_row(),
+            trigger_row("triggered", 1700000600000),
+            trigger_row("open", 1700000000000),
+        ])
+    }
+
+    fn filled_stop_row() -> Value {
+        json!({
+            "order": {
+                "coin": "BTC", "side": "A", "limitPx": "58200.0", "sz": "0.0",
+                "oid": 900000001_u64, "timestamp": 1700000600000_u64,
+                "triggerCondition": "Triggered", "isTrigger": false, "triggerPx": "0.0",
+                "children": [], "isPositionTpsl": true, "reduceOnly": true,
+                "orderType": "Stop Market", "origSz": "0.02", "tif": "Gtc",
+                "cloid": "0x00000000000000000000000000000a01"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700000600000_u64
+        })
+    }
+
+    #[rstest]
+    fn test_historical_reports_triggered_stop_keeps_trigger_from_earlier_rows() {
+        let client = btc_history_client();
+
+        let sweep = client
+            .historical_order_status_reports_from_response(
+                history_rows(triggered_stop_rows()),
+                None,
+            )
+            .unwrap();
+
+        assert!(sweep.complete);
+        assert_eq!(sweep.reports.len(), 1);
+        let report = &sweep.reports[0];
+        assert_eq!(report.venue_order_id, VenueOrderId::new("900000001"));
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.filled_qty, Quantity::from("0.02"));
+        assert_eq!(report.trigger_price, Some(Price::from("59500.0")));
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+        assert_initializes_order(report);
+    }
+
+    #[rstest]
+    fn test_historical_reports_triggered_stop_limit_keeps_trigger_and_price() {
+        let client = btc_history_client();
+        let mut rows = triggered_stop_rows();
+        for row in rows.as_array_mut().unwrap() {
+            row["order"]["orderType"] = json!("Stop Limit");
+        }
+
+        let sweep = client
+            .historical_order_status_reports_from_response(history_rows(rows), None)
+            .unwrap();
+
+        assert_eq!(sweep.reports.len(), 1);
+        let report = &sweep.reports[0];
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        // The filled row carries no price; the merge takes it from the earlier rows
+        assert_eq!(report.price, Some(Price::from("58800.0")));
+        assert_eq!(report.trigger_price, Some(Price::from("59500.0")));
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+        assert_initializes_order(report);
+    }
+
+    #[rstest]
+    #[case("Stop Market", "filled", OrderType::Market)]
+    #[case("Take Profit Market", "filled", OrderType::Market)]
+    #[case("Stop Limit", "filled", OrderType::Market)]
+    #[case("Take Profit Limit", "filled", OrderType::Market)]
+    #[case("Stop Market", "canceled", OrderType::Market)]
+    #[case("Take Profit Market", "canceled", OrderType::Market)]
+    #[case("Stop Limit", "canceled", OrderType::Limit)]
+    #[case("Take Profit Limit", "canceled", OrderType::Limit)]
+    fn test_historical_reports_closed_trigger_without_trigger_rows_is_untriggered(
+        #[case] label: &str,
+        #[case] status: &str,
+        #[case] expected: OrderType,
+    ) {
+        // Only the zeroed final row survives (older rows aged out of the history window). A
+        // filled row carries no price, so only a canceled limit-style row can stay a limit order.
+        let client = btc_history_client();
+        let mut row = filled_stop_row();
+        row["order"]["orderType"] = json!(label);
+        row["status"] = json!(status);
+        // A canceled order's `sz` holds its unfilled size
+        let expected_filled = if status == "canceled" {
+            row["order"]["sz"] = json!("0.02");
+            "0"
+        } else {
+            "0.02"
+        };
+
+        let sweep = client
+            .historical_order_status_reports_from_response(history_rows(json!([row])), None)
+            .unwrap();
+
+        assert_eq!(sweep.reports.len(), 1);
+        let report = &sweep.reports[0];
+        assert_eq!(report.order_type, expected);
+        assert_eq!(report.filled_qty, Quantity::from(expected_filled));
+        assert!(report.trigger_price.is_none());
+        assert!(report.trigger_type.is_none());
+        assert_eq!(report.price.is_some(), expected == OrderType::Limit);
+        assert!(report.reduce_only);
+        assert_initializes_order(report);
+    }
+
+    #[rstest]
+    fn test_historical_reports_triggered_stop_filled_with_remainder() {
+        // Both fixes on one row: a triggered stop's zeroed final row that also left a remainder
+        let client = btc_history_client();
+        let mut row = filled_stop_row();
+        row["order"]["sz"] = json!("0.0008");
+
+        let sweep = client
+            .historical_order_status_reports_from_response(history_rows(json!([row])), None)
+            .unwrap();
+
+        assert_eq!(sweep.reports.len(), 1);
+        let report = &sweep.reports[0];
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.order_type, OrderType::Market);
+        assert_eq!(report.filled_qty, Quantity::from("0.0192"));
+        assert!(report.price.is_none());
+        assert_initializes_order(report);
+    }
+
+    #[rstest]
+    fn test_historical_reports_open_trigger_without_trigger_price_keeps_order_type() {
+        // An order that is still working keeps its trigger type even when its row lacks a
+        // trigger price
+        let client = btc_history_client();
+        let mut row = filled_stop_row();
+        row["status"] = json!("triggered");
+
+        let sweep = client
+            .historical_order_status_reports_from_response(history_rows(json!([row])), None)
+            .unwrap();
+
+        assert_eq!(sweep.reports.len(), 1);
+        assert_eq!(sweep.reports[0].order_type, OrderType::StopMarket);
+    }
+
+    // An IOC order the venue marks `filled` although 0.0005 of 0.015 went unfilled: `sz`
+    // carries the canceled remainder
+    #[rstest]
+    fn test_historical_reports_partially_filled_ioc_is_canceled() {
+        let client = btc_history_client();
+        let row = |status: &str, sz: &str| {
+            json!({
+                "order": {
+                    "coin": "BTC", "side": "A", "limitPx": "60100.0", "sz": sz,
+                    "oid": 900000002_u64, "timestamp": 1700001000000_u64,
+                    "triggerCondition": "N/A", "isTrigger": false, "triggerPx": "0.0",
+                    "children": [], "isPositionTpsl": false, "reduceOnly": false,
+                    "orderType": "Limit", "origSz": "0.015", "tif": "Ioc",
+                    "cloid": "0x00000000000000000000000000000a02"
+                },
+                "status": status,
+                "statusTimestamp": 1700001000000_u64
+            })
+        };
+
+        let sweep = client
+            .historical_order_status_reports_from_response(
+                history_rows(json!([row("filled", "0.0005"), row("open", "0.015")])),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(sweep.reports.len(), 1);
+        let report = &sweep.reports[0];
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.quantity, Quantity::from("0.015"));
+        assert_eq!(report.filled_qty, Quantity::from("0.0145"));
+        // The filled row carries no price; the merge takes the limit price from the open row
+        assert_eq!(report.price, Some(Price::from("60100.0")));
+        assert_eq!(
+            report.cancel_reason.as_deref(),
+            Some("Unfilled remainder canceled")
+        );
+        assert_initializes_order(report);
     }
 }
