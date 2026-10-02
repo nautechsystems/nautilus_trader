@@ -2029,7 +2029,7 @@ async fn test_request_order_status_report_frontend_trigger_label() {
 
     assert_eq!(report.order_type, OrderType::StopMarket);
     assert_eq!(report.order_status, OrderStatus::Accepted);
-    assert!(report.trigger_price.is_some());
+    assert_eq!(report.trigger_price, Some(Price::from("91000.0")));
     assert!(report.reduce_only);
 }
 
