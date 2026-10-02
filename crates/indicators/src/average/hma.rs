@@ -166,13 +166,7 @@ impl MovingAverage for HullMovingAverage {
         self.count += 1;
 
         if self.ma1.initialized && self.ma2.initialized {
-            let input = 2.0 * self.ma1.value - self.ma2.value;
-            let input = if input.is_finite() {
-                input
-            } else {
-                2.0_f64.mul_add(self.ma1.value, -self.ma2.value)
-            };
-            self.ma3.update_raw(input);
+            self.ma3.update_raw(2.0 * self.ma1.value - self.ma2.value);
             self.initialized = self.ma3.initialized;
             if self.initialized {
                 self.value = self.ma3.value;

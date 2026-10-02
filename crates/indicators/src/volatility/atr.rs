@@ -156,9 +156,6 @@ impl AverageTrueRange {
             high - low
         };
 
-        if !range.is_finite() {
-            return;
-        }
         self.ma.update_raw(range);
 
         if self.use_previous {
@@ -367,7 +364,6 @@ mod tests {
             (10.0, 12.0, 11.0),
             (12.0, 10.0, 13.0),
             (12.0, 10.0, f64::NAN),
-            (1e308, -1e308, 0.0),
         ] {
             indicator.update_raw(high, low, close);
             assert_eq!(indicator.count, 1);

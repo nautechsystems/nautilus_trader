@@ -15,6 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
@@ -89,22 +90,31 @@ impl Pressure {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is outside `1..=MAX_PERIOD` or the ATR floor is negative or non-finite.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>, atr_floor: Option<f64>) -> Self {
-        assert!(period > 0, "Pressure: period must be > 0");
+        Self::new_checked(period, ma_type, atr_floor).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+        atr_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(period > 0, "Pressure: period must be > 0");
         let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
-        Self {
+        let atr = AverageTrueRange::new_checked(period, Some(ma_type), Some(true), atr_floor)?;
+        Ok(Self {
             period,
             ma_type,
             atr_floor: atr_floor.unwrap_or(0.0),
             value: 0.0,
             value_cumulative: 0.0,
-            atr: AverageTrueRange::new(period, Some(ma_type), Some(true), atr_floor),
+            atr,
             average_volume: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {

@@ -18,20 +18,18 @@ use std::{collections::VecDeque, fmt::Display};
 use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
-use crate::{
-    indicator::Indicator,
-    support::{MAX_PERIOD, log_ratio},
-};
+use crate::{indicator::Indicator, support::MAX_PERIOD};
 
 /// Output convention for [`RateOfChange`].
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
         frozen,
         eq,
         eq_int,
+        hash,
         module = "nautilus_trader.indicators",
         from_py_object
     )
@@ -188,7 +186,7 @@ impl RateOfChange {
                 RateOfChangeMode::Fraction => ratio - 1.0,
                 RateOfChangeMode::Ratio => ratio,
                 RateOfChangeMode::RatioPercent => 100.0 * ratio,
-                RateOfChangeMode::Log => log_ratio(price, *first),
+                RateOfChangeMode::Log => (price / first).ln(),
             };
         }
     }

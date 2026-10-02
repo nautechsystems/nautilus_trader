@@ -133,9 +133,6 @@ impl VolatilityRatio {
                 .max((low - previous_close).abs())
         });
 
-        if true_range.is_some_and(|range| !range.is_finite()) {
-            return;
-        }
         self.previous_close = Some(close);
         self.count += 1;
         self.has_inputs = true;

@@ -60,3 +60,16 @@ def test_default_mode_is_percentage() -> None:
 
     # Assert
     assert roc.value == 100.0 * (75.0 / 50.0 - 1.0)
+
+
+def test_mode_is_hashable() -> None:
+    """
+    Test modes can key dictionaries and sets like the other indicator enums.
+    """
+    # Arrange
+    modes = {RateOfChangeMode.Percentage: "pct", RateOfChangeMode.Log: "log"}
+
+    # Act, Assert
+    assert hash(RateOfChangeMode.Percentage) == hash(RateOfChangeMode.Percentage)
+    assert modes[RateOfChangeMode.Log] == "log"
+    assert len({RateOfChangeMode.Ratio, RateOfChangeMode.Ratio}) == 1

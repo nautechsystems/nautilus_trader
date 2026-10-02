@@ -226,7 +226,7 @@ def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAver
     assert hma.value == 0
 
 
-# Mirrors `MAX_PERIOD` in `crates/indicators/src/support/sum.rs`.
+# Mirrors `MAX_PERIOD` in `crates/indicators/src/support/mod.rs`.
 MAX_PERIOD = 16_777_216
 
 

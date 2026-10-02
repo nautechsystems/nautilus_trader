@@ -200,6 +200,7 @@ mod tests {
         average::{sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -407,5 +408,23 @@ mod tests {
             assert_eq!(implicit.count, explicit.count);
             assert_eq!(implicit.initialized, explicit.initialized);
         }
+    }
+
+    #[rstest]
+    fn test_independent_cmo_period_matches_reference() {
+        // VIDYA(4) with CMO(2): alpha = 2/5, seeded at 11 once the CMO is ready.
+        // CMO(2) = 1/3, 1/3, 1/2 for the next three inputs.
+        let mut vidya = VariableIndexDynamicAverage::new_with_cmo_period(4, 2, None, None);
+        for value in [10.0, 12.0, 11.0] {
+            vidya.update_raw(value);
+        }
+        assert!(vidya.initialized);
+        assert_eq!(vidya.value, 11.0);
+
+        for value in [13.0, 12.0, 15.0] {
+            vidya.update_raw(value);
+        }
+        assert_approx_equal(vidya.value, 13603.0 / 1125.0);
+        assert_approx_equal(vidya.cmo_pct, 0.5);
     }
 }

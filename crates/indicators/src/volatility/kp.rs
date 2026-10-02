@@ -15,6 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use super::kc::KeltnerChannel;
@@ -85,6 +86,11 @@ impl Indicator for KeltnerPosition {
 
 impl KeltnerPosition {
     /// Creates a new [`KeltnerPosition`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is outside `1..=MAX_PERIOD`, the multiplier is not positive and finite,
+    /// or the ATR floor is negative or non-finite.
     #[must_use]
     pub fn new(
         period: usize,
@@ -94,7 +100,35 @@ impl KeltnerPosition {
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
     ) -> Self {
-        Self {
+        Self::new_checked(
+            period,
+            k_multiplier,
+            ma_type,
+            ma_type_atr,
+            use_previous,
+            atr_floor,
+        )
+        .expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        k_multiplier: f64,
+        ma_type: Option<MovingAverageType>,
+        ma_type_atr: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        atr_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        let kc = KeltnerChannel::new_checked(
+            period,
+            k_multiplier,
+            None,
+            ma_type,
+            ma_type_atr.or(Some(MovingAverageType::Simple)),
+            use_previous,
+            atr_floor,
+        )?;
+        Ok(Self {
             period,
             k_multiplier,
             ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
@@ -104,16 +138,8 @@ impl KeltnerPosition {
             value: 0.0,
             has_inputs: false,
             initialized: false,
-            kc: KeltnerChannel::new(
-                period,
-                k_multiplier,
-                None,
-                ma_type,
-                ma_type_atr.or(Some(MovingAverageType::Simple)),
-                use_previous,
-                atr_floor,
-            ),
-        }
+            kc,
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

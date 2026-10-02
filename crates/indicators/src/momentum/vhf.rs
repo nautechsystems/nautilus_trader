@@ -16,10 +16,7 @@
 use std::{collections::VecDeque, fmt::Display};
 
 use nautilus_core::correctness::FAILED;
-use nautilus_model::{
-    data::{Bar, QuoteTick, TradeTick},
-    enums::PriceType,
-};
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -68,14 +65,11 @@ impl Indicator for VerticalHorizontalFilter {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn handle_trade(&mut self, trade: &TradeTick) {
-        self.update_raw((&trade.price).into());
-    }
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());
@@ -272,5 +266,15 @@ mod tests {
         // Window is now [2, 3, 4]: |max - min| = 2, and the SMA(3) of the last
         // three absolute price changes (1, 1, 1) is 1, so value = 2 / 3 / 1.
         assert_eq!(vhf.value, 2.0 / 3.0);
+    }
+
+    #[rstest]
+    fn test_value_is_zero_for_flat_prices(mut vhf_10: VerticalHorizontalFilter) {
+        for _ in 0..20 {
+            vhf_10.update_raw(100.0);
+        }
+
+        assert!(vhf_10.initialized);
+        assert_eq!(vhf_10.value, 0.0);
     }
 }

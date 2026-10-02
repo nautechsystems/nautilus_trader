@@ -25,15 +25,6 @@ pub(crate) const SMA_RESEED_WINDOWS: usize = 16;
 /// The maximum period accepted by windowed indicators.
 pub const MAX_PERIOD: usize = 1 << 24;
 
-pub(crate) fn log_ratio(numerator: f64, denominator: f64) -> f64 {
-    let ratio = numerator / denominator;
-    if ratio.is_normal() {
-        ratio.ln()
-    } else {
-        numerator.ln() - denominator.ln()
-    }
-}
-
 pub(crate) fn is_valid_hlc(high: f64, low: f64, close: f64) -> bool {
     is_valid_high_low(high, low) && close.is_finite() && close >= low && close <= high
 }

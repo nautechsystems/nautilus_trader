@@ -85,10 +85,9 @@ impl VolumeWeightedAveragePrice {
     }
 
     /// Adds a price and nonnegative volume to the current manually reset window.
-    /// Non-finite inputs and unrepresentable price-volume products leave state unchanged.
+    /// Non-finite inputs and negative volume leave state unchanged.
     pub fn update_raw(&mut self, price: f64, volume: f64) {
-        let product = price * volume;
-        if !price.is_finite() || !volume.is_finite() || volume < 0.0 || !product.is_finite() {
+        if !price.is_finite() || !volume.is_finite() || volume < 0.0 {
             return;
         }
         self.has_inputs = true;
@@ -96,7 +95,7 @@ impl VolumeWeightedAveragePrice {
         if volume == 0.0 {
             return;
         }
-        self.price_volume += product;
+        self.price_volume += price * volume;
         self.volume_total += volume;
         self.value = self.price_volume / self.volume_total;
         self.initialized = true;
@@ -161,7 +160,6 @@ mod tests {
     #[case(2.0, f64::NAN)]
     #[case(2.0, f64::INFINITY)]
     #[case(2.0, -1.0)]
-    #[case(f64::MAX, 2.0)]
     fn test_invalid_input_is_atomic(#[case] price: f64, #[case] volume: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
         vwap.update_raw(price, volume);

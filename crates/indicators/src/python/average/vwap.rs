@@ -72,7 +72,7 @@ impl VolumeWeightedAveragePrice {
     }
 
     /// Adds a price and nonnegative volume to the current manually reset window.
-    /// Non-finite inputs and unrepresentable price-volume products leave state unchanged.
+    /// Non-finite inputs and negative volume leave state unchanged.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64, volume: f64) {
         self.update_raw(value, volume);

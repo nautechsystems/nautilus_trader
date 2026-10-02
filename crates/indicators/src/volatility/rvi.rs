@@ -19,10 +19,7 @@ use std::{
 };
 
 use nautilus_core::correctness::FAILED;
-use nautilus_model::{
-    data::{Bar, QuoteTick, TradeTick},
-    enums::PriceType,
-};
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -81,14 +78,11 @@ impl Indicator for RelativeVolatilityIndex {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn handle_trade(&mut self, trade: &TradeTick) {
-        self.update_raw((&trade.price).into());
-    }
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());
@@ -208,7 +202,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::rvi_10;
+    use crate::{stubs::rvi_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(rvi_10: RelativeVolatilityIndex) {
@@ -282,5 +276,34 @@ mod tests {
         assert_eq!(rvi_10.moments.mean(rvi_10.period), 0.0);
         assert_eq!(rvi_10.pos_ma.value(), 0.0);
         assert_eq!(rvi_10.neg_ma.value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_value_is_midpoint_for_flat_prices(mut rvi_10: RelativeVolatilityIndex) {
+        for _ in 0..30 {
+            rvi_10.update_raw(100.0);
+        }
+
+        assert!(rvi_10.initialized());
+        assert_eq!(rvi_10.value, 5.0);
+    }
+
+    #[rstest]
+    fn test_value_matches_wilder_smoothed_population_deviation() {
+        // Window 3, population deviations: sqrt(2/3) for the first three windows,
+        // sqrt(14)/3 for [13, 12, 15]. Directions after warmup: down, up, down, up.
+        let mut rvi = RelativeVolatilityIndex::new(3, Some(100.0), None);
+        for close in [10.0, 12.0, 11.0, 13.0, 12.0] {
+            rvi.update_raw(close);
+        }
+        assert!(rvi.initialized());
+        assert_approx_equal(rvi.value, 100.0 / 3.0);
+
+        rvi.update_raw(15.0);
+        let s = (2.0_f64 / 3.0).sqrt();
+        let t = 14.0_f64.sqrt() / 3.0;
+        let pos = (2.0 * s / 3.0 + t) / 3.0;
+        let neg = 4.0 * s / 9.0;
+        assert_approx_equal(rvi.value, 100.0 * pos / (pos + neg));
     }
 }
