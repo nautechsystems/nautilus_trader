@@ -2370,6 +2370,7 @@ mod tests {
             tid: 77_001,
             fee_token: Ustr::from("+420"),
             builder_fee: Some(dec!(0.0001)),
+            cloid: None,
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");

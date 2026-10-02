@@ -57,12 +57,13 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_hyperliquid::{
     HyperliquidHttpClient, HyperliquidWebSocketClient,
     common::{
         consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
         enums::HyperliquidEnvironment,
+        parse::make_fill_trade_id,
     },
     config::HyperliquidExecutionClientConfig,
     execution::HyperliquidExecutionClient,
@@ -134,6 +135,9 @@ struct TestServerState {
     /// Captures the `user` field from the most recent `clearinghouseState`
     /// request so tests can verify the address sent to the venue.
     last_clearinghouse_user: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Fail `userFills` info calls with a non-retryable error (400) while positive,
+    /// decrementing once per call.
+    fail_user_fills_count: Arc<AtomicUsize>,
     /// Optional override for `userFills` info responses; defaults to `[]`.
     user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `historicalOrders` info responses; defaults to `[]`.
@@ -149,6 +153,11 @@ struct TestServerState {
     /// observe the response.
     pause_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     pause_release: Arc<tokio::sync::Notify>,
+    /// Acknowledges WebSocket subscribe requests while set (the default), as the venue does.
+    ack_subscriptions: Arc<std::sync::atomic::AtomicBool>,
+    /// Message sent once after the next `userEvents` subscription acknowledgement, standing in
+    /// for events the venue streams on the resumed subscription.
+    frame_after_user_events_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -171,6 +180,7 @@ impl Default for TestServerState {
             perp_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             perp_clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_clearinghouse_user: Arc::new(tokio::sync::Mutex::new(None)),
+            fail_user_fills_count: Arc::new(AtomicUsize::new(0)),
             user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             all_perp_metas_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -180,6 +190,8 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_release: Arc::new(tokio::sync::Notify::new()),
+            ack_subscriptions: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            frame_after_user_events_ack: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -404,13 +416,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                 Json(json!({"status": "unknownOid"})).into_response()
             }
         }
-        "userFills" => {
-            if let Some(body) = state.user_fills_response.lock().await.clone() {
-                Json(body).into_response()
-            } else {
-                Json(json!([])).into_response()
-            }
-        }
+        "userFills" => handle_info_user_fills(&state).await,
         "historicalOrders" => {
             if let Some(body) = state.historical_orders_response.lock().await.clone() {
                 Json(body).into_response()
@@ -470,6 +476,28 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             }
         }
         _ => Json(json!({})).into_response(),
+    }
+}
+
+async fn handle_info_user_fills(state: &TestServerState) -> Response {
+    if state
+        .fail_user_fills_count
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+            if n > 0 { Some(n - 1) } else { None }
+        })
+        .is_ok()
+    {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({"error": "user fills rejected"})),
+        )
+            .into_response();
+    }
+
+    if let Some(body) = state.user_fills_response.lock().await.clone() {
+        Json(body).into_response()
+    } else {
+        Json(json!([])).into_response()
     }
 }
 
@@ -852,6 +880,46 @@ async fn send_ws_post_error_response(socket: &mut WebSocket, id: u64, payload: &
         .is_ok()
 }
 
+async fn send_ws_subscription_response(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    payload: &Value,
+) -> bool {
+    if !state.ack_subscriptions.load(Ordering::Relaxed) {
+        return true;
+    }
+
+    let response = json!({
+        "channel": "subscriptionResponse",
+        "data": {
+            "method": "subscribe",
+            "subscription": payload["subscription"],
+        },
+    });
+
+    if socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_err()
+    {
+        return false;
+    }
+
+    let streamed = if payload["subscription"]["type"] == "userEvents" {
+        state.frame_after_user_events_ack.lock().await.take()
+    } else {
+        None
+    };
+
+    match streamed {
+        Some(message) => socket
+            .send(Message::Text(message.to_string().into()))
+            .await
+            .is_ok(),
+        None => true,
+    }
+}
+
 async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
@@ -872,9 +940,13 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                 break;
                             }
                         }
-                        Some("subscribe") => {
-                            // Acknowledge subscription silently
+                        Some("subscribe")
+                            if !send_ws_subscription_response(&mut socket, &state, &payload)
+                                .await =>
+                        {
+                            break;
                         }
+                        Some("subscribe") => {}
                         Some("unsubscribe") => {}
                         Some("post") if !handle_ws_post(&mut socket, &state, &payload).await => {
                             break;
@@ -2278,6 +2350,1517 @@ async fn test_exec_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).is_none());
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_replays_order_events_missed_while_disconnected() {
+    // The venue accepts, partially fills, and cancels the order while the socket
+    // is down; resubscribing replays nothing, so only the REST history holds them.
+    let state = TestServerState::default();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let info_requests = state.info_requests.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-001").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.00004");
+    fill["time"] = json!(ts_ms + 1);
+    fill["cloid"] = json!(cloid);
+    let mut canceled_order = historical_order("BTC", 12345);
+    canceled_order["order"]["sz"] = json!("0.00006");
+    canceled_order["order"]["origSz"] = json!("0.0001");
+    canceled_order["order"]["cloid"] = json!(cloid);
+    canceled_order["status"] = json!("canceled");
+    canceled_order["statusTimestamp"] = json!(ts_ms + 2);
+    *user_fills.lock().await = Some(json!([fill]));
+    *historical_orders.lock().await = Some(json!([canceled_order]));
+
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Canceled(_))).await;
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+        OrderEventAny::Canceled(canceled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    let venue_order_id = VenueOrderId::from("12345");
+    let trade_id = make_fill_trade_id(
+        &format!("0x{:064x}", 12345),
+        12345,
+        rust_decimal_macros::dec!(56730.0),
+        rust_decimal_macros::dec!(0.00004),
+        ts_ms + 1,
+        rust_decimal_macros::dec!(0),
+    );
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(accepted.venue_order_id, venue_order_id);
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, venue_order_id);
+    assert_eq!(filled.trade_id, trade_id);
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.00004)
+    );
+    assert_eq!(
+        filled.last_px.as_decimal(),
+        rust_decimal_macros::dec!(56730.0)
+    );
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+    assert_eq!(canceled.venue_order_id, Some(venue_order_id));
+
+    // Orders read first, so every fill behind a recovered terminal status is in the fill read
+    assert_eq!(
+        history_reads(&info_requests).await,
+        vec!["historicalOrders", "userFills"]
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_replayed_parent_fill_submits_staged_bracket_children() {
+    // A parent fill missed while the socket is down still releases the staged
+    // take-profit and stop-loss that protect the new position.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let (cmd, cid_p, cid_tp, cid_sl) = add_normal_tpsl_bracket(&cache);
+    client.submit_order_list(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut fill = user_fill("ETH", 12345);
+    fill["px"] = json!("3000.0");
+    fill["sz"] = json!("1.0");
+    fill["time"] = json!(get_atomic_clock_realtime().get_time_ns().as_millis());
+    fill["cloid"] = json!(Cloid::from_client_order_id(cid_p).to_hex());
+    *user_fills.lock().await = Some(json!([fill]));
+
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .and_then(|action| action["orders"].as_array().map(Vec::len))
+                    == Some(2)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let action = last_action.lock().await.clone().unwrap();
+    let wire_cloids: Vec<&str> = action["orders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|order| order["c"].as_str())
+        .collect();
+
+    assert_eq!(action["grouping"], "na");
+    assert_eq!(
+        wire_cloids,
+        vec![
+            Cloid::from_client_order_id(cid_tp).to_hex(),
+            Cloid::from_client_order_id(cid_sl).to_hex(),
+        ],
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_reads_history_after_subscription_wait_times_out() {
+    // Unacknowledged resubscriptions hold the history read until the confirmation
+    // timeout, after which the missed fill is still recovered.
+    let state = TestServerState::default();
+    let user_fills = state.user_fills_response.clone();
+    let info_requests = state.info_requests.clone();
+    let ack_subscriptions = state.ack_subscriptions.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-002").await;
+
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.0001");
+    fill["time"] = json!(get_atomic_clock_realtime().get_time_ns().as_millis());
+    fill["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    *user_fills.lock().await = Some(json!([fill]));
+    ack_subscriptions.store(false, Ordering::Relaxed);
+
+    request_user_streams_reconnect(&registry);
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let fill_reads_before_timeout = info_requests
+        .lock()
+        .await
+        .iter()
+        .filter(|request| request["type"] == "userFills")
+        .count();
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(fill_reads_before_timeout, 0);
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12345"));
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.0001)
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_recovers_after_failed_history_read() {
+    // A failed history read leaves the stream running, so the next reconnect
+    // recovers the fill the first attempt could not read.
+    let state = TestServerState::default();
+    let user_fills = state.user_fills_response.clone();
+    let fail_user_fills_count = state.fail_user_fills_count.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-003").await;
+
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.0001");
+    fill["time"] = json!(get_atomic_clock_realtime().get_time_ns().as_millis());
+    fill["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    *user_fills.lock().await = Some(json!([fill]));
+    fail_user_fills_count.store(1, Ordering::Relaxed);
+
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let fail_user_fills_count = fail_user_fills_count.clone();
+            async move { fail_user_fills_count.load(Ordering::Relaxed) == 0 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12345"));
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.0001)
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_follow_up_read_recovers_fill_missing_from_lagging_history() {
+    // The venue history lags its live state, so the first read after the reconnect shows the
+    // order still open and no fill; the follow-up read must recover the fill it missed.
+    let state = TestServerState::default();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let info_requests = state.info_requests.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-LAG").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut open_order = historical_order("BTC", 12345);
+    open_order["order"]["sz"] = json!("0.0001");
+    open_order["order"]["origSz"] = json!("0.0001");
+    open_order["order"]["cloid"] = json!(cloid);
+    open_order["status"] = json!("open");
+    open_order["statusTimestamp"] = json!(ts_ms);
+    *historical_orders.lock().await = Some(json!([open_order]));
+    let reads_before = history_reads(&info_requests).await.len();
+
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+    wait_until_async(
+        || {
+            let info_requests = info_requests.clone();
+            async move { history_reads(&info_requests).await.len() == reads_before + 2 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.0001");
+    fill["time"] = json!(ts_ms + 1);
+    fill["cloid"] = json!(cloid);
+    let mut filled_order = open_order.clone();
+    filled_order["order"]["sz"] = json!("0");
+    filled_order["status"] = json!("filled");
+    filled_order["statusTimestamp"] = json!(ts_ms + 1);
+    *user_fills.lock().await = Some(json!([fill]));
+    *historical_orders.lock().await = Some(json!([filled_order]));
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+
+    let [OrderEventAny::Filled(filled)] = events.as_slice() else {
+        panic!("unexpected events from the follow-up read: {events:?}");
+    };
+
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12345"));
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.0001)
+    );
+    assert_eq!(
+        history_reads(&info_requests).await[reads_before..],
+        [
+            "historicalOrders",
+            "userFills",
+            "historicalOrders",
+            "userFills"
+        ]
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_ignores_stream_copy_of_recovered_bracket_child_fill() {
+    // A child fill both recovered and delivered by the resumed stream counts once, otherwise
+    // the copy completes the child and cancels the stop-loss while half the position is open.
+    let state = TestServerState::default();
+    let exchange_request_count = state.exchange_request_count.clone();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let (cmd, cid_p, cid_tp, _) = add_normal_tpsl_bracket(&cache);
+    client.submit_order_list(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut parent_fill = user_fill("ETH", 12345);
+    parent_fill["px"] = json!("3000.0");
+    parent_fill["sz"] = json!("1.0");
+    parent_fill["time"] = json!(ts_ms);
+    parent_fill["cloid"] = json!(Cloid::from_client_order_id(cid_p).to_hex());
+    *user_fills.lock().await = Some(json!([parent_fill]));
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .and_then(|action| action["orders"].as_array().map(Vec::len))
+                    == Some(2)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let mut child_fill = user_fill("ETH", 777);
+    child_fill["side"] = json!("A");
+    child_fill["px"] = json!("3200.0");
+    child_fill["sz"] = json!("0.5");
+    child_fill["time"] = json!(ts_ms + 1);
+    child_fill["cloid"] = json!(Cloid::from_client_order_id(cid_tp).to_hex());
+    let mut marker_fill = user_fill("ETH", 888);
+    marker_fill["time"] = json!(ts_ms + 2);
+    *user_fills.lock().await = Some(json!([parent_fill, child_fill]));
+    *frame_after_user_events_ack.lock().await = Some(json!({
+        "channel": "user",
+        "data": {"fills": [child_fill, marker_fill]},
+    }));
+    let requests_before = *exchange_request_count.lock().await;
+
+    request_user_streams_reconnect(&registry);
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(event) = rx.recv().await {
+            if let ExecutionEvent::Report(ExecutionReport::Fill(fill)) = event
+                && fill.venue_order_id == VenueOrderId::from("888")
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for the external marker fill");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert_eq!(*exchange_request_count.lock().await, requests_before);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_stream_old_leg_cancels_leave_bracket_intact() {
+    // Once a modify's replacement is bound, the old leg's cancel streams in; it must neither
+    // drop the staged children nor cancel the stop-loss sibling.
+    let state = TestServerState::default();
+    let exchange_request_count = state.exchange_request_count.clone();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let (cmd, cid_p, cid_tp, _) = add_normal_tpsl_bracket(&cache);
+    client.submit_order_list(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let [parent_replacement, parent_old_leg] =
+        replaced_order_legs(cid_p, "B", "3000.0", 555, 556, ts_ms);
+    *historical_orders.lock().await = Some(json!([parent_replacement]));
+    *frame_after_user_events_ack.lock().await = Some(order_updates_frame(&[
+        parent_old_leg,
+        external_canceled_order(998, ts_ms),
+    ]));
+    request_user_streams_reconnect(&registry);
+    recv_order_report(&mut rx, "998").await;
+
+    let mut parent_fill = user_fill("ETH", 556);
+    parent_fill["px"] = json!("3000.0");
+    parent_fill["sz"] = json!("1.0");
+    parent_fill["time"] = json!(ts_ms + 1);
+    parent_fill["cloid"] = json!(Cloid::from_client_order_id(cid_p).to_hex());
+    *user_fills.lock().await = Some(json!([parent_fill]));
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .and_then(|action| action["orders"].as_array().map(Vec::len))
+                    == Some(2)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let [tp_replacement, tp_old_leg] =
+        replaced_order_legs(cid_tp, "A", "3200.0", 557, 558, ts_ms + 2);
+    *historical_orders.lock().await = Some(json!([tp_replacement]));
+    *frame_after_user_events_ack.lock().await = Some(order_updates_frame(&[
+        tp_old_leg,
+        external_canceled_order(999, ts_ms + 3),
+    ]));
+    let requests_before = *exchange_request_count.lock().await;
+
+    request_user_streams_reconnect(&registry);
+    recv_order_report(&mut rx, "999").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert_eq!(*exchange_request_count.lock().await, requests_before);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_rebinds_modified_bracket_child_before_its_fill() {
+    // The take-profit is modified twice and then fills while disconnected. History keeps each
+    // leg's latest status only, so the first leg reads as canceled; recovery must rebind the
+    // take-profit to its newest leg, apply the fill, and cancel the stop-loss sibling.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let (cmd, cid_p, cid_tp, cid_sl) = add_normal_tpsl_bracket(&cache);
+    client.submit_order_list(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut parent_fill = user_fill("ETH", 12345);
+    parent_fill["px"] = json!("3000.0");
+    parent_fill["sz"] = json!("1.0");
+    parent_fill["time"] = json!(ts_ms);
+    parent_fill["cloid"] = json!(Cloid::from_client_order_id(cid_p).to_hex());
+    *user_fills.lock().await = Some(json!([parent_fill]));
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .and_then(|action| action["orders"].as_array().map(Vec::len))
+                    == Some(2)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let tp_cloid = Cloid::from_client_order_id(cid_tp).to_hex();
+
+    let tp_leg = |oid: u64, limit_px: &str, status: &str, created_ms: u64, status_ts_ms: u64| {
+        let mut leg = historical_order("ETH", oid);
+        leg["order"]["timestamp"] = json!(created_ms);
+        leg["order"]["side"] = json!("A");
+        leg["order"]["limitPx"] = json!(limit_px);
+        leg["order"]["sz"] = json!("1.0");
+        leg["order"]["origSz"] = json!("1.0");
+        leg["order"]["cloid"] = json!(tp_cloid);
+        leg["status"] = json!(status);
+        leg["statusTimestamp"] = json!(status_ts_ms);
+        leg
+    };
+
+    while rx.try_recv().is_ok() {}
+    *historical_orders.lock().await =
+        Some(json!([tp_leg(700, "3200.0", "open", ts_ms + 1, ts_ms + 1)]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| {
+        matches!(event, OrderEventAny::Accepted(accepted) if accepted.client_order_id == cid_tp)
+    })
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let mut tp_fill = user_fill("ETH", 702);
+    tp_fill["side"] = json!("A");
+    tp_fill["px"] = json!("3150.0");
+    tp_fill["sz"] = json!("1.0");
+    tp_fill["time"] = json!(ts_ms + 4);
+    tp_fill["cloid"] = json!(tp_cloid);
+    *historical_orders.lock().await = Some(json!([
+        tp_leg(700, "3200.0", "canceled", ts_ms + 1, ts_ms + 2),
+        tp_leg(701, "3175.0", "canceled", ts_ms + 2, ts_ms + 3),
+        tp_leg(702, "3150.0", "filled", ts_ms + 3, ts_ms + 4),
+    ]));
+    *user_fills.lock().await = Some(json!([parent_fill, tp_fill]));
+
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .map(|action| action["type"].clone())
+                    == Some(json!("cancelByCloid"))
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let [
+        OrderEventAny::Updated(updated_middle),
+        OrderEventAny::Updated(updated_newest),
+        OrderEventAny::Filled(filled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    let action = last_action.lock().await.clone().unwrap();
+    assert_eq!(updated_middle.client_order_id, cid_tp);
+    assert_eq!(
+        updated_middle.venue_order_id,
+        Some(VenueOrderId::from("701"))
+    );
+    assert_eq!(updated_middle.price, Some(Price::from("3175.00")));
+    assert_eq!(updated_newest.client_order_id, cid_tp);
+    assert_eq!(
+        updated_newest.venue_order_id,
+        Some(VenueOrderId::from("702"))
+    );
+    // History omits a filled leg's limit price, so its rebind keeps the previous leg's
+    assert_eq!(updated_newest.price, Some(Price::from("3175.00")));
+    assert_eq!(filled.client_order_id, cid_tp);
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("702"));
+    assert_eq!(filled.last_qty.as_decimal(), rust_decimal_macros::dec!(1));
+    assert_eq!(filled.last_px.as_decimal(), rust_decimal_macros::dec!(3150));
+    assert_eq!(
+        action["cancels"][0]["cloid"],
+        json!(Cloid::from_client_order_id(cid_sl).to_hex())
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_holds_recovered_cancel_until_its_modify_resolves() {
+    // A modify replaces the order while disconnected, and the first history read shows the old
+    // venue order canceled before its replacement appears. The cancel must wait for the modify,
+    // so the read that shows the replacement rebinds the order instead of it being closed.
+    let state = TestServerState::default();
+    let historical_orders = state.historical_orders_response.clone();
+    let info_requests = state.info_requests.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-MOD").await;
+
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut open_order = historical_order("BTC", 12345);
+    open_order["order"]["sz"] = json!("0.0001");
+    open_order["order"]["origSz"] = json!("0.0001");
+    open_order["order"]["cloid"] =
+        json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    open_order["status"] = json!("open");
+    open_order["statusTimestamp"] = json!(ts_ms);
+    *historical_orders.lock().await = Some(json!([open_order]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+
+    let order = accept_order_in_cache(&cache, order, VenueOrderId::from("12345"));
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut canceled_order = open_order.clone();
+    canceled_order["status"] = json!("canceled");
+    canceled_order["statusTimestamp"] = json!(ts_ms + 1);
+    *historical_orders.lock().await = Some(json!([canceled_order]));
+    let reads_before = history_reads(&info_requests).await.len();
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let info_requests = info_requests.clone();
+            async move { history_reads(&info_requests).await.len() >= reads_before + 2 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let mut events_while_held = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            events_while_held.push(event);
+        }
+    }
+
+    let mut replacement = open_order.clone();
+    replacement["order"]["oid"] = json!(12346);
+    replacement["statusTimestamp"] = json!(ts_ms + 1);
+    *historical_orders.lock().await = Some(json!([canceled_order, replacement]));
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Updated(_))).await;
+
+    let [OrderEventAny::Updated(updated)] = events.as_slice() else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(events_while_held, vec![]);
+    assert_eq!(updated.client_order_id, order.client_order_id());
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from("12346")));
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id()),
+        None
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_ignores_stream_accepts_of_superseded_legs() {
+    // Two modifies land between the resubscription and the history read, so the history and the
+    // resumed stream both hold them. Once recovery binds the newest leg, the stream's accept and
+    // cancel of the middle leg must neither move the binding back nor close the order.
+    let state = TestServerState::default();
+    let historical_orders = state.historical_orders_response.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-OVERLAP").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+
+    let leg = |oid: u64, status: &str, created_ms: u64, status_ts_ms: u64| {
+        let mut leg = historical_order("BTC", oid);
+        leg["order"]["timestamp"] = json!(created_ms);
+        leg["order"]["sz"] = json!("0.0001");
+        leg["order"]["origSz"] = json!("0.0001");
+        leg["order"]["cloid"] = json!(cloid);
+        leg["status"] = json!(status);
+        leg["statusTimestamp"] = json!(status_ts_ms);
+        leg
+    };
+
+    *historical_orders.lock().await = Some(json!([leg(12345, "open", ts_ms, ts_ms)]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+
+    while rx.try_recv().is_ok() {}
+    *historical_orders.lock().await = Some(json!([
+        leg(12345, "canceled", ts_ms, ts_ms + 1),
+        leg(12346, "canceled", ts_ms + 1, ts_ms + 2),
+        leg(12347, "open", ts_ms + 2, ts_ms + 2),
+    ]));
+    *frame_after_user_events_ack.lock().await = Some(order_updates_frame(&[
+        leg(12346, "open", ts_ms + 1, ts_ms + 1),
+        leg(12345, "canceled", ts_ms, ts_ms + 1),
+        leg(12346, "canceled", ts_ms + 1, ts_ms + 2),
+        leg(12347, "open", ts_ms + 2, ts_ms + 2),
+        external_canceled_order(999, ts_ms + 3),
+    ]));
+    request_user_streams_reconnect(&registry);
+    let mut events = Vec::new();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(event) = rx.recv().await {
+            match event {
+                ExecutionEvent::Order(event) => events.push(event),
+                ExecutionEvent::Report(ExecutionReport::Order(report))
+                    if report.venue_order_id == VenueOrderId::from("999") =>
+                {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for the external marker order");
+
+    let [
+        OrderEventAny::Updated(updated_middle),
+        OrderEventAny::Updated(updated_newest),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected events after recovery: {events:?}");
+    };
+
+    assert_eq!(updated_middle.client_order_id, order.client_order_id());
+    assert_eq!(
+        updated_middle.venue_order_id,
+        Some(VenueOrderId::from("12346"))
+    );
+    assert_eq!(updated_newest.client_order_id, order.client_order_id());
+    assert_eq!(
+        updated_newest.venue_order_id,
+        Some(VenueOrderId::from("12347"))
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_rebinds_through_queued_modifies_before_the_close() {
+    // Two modifies are queued when the socket drops, both replace the order, and the second
+    // replacement is canceled before reconnect. Recovery must rebind through each leg with its
+    // own modify's target and then apply the cancel, not leave a modify to hide it.
+    let state = TestServerState::default();
+    let historical_orders = state.historical_orders_response.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-MODS").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+
+    let leg = |oid: u64, status: &str, created_ms: u64, status_ts_ms: u64| {
+        let mut leg = historical_order("BTC", oid);
+        leg["order"]["timestamp"] = json!(created_ms);
+        leg["order"]["sz"] = json!("0.0001");
+        leg["order"]["origSz"] = json!("0.0001");
+        leg["order"]["cloid"] = json!(cloid);
+        leg["status"] = json!(status);
+        leg["statusTimestamp"] = json!(status_ts_ms);
+        leg
+    };
+
+    *historical_orders.lock().await = Some(json!([leg(12345, "open", ts_ms, ts_ms)]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+
+    let order = accept_order_in_cache(&cache, order, VenueOrderId::from("12345"));
+
+    let second_modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("12345")),
+        Some(Quantity::from("0.0003")),
+        Some(Price::from("56900.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
+        .unwrap();
+    client.modify_order(second_modify).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+    *historical_orders.lock().await = Some(json!([
+        leg(12345, "canceled", ts_ms, ts_ms + 1),
+        leg(12346, "canceled", ts_ms + 1, ts_ms + 2),
+        leg(12347, "canceled", ts_ms + 2, ts_ms + 3),
+    ]));
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Canceled(_))).await;
+
+    let [
+        OrderEventAny::Updated(updated_middle),
+        OrderEventAny::Updated(updated_newest),
+        OrderEventAny::Canceled(canceled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(updated_middle.client_order_id, order.client_order_id());
+    assert_eq!(
+        updated_middle.venue_order_id,
+        Some(VenueOrderId::from("12346"))
+    );
+    assert_eq!(updated_middle.quantity, Quantity::from("0.0002"));
+    assert_eq!(updated_newest.client_order_id, order.client_order_id());
+    assert_eq!(
+        updated_newest.venue_order_id,
+        Some(VenueOrderId::from("12347"))
+    );
+    assert_eq!(updated_newest.quantity, Quantity::from("0.0003"));
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+    assert_eq!(canceled.venue_order_id, Some(VenueOrderId::from("12347")));
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id()),
+        None
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::fill_before_the_modify(2)]
+#[case::fill_in_the_modify_block(3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_reduces_oversized_replacement_after_middle_leg_fill(
+    #[case] fill_offset_ms: u64,
+) {
+    // Two modifies of 0.0002 are queued when the socket drops. The first replacement fills
+    // 0.0001 before the second replaces it (in an earlier block, or in the same block, so with
+    // the same timestamp), and the venue rests the second at the full 0.0002 it was sent with.
+    // Recovery must apply each leg in turn and reduce the resting replacement to the 0.0001
+    // still owed, not send that reduction to the replaced leg.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-CORR").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+
+    let leg =
+        |oid: u64, limit_px: &str, size: &str, status: &str, created_ms: u64, status_ts_ms: u64| {
+            let mut leg = historical_order("BTC", oid);
+            leg["order"]["timestamp"] = json!(created_ms);
+            leg["order"]["limitPx"] = json!(limit_px);
+            leg["order"]["sz"] = json!(size);
+            leg["order"]["origSz"] = json!(size);
+            leg["order"]["cloid"] = json!(cloid);
+            leg["status"] = json!(status);
+            leg["statusTimestamp"] = json!(status_ts_ms);
+            leg
+        };
+
+    *historical_orders.lock().await = Some(json!([leg(
+        12345, "56730.0", "0.0001", "open", ts_ms, ts_ms
+    )]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+
+    let order = accept_order_in_cache(&cache, order, VenueOrderId::from("12345"));
+
+    let second_modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("12345")),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56900.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
+        .unwrap();
+    client.modify_order(second_modify).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+    let mut middle_fill = user_fill("BTC", 12346);
+    middle_fill["px"] = json!("56800.0");
+    middle_fill["sz"] = json!("0.0001");
+    middle_fill["time"] = json!(ts_ms + fill_offset_ms);
+    middle_fill["cloid"] = json!(cloid);
+    *historical_orders.lock().await = Some(json!([
+        leg(12345, "56730.0", "0.0001", "canceled", ts_ms, ts_ms + 1),
+        leg(12346, "56800.0", "0.0001", "canceled", ts_ms + 1, ts_ms + 3),
+        leg(12347, "56900.0", "0.0002", "open", ts_ms + 3, ts_ms + 3),
+    ]));
+    *user_fills.lock().await = Some(json!([middle_fill]));
+    request_user_streams_reconnect(&registry);
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Updated(updated) if updated.venue_order_id == Some(VenueOrderId::from("12347")))).await;
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action.lock().await.as_ref().is_some_and(|action| {
+                    action["type"] == json!("modify") && action["oid"] == json!(12347)
+                })
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let [
+        OrderEventAny::Updated(updated_middle),
+        OrderEventAny::Filled(filled),
+        OrderEventAny::Updated(updated_newest),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    let action = last_action.lock().await.clone().unwrap();
+    assert_eq!(
+        updated_middle.venue_order_id,
+        Some(VenueOrderId::from("12346"))
+    );
+    assert_eq!(updated_middle.quantity, Quantity::from("0.0002"));
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12346"));
+    assert_eq!(filled.last_qty, Quantity::from("0.0001"));
+    assert_eq!(
+        updated_newest.venue_order_id,
+        Some(VenueOrderId::from("12347"))
+    );
+    assert_eq!(updated_newest.quantity, Quantity::from("0.0002"));
+    assert_eq!(action["order"]["s"], json!("0.0001"));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_applies_replacement_cancel_once_reduce_and_modify_fail() {
+    // As above, but the venue canceled the oversized replacement while disconnected, so the
+    // corrective reduce sent after the rebind fails, and so does a modify the strategy sends
+    // meanwhile. The replacement's cancel stays held while either can still replace it, then
+    // closes the order.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let pause_next_exchange = state.pause_next_exchange.clone();
+    let pause_release = state.pause_release.clone();
+    let inner_order_error_next = state.inner_order_error_next.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-DEAD").await;
+
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+
+    let leg =
+        |oid: u64, limit_px: &str, size: &str, status: &str, created_ms: u64, status_ts_ms: u64| {
+            let mut leg = historical_order("BTC", oid);
+            leg["order"]["timestamp"] = json!(created_ms);
+            leg["order"]["limitPx"] = json!(limit_px);
+            leg["order"]["sz"] = json!(size);
+            leg["order"]["origSz"] = json!(size);
+            leg["order"]["cloid"] = json!(cloid);
+            leg["status"] = json!(status);
+            leg["statusTimestamp"] = json!(status_ts_ms);
+            leg
+        };
+
+    *historical_orders.lock().await = Some(json!([leg(
+        12345, "56730.0", "0.0001", "open", ts_ms, ts_ms
+    )]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(_))).await;
+
+    let order = accept_order_in_cache(&cache, order, VenueOrderId::from("12345"));
+
+    let second_modify = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("12345")),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56900.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
+        .unwrap();
+    client.modify_order(second_modify).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+    let mut middle_fill = user_fill("BTC", 12346);
+    middle_fill["px"] = json!("56800.0");
+    middle_fill["sz"] = json!("0.0001");
+    middle_fill["time"] = json!(ts_ms + 2);
+    middle_fill["cloid"] = json!(cloid);
+    *historical_orders.lock().await = Some(json!([
+        leg(12345, "56730.0", "0.0001", "canceled", ts_ms, ts_ms + 1),
+        leg(12346, "56800.0", "0.0001", "canceled", ts_ms + 1, ts_ms + 3),
+        leg(12347, "56900.0", "0.0002", "canceled", ts_ms + 3, ts_ms + 4),
+        external_canceled_order(999, ts_ms + 5),
+    ]));
+    *user_fills.lock().await = Some(json!([middle_fill]));
+    pause_next_exchange.store(true, Ordering::Relaxed);
+    inner_order_error_next.store(true, Ordering::Relaxed);
+
+    request_user_streams_reconnect(&registry);
+    let recovered_events = recv_order_report(&mut rx, "999").await;
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action.lock().await.as_ref().is_some_and(|action| {
+                    action["type"] == json!("modify") && action["oid"] == json!(12347)
+                })
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let corrective = last_action.lock().await.clone().unwrap();
+    pause_next_exchange.store(true, Ordering::Relaxed);
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12347"))))
+        .unwrap();
+    pause_release.notify_one();
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            let cloid = cloid.clone();
+            async move {
+                last_action.lock().await.as_ref().is_some_and(|action| {
+                    action["type"] == json!("modify") && action["oid"] == json!(cloid)
+                })
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let mut events_after_reduce = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            events_after_reduce.push(event);
+        }
+    }
+
+    inner_order_error_next.store(true, Ordering::Relaxed);
+    pause_release.notify_one();
+    let events_after_modify =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Canceled(_))).await;
+
+    let [
+        OrderEventAny::Updated(updated_middle),
+        OrderEventAny::Filled(filled),
+        OrderEventAny::Updated(updated_newest),
+    ] = recovered_events.as_slice()
+    else {
+        panic!("unexpected recovered events: {recovered_events:?}");
+    };
+
+    let Some((OrderEventAny::Canceled(canceled), before_cancel)) = events_after_modify.split_last()
+    else {
+        panic!("unexpected events after the failed modify: {events_after_modify:?}");
+    };
+
+    assert_eq!(
+        updated_middle.venue_order_id,
+        Some(VenueOrderId::from("12346"))
+    );
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12346"));
+    assert_eq!(
+        updated_newest.venue_order_id,
+        Some(VenueOrderId::from("12347"))
+    );
+    assert_eq!(corrective["order"]["s"], json!("0.0001"));
+    assert_eq!(events_after_reduce, vec![]);
+    assert!(
+        before_cancel
+            .iter()
+            .all(|event| matches!(event, OrderEventAny::ModifyRejected(_))),
+        "unexpected events before the cancel: {before_cancel:?}"
+    );
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+    assert_eq!(canceled.venue_order_id, Some(VenueOrderId::from("12347")));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_applies_stop_loss_cancel_after_failed_resize() {
+    // A take-profit partial fill resizes the stop-loss, and the venue had already canceled the
+    // stop-loss, so the resize fails. The stop-loss cancel, held while the resize was in flight,
+    // must still close the stop-loss and cancel its take-profit sibling.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let user_fills = state.user_fills_response.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let pause_next_exchange = state.pause_next_exchange.clone();
+    let pause_release = state.pause_release.clone();
+    let inner_order_error_next = state.inner_order_error_next.clone();
+    let addr = start_mock_server(state).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let (cmd, cid_p, cid_tp, cid_sl) = add_normal_tpsl_bracket(&cache);
+    client.submit_order_list(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let mut parent_fill = user_fill("ETH", 12345);
+    parent_fill["px"] = json!("3000.0");
+    parent_fill["sz"] = json!("1.0");
+    parent_fill["time"] = json!(ts_ms);
+    parent_fill["cloid"] = json!(Cloid::from_client_order_id(cid_p).to_hex());
+    *user_fills.lock().await = Some(json!([parent_fill]));
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .and_then(|action| action["orders"].as_array().map(Vec::len))
+                    == Some(2)
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+    let sl_cloid = Cloid::from_client_order_id(cid_sl).to_hex();
+
+    let sl_leg = |status: &str, status_ts_ms: u64| {
+        let mut leg = historical_order("ETH", 800);
+        leg["order"]["side"] = json!("A");
+        leg["order"]["limitPx"] = json!("2800.0");
+        leg["order"]["sz"] = json!("1.0");
+        leg["order"]["origSz"] = json!("1.0");
+        leg["order"]["reduceOnly"] = json!(true);
+        leg["order"]["cloid"] = json!(sl_cloid);
+        leg["status"] = json!(status);
+        leg["statusTimestamp"] = json!(status_ts_ms);
+        leg
+    };
+
+    *historical_orders.lock().await = Some(json!([sl_leg("open", ts_ms + 1)]));
+    request_user_streams_reconnect(&registry);
+    recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Accepted(accepted) if accepted.client_order_id == cid_sl)).await;
+
+    let tp_cloid = Cloid::from_client_order_id(cid_tp).to_hex();
+    let mut tp_fill = user_fill("ETH", 700);
+    tp_fill["side"] = json!("A");
+    tp_fill["px"] = json!("3200.0");
+    tp_fill["sz"] = json!("0.5");
+    tp_fill["time"] = json!(ts_ms + 2);
+    tp_fill["cloid"] = json!(tp_cloid);
+    *user_fills.lock().await = Some(json!([parent_fill, tp_fill]));
+    *historical_orders.lock().await = Some(json!([
+        sl_leg("reduceOnlyCanceled", ts_ms + 3),
+        external_canceled_order(999, ts_ms + 4),
+    ]));
+    pause_next_exchange.store(true, Ordering::Relaxed);
+    inner_order_error_next.store(true, Ordering::Relaxed);
+
+    request_user_streams_reconnect(&registry);
+    let recovered_events = recv_order_report(&mut rx, "999").await;
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|action| action["type"] == json!("modify"))
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let resize = last_action.lock().await.clone().unwrap();
+    pause_release.notify_one();
+    let released_events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Canceled(_))).await;
+    wait_until_async(
+        || {
+            let last_action = last_action.clone();
+            async move {
+                last_action
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|action| action["type"] == json!("cancelByCloid"))
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let [
+        OrderEventAny::Accepted(tp_accepted),
+        OrderEventAny::Filled(tp_filled),
+    ] = recovered_events.as_slice()
+    else {
+        panic!("unexpected recovered events: {recovered_events:?}");
+    };
+
+    let [OrderEventAny::Canceled(sl_canceled)] = released_events.as_slice() else {
+        panic!("unexpected events after the failed resize: {released_events:?}");
+    };
+
+    let sibling_cancel = last_action.lock().await.clone().unwrap();
+    assert_eq!(tp_accepted.client_order_id, cid_tp);
+    assert_eq!(tp_filled.client_order_id, cid_tp);
+    assert_eq!(
+        tp_filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.5)
+    );
+    assert_eq!(resize["oid"], json!(sl_cloid));
+    assert_eq!(resize["order"]["s"], json!("0.5"));
+    assert_eq!(sl_canceled.client_order_id, cid_sl);
+    assert_eq!(sl_canceled.venue_order_id, Some(VenueOrderId::from("800")));
+    assert_eq!(sibling_cancel["cancels"][0]["cloid"], json!(tp_cloid));
+
+    client.disconnect().await.unwrap();
+}
+
+// History rows of a cancel-replace modify: the replacement leg open and the old leg canceled
+fn replaced_order_legs(
+    client_order_id: ClientOrderId,
+    side: &str,
+    limit_px: &str,
+    old_oid: u64,
+    new_oid: u64,
+    ts_ms: u64,
+) -> [Value; 2] {
+    let mut replacement = historical_order("ETH", new_oid);
+    replacement["order"]["side"] = json!(side);
+    replacement["order"]["limitPx"] = json!(limit_px);
+    replacement["order"]["sz"] = json!("1.0");
+    replacement["order"]["origSz"] = json!("1.0");
+    replacement["order"]["cloid"] = json!(Cloid::from_client_order_id(client_order_id).to_hex());
+    replacement["status"] = json!("open");
+    replacement["statusTimestamp"] = json!(ts_ms);
+    let mut old_leg = replacement.clone();
+    old_leg["order"]["oid"] = json!(old_oid);
+    old_leg["status"] = json!("canceled");
+    [replacement, old_leg]
+}
+
+fn order_updates_frame(rows: &[Value]) -> Value {
+    json!({"channel": "orderUpdates", "data": rows})
+}
+
+fn external_canceled_order(oid: u64, ts_ms: u64) -> Value {
+    let mut order = historical_order("ETH", oid);
+    order["status"] = json!("canceled");
+    order["statusTimestamp"] = json!(ts_ms);
+    order
+}
+
+// Returns the order events emitted before the report
+async fn recv_order_report(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    venue_order_id: &str,
+) -> Vec<OrderEventAny> {
+    let mut events = Vec::new();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(event) = rx.recv().await {
+            match event {
+                ExecutionEvent::Order(event) => events.push(event),
+                ExecutionEvent::Report(ExecutionReport::Order(report))
+                    if report.venue_order_id == VenueOrderId::from(venue_order_id) =>
+                {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for the external order report");
+
+    events
+}
+
+async fn submit_resting_limit_order(
+    client: &HyperliquidExecutionClient,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: &str,
+) -> OrderAny {
+    let order = make_limit_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    order
+}
+
+// Waits out a reconnect still finishing, so back-to-back requests each force their own cycle
+fn request_user_streams_reconnect(registry: &SocketReconnectRegistry) {
+    let handle = registry
+        .handle(
+            *HYPERLIQUID_CLIENT_ID,
+            Ustr::from("hyperliquid-user-streams"),
+        )
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut outcome = handle.request_reconnect();
+
+    while outcome == SocketReconnectRequestOutcome::AlreadyReconnecting
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(20));
+        outcome = handle.request_reconnect();
+    }
+
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+}
+
+async fn recv_order_events_until(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    last: impl Fn(&OrderEventAny) -> bool,
+) -> Vec<OrderEventAny> {
+    let mut events = Vec::new();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(event) = rx.recv().await {
+            if let ExecutionEvent::Order(event) = event {
+                let done = last(&event);
+                events.push(event);
+
+                if done {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for recovered order events");
+
+    events
+}
+
+async fn history_reads(info_requests: &tokio::sync::Mutex<Vec<Value>>) -> Vec<String> {
+    info_requests
+        .lock()
+        .await
+        .iter()
+        .filter_map(|request| request["type"].as_str())
+        .filter(|kind| matches!(*kind, "historicalOrders" | "userFills"))
+        .map(String::from)
+        .collect()
 }
 
 #[rstest]
@@ -6533,6 +8116,40 @@ async fn test_submit_order_list_normal_tpsl_stages_children_until_parent_fill() 
     client.start().unwrap();
     client.connect().await.unwrap();
 
+    let (cmd, cid_p, cid_tp, cid_sl) = add_normal_tpsl_bracket(&cache);
+
+    client.submit_order_list(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("order action should have been sent");
+    let wire_orders = action["orders"].as_array().expect("order action array");
+
+    assert_eq!(action["grouping"], "na");
+    assert_eq!(wire_orders.len(), 1);
+    assert_eq!(
+        wire_orders[0]["c"],
+        Cloid::from_client_order_id(cid_p).to_hex()
+    );
+    assert!(client.ws_dispatch_state().lookup_context(&cid_p).is_some());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_tp).is_none());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_sl).is_none());
+
+    client.disconnect().await.unwrap();
+}
+
+// Entry with OUO take-profit and stop-loss children, listed as OrderFactory returns them
+fn add_normal_tpsl_bracket(
+    cache: &Rc<RefCell<Cache>>,
+) -> (SubmitOrderList, ClientOrderId, ClientOrderId, ClientOrderId) {
     let trader_id = TraderId::from("TESTER-001");
     let strategy_id = StrategyId::from("S-001");
     let instrument_id = InstrumentId::from("ETH-USD-PERP.HYPERLIQUID");
@@ -6628,15 +8245,15 @@ async fn test_submit_order_list_normal_tpsl_stages_children_until_parent_fill() 
 
     cache
         .borrow_mut()
-        .add_order(parent.clone(), None, None, false)
+        .add_order(parent, None, None, false)
         .unwrap();
     cache
         .borrow_mut()
-        .add_order(take_profit.clone(), None, None, false)
+        .add_order(take_profit, None, None, false)
         .unwrap();
     cache
         .borrow_mut()
-        .add_order(stop_loss.clone(), None, None, false)
+        .add_order(stop_loss, None, None, false)
         .unwrap();
 
     let order_list = OrderList::new(
@@ -6661,32 +8278,7 @@ async fn test_submit_order_list_normal_tpsl_stages_children_until_parent_fill() 
         None, // correlation_id
     );
 
-    client.submit_order_list(cmd).unwrap();
-
-    wait_until_async(
-        || async { client.pending_tasks_all_finished() },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    let action = last_action
-        .lock()
-        .await
-        .clone()
-        .expect("order action should have been sent");
-    let wire_orders = action["orders"].as_array().expect("order action array");
-
-    assert_eq!(action["grouping"], "na");
-    assert_eq!(wire_orders.len(), 1);
-    assert_eq!(
-        wire_orders[0]["c"],
-        Cloid::from_client_order_id(cid_p).to_hex()
-    );
-    assert!(client.ws_dispatch_state().lookup_context(&cid_p).is_some());
-    assert!(client.ws_dispatch_state().lookup_context(&cid_tp).is_none());
-    assert!(client.ws_dispatch_state().lookup_context(&cid_sl).is_none());
-
-    client.disconnect().await.unwrap();
+    (cmd, cid_p, cid_tp, cid_sl)
 }
 
 #[rstest]

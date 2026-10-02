@@ -1230,15 +1230,22 @@ paired cancel of the old leg never reaches it.
 #### Early cancel before the replacement
 
 If Hyperliquid delivers `CANCELED(old_oid)` before `ACCEPTED(new_oid)` for an in-flight modify,
-a pending-modify intent lets the dispatch drop the old leg's cancel and still route the
-subsequent `ACCEPTED` through the `OrderUpdated` path. The intent is queued before the HTTP call,
-so an early cancel is suppressed even while the request is still in flight. If the request fails
-before dispatch, or the venue rejects it, the adapter emits `OrderModifyRejected` and clears its
-own intent. A failure after dispatch with an unknown venue outcome keeps the intent, so a modify
-that reaches the venue despite a client-side timeout still suppresses the early `CANCELED(old_oid)`
-and promotes the eventual `ACCEPTED(new_oid)` to `OrderUpdated` (detection otherwise falls back to
-the cached `venue_order_id`, which the late `ACCEPTED` no longer matches). See
+a pending-modify intent lets the dispatch hold the old leg's cancel and still route the
+subsequent `ACCEPTED` through the `OrderUpdated` path, which discards the held cancel. The intent
+is queued before the HTTP call, so an early cancel is held even while the request is still in
+flight. If the request fails before dispatch, or the venue rejects it, the adapter emits
+`OrderModifyRejected` and clears its own intent. A failure after dispatch with an unknown venue
+outcome keeps the intent, so a modify that reaches the venue despite a client-side timeout still
+holds the early `CANCELED(old_oid)` and promotes the eventual `ACCEPTED(new_oid)` to
+`OrderUpdated` (detection otherwise falls back to the cached `venue_order_id`, which the late
+`ACCEPTED` no longer matches). See
 [GH-3827](https://github.com/nautechsystems/nautilus_trader/issues/3827).
+
+A cancel from elsewhere, such as a user cancel or a reduce-only cancel by the venue, arrives the
+same way while a modify of that leg is in flight, and it makes the modify fail. Once no modify or
+corrective reduce still targets the leg, the adapter applies the held cancel as `OrderCanceled`
+through the stream path, so bracket handling runs as for any other cancel. A cancel held behind a
+request whose outcome is unknown waits until the in-flight check settles the order.
 
 #### Chained modifies
 
@@ -1247,7 +1254,9 @@ a single marker. A later modify does not overwrite an earlier intent's old-leg s
 failed modify clears only its own attempt, leaving newer queued modifies intact. Each replacement
 `ACCEPTED` promotes the oldest queued intent and advances the next intent's old leg to the promoted
 replacement, so every leg's stale cancel is suppressed and each `OrderUpdated` carries its own
-target quantity.
+target quantity. Hyperliquid assigns venue order IDs in increasing order, so an `ACCEPTED` or fill
+for a leg older than the bound one, such as a replay after a reconnect, never moves the binding
+back.
 
 The same chain guards the inflight query and single-order reconcile paths. While a modify is in
 flight, `query_order` and `generate_order_status_report` drop a `Canceled` for the superseded leg,
@@ -1436,6 +1445,47 @@ frame as a dead peer and starts the same reconnect path.
 Live data and execution clients publish `SocketStateChanged` on `hyperliquid-data-streams` and
 `hyperliquid-user-streams`. Both endpoints register a reconnect handle, so `reconnect_socket` can
 target them without cycling the containing client.
+
+### Execution recovery after reconnect
+
+Hyperliquid sends no snapshot when the execution client resubscribes to `orderUpdates` and
+`userEvents`, so fills and order updates that occur while the socket is down never arrive on the
+stream. After a reconnect, the execution client waits for the venue to confirm both
+subscriptions, then reads the account's `historicalOrders` and then its `userFills` over REST. It
+processes the fills and the latest status of each venue order from the venue time of the last
+report the stream delivered (the stream start before any report), less a 30-second margin, oldest
+first and through the same path as stream updates. Stream updates that arrive after the reconnect
+wait until this recovery finishes, so recovered events apply before any newer update.
+
+The history endpoints can lag the venue's live state by several seconds, so an event shortly
+before the reconnect can be missing from that first read. Five seconds after it, the client reads
+the history again over the same window and processes it the same way, applying what the first read
+missed and skipping what it already applied. Stream updates do not wait for this second read, so
+it can apply an event after a newer stream update for the same order. A fill it finds for an order
+that a newer update has already closed reaches reconciliation as an external fill report.
+
+- The client skips fills it already emitted and status-only `filled` updates, whose state the
+  recovered fills carry. The engine deduplicates any other fill it already applied by trade ID.
+- Updates for orders this client submitted resolve to their client order IDs through the venue
+  CLOID. Updates for other orders reach reconciliation as external reports, as they do on the
+  stream.
+- A modify gives the order a new venue order ID, so an order modified while disconnected spans
+  several venue orders. Recovery opens each one the client has not seen in placement order, so the
+  order rebinds to each in turn with `OrderUpdated` and each one's fills apply after it. Recovery
+  drops the cancels of the replaced venue orders and applies only the newest one's status.
+- A modify or corrective reduce still pending against the newest venue order holds back that
+  venue order's close until the venue resolves the request, as described in
+  [Early cancel before the replacement](#early-cancel-before-the-replacement). A read that shows
+  the close before the replacement appears therefore cannot end an order the modify replaced.
+- If the venue does not confirm the subscriptions within 10 seconds, the client logs a warning
+  and reads the history anyway.
+- If a history request fails, the client logs an error and resumes the stream without the missed
+  events until the second read retries it. If that read fails too, a later reconnect recovers only
+  from the last report the stream has delivered by then, so in-flight checks and, when configured,
+  open-order checks (`open_check_interval_secs`) are the fallback.
+
+Each history endpoint returns only the account's 2,000 most recent records, so recovery cannot
+reach events older than those.
 
 ### Stream health and recovery
 

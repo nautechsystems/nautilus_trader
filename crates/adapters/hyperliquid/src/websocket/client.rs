@@ -1400,6 +1400,24 @@ impl HyperliquidWebSocketClient {
         self.subscriptions.len()
     }
 
+    pub(crate) async fn wait_for_subscriptions_confirmed(
+        &self,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
+        tokio::time::timeout(timeout, async {
+            while !self.subscriptions.pending_subscribe_topics().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Subscriptions still pending after {timeout:?}: {:?}",
+                self.subscriptions.pending_subscribe_topics()
+            )
+        })
+    }
+
     /// Gets a bar type from the cache by coin and interval.
     ///
     /// This looks up the subscription key created when subscribing to bars.
@@ -2920,6 +2938,34 @@ mod tests {
             error.to_string(),
             "auth error: credentials required for exchange operations"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn wait_for_subscriptions_confirmed_waits_for_pending_topics() {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let topic = "orderUpdates:0xabc";
+        client.subscriptions.mark_subscribe(topic);
+
+        let pending = client
+            .wait_for_subscriptions_confirmed(Duration::from_millis(30))
+            .await;
+        client.subscriptions.confirm_subscribe(topic);
+        let confirmed = client
+            .wait_for_subscriptions_confirmed(Duration::from_millis(30))
+            .await;
+
+        assert_eq!(
+            pending.unwrap_err().to_string(),
+            r#"Subscriptions still pending after 30ms: ["orderUpdates:0xabc"]"#,
+        );
+        assert!(confirmed.is_ok());
     }
 
     #[tokio::test]

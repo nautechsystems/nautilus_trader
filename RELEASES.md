@@ -363,6 +363,9 @@ Released on TBD (UTC).
 - Fixed Hyperliquid book recovery after missing snapshots, invalid frames, and reconnects
 - Fixed Hyperliquid order book snapshots missing `F_SNAPSHOT` and closing every level with `F_LAST`
 - Fixed Hyperliquid depth-only book subscriptions emitting order book deltas
+- Fixed Hyperliquid fills and order updates missed while the execution WebSocket was disconnected
+- Fixed Hyperliquid bracket order modification canceling contingent orders
+- Fixed Hyperliquid orders left open when canceled while a modify of them was in flight
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
