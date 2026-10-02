@@ -261,6 +261,7 @@ Released on TBD (UTC).
 - Fixed catalog instrument listing ignoring `base_path` on remote stores such as `s3://` (#5052), thanks @xWaita
 - Fixed catalog-wide delete and consolidation skipping directories whose name prefixes a sibling directory
 - Fixed catalog-wide delete and consolidation on remote catalogs whose base path contains a `data` segment
+- Fixed remote catalogs accepting base paths that object-store paths encode, which broke queries
 - Fixed custom data queries matching identifiers by substring instead of the identifier directory
 - Fixed bar queries dropping instrument ID identifiers listed alongside full bar types
 - Fixed `filter_files` matching bar types by name prefix instead of instrument ID

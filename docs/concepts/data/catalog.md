@@ -72,6 +72,10 @@ azure_catalog = ParquetDataCatalog(
 )
 ```
 
+The base path of a remote URI, after the bucket, container, or host, must not contain spaces,
+non-ASCII characters, or characters that object-store paths encode, such as `~`, `%`, `#`, `?`,
+`^`, or `|`. The catalog rejects such a URI when it opens, with an error that names it.
+
 ## Compression and row groups
 
 `DataCatalogConfig` sets how a configured catalog reads and writes data files:

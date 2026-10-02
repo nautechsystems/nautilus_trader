@@ -3210,6 +3210,25 @@ fn test_remote_to_object_path_rejects_cross_store_uri() {
 
 #[cfg(feature = "cloud")]
 #[rstest]
+fn test_from_uri_rejects_base_path_that_paths_change() {
+    let uri = "s3://test-bucket/préfix";
+
+    let error = ParquetDataCatalog::from_uri(uri, None, None, None, None)
+        .err()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        error,
+        format!(
+            "Storage URI '{uri}' has a base path that URL parsing or object-store path encoding \
+             changes; use a base path without spaces, non-ASCII, or reserved characters"
+        )
+    );
+}
+
+#[cfg(feature = "cloud")]
+#[rstest]
 fn test_is_remote_uri() {
     // Test S3 URIs
     let s3_catalog =

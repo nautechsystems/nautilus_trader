@@ -1012,4 +1012,24 @@ mod tests {
             "s3://nautilus-test/"
         );
     }
+
+    #[cfg(feature = "cloud")]
+    #[rstest]
+    fn create_storage_backend_rejects_base_path_that_paths_change() {
+        let uri = "s3://nautilus-test/préfix";
+
+        let error = create_storage_backend_from_path(uri, None)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            error,
+            format!(
+                "Storage URI '{uri}' has a base path that URL parsing or object-store path \
+                 encoding changes; use a base path without spaces, non-ASCII, or reserved \
+                 characters"
+            )
+        );
+    }
 }

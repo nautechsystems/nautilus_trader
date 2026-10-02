@@ -1007,11 +1007,25 @@ fn create_http_store(
     Ok((Arc::new(http_store), path, uri.to_string()))
 }
 
-/// Helper function to parse URL and extract path component.
+/// Parses a remote storage URI into its URL and object-store base path.
+///
+/// Catalog listings return keys under the encoded base path while lookups use the path as
+/// written, so a base path that URL parsing or object-store path encoding changes is rejected.
 #[cfg(feature = "cloud")]
 fn parse_url_and_path(uri: &str) -> anyhow::Result<(Url, String)> {
     let url = Url::parse(uri)?;
     let path = url.path().trim_start_matches('/').to_string();
+    let raw_path = uri
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .map_or("", |(_, raw)| raw.trim_start_matches('/'));
+
+    anyhow::ensure!(
+        raw_path == path && ObjectPath::from(path.as_str()).as_ref() == path.trim_end_matches('/'),
+        "Storage URI '{uri}' has a base path that URL parsing or object-store path encoding \
+         changes; use a base path without spaces, non-ASCII, or reserved characters",
+    );
+
     Ok((url, path))
 }
 
@@ -1706,6 +1720,52 @@ mod tests {
             error,
             format!("Configuration key: '{key}' is not valid for store '{store}'.")
         );
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::non_ascii("s3://test-bucket/préfix")]
+    #[case::space("s3://test-bucket/my prefix")]
+    #[case::tilde("s3://test-bucket/~prefix")]
+    #[case::fragment("s3://test-bucket/pre#fix")]
+    #[case::percent_encoded("s3://test-bucket/pr%C3%A9fix")]
+    #[case::empty_segment("s3://test-bucket/base//path")]
+    #[case::gcs("gs://test-bucket/préfix")]
+    #[case::azure("az://container/préfix")]
+    #[case::abfs("abfs://container@account.dfs.core.windows.net/préfix")]
+    #[case::http("https://example.com/préfix")]
+    fn test_create_object_store_rejects_base_path_that_paths_change(#[case] uri: &str) {
+        let error = create_object_store_from_path(uri, None)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            error,
+            format!(
+                "Storage URI '{uri}' has a base path that URL parsing or object-store path \
+                 encoding changes; use a base path without spaces, non-ASCII, or reserved \
+                 characters"
+            )
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::bucket_root("s3://test-bucket", "")]
+    #[case::trailing_slash("s3://test-bucket/nautilus-data/", "nautilus-data/")]
+    #[case::unreserved(
+        "s3://test-bucket/team_a/v2.catalog/year=2026",
+        "team_a/v2.catalog/year=2026"
+    )]
+    fn test_create_object_store_accepts_ascii_base_path(
+        #[case] uri: &str,
+        #[case] expected_base_path: &str,
+    ) {
+        let (_, base_path, original_uri) = create_object_store_from_path(uri, None).unwrap();
+
+        assert_eq!(base_path, expected_base_path);
+        assert_eq!(original_uri, uri);
     }
 
     #[rstest]
