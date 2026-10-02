@@ -3726,6 +3726,114 @@ mod tests {
         assert_eq!(exits.get(), 1);
     }
 
+    // Submits a bracket whose market entry is larger than the top-of-book size
+    #[derive(Debug)]
+    struct MultiStepEntryStrategy {
+        core: StrategyCore,
+        instrument_id: InstrumentId,
+        submitted: bool,
+    }
+
+    impl DataActor for MultiStepEntryStrategy {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.subscribe_quotes(self.instrument_id, None, None);
+            Ok(())
+        }
+
+        fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+            if self.submitted {
+                return Ok(());
+            }
+            self.submitted = true;
+            let orders = self
+                .order()
+                .bracket()
+                .instrument_id(self.instrument_id)
+                .order_side(OrderSide::Buy)
+                .quantity(Quantity::from("2.000"))
+                .tp_price(Price::from("1100.00"))
+                .sl_trigger_price(Price::from("800.00"))
+                .call();
+            self.submit_order_list(orders, None, None, None)
+        }
+    }
+
+    nautilus_strategy!(MultiStepEntryStrategy);
+
+    #[rstest]
+    fn test_full_trigger_market_entry_filling_in_steps_releases_children(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let instrument_id = crypto_perpetual_ethusdt.id;
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(instrument_id.venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .oto_full_trigger(true)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+        engine
+            .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+            .unwrap();
+        engine
+            .add_strategy(MultiStepEntryStrategy {
+                core: StrategyCore::new(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("MULTI-STEP-001")),
+                    ..Default::default()
+                }),
+                instrument_id,
+                submitted: false,
+            })
+            .unwrap();
+        let quotes = [1, 2]
+            .into_iter()
+            .map(|secs: u64| {
+                let ts = UnixNanos::from(secs * 1_000_000_000);
+                Data::Quote(QuoteTick::new(
+                    instrument_id,
+                    Price::from("1000.00"),
+                    Price::from("1001.00"),
+                    Quantity::from("1.000"),
+                    Quantity::from("1.000"),
+                    ts,
+                    ts,
+                ))
+            })
+            .collect();
+        engine.add_data(quotes, None, true, true).unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+
+        let cache = engine.kernel.cache.borrow();
+        let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+        assert_eq!(orders.len(), 3);
+
+        for order in &orders {
+            let fill_count = order
+                .events()
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+                .count();
+            let expected = if order.parent_order_id().is_none() {
+                assert!(fill_count > 1, "entry filled in {fill_count} step(s)");
+                OrderStatus::Filled
+            } else {
+                OrderStatus::Accepted
+            };
+            assert_eq!(
+                order.status(),
+                expected,
+                "unexpected events {:?}",
+                order.events()
+            );
+        }
+    }
+
     #[rstest]
     fn test_timer_handler_sets_last_ns_to_fire_time() {
         let mut engine = create_engine();

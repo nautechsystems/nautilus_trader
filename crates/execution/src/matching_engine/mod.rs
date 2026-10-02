@@ -128,6 +128,7 @@ pub struct OrderMatchingEngine {
     pending_fills: IndexMap<TradeId, PendingFill>,
     post_match_order_ids: IndexSet<ClientOrderId>,
     pending_oto_order_ids: IndexSet<ClientOrderId>,
+    rejected_oto_parent_ids: RefCell<IndexSet<ClientOrderId>>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
     trade_consumption: QuantityRaw,
@@ -224,6 +225,7 @@ impl OrderMatchingEngine {
             pending_fills: IndexMap::new(),
             post_match_order_ids: IndexSet::new(),
             pending_oto_order_ids: IndexSet::new(),
+            rejected_oto_parent_ids: RefCell::new(IndexSet::new()),
             ids_generator,
             last_trade_size: None,
             trade_consumption: 0,
@@ -293,6 +295,7 @@ impl OrderMatchingEngine {
         self.pending_fills.clear();
         self.post_match_order_ids.clear();
         self.pending_oto_order_ids.clear();
+        self.rejected_oto_parent_ids.get_mut().clear();
         self.core.reset();
         self.target_bid = None;
         self.target_ask = None;
@@ -3042,7 +3045,13 @@ impl OrderMatchingEngine {
                     };
                     let parent_filled_qty = parent_order.filled_qty();
 
-                    if parent_order.status() == OrderStatus::Rejected {
+                    // The rejection of a parent in the same command can still be deferred
+                    if parent_order.status() == OrderStatus::Rejected
+                        || self
+                            .rejected_oto_parent_ids
+                            .borrow()
+                            .contains(&parent_order_id)
+                    {
                         break 'validate Some(
                             format!("Rejected OTO order from {parent_order_id}").into(),
                         );
@@ -3050,24 +3059,13 @@ impl OrderMatchingEngine {
                         || (self.config.oto_full_trigger
                             && parent_filled_qty < parent_order.quantity())
                     {
-                        let parent_held = self.core.order_exists(parent_order_id)
-                            || self.pending_oto_order_ids.contains(&parent_order_id);
-
-                        // A parent for this instrument that this engine does not hold, such as
-                        // a rejected entry, can no longer trigger the child
-                        if !parent_held && parent_order.instrument_id() == self.instrument.id() {
-                            break 'validate Some(
-                                format!("Rejected OTO order from {parent_order_id}").into(),
-                            );
-                        }
-
                         log::info!(
                             "Pending OTO order {} triggers from {parent_order_id}",
                             order.client_order_id(),
                         );
 
-                        // Only a parent this engine holds can still trigger or cancel the child
-                        if parent_held {
+                        // A parent on another instrument triggers the child from its own engine
+                        if parent_order.instrument_id() == self.instrument.id() {
                             self.pending_oto_order_ids.insert(order.client_order_id());
                         }
                         return;
@@ -3656,6 +3654,15 @@ impl OrderMatchingEngine {
             });
     }
 
+    fn purge_applied_rejections(&mut self) {
+        let cache = self.cache.borrow();
+        self.rejected_oto_parent_ids.get_mut().retain(|id| {
+            cache
+                .order(id)
+                .is_some_and(|order| order.status() != OrderStatus::Rejected)
+        });
+    }
+
     fn retain_unapplied_order_updates(order: &OrderAny, updates: &mut Vec<OrderUpdated>) {
         if order.is_closed() {
             updates.clear();
@@ -4076,6 +4083,7 @@ impl OrderMatchingEngine {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
+        self.purge_applied_rejections();
         self.purge_applied_fills();
 
         // Only reset bid/ask from book when not processing trade execution
@@ -4241,6 +4249,7 @@ impl OrderMatchingEngine {
         self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement, &[]);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
+        self.purge_applied_rejections();
         self.purge_applied_fills();
     }
 
@@ -6701,7 +6710,7 @@ impl OrderMatchingEngine {
     // it parked, so a locally active cached status for either means their submit, and for an
     // accepted order its acceptance, went through a deferring event handler and is not applied
     // yet. Applies them to the snapshot, as `accept_order` applies its acceptance, so a
-    // cancellation dispatched now follows them
+    // cancellation dispatched now follows them.
     fn apply_deferred_submission(&mut self, order: &mut OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
         let accepted = self.core.order_exists(client_order_id);
@@ -6803,6 +6812,12 @@ impl OrderMatchingEngine {
     }
 
     fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
+        if order.contingency_type() == Some(ContingencyType::Oto) {
+            self.rejected_oto_parent_ids
+                .borrow_mut()
+                .insert(order.client_order_id());
+        }
+
         let event = self.create_order_rejected(order, reason);
         self.dispatch_order_event(event);
     }
@@ -9740,8 +9755,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_process_order_parks_oto_child_only_for_held_parent(
-        #[values(false, true)] parent_rejected: bool,
+    #[case::accepted_parent(false, false)]
+    #[case::rejected_parent(true, false)]
+    #[case::child_listed_first(false, true)]
+    fn test_process_order_parks_oto_child_until_parent_rejected(
+        #[case] parent_rejected: bool,
+        #[case] child_first: bool,
     ) {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -9794,8 +9813,14 @@ mod tests {
                 .unwrap();
         }
         let account_id = AccountId::from("ACCOUNT-001");
-        engine.process_order(&mut parent, account_id);
-        engine.process_order(&mut child, account_id);
+
+        if child_first {
+            engine.process_order(&mut child, account_id);
+            engine.process_order(&mut parent, account_id);
+        } else {
+            engine.process_order(&mut parent, account_id);
+            engine.process_order(&mut child, account_id);
+        }
 
         assert_eq!(engine.order_exists(parent_id), !parent_rejected);
         assert!(!engine.order_exists(child_id));
@@ -9811,6 +9836,85 @@ mod tests {
                 OrderStatus::Submitted
             }
         );
+    }
+
+    #[rstest]
+    fn test_process_order_rejects_oto_child_of_deferred_parent_rejection_until_purged() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            OrderMatchingEngineConfig::builder()
+                .use_reduce_only(false)
+                .build(),
+        );
+        // Defers events as an immediate-mode venue does until its command completes
+        let deferred = Rc::new(RefCell::new(Vec::new()));
+        let handler_deferred = deferred.clone();
+        engine.set_event_handler(Rc::new(move |event| {
+            handler_deferred.borrow_mut().push(event);
+        }));
+        let parent_id = ClientOrderId::from("PARK-PARENT");
+        let child_id = ClientOrderId::from("PARK-CHILD");
+        // A reduce-only parent is rejected because this engine does not support reduce-only
+        let mut parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("900.00"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let mut child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1100.00"))
+            .parent_order_id(parent_id)
+            .submit(true)
+            .build();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let account_id = AccountId::from("ACCOUNT-001");
+        engine.process_order(&mut parent, account_id);
+        engine.process_order(&mut child, account_id);
+
+        let events = deferred.borrow().clone();
+        assert_eq!(events.len(), 2);
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+        assert_eq!(events[1].client_order_id(), child_id);
+        assert!(!engine.pending_oto_order_ids.contains(&child_id));
+
+        // Kept until the cache shows the rejection
+        engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+        assert!(engine.rejected_oto_parent_ids.borrow().contains(&parent_id));
+
+        for event in &events {
+            cache.borrow_mut().update_order(event).unwrap();
+        }
+        engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
+        assert!(engine.rejected_oto_parent_ids.borrow().is_empty());
     }
 
     #[rstest]
