@@ -14,7 +14,7 @@ primary state transitions, see [Orders](../orders/index.md#order-state-flow).
 | ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Order state             | Each applied event must satisfy the order state machine and identity checks.                    | A status alone does not identify whether venue evidence or reconciliation produced it.        |
 | Command outcome         | Adapters distinguish definitive local failures, definitive venue results, and unknown outcomes. | A transport result does not necessarily prove what the venue did.                             |
-| Command delivery        | Adapters retry state-changing commands only when repeating the same request is safe.            | NautilusTrader does not guarantee exactly-once delivery across the venue boundary.            |
+| Command delivery        | The contract retries a state-changing command only when repeating the same request is safe.     | Not every adapter follows that contract, and delivery is not exactly once.                    |
 | Event application       | Order identity and transition checks reject invalid events; fills reject a repeated `trade_id`. | No blanket exactly-once guarantee applies to every event type or across lost retained state.  |
 | Persistence before send | The cache enqueues the order and resolved execution-client origin before calling the client.    | The built-in cache backends do not wait for durable storage before the client can send.       |
 | Bounded recovery        | Reconciliation recovers reported order state without applying unsupported fill economics.       | Partial history does not prove historical position economics, realized PnL, or average price. |
@@ -118,17 +118,46 @@ An **in-flight order** is awaiting resolution:
 
 ### Delivery and retry limits
 
-A request can reach a venue even when its response is lost. NautilusTrader therefore does not make
-a broad exactly-once delivery claim for submit, modify, or cancel commands.
+A request can reach a venue even when its response is lost. NautilusTrader does not guarantee
+exactly-once delivery for submit, modify, or cancel commands.
 
-An adapter may retry a state-changing command only when the venue protocol makes repetition safe,
-such as through stable request identity and duplicate detection or idempotent semantics for the
-same target. Otherwise, the adapter sends once and uses stream updates, queries, polling, or
-reconciliation to resolve an unknown outcome.
+#### Safety test
 
-Retryability and command outcome are separate. A failure can be safe to retry while still leaving
-the earlier attempt ambiguous. Once an attempt may have reached the venue, a later failure remains
-ambiguous unless authoritative evidence resolves the same semantic command.
+An adapter retries a transient failure only when a repeat is safe. A repeat is safe when it cannot
+apply a state change twice, cannot change an order the first attempt did not name, and cannot
+report an earlier success as a rejection. A repeat that only mints an additional short-lived
+session token, and does not revoke an existing session or create a lasting credential, is safe.
+
+Only the venue protocol can make any other repeat safe, through stable request identity and
+duplicate detection, or through idempotent semantics for the same target. That guarantee must hold
+for the whole retry window, including after the targeted order fills or cancels, and until any
+venue deduplication clock expires.
+
+| Request                                                                                                                                 | Repeat effect                                | Attempts                            |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------- |
+| Submit, or submit order list.                                                                                                           | Can place a second live order.               | Once, unless the safety test holds. |
+| Modify.                                                                                                                                 | Can apply a second modification.             | Once, unless the safety test holds. |
+| Cancel, or batch cancel by explicit ID.                                                                                                 | Second response can report a rejection.      | Once, unless the safety test holds. |
+| Cancel-all.                                                                                                                             | Can cancel an order placed between attempts. | Once, unless the safety test holds. |
+| Other state-changing request.                                                                                                           | Can apply that change twice.                 | Once, unless the safety test holds. |
+| Session-token request that only mints an unused short-lived token, does not revoke a session, and does not create a lasting credential. | Mints another unused token.                  | On a transient failure.             |
+| Read or other idempotent request.                                                                                                       | No venue state change.                       | On a transient failure.             |
+
+When the safety test does not hold, the adapter sends the request once. The outcome stays unknown
+until stream updates, queries, polling, or reconciliation resolve the same semantic command.
+
+:::warning[Incomplete conformance]
+A transient failure can send some order commands twice, including on Bybit, OKX, and Kraken spot.
+That list is not a complete census. The
+[retry gate conformance](../../developer_guide/adapters.md#retry-gate-conformance) table records
+the checked HTTP gates.
+:::
+
+#### Outcome
+
+Whether a failure is safe to retry is separate from the venue outcome. A failure can be safe to
+retry while the earlier attempt remains ambiguous. Once an attempt may have reached the venue, a
+later failure remains ambiguous unless authoritative evidence resolves the same semantic command.
 
 ## Persistence before transport
 

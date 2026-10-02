@@ -1368,6 +1368,55 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_fill_report_rounds_sub_cent_fee_to_usd_precision() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut fill = create_fill();
+        fill.fee = dec!(0.012188);
+
+        let report = parse_fill_report(
+            &fill,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.commission, Money::from("0.01 USD"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_unrepresentable_fee() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut fill = create_fill();
+        fill.fee = dec!(9999999999999999999999999999);
+
+        let error = parse_fill_report(
+            &fill,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to convert fill.fee Decimal to Money"),
+            "expected fee conversion failure, was {error}"
+        );
+    }
+
+    #[rstest]
     #[case(None)]
     #[case(Some("O-01ARZ3NDEKTSV4RRFFQ69G5FAV"))]
     fn test_parse_fill_report_uses_stable_surrogate_for_block_fill(#[case] order_id: Option<&str>) {

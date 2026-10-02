@@ -48,7 +48,7 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderRejected},
+    events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderRejected},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
@@ -1734,6 +1734,289 @@ async fn test_generate_fill_reports_rejects_ambiguous_fill_classification() {
     assert!(
         format!("{error:#}").contains("missing order_id and explicit special-fill classification"),
         "error was: {error:#}"
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rounds_sub_cent_fee_to_usd_precision() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.fills_payload.lock().await = Some(serde_json::json!({
+        "fills": [{
+            "trade_id": "T-SUBCENT",
+            "order_id": "OID-SUBCENT",
+            "fee": "0.012188",
+            "is_taker": true,
+            "is_block_trade": false,
+            "is_final_settlement": false,
+            "price": "1.08450",
+            "quantity": 100,
+            "side": "B",
+            "symbol": "EURUSD-PERP",
+            "timestamp": "2024-01-15T10:30:45Z",
+            "account_id": "u"
+        }]
+    }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("generate_fill_reports");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].commission, Money::from("0.01 USD"));
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_unrepresentable_fee() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.fills_payload.lock().await = Some(serde_json::json!({
+        "fills": [{
+            "trade_id": "T-OVERFLOW",
+            "order_id": "OID-OVERFLOW",
+            "fee": "9999999999999999999999999999",
+            "is_taker": true,
+            "is_block_trade": false,
+            "is_final_settlement": false,
+            "price": "1.08450",
+            "quantity": 100,
+            "side": "B",
+            "symbol": "EURUSD-PERP",
+            "timestamp": "2024-01-15T10:30:45Z",
+            "account_id": "u"
+        }]
+    }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unrepresentable fee must fail the fill request");
+    assert!(
+        format!("{error:#}").contains("Failed to convert fill.fee Decimal to Money"),
+        "error was: {error:#}"
+    );
+
+    let mass_error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("unrepresentable fee must fail mass status");
+    assert!(
+        format!("{mass_error:#}").contains("Failed to convert fill.fee Decimal to Money"),
+        "mass status error was: {mass_error:#}"
+    );
+
+    let event = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
+    assert!(
+        event.is_err() || event.as_ref().is_ok_and(|msg| msg.is_none()),
+        "unrepresentable fee must not emit a fallback fill, was {event:?}"
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_transport_failure_emits_no_order_rejected() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    state
+        .disconnect_trigger
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let places_before = state
+        .get_messages()
+        .await
+        .iter()
+        .filter(|message| message.get("t").and_then(|value| value.as_str()) == Some("p"))
+        .count();
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-SUBMIT-TRANSPORT");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("1.00"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_order_cmd(&order))
+        .expect("submit_order should not error");
+
+    let mut saw_submitted = false;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(800);
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))) => {
+                assert_eq!(submitted.client_order_id, client_order_id);
+                saw_submitted = true;
+            }
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Rejected(rejected)))) => {
+                panic!(
+                    "transport failure must not emit OrderRejected, was {}",
+                    rejected.reason
+                );
+            }
+            Ok(Some(_) | None) | Err(_) => {}
+        }
+    }
+
+    assert!(
+        saw_submitted,
+        "expected OrderSubmitted before the failed send"
+    );
+    let places_after = state
+        .get_messages()
+        .await
+        .iter()
+        .filter(|message| message.get("t").and_then(|value| value.as_str()) == Some("p"))
+        .count();
+    assert_eq!(
+        places_after, places_before,
+        "place must not reach the dropped socket, before {places_before}, after {places_after}"
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_already_terminal_order_is_forwarded() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-CANCEL-TWICE");
+    let venue_order_id = VenueOrderId::new("OID-CANCEL-TWICE");
+    client.register_external_order(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        StrategyId::from("S-001"),
+        UnixNanos::default(),
+    );
+    add_open_order_to_cache(
+        &cache,
+        client_order_id.as_str(),
+        venue_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "S-001",
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Canceled(OrderCanceled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+            Some(AccountId::from("AX-001")),
+            None,
+        )))
+        .expect("mark order canceled");
+
+    let cancel = || {
+        CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*AX_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    client
+        .cancel_order(cancel())
+        .expect("first cancel should not error");
+    client
+        .cancel_order(cancel())
+        .expect("second cancel should not error");
+
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .filter(|message| message.get("t").and_then(|value| value.as_str()) == Some("x"))
+                .count()
+                >= 2
+        },
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+
+    let result = tokio::time::timeout(std::time::Duration::from_millis(300), rx.recv()).await;
+    assert!(
+        !matches!(
+            result,
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(
+                _
+            ))))
+        ),
+        "a forwarded cancel must not invent OrderCancelRejected, was {result:?}"
     );
 
     client.disconnect().await.expect("Failed to disconnect");

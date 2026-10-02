@@ -422,6 +422,13 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
+A cancel that already has a venue order ID is forwarded, including a second cancel of a
+terminal order. A strategy does not send that second cancel after the local order is already
+closed or pending cancel. The adapter emits `OrderCancelRejected` only when AX sends
+`CancelRejected`. Sandbox answers a resend of an already canceled order with WebSocket error
+`404` (`order not found`). The adapter logs that error and does not turn it into
+`OrderCancelRejected`.
+
 **Side filter**: AX cancel-all has no side parameter, so a `CancelAllOrders` command with
 `order_side` set cancels only open orders on that side for the instrument through individual
 cancel requests. A side-filtered request selects from open orders only, so an inflight
@@ -514,46 +521,46 @@ API base URL. The adapter resolves both from the configured environment.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                         |
-| ---------------------------------- | --------- | ------------------------------------------------------------------- |
-| `api_key`                          | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`                    | `None`    | Override for the REST base URL.                                     |
-| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                         |
-| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                      |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
-| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
-| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.  |
-| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                        |
+| Option                             | Default   | Description                                                                     |
+| ---------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `api_key`                          | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.                         |
+| `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.                   |
+| `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
+| `base_url_http`                    | `None`    | Override for the REST base URL.                                                 |
+| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                                     |
+| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                                  |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                            |
+| `max_retries`                      | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
+| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                                   |
+| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
+| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.                        |
+| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.                          |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.              |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                    |
 
 ### Execution client configuration options
 
-| Option                    | Default   | Description                                                         |
-| ------------------------- | --------- | ------------------------------------------------------------------- |
-| `account_id`              | `AX-001`  | Account ID for the execution client.                                |
-| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`    | Override for the API REST base URL.                                 |
-| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
-| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.          |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
+| Option                    | Default   | Description                                                                     |
+| ------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `account_id`              | `AX-001`  | Account ID for the execution client.                                            |
+| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.                         |
+| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.                   |
+| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
+| `base_url_http`           | `None`    | Override for the API REST base URL.                                             |
+| `base_url_orders`         | `None`    | Override for the orders REST base URL.                                          |
+| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                                          |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                            |
+| `max_retries`             | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                   |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
+| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
+| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.                      |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                    |
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
@@ -606,8 +613,13 @@ credentials are valid and have trading permissions.
   authenticated client still resolves account rates from `GET /whoami` and fails to
   connect if that lookup fails. Those rates are not copied onto instruments.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
-  Commission is reported as zero for streaming fills. During reconciliation, the REST
-  `/fills` endpoint provides accurate fee information.
+  A tracked streaming fill leaves `commission` unset. An untracked fill falls back to a
+  fill report with zero commission. Reconciliation does not replace the commission on a
+  fill that was already applied. The REST `/fills` endpoint supplies the fee for a fill
+  that was not already applied from the stream. The adapter converts that fee with
+  `Money::from_decimal` into USD, whose precision is 2, so a sub-cent fee such as
+  `0.012188` is stored as `0.01`. A fee that cannot be represented fails the fill-report
+  request and mass status. During startup, that error prevents the node from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and
   caps the span at seven days. Reconciliation requests the most recent seven days of fills;
   fills older than that are not reconciled.
