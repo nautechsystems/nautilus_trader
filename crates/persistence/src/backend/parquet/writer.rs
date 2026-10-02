@@ -11,7 +11,6 @@
 
 use std::{
     fmt::Debug,
-    fs,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -28,10 +27,8 @@ use super::catalog::ParquetDataCatalog;
 use crate::{
     catalog::factory::CatalogConnectConfig,
     common::{
-        conversion::FeatherConversionSummary,
-        datafusion::identifiers_from_record_batches,
-        paths::{file_uri_to_native_path, normalize_path_to_uri},
-        storage::create_storage_backend_from_path,
+        conversion::FeatherConversionSummary, datafusion::identifiers_from_record_batches,
+        paths::create_local_directory, storage::create_storage_backend_from_path,
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
@@ -109,10 +106,7 @@ impl ParquetWriter {
 
         // A Parquet catalog opens only an existing local directory, so the writer creates the one
         // it promotes into, then opens it now rather than failing at the first promotion
-        let catalog_location = normalize_path_to_uri(&catalog.uri)?;
-        if catalog_location.starts_with("file://") {
-            fs::create_dir_all(file_uri_to_native_path(&catalog_location))?;
-        }
+        create_local_directory(&catalog.uri)?;
 
         let legacy_manifest_missing = Arc::new(AtomicBool::new(false));
 
@@ -571,6 +565,7 @@ fn feather_replay_identity(
 #[cfg(test)]
 mod tests {
     use std::{
+        fs,
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
     };
@@ -598,7 +593,7 @@ mod tests {
     use crate::{
         backend::parquet::io::read_parquet_from_object_store,
         catalog::traits::{CatalogQuery, CatalogReader},
-        common::storage::RUN_MANIFEST_FILENAME,
+        common::{paths::normalize_path_to_uri, storage::RUN_MANIFEST_FILENAME},
         config::{CatalogCompression, DataCatalogConfig},
         test_data::RustTestHashMapCustomData,
         writer::{

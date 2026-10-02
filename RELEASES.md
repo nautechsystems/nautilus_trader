@@ -237,6 +237,7 @@ Released on TBD (UTC).
 - Fixed Parquet writers accepting run IDs that object-store paths encode, which skipped promotion
 - Fixed Feather staging writes hanging when the staging worker panics
 - Fixed Parquet promotion and `convert_stream_to_data` of Feather files with non-ASCII identifiers
+- Fixed streaming `replace_existing` emptying the run directory before rejecting an invalid catalog
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed live node startup succeeding with unrecovered venue positions

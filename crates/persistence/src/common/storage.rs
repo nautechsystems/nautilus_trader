@@ -39,8 +39,8 @@ pub use crate::common::paths::normalize_path_to_uri;
 use crate::{
     backend::parquet::io::{create_object_store_from_path, decode_object_store_segment},
     common::paths::{
-        environment_directory, environment_from_directory, file_uri_to_native_path,
-        make_object_store_path, path_to_file_uri,
+        create_local_directory, environment_directory, environment_from_directory,
+        file_uri_to_native_path, make_object_store_path, path_to_file_uri,
     },
     writer::run::RunStatus,
 };
@@ -409,9 +409,7 @@ pub fn create_storage_backend_from_path(
         ));
     }
 
-    if uri.starts_with("file://") {
-        fs::create_dir_all(file_uri_to_native_path(&uri))?;
-    }
+    create_local_directory(&uri)?;
 
     let (object_store, base_path, original_uri) =
         create_object_store_from_path(&uri, storage_options)?;
