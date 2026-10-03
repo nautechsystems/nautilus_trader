@@ -994,6 +994,20 @@ pub trait Strategy: DataActor {
             .map(|order| order.client_order_id())
             .collect();
 
+        // An order submitted earlier in the same handler stays local until its queued
+        // command is processed, so it is not yet open or in flight
+        let mut local_order_ids: Vec<ClientOrderId> = cache
+            .orders_active_local(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .into_iter()
+            .map(|order| order.client_order_id())
+            .collect();
+
         // Sort the algorithm IDs so the per-algo cancel cascade fires msgbus
         // events in a deterministic order across runs; the cache returns an
         // unordered AHashSet.
@@ -1028,17 +1042,20 @@ pub trait Strategy: DataActor {
         open_order_ids.retain(&matches_client);
         emulated_order_ids.retain(&matches_client);
         inflight_order_ids.retain(&matches_client);
+        local_order_ids.retain(&matches_client);
         algo_order_ids.retain(&matches_client);
 
         let open_count = open_order_ids.len();
         let emulated_count = emulated_order_ids.len();
         let inflight_count = inflight_order_ids.len();
+        let local_count = local_order_ids.len();
         let algo_count = algo_order_ids.len();
 
         let mut cancel_routes: Vec<_> = open_order_ids
             .iter()
             .chain(&emulated_order_ids)
             .chain(&inflight_order_ids)
+            .chain(&local_order_ids)
             .chain(&algo_order_ids)
             .map(|client_order_id| {
                 (
@@ -1052,7 +1069,12 @@ pub trait Strategy: DataActor {
 
         drop(cache);
 
-        if open_count == 0 && emulated_count == 0 && inflight_count == 0 && algo_count == 0 {
+        if open_count == 0
+            && emulated_count == 0
+            && inflight_count == 0
+            && local_count == 0
+            && algo_count == 0
+        {
             let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
             log::info!("No {instrument_id} open, emulated, or inflight{side_str} orders to cancel");
             return Ok(());
@@ -5284,6 +5306,61 @@ mod tests {
         ));
         assert_eq!(cached_failing.status(), OrderStatus::Accepted);
         assert_eq!(cached_succeeding.status(), OrderStatus::PendingCancel);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_cancels_order_submitted_in_same_handler() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, _risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-CANCEL-ALL-LOCAL-001"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        let sibling_order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("SIBLING-001"))
+            .instrument_id(order.instrument_id())
+            .client_order_id(ClientOrderId::from("O-20250208-CANCEL-ALL-LOCAL-002"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        add_order_to_cache(&strategy, &sibling_order);
+
+        // The submit command is queued, so the order is still INITIALIZED when canceled
+        strategy
+            .submit_order(order.clone(), None, None, None)
+            .unwrap();
+        strategy
+            .cancel_all_orders(order.instrument_id(), None, None, true, None)
+            .unwrap();
+
+        let messages = exec_messages.get_messages();
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
     }
 
     #[rstest]

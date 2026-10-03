@@ -127,6 +127,8 @@ pub struct OrderMatchingEngine {
     pending_order_updates: RefCell<IndexMap<ClientOrderId, Vec<OrderUpdated>>>,
     pending_fills: IndexMap<TradeId, PendingFill>,
     post_match_order_ids: IndexSet<ClientOrderId>,
+    pending_oto_order_ids: IndexSet<ClientOrderId>,
+    rejected_oto_parent_ids: RefCell<IndexSet<ClientOrderId>>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
     trade_consumption: QuantityRaw,
@@ -222,6 +224,8 @@ impl OrderMatchingEngine {
             pending_order_updates: RefCell::new(IndexMap::new()),
             pending_fills: IndexMap::new(),
             post_match_order_ids: IndexSet::new(),
+            pending_oto_order_ids: IndexSet::new(),
+            rejected_oto_parent_ids: RefCell::new(IndexSet::new()),
             ids_generator,
             last_trade_size: None,
             trade_consumption: 0,
@@ -290,6 +294,8 @@ impl OrderMatchingEngine {
         self.pending_order_updates.get_mut().clear();
         self.pending_fills.clear();
         self.post_match_order_ids.clear();
+        self.pending_oto_order_ids.clear();
+        self.rejected_oto_parent_ids.get_mut().clear();
         self.core.reset();
         self.target_bid = None;
         self.target_ask = None;
@@ -3029,13 +3035,23 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
+                    // Parked again below while the parent has not triggered it
+                    self.pending_oto_order_ids
+                        .swap_remove(&order.client_order_id());
+
                     let parent_order = match self.order_snapshot(parent_order_id) {
                         Some(o) if o.contingency_type() == Some(ContingencyType::Oto) => o,
                         _ => panic!("OTO parent not found"),
                     };
                     let parent_filled_qty = parent_order.filled_qty();
 
-                    if parent_order.status() == OrderStatus::Rejected {
+                    // The rejection of a parent in the same command can still be deferred
+                    if parent_order.status() == OrderStatus::Rejected
+                        || self
+                            .rejected_oto_parent_ids
+                            .borrow()
+                            .contains(&parent_order_id)
+                    {
                         break 'validate Some(
                             format!("Rejected OTO order from {parent_order_id}").into(),
                         );
@@ -3047,6 +3063,11 @@ impl OrderMatchingEngine {
                             "Pending OTO order {} triggers from {parent_order_id}",
                             order.client_order_id(),
                         );
+
+                        // A parent on another instrument triggers the child from its own engine
+                        if parent_order.instrument_id() == self.instrument.id() {
+                            self.pending_oto_order_ids.insert(order.client_order_id());
+                        }
                         return;
                     }
                 }
@@ -3417,10 +3438,15 @@ impl OrderMatchingEngine {
 
     /// Processes an order cancel command.
     pub fn process_cancel(&mut self, command: &CancelOrder, account_id: AccountId) {
-        if !self.core.order_exists(command.client_order_id) {
-            // Live orders of this account that the core does not hold, such as pending OTO
-            // children and market order remainders, cancel from the cache as in
-            // `process_cancel_all`.
+        // A parked OTO child is held by this engine without being in the core
+        if !self.core.order_exists(command.client_order_id)
+            && !self
+                .pending_oto_order_ids
+                .contains(&command.client_order_id)
+        {
+            // Live orders of this account that the engine does not hold, such as market order
+            // remainders and OTO children of a parent on another instrument, cancel from the
+            // cache as in `process_cancel_all`.
             let order = self
                 .order_snapshot(command.client_order_id)
                 .filter(|order| {
@@ -3446,7 +3472,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let order = match self.order_snapshot(command.client_order_id) {
+        let mut order = match self.order_snapshot(command.client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -3456,6 +3482,20 @@ impl OrderMatchingEngine {
                 return;
             }
         };
+
+        // Leave the order resting rather than purge it without an event
+        if let Err(e) = self.apply_deferred_submission(&mut order) {
+            self.generate_order_cancel_rejected(
+                command.trader_id,
+                command.strategy_id,
+                account_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                Ustr::from(e.to_string().as_str()),
+            );
+            return;
+        }
 
         if !order.is_inflight() && !order.is_open() {
             self.purge_stale_core_entry(command.client_order_id);
@@ -3612,6 +3652,15 @@ impl OrderMatchingEngine {
                 Self::retain_unapplied_order_updates(&order, updates);
                 !updates.is_empty()
             });
+    }
+
+    fn purge_applied_rejections(&mut self) {
+        let cache = self.cache.borrow();
+        self.rejected_oto_parent_ids.get_mut().retain(|id| {
+            cache
+                .order(id)
+                .is_some_and(|order| order.status() != OrderStatus::Rejected)
+        });
     }
 
     fn retain_unapplied_order_updates(order: &OrderAny, updates: &mut Vec<OrderUpdated>) {
@@ -4034,6 +4083,7 @@ impl OrderMatchingEngine {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
+        self.purge_applied_rejections();
         self.purge_applied_fills();
 
         // Only reset bid/ask from book when not processing trade execution
@@ -4199,6 +4249,7 @@ impl OrderMatchingEngine {
         self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement, &[]);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
+        self.purge_applied_rejections();
         self.purge_applied_fills();
     }
 
@@ -6238,6 +6289,8 @@ impl OrderMatchingEngine {
             self.delete_core_order(order.client_order_id());
         }
 
+        self.pending_oto_order_ids
+            .swap_remove(&order.client_order_id());
         self.remove_queue_position(order.client_order_id());
         self.cached_filled_qty.swap_remove(&order.client_order_id());
 
@@ -6653,6 +6706,39 @@ impl OrderMatchingEngine {
         }
     }
 
+    // The core holds the orders this engine accepted and `pending_oto_order_ids` the OTO children
+    // it parked, so a locally active cached status for either means their submit, and for an
+    // accepted order its acceptance, went through a deferring event handler and is not applied
+    // yet. Applies them to the snapshot, as `accept_order` applies its acceptance, so a
+    // cancellation dispatched now follows them.
+    fn apply_deferred_submission(&mut self, order: &mut OrderAny) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id();
+        let accepted = self.core.order_exists(client_order_id);
+
+        if !order.is_active_local()
+            || !(accepted || self.pending_oto_order_ids.contains(&client_order_id))
+        {
+            return Ok(());
+        }
+
+        let account_id = match order.account_id() {
+            Some(account_id) => account_id,
+            None => *self
+                .account_ids
+                .get(&order.trader_id())
+                .ok_or_else(|| anyhow::anyhow!("No account ID for {}", order.trader_id()))?,
+        };
+        let event = self.create_order_submitted(order, account_id);
+        order.apply(event)?;
+
+        if accepted {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order)?;
+            let event = self.create_order_accepted(order, venue_order_id);
+            order.apply(event)?;
+        }
+        Ok(())
+    }
+
     fn cancel_contingent_orders(&mut self, order: &OrderAny, excluded: &[ClientOrderId]) {
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
@@ -6661,10 +6747,15 @@ impl OrderMatchingEngine {
                     continue;
                 }
 
-                let contingent_order = match self.order_snapshot(*client_order_id) {
+                let mut contingent_order = match self.order_snapshot(*client_order_id) {
                     Some(order) => order,
                     None => panic!("Cannot find contingent order for {client_order_id}"),
                 };
+
+                if let Err(e) = self.apply_deferred_submission(&mut contingent_order) {
+                    log::error!("Cannot cancel contingent order {client_order_id}: {e}");
+                    continue;
+                }
 
                 if contingent_order.is_active_local() {
                     // order is not on the exchange yet
@@ -6678,9 +6769,9 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+    fn create_order_submitted(&self, order: &OrderAny, account_id: AccountId) -> OrderEventAny {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+        OrderEventAny::Submitted(OrderSubmitted::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -6689,7 +6780,11 @@ impl OrderMatchingEngine {
             UUID4::new(),
             ts_now,
             ts_now,
-        ));
+        ))
+    }
+
+    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+        let event = self.create_order_submitted(order, account_id);
         self.dispatch_order_event(event);
     }
 
@@ -6717,6 +6812,12 @@ impl OrderMatchingEngine {
     }
 
     fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
+        if order.contingency_type() == Some(ContingencyType::Oto) {
+            self.rejected_oto_parent_ids
+                .borrow_mut()
+                .insert(order.client_order_id());
+        }
+
         let event = self.create_order_rejected(order, reason);
         self.dispatch_order_event(event);
     }
@@ -9651,6 +9752,169 @@ mod tests {
             rejected.reason,
             "Reduce-only orders are not supported by this matching engine"
         );
+    }
+
+    #[rstest]
+    #[case::accepted_parent(false, false)]
+    #[case::rejected_parent(true, false)]
+    #[case::child_listed_first(false, true)]
+    fn test_process_order_parks_oto_child_until_parent_rejected(
+        #[case] parent_rejected: bool,
+        #[case] child_first: bool,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            OrderMatchingEngineConfig::builder()
+                .use_reduce_only(false)
+                .build(),
+        );
+        let handler_cache = cache.clone();
+        engine.set_event_handler(Rc::new(move |event| {
+            handler_cache.borrow_mut().update_order(&event).unwrap();
+        }));
+        let parent_id = ClientOrderId::from("PARK-PARENT");
+        let child_id = ClientOrderId::from("PARK-CHILD");
+        // A reduce-only parent is rejected because this engine does not support reduce-only
+        let mut parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("900.00"))
+            .reduce_only(parent_rejected)
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let mut child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1100.00"))
+            .parent_order_id(parent_id)
+            .submit(true)
+            .build();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let account_id = AccountId::from("ACCOUNT-001");
+
+        if child_first {
+            engine.process_order(&mut child, account_id);
+            engine.process_order(&mut parent, account_id);
+        } else {
+            engine.process_order(&mut parent, account_id);
+            engine.process_order(&mut child, account_id);
+        }
+
+        assert_eq!(engine.order_exists(parent_id), !parent_rejected);
+        assert!(!engine.order_exists(child_id));
+        assert_eq!(
+            engine.pending_oto_order_ids.contains(&child_id),
+            !parent_rejected
+        );
+        assert_eq!(
+            cache.borrow().order(&child_id).unwrap().status(),
+            if parent_rejected {
+                OrderStatus::Rejected
+            } else {
+                OrderStatus::Submitted
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_process_order_rejects_oto_child_of_deferred_parent_rejection_until_purged() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            OrderMatchingEngineConfig::builder()
+                .use_reduce_only(false)
+                .build(),
+        );
+        // Defers events as an immediate-mode venue does until its command completes
+        let deferred = Rc::new(RefCell::new(Vec::new()));
+        let handler_deferred = deferred.clone();
+        engine.set_event_handler(Rc::new(move |event| {
+            handler_deferred.borrow_mut().push(event);
+        }));
+        let parent_id = ClientOrderId::from("PARK-PARENT");
+        let child_id = ClientOrderId::from("PARK-CHILD");
+        // A reduce-only parent is rejected because this engine does not support reduce-only
+        let mut parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("900.00"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let mut child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1100.00"))
+            .parent_order_id(parent_id)
+            .submit(true)
+            .build();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let account_id = AccountId::from("ACCOUNT-001");
+        engine.process_order(&mut parent, account_id);
+        engine.process_order(&mut child, account_id);
+
+        let events = deferred.borrow().clone();
+        assert_eq!(events.len(), 2);
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+        assert_eq!(events[1].client_order_id(), child_id);
+        assert!(!engine.pending_oto_order_ids.contains(&child_id));
+
+        // Kept until the cache shows the rejection
+        engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+        assert!(engine.rejected_oto_parent_ids.borrow().contains(&parent_id));
+
+        for event in &events {
+            cache.borrow_mut().update_order(event).unwrap();
+        }
+        engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
+        assert!(engine.rejected_oto_parent_ids.borrow().is_empty());
     }
 
     #[rstest]
