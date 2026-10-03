@@ -248,6 +248,8 @@ Released on TBD (UTC).
 - Fixed spread quote aggregation accepting signed leg ratios that flipped the leg sign (#5041), thanks @faysou
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
 - Fixed typed catalog decode for kernel Feather streams of quotes, trades, bars, and related types
+- Fixed migration of class-tagged Parquet instruments with `UInt64` or UTC nanosecond timestamps
+- Fixed runtime catalog queries to reject legacy instrument schemas with explicit migration guidance
 - Fixed streaming Feather writers sealing a new file on every flush (#5115), thanks @faysou
 - Fixed Parquet promotion precision for an empty order book depth staged with populated ones (#5115), thanks @faysou
 - Fixed a Feather writer panic when a mixed-instrument batch crossed the rotation size limit (#5115), thanks @faysou
@@ -561,6 +563,7 @@ Released on TBD (UTC).
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
 - Documented legacy custom data layout migration
+- Documented verified Parquet migration sources, removed fee columns, and cutover limits
 - Documented streaming into a separate catalog and `RotationConfig` file rotation (#5115), thanks @faysou
 - Documented v1 `StreamingConfig` migration to `writer_path`, `catalog`, and `RotationConfig` (#5115), thanks @faysou
 - Documented HTTP client ambient proxy routing defaults and the `use_system_proxy(false)` opt-out

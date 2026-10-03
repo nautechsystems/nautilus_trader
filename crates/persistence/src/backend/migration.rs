@@ -39,7 +39,7 @@ use nautilus_model::{
         MarkPriceUpdate, NautilusDataType, NautilusRecordType, OptionGreeks, OrderBookDelta,
         OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
-    instruments::InstrumentAny,
+    instruments::{InstrumentAny, NautilusInstrumentType},
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_INSTRUMENT_ID,
@@ -1345,10 +1345,14 @@ fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
 }
 
 fn is_legacy_instrument_schema(schema: &Schema) -> bool {
-    schema.metadata().contains_key(LEGACY_KEY_CLASS)
-        && schema
-            .field_with_name("ts_init")
-            .is_ok_and(|field| field.data_type() == &ArrowDataType::UInt64)
+    schema
+        .metadata()
+        .get(LEGACY_KEY_CLASS)
+        .is_some_and(|type_name| type_name.parse::<NautilusInstrumentType>().is_ok())
+        && schema.field_with_name("ts_init").is_ok_and(|field| {
+            field.data_type() == &ArrowDataType::UInt64
+                || field.data_type() == &nautilus_serialization::arrow::timestamp_data_type()
+        })
 }
 
 // Legacy catalogs name the instrument type under `class`; current schemas use `type_name`
@@ -2422,6 +2426,30 @@ mod tests {
 
         assert_eq!(part.row_count, expected.len());
         assert_eq!(decoded, expected);
+    }
+
+    #[rstest]
+    #[case::instrument_u64("CryptoPerpetual", DataType::UInt64, true)]
+    #[case::instrument_utc("CryptoPerpetual", timestamp_data_type(), true)]
+    #[case::instrument_no_timezone(
+        "CryptoPerpetual",
+        DataType::Timestamp(TimeUnit::Nanosecond, None),
+        false
+    )]
+    #[case::instrument_other_timezone("CryptoPerpetual", DataType::Timestamp(TimeUnit::Nanosecond, Some("America/New_York".into())), false)]
+    #[case::quote_u64("QuoteTick", DataType::UInt64, false)]
+    #[case::quote_utc("QuoteTick", timestamp_data_type(), false)]
+    fn legacy_instrument_detection_requires_known_class_and_supported_timestamps(
+        #[case] class: &str,
+        #[case] timestamp_type: DataType,
+        #[case] expected: bool,
+    ) {
+        let schema = Schema::new_with_metadata(
+            vec![Field::new("ts_init", timestamp_type, false)],
+            HashMap::from([(LEGACY_KEY_CLASS.to_string(), class.to_string())]),
+        );
+
+        assert_eq!(is_legacy_instrument_schema(&schema), expected);
     }
 
     #[rstest]
