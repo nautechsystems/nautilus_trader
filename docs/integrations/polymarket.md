@@ -1302,10 +1302,11 @@ zero or a generic commission. See the
 
 A commission construction error fails a direct fill report request, terminal trade-history recovery,
 or complete mass status. Startup returns a mass-status error without applying that client's reports.
-When an active order report cannot enrich matched quantity from confirmed fills, the adapter logs
-the error and caps matched quantity to local and previously tracked evidence so reconciliation
-defers the unsupported residual. The adapter does not drop a failed fill while returning an order or
-position report that could recreate its quantity without the Polymarket commission.
+When an active order's trade-history request fails, the adapter logs the error and caps matched
+quantity to fills already applied in core. Reconciliation then defers any unsupported residual
+quantity. Commission construction and settlement validation errors instead fail the report request.
+The adapter does not drop a failed fill while returning an order or position report that could
+recreate its quantity without the Polymarket commission.
 
 For the latest public schedule, see Polymarket's
 [Fees](https://docs.polymarket.com/trading/fees) documentation.
@@ -1417,6 +1418,25 @@ trade quarantined because its message failed validation blocks every report when
 admitted legs; otherwise the order and instrument scope of those legs applies. See
 [settlement updates](#settlement-updates) for how trades resolve.
 
+`QueryOrder` checks settlement before and after its venue reads. If settlement evidence for the
+order remains unresolved, the query emits no status report and leaves the local order unchanged.
+Queries for an unacknowledged submission still use
+[unknown-outcome reconciliation](#unknown-outcome-reconciliation).
+
+Fill-report generation checks retained settlement outcomes and rejects a `CONFIRMED` trade row that:
+
+- Belongs to a trade already settled as `FAILED`.
+- Contradicts a retained terminal leg.
+- Adds a leg to a retained terminal trade.
+
+Rejection fails the report request without creating a fill or changing the retained outcome.
+Scoped report evidence cannot establish a terminal outcome for the complete trade; only the
+[targeted terminal REST read](#failed-trades-and-rest-resolution) can do that. Applied fill values
+take precedence over non-terminal REST copies.
+
+Order reports cap `filled_qty` using fills already applied in core and fill reports that pass
+settlement validation, counting each fill once. This cap applies with or without a lookback window.
+
 ### Missing orders and API lag
 
 #### Open-order checks
@@ -1470,13 +1490,13 @@ Mass-status reconciliation pairs each order report with its venue fill reports. 
 first to preserve trade IDs and commissions, then infers only any residual quantity needed to reach the
 venue-reported status.
 
-When mass status declares no lookback, REST order reports cap matched quantity to authenticated
-`CONFIRMED` trade history, without a local-fill floor, so pending settlement cannot create an inferred
-fill. A bounded mass status keeps the venue open-order `size_matched` so a live partial fill outside the
-lookback window is not understated.
+Mass status caps REST matched quantity using fills already applied in core and authenticated
+`CONFIRMED` fill reports that pass settlement validation, counting each fill once. This prevents
+pending settlement from creating an inferred fill, with or without a lookback window. Applied fills
+outside the lookback window still contribute to the cap.
 
-Runtime order checks fetch confirmed trade history when the venue reports more matched quantity than the
-local order and WebSocket fill tracker contain. Unpaired fill reports retain the normal fill-only path.
+Runtime order checks fetch confirmed trade history when the venue's matched quantity exceeds the
+local order's applied fill quantity. Unpaired fill reports retain the normal fill-only path.
 
 A commission construction error fails the complete REST report request. Startup returns the error without
 applying a mass status; periodic and targeted reconciliation defer the affected work. The adapter does
@@ -1554,11 +1574,24 @@ snapshot reconciliation provide correction paths, so the local total is not an i
 
 #### REST evidence and cache state
 
-For runtime order checks, the adapter caps REST matched quantity at `min(venue_matched,
-max(local_applied_or_tracked, confirmed_trade_quantity))`. Local fill tracking accounts for WebSocket
-fills awaiting core processing. This prevents an unsupported increase in REST `size_matched` from
-becoming an inferred fill, while preserving evidence of locally observed matches. Unbounded mass status
-uses only confirmed fills for this cap; bounded mass status retains the venue matched total. See
+For runtime order checks, the adapter caps REST matched quantity at
+`min(venue_matched, max(local_applied, settlement_validated_quantity))`.
+
+The validated quantity combines effective fills in cached order history with fill reports that pass
+settlement validation:
+
+- Each venue fill ID counts once across applied fills and report rows.
+- Inferred core fills provide a floor rather than additional venue evidence. A later venue report
+  for the same quantity cannot inflate the total.
+- Cumulative fill voids remove only the corrected quantity. An older report cannot restore that
+  quantity through the cap.
+
+If core still retains quantity for a leg whose targeted REST settlement is `FAILED`, report generation
+fails closed rather than preserving that failed exposure through the cap.
+
+WebSocket fills awaiting core processing do not raise the local applied-fill floor. This prevents an
+unsupported increase in REST `size_matched` from becoming an inferred fill while preserving applied fills.
+Mass status uses the same validated quantity with or without a lookback window. See
 [mass-status reconciliation](#mass-status-reconciliation).
 
 The cache retains order identity, applied fills, and correction history used for replay handling. It is

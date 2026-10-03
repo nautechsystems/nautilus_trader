@@ -492,6 +492,10 @@ Released on TBD (UTC).
 - Fixed Polymarket opening an idle market WebSocket on connect, which the venue closed with code 1008
 - Fixed Polymarket HTTP cancels emitting `OrderCanceled` for tracked orders or orders the response omits
 - Fixed Polymarket sub-tick settlement prices being rejected or emitted raw (#5176), thanks @yashwardhan-gautam
+- Fixed Polymarket fill reports admitting trades that contradict retained settlement outcomes
+- Fixed Polymarket order queries emitting events while settlement evidence is unresolved
+- Fixed Polymarket bounded reconciliation reports inferring fills from pending settlement
+- Fixed Polymarket report fill totals double-counting inferred fills or restoring voided quantities
 - Fixed Tardis accepting stream requests and retrying connections for unsupported venues
 - Fixed Tardis instrument filtering excluding the exact availability start timestamp
 - Fixed Tardis instrument bootstrap failing on very large instrument lists such as Deribit
@@ -640,6 +644,7 @@ Released on TBD (UTC).
 - Documented OKX opt-in submission retention and incomplete-recovery shutdown errors (#5178), thanks @silarin
 - Documented OKX rejection reason format with venue error codes
 - Documented Polymarket trade settlement, quarantine, and reconciliation precedence
+- Documented Polymarket report settlement authority and fill-quantity caps
 - Documented Polymarket GTD expiry mapping, immediate BUY cent budgets, and idle market sockets
 - Documented Tardis CSV loaders skipping rows before the first snapshot (#5127), thanks @szpony
 - Updated Databento and Tardis integration guides with new URL overrides

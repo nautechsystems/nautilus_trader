@@ -57,7 +57,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
         TradeId, TraderId, VenueOrderId,
     },
-    instruments::{BinaryOption, InstrumentAny},
+    instruments::{BinaryOption, Instrument, InstrumentAny},
     orders::{
         LimitOrder, MarketOrder, Order, OrderAny, OrderList, OrderTestBuilder,
         stubs::TestOrderEventStubs,
@@ -1601,11 +1601,14 @@ async fn test_generate_mass_status_lookback_sets_report_window() {
 }
 
 #[rstest]
+#[case::observed(true)]
+#[case::unobserved(false)]
 #[tokio::test]
-async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
+async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty(#[case] observed: bool) {
     let state = TestServerState::default();
     let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
     order["size_matched"] = json!("4.0000");
+    let venue_order_id = order["id"].as_str().unwrap().to_string();
     *state.orders_response_override.lock().await = Some(json!({
         "data": [order],
         "next_cursor": "LTE=",
@@ -1620,7 +1623,19 @@ async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
     let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
-    client.on_instrument(instrument);
+    client.on_instrument(instrument.clone());
+
+    if observed {
+        seed_observed_fill(
+            &cache,
+            &instrument,
+            &venue_order_id,
+            Quantity::from("4.0000"),
+        );
+        add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+        client.start().unwrap();
+        client.connect().await.unwrap();
+    }
 
     let mass_status = client
         .generate_mass_status(Some(60))
@@ -1630,19 +1645,25 @@ async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
     let reports = mass_status.order_reports();
     let report = reports.values().next().expect("open order report");
 
-    assert_eq!(report.filled_qty, Quantity::from("4.0000"));
+    assert_eq!(
+        report.filled_qty,
+        Quantity::from(if observed { "4.0000" } else { "0.0000" })
+    );
     assert!(mass_status.lookback_start().is_some());
     assert!(mass_status.reports_complete());
 }
 
 #[rstest]
+#[case::observed(true)]
+#[case::unobserved(false)]
 #[tokio::test]
-async fn test_generate_mass_status_lookback_raises_filled_buy_overfill_qty() {
+async fn test_generate_mass_status_lookback_raises_filled_buy_overfill_qty(#[case] observed: bool) {
     let state = TestServerState::default();
     let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
     order["status"] = json!("MATCHED");
     order["original_size"] = json!("10.0000");
     order["size_matched"] = json!("10.0040");
+    let venue_order_id = order["id"].as_str().unwrap().to_string();
     *state.orders_response_override.lock().await = Some(json!({
         "data": [order],
         "next_cursor": "LTE=",
@@ -1657,7 +1678,19 @@ async fn test_generate_mass_status_lookback_raises_filled_buy_overfill_qty() {
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
     let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
-    client.on_instrument(instrument);
+    client.on_instrument(instrument.clone());
+
+    if observed {
+        seed_observed_fill(
+            &cache,
+            &instrument,
+            &venue_order_id,
+            Quantity::from("10.0040"),
+        );
+        add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+        client.start().unwrap();
+        client.connect().await.unwrap();
+    }
 
     let mass_status = client
         .generate_mass_status(Some(60))
@@ -1668,8 +1701,14 @@ async fn test_generate_mass_status_lookback_raises_filled_buy_overfill_qty() {
     let report = reports.values().next().expect("matched order report");
 
     assert_eq!(report.order_status, OrderStatus::Filled);
-    assert_eq!(report.quantity, Quantity::from("10.0040"));
-    assert_eq!(report.filled_qty, Quantity::from("10.0040"));
+    assert_eq!(
+        report.quantity,
+        Quantity::from(if observed { "10.0040" } else { "10.0000" })
+    );
+    assert_eq!(
+        report.filled_qty,
+        Quantity::from(if observed { "10.0040" } else { "0.0000" })
+    );
 }
 
 #[rstest]
@@ -10304,6 +10343,43 @@ fn submit_and_accept_order(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny, ven
     *order = cache.borrow_mut().update_order(&submitted).unwrap();
     let accepted = TestOrderEventStubs::accepted(order, account_id, vid);
     *order = cache.borrow_mut().update_order(&accepted).unwrap();
+}
+
+fn seed_observed_fill(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    venue_order_id: &str,
+    filled: Quantity,
+) {
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-OBSERVED-LOOKBACK",
+        instrument.id(),
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        filled.max(Quantity::from("10.0000")),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(cache, &mut order, venue_order_id);
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        instrument,
+        Some(TradeId::from("trade-observed-lookback")),
+        None,
+        Some(Price::from("0.5000")),
+        Some(filled),
+        Some(LiquiditySide::Taker),
+        Some(Money::zero(Currency::pUSD())),
+        None,
+        Some(AccountId::from("POLYMARKET-001")),
+    );
+    cache.borrow_mut().update_order(&fill).unwrap();
 }
 
 fn mark_order_pending_update(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {

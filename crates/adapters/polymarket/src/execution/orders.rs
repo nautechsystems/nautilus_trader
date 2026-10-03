@@ -1108,6 +1108,7 @@ impl PolymarketExecutionClient {
                 api_key: api_key.expose_secret(),
                 pusd: get_pusd_currency(),
                 clock,
+                settlement: settlement.clone(),
             };
             let mut status_retry_count = 0;
             let mut status_retry_delay_ms =

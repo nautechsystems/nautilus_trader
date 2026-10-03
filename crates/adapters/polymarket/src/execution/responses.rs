@@ -2024,6 +2024,9 @@ mod tests {
             api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2069,6 +2072,9 @@ mod tests {
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2118,6 +2124,9 @@ mod tests {
             api_key: foreign_api_key,
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2160,6 +2169,9 @@ mod tests {
             api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2203,6 +2215,9 @@ mod tests {
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2249,6 +2264,9 @@ mod tests {
             api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let (maker_reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -2311,6 +2329,9 @@ mod tests {
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let build = |scope| {
@@ -2366,6 +2387,9 @@ mod tests {
             api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: std::sync::Arc::new(crate::execution::settlement::SettlementRegistry::new(
+                AccountId::from("POLY-001"),
+            )),
         };
 
         let result = crate::execution::reconciliation::build_fill_reports_from_trades(

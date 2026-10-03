@@ -23,7 +23,9 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
+    events::{OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    orders::{Order, OrderAny},
     types::{Price, Quantity},
 };
 use uuid::Uuid;
@@ -151,6 +153,87 @@ pub fn create_position_reconciliation_venue_order_id(
         "position-reconciliation-order",
         &seed,
     ))
+}
+
+/// Returns active fill IDs proven to come from deterministic reconciliation inference.
+///
+/// Replays candidate order history to recover each fill's cumulative quantity before comparing
+/// the complete deterministic ID. A matching UUID format alone does not establish provenance.
+///
+/// # Errors
+///
+/// Returns an error when candidate order history cannot be replayed.
+pub fn inferred_reconciliation_trade_ids(order: &OrderAny) -> anyhow::Result<Vec<TradeId>> {
+    let events = order.events();
+    let trade_ids = order.trade_ids();
+
+    let is_candidate = |fill: &OrderFilled| {
+        fill.reconciliation
+            && is_inferred_reconciliation_trade_id_format(&fill.trade_id)
+            && trade_ids.contains(&&fill.trade_id)
+    };
+
+    if !events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(fill) if is_candidate(fill)))
+    {
+        return Ok(Vec::new());
+    }
+
+    let Some((first, remaining)) = events.split_first() else {
+        return Ok(Vec::new());
+    };
+
+    let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot replay order {} for inferred fill detection: {e}",
+            order.client_order_id(),
+        )
+    })?;
+
+    let mut inferred_trade_ids = Vec::new();
+
+    for event in remaining {
+        projected.apply((*event).clone()).map_err(|e| {
+            anyhow::anyhow!(
+                "cannot replay order {} for inferred fill detection: {e}",
+                order.client_order_id(),
+            )
+        })?;
+
+        let OrderEventAny::Filled(fill) = event else {
+            continue;
+        };
+
+        if !is_candidate(fill) {
+            continue;
+        }
+
+        let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
+        let position_ids = [fill.position_id, Some(external_position_id)];
+
+        let inferred = position_ids.into_iter().flatten().any(|position_id| {
+            create_inferred_reconciliation_trade_id(
+                fill.account_id,
+                fill.instrument_id,
+                fill.client_order_id,
+                Some(fill.venue_order_id),
+                fill.order_side,
+                fill.order_type,
+                projected.filled_qty(),
+                fill.last_qty,
+                fill.last_px,
+                position_id,
+                fill.ts_event,
+            ) == fill.trade_id
+        });
+
+        if inferred {
+            inferred_trade_ids.push(fill.trade_id);
+        }
+    }
+
+    Ok(inferred_trade_ids)
 }
 
 fn synthetic_fill_id_suffix(

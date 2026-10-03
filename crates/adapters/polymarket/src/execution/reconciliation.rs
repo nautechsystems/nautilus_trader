@@ -15,6 +15,8 @@
 
 //! Reconciliation report generation for the Polymarket execution client.
 
+use std::sync::Arc;
+
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use indexmap::IndexMap;
@@ -23,10 +25,11 @@ use nautilus_core::{
     DurationNanos, UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND,
     time::AtomicTime,
 };
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -41,7 +44,10 @@ use super::{
         OrderReportParseContext, parse_timestamp, parse_validated_order_status_report,
         sum_filled_quantity, weighted_average_price,
     },
-    settlement::{AdmissionContext, AdmissionError, AdmittedLeg, TradeEvidence, admit_trade_legs},
+    settlement::{
+        AdmissionContext, AdmissionError, AdmittedLeg, SettlementRegistry, TradeEvidence,
+        admit_trade_legs,
+    },
 };
 use crate::{
     common::{
@@ -105,6 +111,7 @@ pub(crate) struct FillContext<'a> {
     pub api_key: &'a str,
     pub pusd: Currency,
     pub clock: &'static AtomicTime,
+    pub settlement: Arc<SettlementRegistry>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -747,7 +754,7 @@ pub(crate) fn build_fill_reports_from_trades(
         return build_target_fill_reports(
             trades,
             &admission_ctx,
-            ctx.account_id,
+            &ctx.settlement,
             scope,
             target_order_id,
             ts_init,
@@ -783,15 +790,18 @@ pub(crate) fn build_fill_reports_from_trades(
             &selected_order_ids,
         ) {
             Ok(admitted) => admitted,
-            Err(AdmissionError::Untimestamped(e)) => {
-                // A bounded report counts the trade as untimestamped; an unbounded one fails
-                if trade_in_lookback_window(None, lookback_start, true, &trade.id, &mut discards) {
-                    return Err(e);
-                }
-
+            Err(AdmissionError::Untimestamped(_))
+                if !trade_in_lookback_window(
+                    None,
+                    lookback_start,
+                    true,
+                    &trade.id,
+                    &mut discards,
+                ) =>
+            {
                 continue;
             }
-            Err(AdmissionError::Invalid(e)) => return Err(e),
+            Err(AdmissionError::Untimestamped(e) | AdmissionError::Invalid(e)) => return Err(e),
             Err(e) => {
                 anyhow::bail!("selected trade {} was not admitted: {e}", trade.id)
             }
@@ -811,12 +821,13 @@ pub(crate) fn build_fill_reports_from_trades(
             continue;
         }
 
-        reports.extend(
-            admitted
-                .legs
-                .iter()
-                .map(|leg| leg.fill_report(ctx.account_id, ts_init)),
-        );
+        for leg in &admitted.legs {
+            reports.push(ctx.settlement.build_fill_report(
+                &admitted.venue_trade_id,
+                leg,
+                ts_init,
+            )?);
+        }
     }
 
     Ok((reports, discards))
@@ -825,7 +836,7 @@ pub(crate) fn build_fill_reports_from_trades(
 fn build_target_fill_reports(
     trades: &[PolymarketTradeReport],
     ctx: &AdmissionContext<'_>,
-    account_id: AccountId,
+    settlement: &SettlementRegistry,
     scope: FillReportScope,
     target_order_id: VenueOrderId,
     ts_init: UnixNanos,
@@ -854,7 +865,9 @@ fn build_target_fill_reports(
         match target {
             TargetTrade::Unrelated | TargetTrade::Failed => {}
             TargetTrade::Pending => discards.has_pending_target = true,
-            TargetTrade::Confirmed(leg) => reports.push(leg.fill_report(account_id, ts_init)),
+            TargetTrade::Confirmed(leg) => {
+                reports.push(settlement.build_fill_report(&trade.id, &leg, ts_init)?);
+            }
         }
     }
 
@@ -1225,14 +1238,15 @@ pub(crate) async fn generate_mass_status(
     data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     ctx: &FillContext<'_>,
-    client_id: ClientId,
-    venue: Venue,
+    core: &ExecutionClientCore,
     lookback_mins: Option<u64>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
     retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
     is_cached_order: impl Fn(&VenueOrderId) -> bool,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+    let client_id = core.client_id;
+    let venue = core.venue;
     let ts_init = ctx.clock.get_time_ns();
     let lookback_start = lookback_mins
         .map(DurationNanos::try_from_mins)
@@ -1255,6 +1269,15 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
+    let positions = if ctx.signer_type == PolymarketSignerType::Session {
+        Vec::new()
+    } else {
+        data_api_client
+            .get_positions(ctx.user_address)
+            .await
+            .context("failed to fetch positions for mass status")?
+    };
+
     let (fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
         ctx,
@@ -1276,11 +1299,6 @@ pub(crate) async fn generate_mass_status(
     let mut position_reports = if ctx.signer_type == PolymarketSignerType::Session {
         Vec::new()
     } else {
-        let positions = data_api_client
-            .get_positions(ctx.user_address)
-            .await
-            .context("failed to fetch positions for mass status")?;
-
         build_reconciliation_position_reports(
             &positions,
             ctx.account_id,
@@ -1292,12 +1310,15 @@ pub(crate) async fn generate_mass_status(
         )?
     };
 
-    if lookback_start.is_none() {
-        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
-    } else {
-        order_reports
-            .iter_mut()
-            .for_each(normalize_terminal_order_report_quantity);
+    {
+        let cache = core.cache();
+        let orders = cache.orders_refs(Some(&venue), None, None, Some(&ctx.account_id), None);
+        cap_order_reports_to_confirmed_fills(
+            &mut order_reports,
+            &fill_reports,
+            &ctx.settlement,
+            orders.iter().map(|order| &**order),
+        )?;
     }
 
     let aligned_instrument_ids =
@@ -1690,11 +1711,13 @@ fn classify_unmapped_historical(
     log::debug!("Dropping out-of-scope unmapped historical instrument {instrument_id}");
 }
 
-fn cap_order_reports_to_confirmed_fills(
+fn cap_order_reports_to_confirmed_fills<'a>(
     order_reports: &mut [OrderStatusReport],
     fill_reports: &[FillReport],
-) {
-    let confirmed_by_order = confirmed_filled_quantities(fill_reports);
+    settlement: &SettlementRegistry,
+    orders: impl IntoIterator<Item = &'a OrderAny>,
+) -> anyhow::Result<()> {
+    let confirmed_by_order = settlement.report_filled_quantities(fill_reports, orders)?;
 
     for report in order_reports {
         let local_filled = Quantity::zero(report.quantity.precision);
@@ -1704,6 +1727,8 @@ fn cap_order_reports_to_confirmed_fills(
             confirmed_by_order.get(&report.venue_order_id).copied(),
         );
     }
+
+    Ok(())
 }
 
 pub(crate) fn confirmed_filled_quantities(
@@ -1834,12 +1859,68 @@ mod tests {
             api_key: TEST_API_KEY,
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: Arc::new(SettlementRegistry::new(AccountId::from("POLY-001"))),
         }
     }
 
     fn confirmed_taker_trade() -> PolymarketTradeReport {
         serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
             .expect("valid trade fixture")
+    }
+
+    #[rstest]
+    #[case::collection(false)]
+    #[case::target(true)]
+    fn test_fill_reports_reject_rest_failed_tombstone(#[case] targeted: bool) {
+        let ctx = test_fill_context();
+        let instruments = test_instruments();
+        let trade = confirmed_taker_trade();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
+        let admission_ctx = AdmissionContext {
+            signer_type: ctx.signer_type,
+            user_address: ctx.user_address,
+            api_key: ctx.api_key,
+            pusd: ctx.pusd,
+            instruments: &instruments,
+        };
+
+        let mut admitted = admit_trade_legs(
+            TradeEvidence::Rest(&trade),
+            &admission_ctx,
+            &[venue_order_id.as_str()],
+        )
+        .unwrap();
+        admitted.status = PolymarketTradeStatus::Failed;
+        assert!(ctx.settlement.admit_rest_result(&admitted).is_empty());
+
+        let result = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, targeted.then_some(venue_order_id)),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+
+        assert!(result.unwrap_err().to_string().contains("settled FAILED"));
+        assert_eq!(
+            super::super::settlement::registry::tests::settlement_state(
+                &ctx.settlement,
+                &admitted.venue_trade_id,
+            ),
+            Some(super::super::settlement::state::SettlementState::RestFailed),
+        );
+        assert_eq!(
+            super::super::settlement::registry::tests::leg_application(
+                &ctx.settlement,
+                &admitted.legs[0].trade_id,
+            ),
+            Some(super::super::settlement::state::LegApplication::Absent),
+        );
+        assert_eq!(ctx.settlement.record_count(), 1);
+        ctx.settlement.ensure_resolved(None, "fills").unwrap();
     }
 
     fn open_order() -> PolymarketOpenOrder {
@@ -2285,7 +2366,13 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        cap_order_reports_to_confirmed_fills(
+            &mut reports,
+            &fills,
+            &test_fill_context().settlement,
+            [],
+        )
+        .unwrap();
 
         assert_eq!(reports[0].filled_qty, Quantity::from("4.0000"));
     }
@@ -2333,7 +2420,13 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        cap_order_reports_to_confirmed_fills(
+            &mut reports,
+            &fills,
+            &test_fill_context().settlement,
+            [],
+        )
+        .unwrap();
 
         assert_eq!(reports[0].quantity, Quantity::from(expected_quantity));
         assert_eq!(reports[0].filled_qty, Quantity::from(confirmed));
