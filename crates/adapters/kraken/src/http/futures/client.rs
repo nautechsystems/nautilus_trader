@@ -2941,17 +2941,34 @@ fn emit_balances(amounts: &AmountsByCode) -> Vec<AccountBalance> {
 
     for code in sorted_codes(amounts) {
         let (total, locked) = amounts[&code];
-        match AccountBalance::from_total_and_locked(
-            total,
-            locked,
-            futures_balance_currency(code.as_str()),
-        ) {
+        match aggregate_balance(total, locked, futures_balance_currency(code.as_str())) {
             Ok(balance) => balances.push(balance),
             Err(e) => log::warn!("Skipping {code} balance: {e}"),
         }
     }
 
     balances
+}
+
+/// Builds the balance for amounts already bounded per wallet and summed.
+///
+/// `AccountBalance::from_total_and_locked` would clamp the aggregate's locked amount into
+/// `[0, total]` a second time, which hides a shortfall: a margin wallet at -1 with -2 available
+/// reserves 1, and combined with 1.5 in cash the sums are 0.5 total and 1 locked, so free is -0.5.
+/// Clamping would report 0.5 locked and 0 free. The sums are therefore emitted as they are, with
+/// free derived in fixed point so `total == locked + free` holds exactly.
+fn aggregate_balance(
+    total: Decimal,
+    locked: Decimal,
+    currency: Currency,
+) -> anyhow::Result<AccountBalance> {
+    let total = Money::from_decimal(total, currency)?;
+    let locked = Money::from_decimal(locked, currency)?;
+    let free = total
+        .checked_sub(locked)
+        .ok_or_else(|| anyhow::anyhow!("Derived `free` for {currency} exceeds Money bounds"))?;
+
+    AccountBalance::new_checked(total, locked, free).map_err(Into::into)
 }
 
 /// Adds one wallet's `total` and `locked` to the entry for `code`.
@@ -3375,6 +3392,53 @@ mod tests {
             "the flex wallet's negative raw locked must not cancel the reservation"
         );
         assert_eq!(btc.free.as_decimal(), dec!(1.4));
+    }
+
+    /// Summed wallet-local amounts are emitted as summed, so a shortfall stays visible.
+    ///
+    /// A margin wallet at -1 BTC with -2 BTC available reserves 1 BTC. Combined with 1.5 BTC in
+    /// cash the sums are 0.5 total and 1 locked, leaving free at -0.5. Clamping the aggregate
+    /// would report 0.5 locked and 0 free, dropping half the reservation.
+    #[rstest]
+    fn test_parse_account_entries_preserves_summed_amounts_across_mixed_sign_wallets() {
+        let margin = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: [("xbt".to_string(), dec!(-1))].into_iter().collect(),
+            currencies: AHashMap::new(),
+            auxiliary: Some(FuturesAuxiliary {
+                usd: None,
+                pv: None,
+                pnl: None,
+                af: Some(dec!(-2)),
+                funding: None,
+            }),
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let (balances, _) = entries_for(&[
+            ("fi_xbtusd", margin),
+            ("cash", cash_wallet(&[("xbt", dec!(1.5))])),
+        ]);
+
+        let btc = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "BTC")
+            .expect("one BTC balance");
+        assert_eq!(btc.total.as_decimal(), dec!(0.5));
+        assert_eq!(
+            btc.locked.as_decimal(),
+            dec!(1),
+            "the margin wallet's reservation must survive the aggregate"
+        );
+        assert_eq!(
+            btc.free.as_decimal(),
+            dec!(-0.5),
+            "the shortfall must stay visible rather than clamp to zero"
+        );
     }
 
     /// A negative total keeps its reported `locked`, as a single balance always has.

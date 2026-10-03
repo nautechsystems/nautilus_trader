@@ -187,8 +187,10 @@ Futures balances used the venue's own spelling, which differs per wallet: cash a
 key an asset `xbt` while the flex wallet keys it `XBT`. Both become `BTC`, and `usd` becomes `USD`.
 Because the spellings now meet under one code, an asset held in several wallets is reported as one
 balance whose total and locked amounts are the sum of the wallets', each wallet's locked amount
-bounded to its own total first. Previously each wallet produced its own entry and the account kept
-whichever it read last.
+bounded to its own total first and the sums then reported as they are. Free can therefore be
+negative when one wallet's reservation exceeds the combined holding, which is a real shortfall
+rather than something to clamp away. Previously each wallet produced its own entry and the account
+kept whichever it read last.
 
 A cache or database written by an earlier version needs migrating or rebuilding.
 
