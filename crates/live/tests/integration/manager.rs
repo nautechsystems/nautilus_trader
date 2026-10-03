@@ -4994,10 +4994,9 @@ async fn test_bounded_same_timestamp_orders_reconcile_explicit_flat() {
 
 /// An order whose fills span a position lifecycle keeps its pre-boundary fill as order-only.
 ///
-/// A sell that closes a long and opens a short crosses zero inside the order. Filtering fills
-/// to the current lifecycle used to drop the closing fill while the report kept its full filled
-/// quantity, so the remainder was inferred at the order's price. The closing fill now stays on
-/// the order, settling its quantity at the real price, and does not apply to the position.
+/// A sell that closes a long and opens a short crosses zero inside the order. The closing fill
+/// stays on the order, so its filled quantity settles at the real price rather than an inferred
+/// one, and it does not apply to the position.
 #[tokio::test]
 async fn test_order_spanning_two_lifecycles_keeps_pre_boundary_fill_order_only() {
     let mut ctx = TestContext::new();
