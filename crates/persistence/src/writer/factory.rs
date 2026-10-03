@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Streaming writer factory registry and connections.
+
 use std::{
     fmt::{Debug, Display},
     fs, io,

@@ -247,6 +247,8 @@ Released on TBD (UTC).
 - Fixed a Feather writer panic when a mixed-instrument batch crossed the rotation size limit (#5115), thanks @faysou
 - Fixed Parquet writers accepting run IDs that object-store paths encode, which skipped promotion
 - Fixed Feather staging writes hanging when the staging worker panics
+- Fixed unbounded Feather filename reservations and repeated directory scans during Parquet promotion
+- Fixed Parquet promotion from writer paths containing spaces, non-ASCII, or reserved characters
 - Fixed Parquet promotion and `convert_stream_to_data` of Feather files with non-ASCII identifiers
 - Fixed streaming `replace_existing` emptying the run directory before rejecting an invalid catalog
 - Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag

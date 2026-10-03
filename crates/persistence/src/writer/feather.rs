@@ -31,6 +31,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
+        mpsc::Sender,
     },
 };
 
@@ -505,31 +506,31 @@ pub enum RotationConfig {
 /// and the Arrow metadata it was encoded with, such as its instrument's precision, so readers
 /// restore per-row metadata the file schema cannot hold.
 ///
-/// The `write()` method is the single entry point for clients: they supply a data value (of generic type T)
-/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by
-/// `CatalogFamily`, and appends it to that key's open file. Flushing pushes buffered bytes to disk
-/// without starting a new file; a file is sealed and replaced only on rotation, [`Self::seal`], or
-/// [`Self::close`].
+/// The [`Self::write`] method accepts a data value of generic type `T`, encodes it using `T`'s
+/// metadata via `EncodeToRecordBatch`, routes it by `CatalogFamily`, and appends it to that key's
+/// open file.
+///
+/// # File Lifecycle
+///
+/// Open files are tracked by their final `.feather` paths, while writes go to `.feather.partial`
+/// files. Sealing completes the stream and renames the partial file to its final path. A file is
+/// sealed and replaced only on rotation, [`Self::seal`], or [`Self::close`].
+///
+/// # Flushing
+///
+/// [`Self::flush`] pushes buffered bytes to disk without starting a new file. `flush_interval_ms`
+/// controls automatic flushing in milliseconds; `0` disables automatic flushing.
 pub struct FeatherWriter {
-    /// Local directory for writing files.
     directory: PathBuf,
-    /// Send time source for timestamps, rotation, and flush cadence.
     clock: WriterClock,
-    /// Rotation configuration.
     rotation_config: RotationConfig,
-    /// Optional set of type names to include.
     included_types: Option<HashSet<CatalogDataType>>,
-    /// Optional typed record-family filter.
     record_filter: Option<WriterRecordFilter>,
-    /// Open files keyed by their sealed path.
     writers: HashMap<FileWriterPath, FeatherFile>,
-    /// Paths already handed out by this writer instance.
-    reserved_paths: HashSet<PathBuf>,
-    /// Map of next rotation times keyed by their path.
+    path_sequences: HashMap<CatalogDataType, (UnixNanos, u64)>,
+    sealed_tx: Option<Sender<PathBuf>>,
     next_rotation_times: HashMap<FileWriterPath, UnixNanos>,
-    /// Flush interval in milliseconds (0 = no automatic flushing).
     flush_interval_ms: u64,
-    /// Last flush timestamp in nanoseconds.
     last_flush_ns: UnixNanos,
     pending_write_error: Option<String>,
 }
@@ -554,7 +555,8 @@ impl FeatherWriter {
             included_types,
             record_filter: None,
             writers: HashMap::new(),
-            reserved_paths: HashSet::new(),
+            path_sequences: HashMap::new(),
+            sealed_tx: None,
             next_rotation_times: HashMap::new(),
             flush_interval_ms,
             last_flush_ns,
@@ -566,6 +568,11 @@ impl FeatherWriter {
     #[must_use]
     pub fn with_record_filter(mut self, record_filter: Option<WriterRecordFilter>) -> Self {
         self.record_filter = record_filter;
+        self
+    }
+
+    pub(crate) fn with_sealed_sender(mut self, sealed_tx: Sender<PathBuf>) -> Self {
+        self.sealed_tx = Some(sealed_tx);
         self
     }
 
@@ -849,8 +856,11 @@ impl FeatherWriter {
         };
 
         let partial_path = file.partial_path.clone();
-        file.seal()
-            .inspect_err(|_| recover_released_feather_file(&partial_path))
+        let result = file
+            .seal()
+            .inspect_err(|_| recover_released_feather_file(&partial_path));
+        self.notify_sealed(path);
+        result
     }
 
     // A failed append can leave a partial IPC message, so the file is recovered to its complete
@@ -871,6 +881,15 @@ impl FeatherWriter {
         );
 
         recover_released_feather_file(&partial_path);
+        self.notify_sealed(path);
+    }
+
+    fn notify_sealed(&self, path: &FileWriterPath) {
+        if let Some(sealed_tx) = &self.sealed_tx
+            && path.path.exists()
+        {
+            let _ = sealed_tx.send(path.path.clone());
+        }
     }
 
     /// Creates (and inserts) a new `FileWriter` for type T.
@@ -1105,9 +1124,15 @@ impl FeatherWriter {
     }
 
     fn reserve_writer_path(&mut self, data_type: CatalogDataType) -> FileWriterPath {
-        let timestamp = self.clock.timestamp_ns();
+        let now = self.clock.timestamp_ns();
+        let (timestamp, first_sequence) = self
+            .path_sequences
+            .get(&data_type)
+            .copied()
+            .filter(|(timestamp, _)| *timestamp >= now)
+            .unwrap_or((now, 0));
 
-        for sequence in 0.. {
+        for sequence in first_sequence.. {
             let path = self.build_writer_path(&data_type, timestamp, sequence);
 
             // Files left by an earlier writer in the same directory keep their names
@@ -1115,9 +1140,9 @@ impl FeatherWriter {
                 continue;
             }
 
-            if self.reserved_paths.insert(path.clone()) {
-                return FileWriterPath { path, data_type };
-            }
+            self.path_sequences
+                .insert(data_type.clone(), (timestamp, sequence + 1));
+            return FileWriterPath { path, data_type };
         }
 
         unreachable!("unbounded writer path sequence exhausted")
@@ -2481,6 +2506,35 @@ mod tests {
     }
 
     #[rstest]
+    #[case::same_time(vec![5; 32])]
+    #[case::clock_rewinds(vec![5, 3, 5])]
+    #[case::clock_advances_then_rewinds(vec![5, 7, 5, 7])]
+    fn path_reservations_are_bounded_after_files_are_deleted(#[case] timestamps: Vec<u64>) {
+        let temp_dir = TempDir::new().unwrap();
+        let time = Arc::new(AtomicU64::new(0));
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::clone(&time)),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        let mut paths = HashSet::new();
+
+        for timestamp in &timestamps {
+            time.store(*timestamp, Ordering::Relaxed);
+            writer.write(quote_at(1)).unwrap();
+            writer.close().unwrap();
+            let path = feather_files(temp_dir.path(), FEATHER_EXTENSION).remove(0);
+            assert!(paths.insert(path.clone()));
+            fs::remove_file(path).unwrap();
+        }
+
+        assert_eq!(paths.len(), timestamps.len());
+        assert_eq!(writer.path_sequences.len(), 1);
+    }
+
+    #[rstest]
     fn test_close() {
         let temp_dir = TempDir::new().unwrap();
         let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
@@ -2599,6 +2653,7 @@ mod tests {
     #[cfg(unix)]
     fn failed_seal_of_a_removed_file_reports_the_error_and_publishes_nothing() {
         let temp_dir = TempDir::new().unwrap();
+        let (sealed_tx, sealed_rx) = std::sync::mpsc::channel();
 
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
@@ -2606,7 +2661,8 @@ mod tests {
             RotationConfig::NoRotation,
             None,
             None,
-        );
+        )
+        .with_sealed_sender(sealed_tx);
         writer
             .write(QuoteTick::new(
                 InstrumentId::from("AUD/USD.SIM"),
@@ -2628,12 +2684,17 @@ mod tests {
         assert_eq!(error.to_string(), "No such file or directory (os error 2)");
         assert!(writer.is_closed());
         assert!(feather_files(temp_dir.path(), FEATHER_EXTENSION).is_empty());
+        assert_eq!(
+            sealed_rx.try_iter().collect::<Vec<_>>(),
+            Vec::<PathBuf>::new()
+        );
     }
 
     #[rstest]
     #[cfg(target_os = "linux")]
     fn failed_seal_recovers_the_batches_that_reached_the_file() {
         let temp_dir = TempDir::new().unwrap();
+        let (sealed_tx, sealed_rx) = std::sync::mpsc::channel();
 
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
@@ -2641,7 +2702,8 @@ mod tests {
             RotationConfig::NoRotation,
             None,
             Some(0),
-        );
+        )
+        .with_sealed_sender(sealed_tx);
 
         writer.write(quote_at(1)).unwrap();
         writer.flush().unwrap();
@@ -2663,6 +2725,7 @@ mod tests {
         assert!(writer.is_closed());
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
         assert_eq!(read_quotes(&sealed), quotes_at(&[1]));
+        assert_eq!(sealed_rx.try_iter().collect::<Vec<_>>(), vec![sealed]);
     }
 
     #[rstest]
@@ -2674,6 +2737,7 @@ mod tests {
         #[case] expected: Vec<u64>,
     ) {
         let temp_dir = TempDir::new().unwrap();
+        let (sealed_tx, sealed_rx) = std::sync::mpsc::channel();
 
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
@@ -2681,7 +2745,8 @@ mod tests {
             RotationConfig::NoRotation,
             None,
             Some(0),
-        );
+        )
+        .with_sealed_sender(sealed_tx);
 
         writer.write(quote_at(1)).unwrap();
 
@@ -2717,6 +2782,9 @@ mod tests {
         assert_eq!(abandoned.path.exists(), flushed);
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
         assert_eq!(recovered, quotes_at(&expected));
+        let mut notified = sealed_rx.try_iter().collect::<Vec<_>>();
+        notified.sort();
+        assert_eq!(notified, feather_files(temp_dir.path(), FEATHER_EXTENSION));
     }
 
     #[rstest]
@@ -3001,7 +3069,7 @@ mod tests {
 
             assert!(error.to_string().contains(expected_error));
             assert!(writer.writers.is_empty());
-            assert!(writer.reserved_paths.is_empty());
+            assert!(writer.path_sequences.is_empty());
         }
     }
 
