@@ -5910,10 +5910,13 @@ mod tests {
             btc_user_fill(1001, "0xa3", start_ms + 10, &filled_cloid),
             btc_user_fill(2002, "0xb1", start_ms, external_cloid),
         ];
+        let mut filled_order = btc_order_entry(4004, "filled", start_ms + 30, &filled_cloid);
+        filled_order.order.sz = Decimal::ZERO;
+
         let orders = vec![
             btc_order_entry(1001, "canceled", start_ms + 20, &filled_cloid),
             btc_order_entry(3003, "open", start_ms, &accepted_cloid),
-            btc_order_entry(4004, "filled", start_ms + 30, &filled_cloid),
+            filled_order,
             btc_order_entry(5005, "canceled", start_ms + 40, external_cloid),
             btc_order_entry(6006, "canceled", start_ms - 1, &accepted_cloid),
             btc_order_entry(7010, "canceled", start_ms + 50, external_cloid),
