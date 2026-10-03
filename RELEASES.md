@@ -328,6 +328,9 @@ Released on TBD (UTC).
 - Fixed DeFi chain IDs and HyperSync URLs for 12 chains, including Unichain, Ink, and Hyperliquid
 - Fixed DeFi `Pool` display repeating the fee label
 - Fixed DeFi swap replay advancing fees across a drifted tick partition (#5163), thanks @folknor
+- Fixed DeFi pool utilization panics during partial-history replay
+- Fixed DeFi mint panics above tick liquidity limits and state changes on rejected mints or burns
+- Fixed DeFi size estimates overflowing near the maximum pool tick
 - Fixed non-ASCII symbols silently dropping positions (#5143), thanks @Yize9
 - Fixed `nautilus-live` failing to compile without the `node` feature (#5177), thanks @zhaow-de
 - Fixed adapters logging routine events as warnings and duplicate failures twice

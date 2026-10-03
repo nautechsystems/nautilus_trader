@@ -39,7 +39,7 @@ use crate::defi::{
         error::{PoolEventKind, PoolProfilerError},
         profiler::PoolProfiler,
         quote::SwapQuote,
-        size_estimator::slippage_for_size_bps,
+        size_estimator::{estimate_max_size_for_impact, slippage_for_size_bps},
     },
     stubs::{arbitrum, uniswap_v3},
     tick_map::{
@@ -510,6 +510,46 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
         result.err().unwrap().to_string(),
         format!("Invalid tick bounds for {invalid_tick_lower} and {invalid_tick_upper}").as_str(),
     );
+}
+
+#[rstest]
+#[case::same_position(-60, 60, lp_address(), -60)]
+#[case::lower_boundary(-60, 120, user_address(), -60)]
+#[case::upper_boundary(-120, 60, user_address(), 60)]
+fn test_execute_mint_exceeds_tick_limit_leaves_state_unchanged(
+    #[case] lower: i32,
+    #[case] upper: i32,
+    #[case] owner: Address,
+    #[case] full_tick: i32,
+) {
+    let price = encode_sqrt_ratio_x96(1, 1);
+    let pool = Arc::new(pool_definition(Some(3000), Some(60), Some(price)));
+    let mut profiler = PoolProfiler::new(pool);
+    profiler.initialize(price).unwrap();
+    let max_liquidity = profiler.tick_map.max_liquidity_per_tick;
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            -60,
+            60,
+            max_liquidity,
+        )
+        .unwrap();
+    let before = profiler.clone();
+
+    let e = profiler
+        .execute_mint(owner, create_block_position(), lower, upper, 1)
+        .unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        format!(
+            "Liquidity {} exceeds maximum per tick {max_liquidity} at tick {full_tick}",
+            max_liquidity + 1,
+        )
+    );
+    assert_profiler_unchanged(&profiler, &before);
 }
 
 #[rstest]
@@ -1659,6 +1699,69 @@ fn empty_low_fee_pool_profiler() -> PoolProfiler {
 }
 
 #[rstest]
+fn test_liquidity_utilization_rate_partial_history_replay() {
+    let price = encode_sqrt_ratio_x96(1, 1);
+    let pool = Arc::new(pool_definition(Some(3000), Some(60), Some(price)));
+    let mut canonical = PoolProfiler::new(pool.clone());
+    canonical.initialize(price).unwrap();
+    canonical
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            -60,
+            60,
+            1_000_000_000_000_000_000,
+        )
+        .unwrap();
+    let recent_mint = canonical
+        .execute_mint(user_address(), create_block_position(), -60, 60, 1)
+        .unwrap();
+    let swap = canonical
+        .execute_swap(
+            user_address(),
+            user_address(),
+            create_block_position(),
+            true,
+            I256::ONE,
+            MIN_SQRT_RATIO + U160::from(1),
+        )
+        .unwrap();
+    let mut partial = PoolProfiler::new(pool);
+    partial.initialize(price).unwrap();
+    partial.process_mint(&recent_mint).unwrap();
+    partial.process_swap(&swap).unwrap();
+
+    assert_eq!(canonical.liquidity_utilization_rate(), 1.0);
+    assert_eq!(swap.amount0, I256::ONE);
+    assert_eq!(swap.amount1, I256::ZERO);
+    assert_eq!(partial.get_active_liquidity(), 1_000_000_000_000_000_001);
+    assert_eq!(partial.get_total_liquidity(), U256::ONE);
+    assert_eq!(
+        partial.liquidity_utilization_rate(),
+        1_000_000_000_000_000_000.0
+    );
+    assert_eq!(
+        partial.analytics.liquidity_utilization_rate,
+        1_000_000_000_000_000_000.0
+    );
+    assert_eq!(partial.analytics.total_swaps, 1);
+    assert_eq!(partial.state.current_tick, swap.tick);
+    assert_eq!(partial.state.price_sqrt_ratio_x96, swap.sqrt_price_x96);
+
+    canonical
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            60,
+            120,
+            2_000_000_000_000_000_000,
+        )
+        .unwrap();
+
+    assert_eq!(canonical.liquidity_utilization_rate(), 0.333_333);
+}
+
+#[rstest]
 fn test_uni_pool_profiler_initial_state(uni_pool_profiler: PoolProfiler) {
     assert_eq!(uni_pool_profiler.state.current_tick, -23028);
     assert_eq!(uni_pool_profiler.get_active_tick_count(), 2);
@@ -2023,17 +2126,16 @@ fn test_if_we_correctly_add_and_remove_liquidity_gross_after_every_updates(
 
 #[rstest]
 fn test_burn_uninitialized_position(mut uni_pool_profiler: PoolProfiler) {
-    // Try to burn a position that was never minted
     let burn_event = create_burn_event(lp_address(), -240, 0, 100);
+    let before = uni_pool_profiler.clone();
 
     let result = uni_pool_profiler.process(&DexPoolData::LiquidityUpdate(burn_event));
 
-    // Should fail because position doesn't exist (will be init with 0 liquidity) and trying to burn > 0
-    assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
         "Position liquidity 0 is less than the requested burn amount of 100",
     );
+    assert_profiler_unchanged(&uni_pool_profiler, &before);
 }
 
 #[rstest]
@@ -3632,6 +3734,30 @@ fn test_quote_swap_rejects_invalid_price_limit(
         .unwrap_err();
 
     assert_eq!(error.to_string(), expected_error);
+}
+
+#[rstest]
+fn test_estimate_max_size_for_impact_high_tick_overflow() {
+    let price = get_sqrt_ratio_at_tick(887_219);
+    let pool = Arc::new(pool_definition(Some(3000), Some(60), Some(price)));
+    let mut profiler = PoolProfiler::new(pool);
+    profiler.initialize(price).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            887_160,
+            887_220,
+            7_944_137_103_949_194_917_442_067,
+        )
+        .unwrap();
+
+    let estimate = estimate_max_size_for_impact(&profiler, 10_000, false);
+
+    assert_eq!(
+        estimate,
+        U256::from(1_000_000_000_000_000_000_000_000_000_000_u128)
+    );
 }
 
 #[rstest]
