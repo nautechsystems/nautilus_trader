@@ -21773,3 +21773,1184 @@ mod cash_sells {
         }
     }
 }
+
+const BRACKET_ENTRY_ID: &str = "O-19700101-000000-001-001-1";
+const BRACKET_SL_ID: &str = "O-19700101-000000-001-001-2";
+const BRACKET_TP_ID: &str = "O-19700101-000000-001-001-3";
+const BRACKET_EXPIRE_NS: u64 = 1_500_000_000_000_000_000;
+
+// Entry BUY LIMIT as OTO, with a STOP_MARKET SL at 100 and a LIMIT TP at 3000 linked OUO as
+// `OrderFactory.bracket` links them. That factory also makes the exits reduce-only, so fills
+// resize them to the position; `reduce_only` selects that path.
+fn bracket_orders(
+    instrument: &InstrumentAny,
+    quantity: &str,
+    entry_price: &str,
+    time_in_force: TimeInForce,
+    reduce_only: bool,
+) -> [OrderAny; 3] {
+    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let quantity = Quantity::from(quantity);
+    let price_precision = instrument.price_precision();
+    let mut entry = OrderTestBuilder::new(OrderType::Limit);
+    entry
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from(entry_price))
+        .quantity(quantity)
+        .time_in_force(time_in_force)
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sl_id, tp_id])
+        .submit(true);
+
+    if time_in_force == TimeInForce::Gtd {
+        entry.expire_time(UnixNanos::from(BRACKET_EXPIRE_NS));
+    }
+    let sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::new(100.0, price_precision))
+        .quantity(quantity)
+        .reduce_only(reduce_only)
+        .client_order_id(sl_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![tp_id])
+        .submit(true)
+        .build();
+    let tp = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .price(Price::new(3000.0, price_precision))
+        .quantity(quantity)
+        .reduce_only(reduce_only)
+        .client_order_id(tp_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sl_id])
+        .submit(true)
+        .build();
+    [entry.build(), sl, tp]
+}
+
+// Applies order events to the cache and folds fills into the netting position, as the
+// execution engine does, so fills can resize reduce-only orders to it
+fn order_event_handler_with_position(
+    cache: Rc<RefCell<Cache>>,
+    instrument: InstrumentAny,
+) -> TypedIntoMessageSavingHandler<OrderEventAny> {
+    use nautilus_common::msgbus::typed_handler::TypedIntoHandler;
+
+    let messages: Rc<RefCell<Vec<OrderEventAny>>> = Rc::new(RefCell::new(Vec::new()));
+    let messages_for_handler = messages.clone();
+
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event: OrderEventAny| {
+            let mut cache = cache.borrow_mut();
+            let _ = cache.update_order(&event);
+
+            if let OrderEventAny::Filled(mut fill) = event.clone() {
+                let position_id =
+                    PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
+                fill.position_id = Some(position_id);
+
+                if cache.position(&position_id).is_some() {
+                    cache.update_position_from_fill(position_id, &fill).unwrap();
+                } else {
+                    let position = Position::new(&instrument, fill);
+                    cache.add_position(&position, OmsType::Netting).unwrap();
+                }
+            }
+            messages_for_handler.borrow_mut().push(event);
+        }),
+    );
+
+    TypedIntoMessageSavingHandler::new_with_messages(
+        Some(Ustr::from("ExecEngine.process")),
+        messages,
+    )
+}
+
+fn book_delta(
+    instrument: &InstrumentAny,
+    action: BookAction,
+    side: OrderSide,
+    price: &str,
+    size: &str,
+    order_id: u64,
+) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(action)
+        .book_order(BookOrder::new(
+            side,
+            Price::from(price),
+            Quantity::from(size),
+            order_id,
+        ))
+        .build()
+}
+
+// Adds book liquidity and removes it after matching, since fills do not consume it and later
+// iterations would match it again
+fn add_then_remove_liquidity(
+    engine: &mut CachingEngine,
+    instrument: &InstrumentAny,
+    side: OrderSide,
+    price: &str,
+    size: &str,
+    order_id: u64,
+) {
+    for action in [BookAction::Add, BookAction::Delete] {
+        let delta = book_delta(instrument, action, side, price, size, order_id);
+        engine.process_order_book_delta(&delta).unwrap();
+    }
+}
+
+fn bracket_engine(
+    instrument: &InstrumentAny,
+    config: OrderMatchingEngineConfig,
+) -> (
+    CachingEngine,
+    Rc<RefCell<Cache>>,
+    TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_position(cache.clone(), instrument.clone());
+    let engine = get_order_matching_engine_l2(
+        instrument.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(config),
+    );
+    (engine, cache, handler)
+}
+
+fn submit_orders(engine: &mut CachingEngine, account_id: AccountId, mut orders: Vec<OrderAny>) {
+    // A released child must already be cached when its parent fills
+    for order in &orders {
+        cache_order(&engine.cache, order);
+    }
+
+    for order in &mut orders {
+        engine.process_order(order, account_id);
+    }
+}
+
+// Submits a 10.000 bracket entry at 1500.00, filling `filled` on submit
+fn submit_bracket(
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    config: OrderMatchingEngineConfig,
+    filled: Option<&str>,
+    time_in_force: TimeInForce,
+    reduce_only: bool,
+) -> (
+    CachingEngine,
+    Rc<RefCell<Cache>>,
+    TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let (mut engine, cache, handler) = bracket_engine(instrument, config);
+    let ask = |action, size| book_delta(instrument, action, OrderSide::Sell, "1500.00", size, 1);
+
+    if let Some(filled) = filled {
+        engine
+            .process_order_book_delta(&ask(BookAction::Add, filled))
+            .unwrap();
+    }
+    let orders = bracket_orders(instrument, "10.000", "1500.00", time_in_force, reduce_only);
+    submit_orders(&mut engine, account_id, orders.to_vec());
+
+    if let Some(filled) = filled {
+        let entry_id = orders[0].client_order_id();
+        let filled_qty = cache
+            .borrow()
+            .order(&entry_id)
+            .map(|order| order.filled_qty());
+        assert_eq!(filled_qty, Some(Quantity::from(filled)));
+        engine
+            .process_order_book_delta(&ask(BookAction::Delete, "0.000"))
+            .unwrap();
+    }
+    (engine, cache, handler)
+}
+
+fn modify_bracket_entry(
+    instrument: &InstrumentAny,
+    quantity: Option<&str>,
+    price: Option<&str>,
+) -> ModifyOrder {
+    ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument.id(),
+        ClientOrderId::from(BRACKET_ENTRY_ID),
+        Some(VenueOrderId::from("V1")),
+        quantity.map(Quantity::from),
+        price.map(Price::from),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn cancel_bracket_entry(instrument: &InstrumentAny) -> CancelOrder {
+    CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument.id(),
+        ClientOrderId::from(BRACKET_ENTRY_ID),
+        Some(VenueOrderId::from("V1")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BracketEntryClose {
+    Cancel,
+    Expire,
+    ModifyToFilled,
+}
+
+fn close_bracket_entry(
+    engine: &mut CachingEngine,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    close: BracketEntryClose,
+    filled: &str,
+) {
+    match close {
+        BracketEntryClose::Cancel => {
+            engine.process_cancel(&cancel_bracket_entry(instrument), account_id);
+        }
+        BracketEntryClose::Expire => {
+            let ts = UnixNanos::from(BRACKET_EXPIRE_NS + 1);
+            engine.process_quote_tick(&QuoteTick::new(
+                instrument.id(),
+                Price::from("1490.00"),
+                Price::from("1510.00"),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts,
+                ts,
+            ));
+        }
+        BracketEntryClose::ModifyToFilled => {
+            let modify = modify_bracket_entry(instrument, Some(filled), None);
+            engine.process_modify(&modify, account_id);
+        }
+    }
+}
+
+// Runs `action` with engine events queued until it returns, as the sandbox dispatches them,
+// or dispatched immediately
+fn run_with_dispatch(
+    engine: &mut CachingEngine,
+    deferred: bool,
+    action: impl FnOnce(&mut CachingEngine),
+) {
+    let pending = Rc::new(RefCell::new(Vec::new()));
+
+    if deferred {
+        let events = pending.clone();
+        engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
+    action(engine);
+
+    for event in pending.borrow_mut().drain(..) {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
+}
+
+fn event_summary(handler: &TypedIntoMessageSavingHandler<OrderEventAny>) -> Vec<String> {
+    get_order_event_handler_messages(handler)
+        .iter()
+        .map(|e| format!("{:?}:{}", e.event_type(), e.client_order_id()))
+        .collect()
+}
+
+fn assert_bracket_entry(cache: &Cache, status: OrderStatus, filled: &str) {
+    let entry = cache.order(&ClientOrderId::from(BRACKET_ENTRY_ID)).unwrap();
+    assert_eq!(entry.status(), status);
+    assert_eq!(entry.filled_qty(), Quantity::from(filled));
+}
+
+fn assert_bracket_exits(
+    cache: &Cache,
+    handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+    status: OrderStatus,
+    quantity: &str,
+) {
+    let summary = event_summary(handler);
+
+    for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+        let exit = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(exit.status(), status, "{id}: {summary:?}");
+        assert_eq!(
+            exit.quantity(),
+            Quantity::from(quantity),
+            "{id}: {summary:?}"
+        );
+    }
+}
+
+#[rstest]
+#[case::cancel(BracketEntryClose::Cancel, OrderStatus::Canceled)]
+#[case::expire(BracketEntryClose::Expire, OrderStatus::Expired)]
+#[case::modify_to_filled(BracketEntryClose::ModifyToFilled, OrderStatus::Canceled)]
+fn test_close_partially_filled_oto_entry_keeps_exits_for_filled_quantity(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] close: BracketEntryClose,
+    #[case] entry_status: OrderStatus,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtd,
+        false,
+    );
+
+    close_bracket_entry(
+        &mut engine,
+        &instrument_eth_usdt,
+        account_id,
+        close,
+        "4.000",
+    );
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, entry_status, "4.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
+}
+
+#[rstest]
+fn test_close_unfilled_oto_entry_cancels_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(BracketEntryClose::Cancel, BracketEntryClose::Expire)] close: BracketEntryClose,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        None,
+        TimeInForce::Gtd,
+        false,
+    );
+
+    close_bracket_entry(
+        &mut engine,
+        &instrument_eth_usdt,
+        account_id,
+        close,
+        "0.000",
+    );
+
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Canceled, "10.000");
+}
+
+// Exits are released on the entry's first fill and held before it
+#[rstest]
+#[case::filled_price_only(Some("4.000"), None, Some("1499.00"), OrderStatus::Accepted, "10.000")]
+#[case::filled_quantity_down(Some("4.000"), Some("6.000"), None, OrderStatus::Accepted, "6.000")]
+#[case::filled_quantity_up(Some("4.000"), Some("12.000"), None, OrderStatus::Accepted, "12.000")]
+#[case::unfilled_quantity_up(None, Some("12.000"), None, OrderStatus::Submitted, "12.000")]
+fn test_modify_working_oto_entry_resizes_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] filled: Option<&str>,
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] exit_status: OrderStatus,
+    #[case] expected: &str,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        filled,
+        TimeInForce::Gtc,
+        false,
+    );
+
+    let modify = modify_bracket_entry(&instrument_eth_usdt, quantity, price);
+    engine.process_modify(&modify, account_id);
+
+    let cache = cache.borrow();
+    let entry = cache.order(&ClientOrderId::from(BRACKET_ENTRY_ID)).unwrap();
+    assert!(entry.is_open());
+    assert_bracket_exits(&cache, &handler, exit_status, expected);
+}
+
+// Expected (TP quantity, TP leaves, SL quantity): both exits cover what the entry can still hold
+// less the quantity the TP has already sold
+#[rstest]
+#[case::cancel_after_exit_partial_fill(true, "1.000", Some(("4.000", "3.000", "3.000")))]
+#[case::cancel_after_exit_closed_position(true, "4.000", None)]
+#[case::price_modify_after_exit_partial_fill(false, "1.000", Some(("10.000", "9.000", "9.000")))]
+fn test_oto_entry_sizes_exits_net_of_exit_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] cancel: bool,
+    #[case] tp_fill: &str,
+    #[case] expected: Option<(&str, &str, &str)>,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Buy,
+        "3000.00",
+        tp_fill,
+        2,
+    );
+    assert_eq!(
+        cache.borrow().order(&tp_id).unwrap().filled_qty(),
+        Quantity::from(tp_fill)
+    );
+
+    if cancel {
+        engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    } else {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, None, Some("1499.00"));
+        engine.process_modify(&modify, account_id);
+    }
+
+    let summary = event_summary(&handler);
+    let cache = cache.borrow();
+    let tp = cache.order(&tp_id).unwrap();
+    let sl = cache.order(&sl_id).unwrap();
+
+    if let Some((tp_quantity, tp_leaves, sl_quantity)) = expected {
+        assert!(tp.is_open(), "{summary:?}");
+        assert!(sl.is_open(), "{summary:?}");
+        assert_eq!(tp.quantity(), Quantity::from(tp_quantity), "{summary:?}");
+        assert_eq!(tp.leaves_qty(), Quantity::from(tp_leaves), "{summary:?}");
+        assert_eq!(sl.quantity(), Quantity::from(sl_quantity), "{summary:?}");
+    } else {
+        assert_eq!(tp.status(), OrderStatus::Canceled, "{summary:?}");
+        assert_eq!(sl.status(), OrderStatus::Canceled, "{summary:?}");
+    }
+}
+
+#[rstest]
+fn test_reduce_only_oto_exits_track_position_through_entry_modify_and_cancel(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtc,
+        true,
+    );
+    let position_id = PositionId::new(format!(
+        "{}-{}",
+        instrument_eth_usdt.id(),
+        StrategyId::test_default()
+    ));
+    let position_quantity =
+        |cache: &Rc<RefCell<Cache>>| cache.borrow().position(&position_id).unwrap().quantity;
+    let fill_entry = |engine: &mut CachingEngine, price: &str, size: &str, order_id: u64| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            price,
+            size,
+            order_id,
+        );
+    };
+    assert_eq!(position_quantity(&cache), Quantity::from("4.000"));
+
+    // Fills resize the reduce-only exits to the position
+    fill_entry(&mut engine, "1500.00", "3.000", 2);
+    assert_eq!(position_quantity(&cache), Quantity::from("7.000"));
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "7.000");
+
+    // A price-only entry modify leaves them there
+    let modify = modify_bracket_entry(&instrument_eth_usdt, None, Some("1499.00"));
+    engine.process_modify(&modify, account_id);
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "7.000");
+
+    fill_entry(&mut engine, "1499.00", "1.000", 3);
+    assert_eq!(position_quantity(&cache), Quantity::from("8.000"));
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "8.000");
+
+    engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "8.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "8.000");
+}
+
+// Full trigger holds the exits for a complete fill, which a cancel or an IOC remainder rules out;
+// partial trigger released them on the first fill
+#[rstest]
+#[case::full_cancel(true, TimeInForce::Gtc, OrderStatus::Canceled, "10.000")]
+#[case::full_ioc(true, TimeInForce::Ioc, OrderStatus::Canceled, "10.000")]
+#[case::partial_ioc(false, TimeInForce::Ioc, OrderStatus::Accepted, "4.000")]
+fn test_partially_filled_oto_entry_closing_by_trigger_mode(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] oto_full_trigger: bool,
+    #[case] time_in_force: TimeInForce,
+    #[case] exit_status: OrderStatus,
+    #[case] exit_quantity: &str,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        config,
+        Some("4.000"),
+        time_in_force,
+        false,
+    );
+
+    if time_in_force != TimeInForce::Ioc {
+        engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    }
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    assert_bracket_exits(&cache, &handler, exit_status, exit_quantity);
+}
+
+#[rstest]
+fn test_full_trigger_releases_exits_for_modified_entry_quantity(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger: true,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        config,
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let modify = modify_bracket_entry(&instrument_eth_usdt, Some("6.000"), None);
+    engine.process_modify(&modify, account_id);
+    assert!(!engine.order_exists(ClientOrderId::from(BRACKET_SL_ID)));
+
+    // The fill that completes the reduced entry releases the exits
+    let ask = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Sell,
+        "1500.00",
+        "2.000",
+        3,
+    );
+    engine.process_order_book_delta(&ask).unwrap();
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Filled, "6.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "6.000");
+}
+
+// Reducing the entry to its fills completes it, which is the full trigger's release condition
+#[rstest]
+fn test_full_trigger_entry_reduced_to_filled_releases_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+    #[values(false, true)] reduce_only: bool,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger: true,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        config,
+        Some("4.000"),
+        TimeInForce::Gtc,
+        reduce_only,
+    );
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    assert!(!engine.order_exists(sl_id));
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, Some("4.000"), None);
+        engine.process_modify(&modify, account_id);
+    });
+
+    assert!(engine.order_exists(sl_id));
+    assert!(engine.order_exists(ClientOrderId::from(BRACKET_TP_ID)));
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
+}
+
+// A released exit goes through submission as on any release: a marketable TP is accepted before it
+// fills, and nothing re-validates or rejects an exit the strategy never modified
+#[rstest]
+fn test_full_trigger_release_of_marketable_exit_follows_submission(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger: true,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        config,
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let bid = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Buy,
+        "3100.00",
+        "20.000",
+        2,
+    );
+    engine.process_order_book_delta(&bid).unwrap();
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, Some("4.000"), None);
+        engine.process_modify(&modify, account_id);
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+    let summary = event_summary(&handler);
+    let tp_events: Vec<OrderEventType> = events
+        .iter()
+        .filter(|event| event.client_order_id() == tp_id)
+        .map(OrderEventAny::event_type)
+        .collect();
+    assert_eq!(
+        tp_events,
+        [
+            OrderEventType::Updated,
+            OrderEventType::Accepted,
+            OrderEventType::Filled
+        ],
+        "{summary:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.event_type() == OrderEventType::ModifyRejected),
+        "{summary:?}"
+    );
+    assert!(!engine.order_exists(tp_id));
+    let cache = cache.borrow();
+    let tp = cache.order(&tp_id).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Filled, "{summary:?}");
+    assert_eq!(tp.filled_qty(), Quantity::from("4.000"), "{summary:?}");
+}
+
+#[rstest]
+fn test_cancel_all_by_entry_side_keeps_exits_of_partially_filled_oto_entry(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let cancel_all = CancelAllOrders::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        Some(OrderSide::Buy),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // Cancel-all selects orders by the account their submit recorded
+    let order_account_id = cache
+        .borrow()
+        .order(&ClientOrderId::from(BRACKET_ENTRY_ID))
+        .unwrap()
+        .account_id()
+        .unwrap();
+    engine.process_cancel_all(&cancel_all, order_account_id);
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
+}
+
+// An instrument update cancels only the orders its prices no longer fit, and the canceled entry
+// leaves the exits that still fit covering its fills
+#[rstest]
+#[case::precision_drop(3, "0.001", "1500.005", 2, "0.01")]
+#[case::tick_change(2, "0.01", "1500.03", 2, "0.05")]
+fn test_instrument_update_canceling_oto_entry_keeps_fitting_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] precision: u8,
+    #[case] increment: &str,
+    #[case] entry_price: &str,
+    #[case] updated_precision: u8,
+    #[case] updated_increment: &str,
+) {
+    let instrument =
+        crypto_perpetual_with_price_precision(instrument_eth_usdt.clone(), precision, increment);
+    let (mut engine, cache, handler) = bracket_engine(&instrument, engine_config());
+    let orders = bracket_orders(&instrument, "10.000", entry_price, TimeInForce::Gtc, false);
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument,
+        OrderSide::Sell,
+        entry_price,
+        "4.000",
+        1,
+    );
+
+    let updated = crypto_perpetual_with_price_precision(
+        instrument_eth_usdt,
+        updated_precision,
+        updated_increment,
+    );
+    engine.update_instrument(updated).unwrap();
+
+    let summary = event_summary(&handler);
+    assert!(
+        !summary
+            .iter()
+            .any(|event| event.starts_with("ModifyRejected")),
+        "{summary:?}"
+    );
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
+}
+
+// Each OTO child is sized as if it covers the whole parent quantity, so two split children
+// each keep covering the whole filled quantity when the parent closes
+// A 10.000 OTO entry at 1500.00 whose two exits, the stop-loss then the take-profit IDs, are
+// independent sell limits at `prices` with no OUO link between them
+fn independent_oto_orders(
+    instrument: &InstrumentAny,
+    exit_quantity: &str,
+    prices: [&str; 2],
+) -> Vec<OrderAny> {
+    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
+    let exit_ids = [
+        ClientOrderId::from(BRACKET_SL_ID),
+        ClientOrderId::from(BRACKET_TP_ID),
+    ];
+    let entry = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("10.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(exit_ids.to_vec())
+        .submit(true)
+        .build();
+    let exits = exit_ids.iter().zip(prices).map(|(id, price)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .price(Price::from(price))
+            .quantity(Quantity::from(exit_quantity))
+            .client_order_id(*id)
+            .parent_order_id(entry_id)
+            .submit(true)
+            .build()
+    });
+    std::iter::once(entry).chain(exits).collect()
+}
+
+#[rstest]
+fn test_split_oto_children_each_cover_whole_parent_quantity(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let orders = independent_oto_orders(&instrument_eth_usdt, "5.000", ["3000.00", "3100.00"]);
+    submit_orders(&mut engine, account_id, orders);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "4.000",
+        1,
+    );
+
+    let modify = modify_bracket_entry(&instrument_eth_usdt, None, Some("1499.00"));
+    engine.process_modify(&modify, account_id);
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "5.000");
+
+    engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "4.000");
+}
+
+// Under the full trigger, reducing an entry filled 4 of 10 to 4 releases its independent exits in
+// turn against a 3100.00 bid. An exit that fills on release leaves the other only what it did not
+// fill, whether that exit is released first or second, or both exits are marketable.
+#[rstest]
+#[case::marketable_first(["3000.00", "3200.00"], [OrderStatus::Filled, OrderStatus::Canceled])]
+#[case::marketable_second(["3200.00", "3000.00"], [OrderStatus::Canceled, OrderStatus::Filled])]
+#[case::both_marketable(["3000.00", "3050.00"], [OrderStatus::Filled, OrderStatus::Canceled])]
+fn test_full_trigger_release_keeps_exits_within_entry_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] prices: [&str; 2],
+    #[case] statuses: [OrderStatus; 2],
+    #[values(false, true)] deferred: bool,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger: true,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, config);
+    let orders = independent_oto_orders(&instrument_eth_usdt, "10.000", prices);
+    submit_orders(&mut engine, account_id, orders);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "4.000",
+        1,
+    );
+    let bid = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Buy,
+        "3100.00",
+        "20.000",
+        2,
+    );
+    engine.process_order_book_delta(&bid).unwrap();
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, Some("4.000"), None);
+        engine.process_modify(&modify, account_id);
+    });
+
+    let summary = event_summary(&handler);
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    let mut exits_filled = Quantity::from("0.000");
+
+    for (id, status) in [BRACKET_SL_ID, BRACKET_TP_ID].into_iter().zip(statuses) {
+        let exit = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(exit.status(), status, "{id}: {summary:?}");
+        let canceled = format!("{:?}:{id}", OrderEventType::Canceled);
+        let cancels = summary.iter().filter(|event| **event == canceled).count();
+        let expected_cancels = usize::from(status == OrderStatus::Canceled);
+        assert_eq!(cancels, expected_cancels, "{id}: {summary:?}");
+        exits_filled = exits_filled + exit.filled_qty();
+    }
+    assert_eq!(exits_filled, Quantity::from("4.000"), "{summary:?}");
+}
+
+// Without the full trigger, an exit that filled 1 and then closes, ahead of the entry in the same
+// deferred batch, still counts that fill, so the other exit covers the remaining 3
+#[rstest]
+fn test_deferred_exit_fill_and_close_before_entry_cancel_counts_exit_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderStatus::Canceled, OrderStatus::Expired)] exit_status: OrderStatus,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let mut orders = independent_oto_orders(&instrument_eth_usdt, "10.000", ["3000.00", "3100.00"]);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+
+    if exit_status == OrderStatus::Expired {
+        orders[1] = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("3000.00"))
+            .quantity(Quantity::from("10.000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(BRACKET_EXPIRE_NS))
+            .client_order_id(sl_id)
+            .parent_order_id(ClientOrderId::from(BRACKET_ENTRY_ID))
+            .submit(true)
+            .build();
+    }
+    submit_orders(&mut engine, account_id, orders);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "4.000",
+        1,
+    );
+    let cancel_sl = CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        sl_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "1.000",
+            2,
+        );
+
+        if exit_status == OrderStatus::Expired {
+            let ts = UnixNanos::from(BRACKET_EXPIRE_NS + 1);
+            engine.process_quote_tick(&QuoteTick::new(
+                instrument_eth_usdt.id(),
+                Price::from("1490.00"),
+                Price::from("1510.00"),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts,
+                ts,
+            ));
+        } else {
+            engine.process_cancel(&cancel_sl, account_id);
+        }
+        engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    });
+
+    let summary = event_summary(&handler);
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), exit_status, "{summary:?}");
+    assert_eq!(sl.filled_qty(), Quantity::from("1.000"), "{summary:?}");
+    let tp = cache.order(&ClientOrderId::from(BRACKET_TP_ID)).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Accepted, "{summary:?}");
+    assert_eq!(tp.quantity(), Quantity::from("3.000"), "{summary:?}");
+}
+
+#[rstest]
+fn test_marketable_modify_of_oto_entry_keeps_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let ask = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Sell,
+        "1500.00",
+        "10.000",
+        1,
+    );
+    engine.process_order_book_delta(&ask).unwrap();
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "1.000",
+        "1490.00",
+        TimeInForce::Gtc,
+        false,
+    );
+    submit_orders(&mut engine, account_id, orders.to_vec());
+
+    // A price modify that crosses the ask fills the whole entry
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, None, Some("1505.00"));
+        engine.process_modify(&modify, account_id);
+    });
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Filled, "1.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "1.000");
+}
+
+#[rstest]
+fn test_deferred_close_sizes_oto_exits_from_engine_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(BracketEntryClose::Cancel, BracketEntryClose::Expire)] close: BracketEntryClose,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtd,
+        false,
+    );
+
+    // A further fill the cache has not applied yet when the entry closes
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            3,
+        );
+        close_bracket_entry(engine, &instrument_eth_usdt, account_id, close, "6.000");
+    });
+
+    let cache = cache.borrow();
+    let entry = cache.order(&ClientOrderId::from(BRACKET_ENTRY_ID)).unwrap();
+    assert!(entry.is_closed());
+    assert_eq!(entry.filled_qty(), Quantity::from("6.000"));
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "6.000");
+}
+
+#[rstest]
+fn test_deferred_fill_then_cancel_keeps_released_oto_exits(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        None,
+        TimeInForce::Gtc,
+        false,
+    );
+
+    // The fill releases the exits into the book before the cache sees their acceptance
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "4.000",
+            2,
+        );
+        assert!(engine.order_exists(ClientOrderId::from(BRACKET_SL_ID)));
+        engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    });
+
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    assert_bracket_exits(&cache, &handler, OrderStatus::Accepted, "4.000");
+}
+
+#[rstest]
+#[case::reduce_to_filled(Some("4.000"), None, true, "4.000")]
+#[case::complete_by_price_modify(None, Some("1505.00"), true, "10.000")]
+#[case::reduce_working(Some("6.000"), None, false, "4.000")]
+#[case::increase_working(Some("12.000"), None, false, "4.000")]
+fn test_deferred_exit_cancel_then_entry_modify_leaves_exits_canceled(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] entry_closed: bool,
+    #[case] entry_filled: &str,
+) {
+    let (mut engine, cache, handler) = submit_bracket(
+        &instrument_eth_usdt,
+        account_id,
+        engine_config(),
+        Some("4.000"),
+        TimeInForce::Gtc,
+        false,
+    );
+    let ask = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Sell,
+        "1502.00",
+        "6.000",
+        2,
+    );
+    engine.process_order_book_delta(&ask).unwrap();
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let cancel_tp = CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        tp_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // The strategy cancels the take-profit, which cancels its OUO stop-loss, and modifies the
+    // entry before any of those events are applied
+    run_with_dispatch(&mut engine, true, |engine| {
+        engine.process_cancel(&cancel_tp, account_id);
+        let modify = modify_bracket_entry(&instrument_eth_usdt, quantity, price);
+        engine.process_modify(&modify, account_id);
+
+        for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+            assert!(!engine.order_exists(ClientOrderId::from(id)), "{id}");
+        }
+    });
+
+    let cache = cache.borrow();
+    let entry = cache.order(&ClientOrderId::from(BRACKET_ENTRY_ID)).unwrap();
+    assert_eq!(entry.is_closed(), entry_closed);
+    assert_eq!(entry.filled_qty(), Quantity::from(entry_filled));
+    let summary = event_summary(&handler);
+
+    for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+        let count = |event_type: OrderEventType| {
+            let event = format!("{event_type:?}:{id}");
+            summary.iter().filter(|e| **e == event).count()
+        };
+        assert_eq!(count(OrderEventType::Canceled), 1, "{id}: {summary:?}");
+        assert_eq!(count(OrderEventType::Updated), 0, "{id}: {summary:?}");
+        let exit = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(exit.status(), OrderStatus::Canceled, "{id}: {summary:?}");
+    }
+}

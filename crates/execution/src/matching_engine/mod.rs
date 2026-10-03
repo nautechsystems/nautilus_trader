@@ -4233,8 +4233,8 @@ impl OrderMatchingEngine {
                 }
                 PostMatchOrderAction::Expire(order) => {
                     self.delete_core_order(client_order_id);
-                    self.cached_filled_qty.swap_remove(&client_order_id);
                     self.expire_order(&order);
+                    self.purge_cached_filled_qty_if_closed(client_order_id);
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
@@ -6481,7 +6481,6 @@ impl OrderMatchingEngine {
         self.pending_oto_order_ids
             .swap_remove(&order.client_order_id());
         self.remove_queue_position(order.client_order_id());
-        self.cached_filled_qty.swap_remove(&order.client_order_id());
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
         self.generate_order_canceled(order, venue_order_id);
@@ -6492,6 +6491,10 @@ impl OrderMatchingEngine {
         {
             self.cancel_contingent_orders(order, excluded);
         }
+
+        // OTO children are sized from this order's fills, and OTO siblings count them, so keep
+        // them until the cache shows the order closed
+        self.purge_cached_filled_qty_if_closed(order.client_order_id());
     }
 
     fn update_order(
@@ -6848,6 +6851,11 @@ impl OrderMatchingEngine {
             order.client_order_id()
         );
 
+        if order.contingency_type() == Some(ContingencyType::Oto) {
+            self.update_oto_children(order, Some(parent_quantity), &[]);
+            return;
+        }
+
         if let Some(linked_order_ids) = order.linked_order_ids() {
             let parent_filled_qty = self
                 .cached_filled_qty
@@ -6928,7 +6936,144 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
+    /// Sizes the children of an OTO `parent` after it is modified to `parent_quantity`, or closes
+    /// when `parent_quantity` is `None`.
+    ///
+    /// Each child's remaining quantity covers what the parent can still hold, less what the
+    /// children have filled between them: the parent's quantity while it works, and its filled
+    /// quantity once it closes. Children only grow when the parent's quantity increases. A closing
+    /// parent cancels any child left with nothing to cover or still waiting for release, except
+    /// that under the full trigger reducing it to its filled quantity releases those children, as
+    /// that completes it. Without the full trigger, once the parent has fills a child out of the
+    /// book is already closing and is left alone.
+    fn update_oto_children(
+        &mut self,
+        parent: &OrderAny,
+        parent_quantity: Option<Quantity>,
+        excluded: &[ClientOrderId],
+    ) {
+        let Some(linked_order_ids) = parent.linked_order_ids() else {
+            return;
+        };
+        let parent_filled_qty = self.engine_filled_qty(
+            &self
+                .order_snapshot(parent.client_order_id())
+                .unwrap_or_else(|| parent.clone()),
+        );
+        let reduced_to_filled = parent_quantity.is_some_and(|q| q <= parent_filled_qty);
+        let parent_quantity = parent_quantity.unwrap_or(parent_filled_qty);
+        let parent_closed = parent_quantity <= parent_filled_qty;
+        // `parent` precedes the modify, and reduce-only children track fills between modifies
+        let parent_grew = parent_quantity > parent.quantity();
+        let mut released_children = false;
+
+        for client_order_id in linked_order_ids {
+            if excluded.contains(client_order_id) {
+                // The venue has not received this order's submit yet
+                continue;
+            }
+
+            let mut child_order = match self.order_snapshot(*client_order_id) {
+                Some(order) => order,
+                None => panic!("Cannot find contingent order for {client_order_id}"),
+            };
+
+            if let Err(e) = self.apply_deferred_submission(&mut child_order) {
+                log::error!("Cannot update contingent order {client_order_id}: {e}");
+                continue;
+            }
+
+            if child_order.is_active_local()
+                || child_order.is_closed()
+                || self.inflight_orders.contains(*client_order_id)
+            {
+                continue;
+            }
+
+            // Recounted per child, as releasing a marketable child fills it at once
+            let children_filled = linked_order_ids
+                .iter()
+                .filter_map(|id| self.order_snapshot(*id))
+                .fold(Quantity::zero(parent_quantity.precision), |acc, child| {
+                    acc + self.engine_filled_qty(&child)
+                });
+            let remaining = parent_quantity.saturating_sub(children_filled);
+
+            // A released child is in the book even before its deferred acceptance applies
+            let released = self.core.order_exists(*client_order_id);
+
+            // Without the full trigger the parent's first fill released every child, so one out
+            // of the book is already closing, though the cache may not show it yet
+            if !released && !self.config.oto_full_trigger && !parent_filled_qty.is_zero() {
+                continue;
+            }
+            let release = !released && reduced_to_filled && self.config.oto_full_trigger;
+            if parent_closed && ((!released && !release) || remaining.is_zero()) {
+                self.cancel_order(&child_order, Some(false));
+                continue;
+            }
+
+            if remaining.is_zero() {
+                // The children have already filled everything the parent can hold
+                continue;
+            }
+
+            let mut quantity = self.engine_filled_qty(&child_order) + remaining;
+            if parent_closed || !parent_grew {
+                quantity = quantity.min(child_order.quantity());
+            }
+
+            if quantity != child_order.quantity() {
+                // Maintenance only: a modify would re-validate prices and match the child
+                self.generate_order_updated(
+                    &child_order,
+                    quantity,
+                    child_order.price(),
+                    child_order.trigger_price(),
+                    None,
+                );
+            }
+
+            if release {
+                let account_id = parent
+                    .account_id()
+                    .or_else(|| self.account_ids.get(&parent.trader_id()).copied());
+
+                match (self.order_snapshot(*client_order_id), account_id) {
+                    (Some(mut child_order), Some(account_id)) => {
+                        self.process_order(&mut child_order, account_id);
+                        released_children = true;
+                    }
+                    _ => log::error!("Cannot release OTO order {client_order_id}"),
+                }
+            }
+        }
+
+        // A child released above can fill at once, leaving less for those sized before it, so
+        // size the children resting in the book again
+        if released_children {
+            let not_resting: Vec<ClientOrderId> = linked_order_ids
+                .iter()
+                .filter(|id| excluded.contains(*id) || !self.core.order_exists(**id))
+                .copied()
+                .collect();
+            self.update_oto_children(parent, Some(parent_quantity), &not_resting);
+        }
+    }
+
+    fn engine_filled_qty(&self, order: &OrderAny) -> Quantity {
+        self.cached_filled_qty
+            .get(&order.client_order_id())
+            .copied()
+            .unwrap_or(order.filled_qty())
+    }
+
     fn cancel_contingent_orders(&mut self, order: &OrderAny, excluded: &[ClientOrderId]) {
+        if order.contingency_type() == Some(ContingencyType::Oto) {
+            self.update_oto_children(order, None, excluded);
+            return;
+        }
+
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
                 if excluded.contains(client_order_id) {
