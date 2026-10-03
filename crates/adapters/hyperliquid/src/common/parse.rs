@@ -1047,6 +1047,8 @@ pub fn parse_account_balances_and_margins(
 /// USDC reserved by resting spot orders; margin on dexes collateralized in another token shows
 /// up as that token's locked balance. The perp summary describes only the default dex in these
 /// modes: its `totalRawUsd` goes negative while longs are open and its `withdrawable` is per-dex.
+/// USDC is always reported in these modes, as zero when the spot row is zero or missing, because
+/// account updates keep any currency an update omits.
 ///
 /// Otherwise the perp parser already reflects combined USDC when its cross-margin summary
 /// carries collateral or margin state, so this parser appends only non-USDC spot
@@ -1062,7 +1064,16 @@ pub fn parse_combined_account_balances_and_margins(
     abstraction: HyperliquidAccountAbstraction,
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     if abstraction.uses_spot_collateral() {
-        let balances = parse_spot_account_balances(spot_state)?;
+        let mut balances = parse_spot_account_balances(spot_state)?;
+
+        // Account updates keep any currency an update omits, so always report USDC: a zero or
+        // missing spot row must clear a previously funded collateral balance
+        let usdc = Currency::USDC();
+        if !balances.iter().any(|balance| balance.currency == usdc) {
+            let zero = Money::zero(usdc);
+            balances.push(AccountBalance::new(zero, zero, zero));
+        }
+
         let mut margins = Vec::new();
 
         if let Some(usdc) = spot_state
@@ -2645,8 +2656,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(balances.len(), 1);
+        assert_eq!(balances.len(), 2);
         assert_eq!(balances[0].currency.code, "PURR");
+        // USDC is reported as zero from spot rather than taken from the perp summary
+        assert_eq!(balances[1].currency.code, "USDC");
+        assert!(balances[1].total.is_zero());
+        assert!(balances[1].free.is_zero());
         assert!(margins.is_empty());
     }
 

@@ -48,11 +48,12 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
+    accounts::{Account, MarginAccount},
     data::BarType,
     enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     reports::FillReport,
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -1528,6 +1529,75 @@ async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[cas
     assert_eq!(
         account_state.margins[0].initial.as_decimal(),
         rust_decimal_macros::dec!(420.0),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_clears_usdc_when_spot_drops_it(
+    #[values("unifiedAccount", "portfolioMargin")] mode: &str,
+    #[values(
+        json!({"balances": [{"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}]}),
+        json!({"balances": []})
+    )]
+    emptied_spot: Value,
+) {
+    // A funded account whose spot USDC later reads zero or disappears while the perp summary
+    // stays non-zero. Account updates keep any currency an update omits, so the follow-up
+    // snapshot must still carry USDC for the funded balance and margin to be cleared
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    let funded = client
+        .request_account_state(user)
+        .await
+        .expect("funded request_account_state should succeed");
+    let mut account = MarginAccount::new(funded, true);
+    assert_eq!(
+        account
+            .balance_total(Some(Currency::USDC()))
+            .unwrap()
+            .as_decimal(),
+        rust_decimal_macros::dec!(512.25),
+    );
+    let funded_margin = account
+        .account_margin(&Currency::USDC())
+        .expect("funded snapshot must carry a USDC margin");
+    assert_eq!(
+        funded_margin.initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0)
+    );
+
+    *state.spot_clearinghouse_response.lock().await = Some(emptied_spot);
+    let emptied = client
+        .request_account_state(user)
+        .await
+        .expect("emptied request_account_state should succeed");
+    account.apply(emptied).unwrap();
+
+    let usdc_total = account
+        .balance_total(Some(Currency::USDC()))
+        .expect("USDC balance must still be present");
+    assert!(usdc_total.is_zero(), "stale USDC total {usdc_total}");
+    assert!(
+        account
+            .balance_free(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account
+            .balance_locked(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account.account_margin(&Currency::USDC()).is_none(),
+        "stale USDC margin {:?}",
+        account.account_margin(&Currency::USDC()),
     );
 }
 
