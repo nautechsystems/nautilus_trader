@@ -10936,10 +10936,64 @@ async fn test_external_order_has_venue_tag() {
     );
 }
 
+#[rstest]
+#[case::accepted_filled(
+    OrderStatus::Accepted,
+    OrderType::Market,
+    "0.0",
+    "10.0",
+    OrderStatus::Filled
+)]
+#[case::accepted_partial(
+    OrderStatus::Accepted,
+    OrderType::Market,
+    "0.0",
+    "6.0",
+    OrderStatus::PartiallyFilled
+)]
+#[case::accepted_priced_residual(
+    OrderStatus::Accepted,
+    OrderType::Limit,
+    "6.0",
+    "4.0",
+    OrderStatus::PartiallyFilled
+)]
+#[case::triggered_filled(
+    OrderStatus::Triggered,
+    OrderType::StopMarket,
+    "0.0",
+    "10.0",
+    OrderStatus::Filled
+)]
+#[case::triggered_partial(
+    OrderStatus::Triggered,
+    OrderType::StopMarket,
+    "0.0",
+    "6.0",
+    OrderStatus::PartiallyFilled
+)]
+#[case::triggered_priced_residual(
+    OrderStatus::Triggered,
+    OrderType::StopLimit,
+    "6.0",
+    "4.0",
+    OrderStatus::PartiallyFilled
+)]
+#[case::filled(
+    OrderStatus::Filled,
+    OrderType::Market,
+    "10.0",
+    "10.0",
+    OrderStatus::Filled
+)]
 #[tokio::test]
-async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() {
-    // When an external order has real fill reports but order report lacks avg_px,
-    // only the real fills should be applied (no inferred fill generated)
+async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only(
+    #[case] order_status: OrderStatus,
+    #[case] order_type: OrderType,
+    #[case] reported_filled_qty: &str,
+    #[case] fill_qty: &str,
+    #[case] expected_status: OrderStatus,
+) {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     ctx.add_instrument(test_instrument());
@@ -10954,23 +11008,32 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         Some(UUID4::new()),
     );
 
-    // Order report shows Filled but WITHOUT avg_px (using Market order for this scenario)
-    let report = OrderStatusReport::new(
+    let mut report = OrderStatusReport::new(
         test_account_id(),
         instrument_id,
         None, // External order
         venue_order_id,
         OrderSide::Buy.into(),
-        OrderType::Market,
+        order_type,
         TimeInForce::Gtc,
-        OrderStatus::Filled,
+        order_status,
         Quantity::from("10.0"),
-        Quantity::from("10.0"),
+        Quantity::from(reported_filled_qty),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
-        None, // No avg_px - cannot generate inferred fill
+        None,
     );
+
+    if matches!(order_type, OrderType::Limit | OrderType::StopLimit) {
+        report = report.with_price(Price::from("3000.00"));
+    }
+
+    if matches!(order_type, OrderType::StopMarket | OrderType::StopLimit) {
+        report = report
+            .with_trigger_price(Price::from("2900.00"))
+            .with_trigger_type(TriggerType::MarkPrice);
+    }
 
     // Real fill report with actual price
     let fill = FillReport::new(
@@ -10979,7 +11042,7 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         venue_order_id,
         TradeId::from("T-REAL-001"),
         OrderSide::Buy,
-        Quantity::from("10.0"),
+        Quantity::from(fill_qty),
         Price::from("3000.00"),
         Money::from("1.00 USDT"),
         LiquiditySide::Taker,
@@ -11017,7 +11080,6 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         })
         .collect();
 
-    // Only the real fill should be applied (no inferred fill due to missing avg_px)
     assert_eq!(
         fill_events.len(),
         1,
@@ -11028,13 +11090,19 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         TradeId::from("T-REAL-001"),
         "Fill should be the real fill, not an inferred one"
     );
-    assert_eq!(fill_events[0].last_qty, Quantity::from("10.0"));
+    assert_eq!(result.events.len(), 2);
+    assert_eq!(fill_events[0].last_qty, Quantity::from(fill_qty));
+    assert_eq!(fill_events[0].last_px, Price::from("3000.00"));
+    assert_eq!(fill_events[0].commission, Some(Money::from("1.00 USDT")));
+    assert_eq!(fill_events[0].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fill_events[0].ts_event, UnixNanos::from(1_000_001));
+    assert!(fill_events[0].reconciliation);
 
-    // Order should exist and be in Filled state
     let client_order_id = ClientOrderId::from("V-FILLS-001");
     let order = ctx.get_order(&client_order_id).expect("Order should exist");
-    assert_eq!(order.status(), OrderStatus::Filled);
-    assert_eq!(order.filled_qty(), Quantity::from("10.0"));
+    assert_eq!(order.status(), expected_status);
+    assert_eq!(order.quantity(), Quantity::from("10.0"));
+    assert_eq!(order.filled_qty(), Quantity::from(fill_qty));
 }
 
 #[tokio::test]

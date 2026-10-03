@@ -9581,15 +9581,17 @@ async fn capped_stop_report(
 }
 
 #[rstest]
-#[case::complete_history(None, false, false, "0.0015")]
-#[case::fills_split_by_lookback(Some(60), false, false, "0.0015")]
-#[case::history_at_venue_cap(None, true, false, "0.0015")]
-#[case::fills_at_venue_cap(None, false, true, "0.002")]
+#[case::complete_history(None, false, false, false, "0.0015")]
+#[case::fills_split_by_lookback(Some(60), false, false, false, "0.0015")]
+#[case::history_at_venue_cap(None, true, false, false, "0.0015")]
+#[case::fills_at_venue_cap(None, false, true, false, "0.002")]
+#[case::fills_parse_incomplete(None, false, false, true, "0.002")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_clamps_reduce_only_filled_report_to_fills(
     #[case] lookback_mins: Option<u64>,
     #[case] history_at_cap: bool,
     #[case] fills_at_cap: bool,
+    #[case] fills_incomplete: bool,
     #[case] expected_qty: &str,
 ) {
     let recent_ms = u64::try_from(
@@ -9614,6 +9616,12 @@ async fn test_generate_mass_status_clamps_reduce_only_filled_report_to_fills(
     if fills_at_cap {
         let template = fills[0].clone();
         pad_to_venue_cap(&mut fills, &template, &["oid"]);
+    }
+
+    if fills_incomplete {
+        let mut unusable_fill = capped_stop_fill("0.0005", recent_ms, 6);
+        unusable_fill["coin"] = json!("NOCOIN");
+        fills.as_array_mut().unwrap().push(unusable_fill);
     }
 
     let report = capped_stop_report(history, fills, lookback_mins).await;
