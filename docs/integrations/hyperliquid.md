@@ -1379,12 +1379,23 @@ and output format.
 
 ## Account and position management
 
-`AccountState` merges perp margin and spot balances. Perp margin and cross-margin
-usage come from `clearinghouseState`; non-zero spot tokens (USDC, USDH, HYPE,
-vault tokens, HIP-4 outcome side tokens, etc.) come from `spotClearinghouseState`.
-USDC comes from the perp summary when it reflects non-zero collateral, margin, or
-withdrawable balance; when the perp summary is absent or zeroed, spot USDC is used
-instead.
+`AccountState` merges perp margin and spot balances. The adapter reads the account mode
+from the `userAbstraction` info request, and the mode decides where balances and margin
+come from.
+
+Unified and portfolio margin accounts report every balance and hold in
+`spotClearinghouseState`, so balances come from spot alone and spot USDC `hold` is the
+account-wide margin.
+
+In the other modes, perp margin and cross-margin usage come from `clearinghouseState`,
+and non-zero spot tokens (USDC, USDH, HYPE, vault tokens, HIP-4 outcome side tokens, etc.)
+come from `spotClearinghouseState`. USDC comes from the perp summary when it reflects
+non-zero collateral, margin, or withdrawable balance; when the perp summary is absent or
+zeroed, spot USDC is used instead. A mode the adapter does not recognize is logged as a
+warning and handled the same way.
+
+If the account mode cannot be fetched or read, the account state request fails, and so
+does connect.
 
 Standard perps default to cross margin; HIP-3 perps default to isolated. On
 connect, the execution client reconciles orders, fills, and positions against

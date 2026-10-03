@@ -70,7 +70,7 @@ use crate::{
         },
         credential::{Secrets, VaultAddress, credential_env_vars},
         enums::{
-            HyperliquidBarInterval, HyperliquidEnvironment,
+            HyperliquidAccountAbstraction, HyperliquidBarInterval, HyperliquidEnvironment,
             HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType,
         },
         parse::{
@@ -589,6 +589,12 @@ impl HyperliquidRawHttpClient {
     /// Get spot clearinghouse state (per-token spot balances) for a user.
     pub async fn info_spot_clearinghouse_state(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::spot_clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    /// Get the account abstraction mode for a user.
+    pub async fn info_user_abstraction(&self, user: &str) -> Result<Value> {
+        let request = InfoRequest::user_abstraction(user);
         self.send_info_request(&request).await
     }
 
@@ -1914,6 +1920,41 @@ impl HyperliquidHttpClient {
         self.inner.info_spot_clearinghouse_state(user).await
     }
 
+    /// Get the account abstraction mode for a user.
+    ///
+    /// A mode string this adapter does not recognize maps to
+    /// [`HyperliquidAccountAbstraction::Unknown`] and is logged as a warning; such accounts keep
+    /// the perp-summary balance logic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is not a JSON string.
+    pub async fn info_user_abstraction(&self, user: &str) -> Result<HyperliquidAccountAbstraction> {
+        let response = self.inner.info_user_abstraction(user).await?;
+
+        // Serde reads a single-key object like `{"mode": null}` as a unit variant, which
+        // `#[serde(other)]` would map to `Unknown`, so only a bare string is accepted. Any
+        // string decodes, to a known mode or to `Unknown`
+        let abstraction = response
+            .as_str()
+            .and_then(|_| serde_json::from_value(response.clone()).ok())
+            .ok_or_else(|| {
+                Error::decode(format!(
+                    "Failed to parse user abstraction: expected a mode string, was {response}"
+                ))
+            })?;
+
+        if abstraction == HyperliquidAccountAbstraction::Unknown {
+            log::warn!(
+                "Unrecognized Hyperliquid account abstraction {response}, using perp clearinghouse balances"
+            );
+        } else {
+            log::debug!("Hyperliquid account abstraction: {abstraction}");
+        }
+
+        Ok(abstraction)
+    }
+
     /// Get user fee schedule and effective rates.
     pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
         self.inner.info_user_fees(user).await
@@ -2931,17 +2972,20 @@ impl HyperliquidHttpClient {
 
     /// Request account state (balances and margins) for a user.
     ///
-    /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
-    /// into a single [`AccountState`]. USDC comes from the perp margin summary only
-    /// when that summary reflects non-zero collateral, margin used, or withdrawable
-    /// balance; if the summary is absent or zeroed, spot USDC is used instead. Non-USDC
-    /// tokens are always appended from the spot balances.
+    /// Fetches perp and spot clearinghouse state and the account abstraction mode from
+    /// Hyperliquid and merges them into a single [`AccountState`]. For unified and portfolio
+    /// margin accounts, balances come from the spot state alone and spot USDC `hold` is the
+    /// account-wide margin. Otherwise USDC comes from the perp margin summary only when that
+    /// summary reflects non-zero collateral, margin used, or withdrawable balance; if the
+    /// summary is absent or zeroed, spot USDC is used instead. Non-USDC tokens are always
+    /// appended from the spot balances.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account_id` is not set, or if either the perp or
-    /// spot clearinghouse request fails. Spot failures are propagated so the
-    /// caller sees real API errors instead of a silently truncated snapshot.
+    /// Returns an error if `account_id` is not set, or if the perp clearinghouse, spot
+    /// clearinghouse, or user abstraction request fails. Spot and abstraction failures are
+    /// propagated so the caller sees real API errors instead of a silently truncated or
+    /// misread snapshot.
     pub async fn request_account_state(&self, user: &str) -> Result<AccountState> {
         let account_id = self
             .account_id
@@ -2968,8 +3012,11 @@ impl HyperliquidHttpClient {
                 Error::bad_request(format!("Failed to parse spot clearinghouse state: {e}"))
             })?;
 
+        // Without the mode a unified account would be read from the default-dex perp summary.
+        let abstraction = self.info_user_abstraction(user).await?;
+
         let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
                 .map_err(|e| Error::decode(e.to_string()))?;
 
         Ok(AccountState::new(

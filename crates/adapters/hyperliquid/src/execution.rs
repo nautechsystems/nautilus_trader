@@ -68,7 +68,7 @@ use crate::{
             HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_VENUE,
         },
         credential::Secrets,
-        enums::HyperliquidProductType,
+        enums::{HyperliquidAccountAbstraction, HyperliquidProductType},
         parse::{
             clamp_price_to_precision, derive_limit_from_trigger, derive_market_order_price,
             extract_error_message, extract_inner_error, extract_inner_errors,
@@ -500,7 +500,7 @@ impl HyperliquidExecutionClient {
     async fn refresh_account_state(&self) -> anyhow::Result<()> {
         let account_address = self.get_account_address()?;
 
-        let (perp_state, spot_state) = self
+        let (perp_state, spot_state, abstraction) = self
             .fetch_combined_clearinghouse_state(&account_address)
             .await?;
 
@@ -512,7 +512,7 @@ impl HyperliquidExecutionClient {
         );
 
         let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
                 .context("failed to parse combined account balances and margins")?;
 
         // Emit even when both sides are empty so the account registers for
@@ -528,7 +528,11 @@ impl HyperliquidExecutionClient {
     async fn fetch_combined_clearinghouse_state(
         &self,
         account_address: &str,
-    ) -> anyhow::Result<(ClearinghouseState, SpotClearinghouseState)> {
+    ) -> anyhow::Result<(
+        ClearinghouseState,
+        SpotClearinghouseState,
+        HyperliquidAccountAbstraction,
+    )> {
         let perp_json = self
             .http_client
             .info_clearinghouse_state(account_address)
@@ -545,7 +549,13 @@ impl HyperliquidExecutionClient {
         let spot_state: SpotClearinghouseState = serde_json::from_value(spot_json)
             .context("failed to deserialize spot clearinghouse state")?;
 
-        Ok((perp_state, spot_state))
+        let abstraction = self
+            .http_client
+            .info_user_abstraction(account_address)
+            .await
+            .context("failed to fetch user abstraction")?;
+
+        Ok((perp_state, spot_state, abstraction))
     }
 
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
@@ -1792,8 +1802,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let spot_state: SpotClearinghouseState = serde_json::from_value(spot_json)
                 .context("failed to deserialize spot clearinghouse state")?;
 
+            let abstraction = http_client
+                .info_user_abstraction(&account_address)
+                .await
+                .context("failed to fetch user abstraction")?;
+
             let (balances, margins) =
-                parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+                parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
                     .context("failed to parse combined account balances and margins")?;
             let ts_event = clock.get_time_ns();
             emitter.emit_account_state(balances, margins, true, ts_event, None);
