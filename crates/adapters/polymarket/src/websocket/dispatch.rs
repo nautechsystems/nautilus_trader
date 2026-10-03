@@ -169,6 +169,7 @@ impl WsDispatchState {
         venue_order_id: VenueOrderId,
         quantity: Quantity,
         leg_quantity: Quantity,
+        prior_filled: Quantity,
         price: Price,
     ) -> bool {
         let Some(PendingCommand::Modify { replacement, .. }) =
@@ -181,6 +182,7 @@ impl WsDispatchState {
             venue_order_id,
             quantity,
             leg_quantity,
+            prior_filled,
             price,
         });
         true
@@ -288,6 +290,7 @@ impl WsDispatchState {
                     venue_order_id,
                     quantity: replacement.quantity,
                     leg_quantity: replacement.leg_quantity,
+                    prior_filled: replacement.prior_filled,
                     price: replacement.price,
                 }),
                 _ => None,
@@ -308,6 +311,7 @@ impl WsDispatchState {
                     venue_order_id: replacement.venue_order_id,
                     quantity: replacement.quantity,
                     leg_quantity: replacement.leg_quantity,
+                    prior_filled: replacement.prior_filled,
                     price: replacement.price,
                 }),
                 _ => None,
@@ -468,6 +472,7 @@ struct PendingModifyReplacement {
     venue_order_id: VenueOrderId,
     quantity: Quantity,
     leg_quantity: Quantity,
+    prior_filled: Quantity,
     price: Price,
 }
 
@@ -478,6 +483,7 @@ pub(crate) struct ModifyPromotion {
     pub(crate) venue_order_id: VenueOrderId,
     pub(crate) quantity: Quantity,
     pub(crate) leg_quantity: Quantity,
+    pub(crate) prior_filled: Quantity,
     pub(crate) price: Price,
 }
 
@@ -733,6 +739,7 @@ fn take_status_update_fills(
             report.client_order_id,
             report.quantity,
             Quantity::zero(report.quantity.precision),
+            Quantity::zero(report.quantity.precision),
             report
                 .order_side
                 .expect("order status report side must be Buy or Sell"),
@@ -797,6 +804,7 @@ fn promote_modify_replacement_from_ws(
         Some(promotion.client_order_id),
         promotion.leg_quantity,
         promotion.quantity.saturating_sub(promotion.leg_quantity),
+        promotion.prior_filled,
         context.identity.order_side,
     ));
     buffered_reports.extend(ctx.fill_tracker.take_pending_reports(&venue_order_id));
@@ -3566,6 +3574,7 @@ mod tests {
                 replacement_id,
                 Quantity::from("25"),
                 Quantity::from("25"),
+                Quantity::from("0"),
                 Price::from("0.6"),
             ));
             assert!(state.claim_modify_replacement(replacement_id).is_some());
@@ -4818,6 +4827,7 @@ mod tests {
             VenueOrderId::from("0xreplacement"),
             Quantity::from("100"),
             Quantity::from("100"),
+            Quantity::from("0"),
             Price::from("0.5"),
         ));
         assert!(
@@ -4888,6 +4898,7 @@ mod tests {
             replacement_venue_order_id,
             Quantity::from("100"),
             Quantity::from("100"),
+            Quantity::from("0"),
             Price::from("0.5"),
         ));
         assert!(
@@ -4968,6 +4979,7 @@ mod tests {
             replacement_venue_order_id,
             Quantity::from("120"),
             Quantity::from("100"),
+            Quantity::from("20"),
             Price::from("0.5"),
         ));
 
@@ -5066,6 +5078,7 @@ mod tests {
             replacement_venue_order_id,
             Quantity::from("120"),
             Quantity::from("100"),
+            Quantity::from("20"),
             Price::from("0.5"),
         ));
 
@@ -5151,6 +5164,7 @@ mod tests {
             replacement_venue_order_id,
             Quantity::from("120"),
             Quantity::from("100"),
+            Quantity::from("20"),
             Price::from("0.5"),
         ));
         let mut cancellation: PolymarketUserOrder = load("ws_user_order_cancellation.json");
@@ -5257,6 +5271,7 @@ mod tests {
             replacement_venue_order_id,
             Quantity::from("120"),
             Quantity::from("100"),
+            Quantity::from("20"),
             Price::from("0.5"),
         ));
 
@@ -5308,6 +5323,7 @@ mod tests {
             first_replacement_venue_order_id,
             Quantity::from("12"),
             Quantity::from("12"),
+            Quantity::from("0"),
             Price::from("0.5"),
         ));
         assert!(
@@ -5325,6 +5341,7 @@ mod tests {
             second_replacement_venue_order_id,
             Quantity::from("15"),
             Quantity::from("15"),
+            Quantity::from("0"),
             Price::from("0.6"),
         ));
 
@@ -5373,6 +5390,7 @@ mod tests {
             first_replacement_venue_order_id,
             Quantity::from("11"),
             Quantity::from("10"),
+            Quantity::from("1"),
             Price::from("0.4"),
         ));
         assert!(state.begin_modify(
@@ -5385,6 +5403,7 @@ mod tests {
             second_replacement_venue_order_id,
             Quantity::from("22"),
             Quantity::from("20"),
+            Quantity::from("2"),
             Price::from("0.6"),
         ));
 
@@ -5509,6 +5528,7 @@ mod tests {
             VenueOrderId::from("0xmodify-cancel-all-new"),
             Quantity::from("12"),
             Quantity::from("12"),
+            Quantity::from("0"),
             Price::from("0.5"),
         ));
         assert!(!state.begin_cancels(&[(client_order_id, instrument_id)]));
@@ -5553,6 +5573,7 @@ mod tests {
             pending_new_venue_order_id,
             Quantity::from("12"),
             Quantity::from("10"),
+            Quantity::from("2"),
             Price::from("0.5"),
         ));
         assert!(state.begin_modify(
@@ -5565,6 +5586,7 @@ mod tests {
             replaced_new_venue_order_id,
             Quantity::from("12"),
             Quantity::from("10"),
+            Quantity::from("2"),
             Price::from("0.5"),
         ));
         assert!(
@@ -5619,6 +5641,7 @@ mod tests {
         fill_tracker.restore_order(
             venue_order_id,
             Quantity::from("100"),
+            Quantity::from("0"),
             Quantity::from("0"),
             Quantity::from("25"),
             OrderSide::Buy,

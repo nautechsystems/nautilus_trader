@@ -21,6 +21,11 @@ so a non-reopened void stays excluded from leaves across subsequent updates with
 to net it out of `quantity` themselves. An adapter that reports `quantity` net of a non-reopened
 void causes leaves to double-subtract that quantity.
 
+Terminal reconciliation is the exception. A reconciliation update (`reconciliation=True`) whose
+`quantity` equals the order's non-zero `filled_qty` closes the order as `FILLED`. Here `quantity`
+is the effective filled quantity, net of voided quantity, so an adapter that closes an order at
+what it filled reports `filled_qty` rather than the gross quantity.
+
 ## Fields
 
 Beyond the [common Python order event fields](index.md#common-python-order-event-fields),

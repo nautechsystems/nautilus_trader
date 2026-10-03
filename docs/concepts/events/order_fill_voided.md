@@ -51,7 +51,9 @@ local fill.
   fills.
 - Report `OrderUpdated.quantity` gross (see [OrderUpdated](order_updated.md#contract)): inclusive
   of filled and non-reopened voided quantity. Nautilus already excludes the non-reopened voided
-  quantity from leaves; an adapter that also nets it out of `quantity` subtracts it twice.
+  quantity from leaves; an adapter that also nets it out of `quantity` subtracts it twice. The
+  exception is a reconciliation update that closes the order as `FILLED`, whose `quantity` is the
+  effective `filled_qty`.
 
 ### Status behavior with a local fill
 

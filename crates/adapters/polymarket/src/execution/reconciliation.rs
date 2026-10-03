@@ -106,7 +106,7 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
 
 /// Returns the non-reopened voided quantity of the venue orders before `venue_order_id`, which
 /// the logical order quantity still carries although none of it is filled.
-pub(crate) fn non_reopened_voided_before_leg(
+fn non_reopened_voided_before_leg(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
 ) -> Option<Quantity> {

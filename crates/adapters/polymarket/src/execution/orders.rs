@@ -981,6 +981,7 @@ impl PolymarketExecutionClient {
                 venue_order_id,
                 venue_leg_qty,
                 order.quantity().saturating_sub(venue_leg_qty),
+                prior_filled_qty,
                 cached_venue_leg_filled,
                 order.order_side(),
             );
@@ -1291,6 +1292,7 @@ impl PolymarketExecutionClient {
                     venue_order_id,
                     venue_leg_qty,
                     order.quantity().saturating_sub(venue_leg_qty),
+                    prior_filled_qty,
                     confirmed_venue_leg_filled,
                     order.order_side(),
                 );
@@ -1399,6 +1401,7 @@ impl PolymarketExecutionClient {
                 expected_venue_order_id,
                 logical_total_qty,
                 submission.expected_base_qty,
+                final_filled_qty,
                 price,
             ) {
                 reject_modify(

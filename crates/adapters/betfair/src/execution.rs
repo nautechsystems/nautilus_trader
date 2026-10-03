@@ -4123,8 +4123,9 @@ impl ReplacedLegFills {
             .notional
             .map(|notional| notional / totals.matched.as_decimal());
         // An executable bet with cumulative matched quantity is partially
-        // filled; the engine's Accepted branch applies no fills.
-        if report.order_status == OrderStatus::Accepted {
+        // filled; the engine's Accepted branch applies no fills. Replaced legs
+        // with only voided quantity leave nothing matched, so it stays Accepted.
+        if report.order_status == OrderStatus::Accepted && !report.filled_qty.is_zero() {
             report.order_status = OrderStatus::PartiallyFilled;
         }
     }
@@ -8720,6 +8721,72 @@ mod tests {
         // original total. Without the voided fold this would understate to 8.
         assert_eq!(successor.quantity, Quantity::from("10"));
         assert_eq!(successor.filled_qty, Quantity::from("4"));
+    }
+
+    // A replaced leg with only voided quantity folds into the successor's quantity, but with no
+    // fills on either leg the successor stays Accepted rather than PartiallyFilled with no fills
+    #[rstest]
+    fn test_replace_fold_of_voided_only_leg_keeps_successor_accepted() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-REPLACE-VOIDED-ONLY-LEG");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::ZERO);
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(8));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(8);
+        new_order.size_matched = Some(Decimal::ZERO);
+        new_order.size_remaining = Some(Decimal::from(8));
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::new(),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+        );
+
+        let successor = reports
+            .iter()
+            .find(|report| report.venue_order_id == VenueOrderId::from(new_bet_id))
+            .unwrap();
+        assert_eq!(successor.order_status, OrderStatus::Accepted);
+        assert_eq!(successor.quantity, Quantity::from("10"));
+        assert_eq!(successor.filled_qty, Quantity::from("0"));
+        assert_eq!(successor.avg_px, None);
     }
 
     #[rstest]

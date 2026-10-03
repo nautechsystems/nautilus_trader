@@ -788,6 +788,7 @@ impl PolymarketExecutionClient {
                     venue_order_id,
                     current_leg_quantity,
                     order.quantity().saturating_sub(current_leg_quantity),
+                    prior_filled,
                     current_leg_filled,
                     order.order_side(),
                 );
@@ -2028,7 +2029,8 @@ mod tests {
 
     // The first venue order filled 3 and had a further 1 voided without reopening, so a modify to
     // 8 leaves 4 to the replacement. Its BUY overfill raises the order quantity to the 4 the first
-    // venue order carries plus the replacement's fills.
+    // venue order carries plus the replacement's fills, while the restored prior filled quantity
+    // for its terminal normalization is only the 3 filled.
     #[rstest]
     fn load_orders_from_cache_excludes_prior_leg_void_from_replacement() {
         let (client, cache) = test_client();
@@ -2095,11 +2097,13 @@ mod tests {
         }
 
         client.load_orders_from_cache();
+        let prior_filled = client.fill_tracker.prior_filled(&new_venue_order_id);
         client
             .fill_tracker
             .record_fill(&new_venue_order_id, ModelQuantity::from("5"));
         let bumped = client.fill_tracker.buy_overfill_bump(&new_venue_order_id);
 
+        assert_eq!(prior_filled, Some(ModelQuantity::from("3")));
         assert_eq!(bumped, Some(ModelQuantity::from("9")));
     }
 
@@ -2196,6 +2200,7 @@ mod tests {
                 new_venue_order_id,
                 ModelQuantity::new(12.0, 0),
                 ModelQuantity::new(12.0, 0),
+                ModelQuantity::zero(0),
                 ModelPrice::from("0.6000"),
             ));
             assert!(state.claim_modify_replacement(new_venue_order_id).is_some());
@@ -2212,6 +2217,7 @@ mod tests {
         client.fill_tracker.restore_order(
             new_venue_order_id,
             ModelQuantity::new(12.0, 0),
+            ModelQuantity::zero(0),
             ModelQuantity::zero(0),
             ModelQuantity::zero(0),
             OrderSide::Buy,
@@ -3290,6 +3296,7 @@ mod tests {
                 replacement_venue_order_id,
                 Quantity::from("12"),
                 Quantity::from("10"),
+                Quantity::from("2"),
                 Price::from("0.5"),
             ));
         }
