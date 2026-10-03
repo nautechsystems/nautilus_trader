@@ -23,6 +23,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
+    enums::CurrencyType,
     events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -31,11 +32,52 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
 
 use super::get_index_key;
+
+/// Persisted representation of a [`Currency`].
+///
+/// A `Currency` serializes as its bare code, which only resolves in a process where that code is
+/// already registered, so a currency minted at runtime could not be restored. This record carries
+/// the same fields the Postgres `currency` table stores, keeping the two backends equivalent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CurrencyRecord {
+    pub code: String,
+    pub precision: u8,
+    pub iso4217: u16,
+    pub name: String,
+    pub currency_type: CurrencyType,
+}
+
+impl From<&Currency> for CurrencyRecord {
+    fn from(currency: &Currency) -> Self {
+        Self {
+            code: currency.code.to_string(),
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name.to_string(),
+            currency_type: currency.currency_type,
+        }
+    }
+}
+
+impl TryFrom<CurrencyRecord> for Currency {
+    type Error = anyhow::Error;
+
+    fn try_from(record: CurrencyRecord) -> Result<Self, Self::Error> {
+        Self::new_checked(
+            record.code.as_str(),
+            record.precision,
+            record.iso4217,
+            record.name.as_str(),
+            record.currency_type,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid currency record: {e}"))
+    }
+}
 
 // Collection keys
 const INDEX: &str = "index";
@@ -262,9 +304,15 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, instrument_closes, synthetics, accounts, orders, positions) =
+        // Currencies must be registered before the dependent payloads decode, because a `Money`
+        // or a `Currency` in them resolves its code through the global registry.
+        let currencies = Self::load_currencies(con, trader_key, encoding).await?;
+        for currency in currencies.values() {
+            Currency::register(*currency, false)?;
+        }
+
+        let (instruments, instrument_closes, synthetics, accounts, orders, positions) =
             tokio::try_join!(
-                Self::load_currencies(con, trader_key, encoding),
                 Self::load_instruments(con, trader_key, encoding),
                 Self::load_instrument_closes(con, trader_key, encoding),
                 Self::load_synthetics(con, trader_key, encoding),
@@ -290,6 +338,24 @@ impl DatabaseQueries {
             greeks,
             yield_curves,
         })
+    }
+
+    /// Decodes a persisted currency, accepting both the record and the legacy bare code.
+    ///
+    /// Records written before the full record was stored hold only the code, which resolves if that
+    /// code is registered. A record that decodes but describes an invalid currency is an error
+    /// rather than a skip, since the intent is recoverable and silently dropping it would omit a
+    /// currency the dependent payloads need.
+    fn deserialize_currency(
+        encoding: SerializationEncoding,
+        value_bytes: &Bytes,
+    ) -> anyhow::Result<Currency> {
+        match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
+            Ok(record) => Currency::try_from(record),
+            Err(record_err) => {
+                Self::deserialize_payload::<Currency>(encoding, value_bytes).map_err(|_| record_err)
+            }
+        }
     }
 
     /// Loads all currencies for `trader_key` using the specified `encoding`.
@@ -326,7 +392,7 @@ impl DatabaseQueries {
             };
 
             if let Some(value_bytes) = value_opt {
-                match Self::deserialize_payload(encoding, value_bytes) {
+                match Self::deserialize_currency(encoding, value_bytes) {
                     Ok(currency) => {
                         currencies.insert(currency_code, currency);
                     }
@@ -1080,6 +1146,7 @@ fn convert_timestamp_strings(value: &mut Value) {
 mod tests {
     use std::str::FromStr;
 
+    use bytes::Bytes;
     use nautilus_common::enums::SerializationEncoding;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -1091,7 +1158,63 @@ mod tests {
     use rstest::rstest;
     use serde::Deserialize;
 
-    use super::{DatabaseQueries, parse_instrument_key};
+    use super::{CurrencyRecord, DatabaseQueries, parse_instrument_key};
+
+    /// A currency the process never registered must survive the round trip.
+    ///
+    /// This is the whole point of the record: `Currency`'s own encoding is the bare code, which
+    /// only resolves against the global registry.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_currency_record_round_trips_an_unregistered_code(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        // A distinct code per encoding: `CURRENCY_MAP` is process-global and tests run in parallel.
+        let code = match encoding {
+            SerializationEncoding::MsgPack => "ZZREDISM",
+            _ => "ZZREDISJ",
+        };
+        assert!(
+            Currency::try_from_str(code).is_none(),
+            "the fixture code must be unregistered for this test to mean anything"
+        );
+
+        let currency = Currency::new(code, 3, 0, "Redis Fixture", CurrencyType::Crypto);
+        let payload =
+            DatabaseQueries::serialize_payload(encoding, &CurrencyRecord::from(&currency)).unwrap();
+
+        let restored =
+            DatabaseQueries::deserialize_currency(encoding, &Bytes::from(payload)).unwrap();
+
+        assert_eq!(restored.code.as_str(), code);
+        assert_eq!(restored.precision, 3);
+        assert_eq!(restored.iso4217, 0);
+        assert_eq!(restored.name.as_str(), "Redis Fixture");
+        assert_eq!(restored.currency_type, CurrencyType::Crypto);
+    }
+
+    /// A record written before the full record existed must keep loading.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_legacy_bare_code_still_loads(#[case] encoding: SerializationEncoding) {
+        let payload = DatabaseQueries::serialize_payload(encoding, &Currency::USD()).unwrap();
+
+        let restored =
+            DatabaseQueries::deserialize_currency(encoding, &Bytes::from(payload)).unwrap();
+
+        assert_eq!(restored, Currency::USD());
+    }
+
+    /// A persisted record must never displace a built-in constant.
+    #[rstest]
+    fn test_register_does_not_displace_a_builtin() {
+        let stale = Currency::new("USD", 8, 0, "Stale USD", CurrencyType::Crypto);
+        Currency::register(stale, false).unwrap();
+
+        assert_eq!(Currency::from_str("USD").unwrap().precision, 2);
+    }
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct TimestampPayload {

@@ -519,6 +519,12 @@ impl Cache {
             None => AHashMap::new(),
         };
 
+        // A loaded currency must reach the global registry, or a `Money` or `Currency` decoded
+        // afterwards cannot resolve its code.
+        for currency in self.currencies.values() {
+            Currency::register(*currency, false)?;
+        }
+
         log::info!("Cached {} currencies from database", self.general.len());
         Ok(())
     }
@@ -2603,13 +2609,37 @@ impl Cache {
         Ok(())
     }
 
+    /// Returns the currencies an `account` references.
+    fn account_currencies(account: &AccountAny) -> Vec<Currency> {
+        let mut currencies: Vec<Currency> = account.balances().into_keys().collect();
+        if let Some(base_currency) = account.base_currency() {
+            currencies.push(base_currency);
+        }
+        currencies
+    }
+
+    /// Persists the currencies an account references, so a restart can restore them.
+    ///
+    /// An account can hold collateral in a currency no instrument carries, and a `Currency`
+    /// persists as its bare code, so without this the account cannot be decoded in a process
+    /// where that code was never registered. Mirrors what [`Self::add_instrument`] does for an
+    /// instrument's base, quote and settlement currencies.
+    fn add_account_currencies(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        for currency in Self::account_currencies(account) {
+            self.add_currency(currency)?;
+        }
+        Ok(())
+    }
+
     /// Adds the `account` to the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the account to the backing database fails.
+    /// Returns an error if persisting the account or its currencies to the backing database fails.
     pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         log::debug!("Adding `Account` {}", account.id());
+
+        self.add_account_currencies(&account)?;
 
         if let Some(database) = &mut self.database {
             database.add_account(&account)?;
@@ -3251,6 +3281,8 @@ impl Cache {
             }
         }
 
+        self.add_account_currencies(account)?;
+
         if let Some(database) = &mut self.database {
             database.update_account(account)?;
         }
@@ -3305,6 +3337,17 @@ impl Cache {
         let account_id = account.id();
         self.cache_account_owned(account);
 
+        let currencies = {
+            let Some(account_cell) = self.accounts.get(&account_id) else {
+                anyhow::bail!("Account {account_id} not found after cache update");
+            };
+            Self::account_currencies(&account_cell.borrow())
+        };
+
+        for currency in currencies {
+            self.add_currency(currency)?;
+        }
+
         if let Some(database) = &mut self.database {
             let Some(account_cell) = self.accounts.get(&account_id) else {
                 anyhow::bail!("Account {account_id} not found after cache update");
@@ -3329,6 +3372,15 @@ impl Cache {
         };
 
         cell.borrow_mut().apply(event.clone())?;
+
+        let currencies = Self::account_currencies(&cell.borrow());
+        for currency in currencies {
+            self.add_currency(currency)?;
+        }
+
+        let Some(cell) = self.accounts.get(&event.account_id) else {
+            anyhow::bail!("Account {} not found after apply", event.account_id);
+        };
 
         if let Some(database) = &mut self.database {
             database.update_account(&cell.borrow())?;

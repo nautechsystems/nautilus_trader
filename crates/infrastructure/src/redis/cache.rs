@@ -82,7 +82,10 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
-use crate::redis::{RedisConnectionConfig, create_redis_connection, queries::DatabaseQueries};
+use crate::redis::{
+    RedisConnectionConfig, create_redis_connection,
+    queries::{CurrencyRecord, DatabaseQueries},
+};
 
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
@@ -1331,8 +1334,14 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         log::debug!("Loading all data");
 
+        // Currencies must be registered before the dependent payloads decode, because a `Money`
+        // or a `Currency` in them resolves its code through the global registry.
+        let currencies = self.load_currencies().await?;
+        for currency in currencies.values() {
+            Currency::register(*currency, false)?;
+        }
+
         let (
-            currencies,
             instruments,
             instrument_closes,
             synthetics,
@@ -1342,7 +1351,6 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             greeks,
             yield_curves,
         ) = tokio::try_join!(
-            self.load_currencies(),
             self.load_instruments(),
             self.load_instrument_closes(),
             self.load_synthetics(),
@@ -1631,7 +1639,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{}", currency.code);
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), currency)?;
+        let record = CurrencyRecord::from(currency);
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), &record)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
