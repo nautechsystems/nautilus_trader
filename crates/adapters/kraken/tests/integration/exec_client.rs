@@ -65,13 +65,14 @@ use nautilus_kraken::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     orders::{LimitOrder, Order, OrderAny, OrderList},
-    types::{AccountBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -1456,6 +1457,164 @@ async fn test_futures_mass_status_incomplete_when_a_history_page_is_refused() {
     assert!(
         !snapshot.reports_complete(),
         "a refused page must leave the set incomplete"
+    );
+}
+
+/// A cached order's recorded fills count toward coverage, so its remaining executions recover.
+///
+/// With 600 of 1,000 contracts already recorded and the final 400 executed offline, the fills
+/// page carries only those 400. Measured against the report alone they fall short, but the cached
+/// order already holds the rest, and the engine matches the page fills to it at their real prices
+/// and commissions. Withholding the report here would discard that recovery.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_cached_partial_order_covered_by_remaining_fills() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::from("O-PART-CACHED");
+    let order = OrderAny::Limit(LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1000"),
+        Price::from("50000"),
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    mark_cached_order_submitted(&cache, &order);
+    set_venue_order_id_on_cached_order(&cache, &order, "F-PART");
+
+    // The 600 contracts already recorded before the node went down.
+    let recorded = OrderFilled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from("F-PART"),
+        test_account_id(),
+        TradeId::from("f-part-recorded"),
+        OrderSide::Buy,
+        OrderType::Limit,
+        Quantity::from("600"),
+        Price::from("49000"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(Money::from("0 USD")),
+        None,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(recorded))
+        .unwrap();
+
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-PART",
+                "FILL",
+                "1000.0",
+                "2023-04-07T15:20:45.500Z",
+            )],
+            None,
+        ));
+    }
+    // Only the final 400 are on the page; the first 600 are older than it.
+    *state.fills_response.lock().await = Some(futures_fills_response(&[futures_fill_sized(
+        "F-PART",
+        "f-part-remaining",
+        "49100.0",
+        "400",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-PART")),
+        "the cached order covers the rest, so the report must be kept"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(
+        fills, 1,
+        "the remaining execution must reach reconciliation"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A caller that sees no completeness flag must get an error for a refused page.
+///
+/// `generate_order_status_reports` returns the reports alone, so a refusal that merely marked the
+/// set incomplete would hand back a truncated set that reads as the venue's full answer and would
+/// advance the missing-order retries instead of marking the client failed.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_status_reports_fail_when_a_history_page_is_refused() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    {
+        let mut pages = state.order_events_pages.lock().await;
+        pages.push_back(futures_order_events_page(
+            &[futures_order_event(
+                "F-FIRST",
+                "PLACE",
+                "0.0",
+                "2023-04-07T14:20:45.500Z",
+            )],
+            Some("tok"),
+        ));
+        pages.push_back(r#"{"result":"error","error":"requestLimitExceeded"}"#.to_string());
+    }
+
+    let result = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a refused page must fail a read whose caller cannot see completeness: {result:?}"
     );
 }
 

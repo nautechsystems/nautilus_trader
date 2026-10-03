@@ -28,7 +28,7 @@ use nautilus_model::{
         AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce,
     },
-    identifiers::{AccountId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -102,12 +102,14 @@ fn process_mass_status_for_reconciliation_inner(
     let mut order_map = extracted.orders;
     let mut fill_map = extracted.fills;
     let mut order_only_ids = IndexSet::new();
+    let mut order_only_fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)> = IndexSet::new();
 
     if fill_snapshots.is_empty() {
         return Ok(ReconciliationResult {
             orders: order_map,
             fills: fill_map,
             order_only_ids,
+            order_only_fill_keys,
         });
     }
 
@@ -173,9 +175,28 @@ fn process_mass_status_for_reconciliation_inner(
             last_zero_crossing_ts,
             current_lifecycle_fills: _,
         } => {
-            // Filter fills to current lifecycle
+            // Filter fills to the current lifecycle. An order whose fills span the crossing
+            // keeps the earlier ones too: they settle its filled quantity, so nothing is left to
+            // infer at the order price, and they are recorded as order-only so they do not apply
+            // to the current position. An order entirely before the crossing is dropped as before.
             for fills in fill_map.values_mut() {
-                fills.retain(|f| f.ts_event.as_u64() > last_zero_crossing_ts);
+                let spans_crossing = fills
+                    .iter()
+                    .any(|f| f.ts_event.as_u64() > last_zero_crossing_ts);
+                if spans_crossing {
+                    for fill in fills
+                        .iter()
+                        .filter(|f| f.ts_event.as_u64() <= last_zero_crossing_ts)
+                    {
+                        order_only_fill_keys.insert((
+                            fill.account_id,
+                            fill.instrument_id,
+                            fill.trade_id,
+                        ));
+                    }
+                } else {
+                    fills.clear();
+                }
             }
             fill_map.retain(|_, fills| !fills.is_empty());
 
@@ -203,6 +224,7 @@ fn process_mass_status_for_reconciliation_inner(
         orders: order_map,
         fills: fill_map,
         order_only_ids,
+        order_only_fill_keys,
     })
 }
 
@@ -665,6 +687,7 @@ fn extract_instrument_reports(
         orders,
         fills,
         order_only_ids: IndexSet::new(),
+        order_only_fill_keys: IndexSet::new(),
     }
 }
 

@@ -1746,6 +1746,10 @@ impl KrakenFuturesHttpClient {
         ))
     }
 
+    /// Requests order status reports.
+    ///
+    /// This caller sees no completeness flag, so a page the venue refuses fails the call rather
+    /// than returning a truncated set that reads as the venue's full answer.
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -1754,9 +1758,17 @@ impl KrakenFuturesHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        self.request_order_status_reports_checked(account_id, instrument_id, start, end, open_only)
-            .await
-            .map(|(reports, _)| reports)
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            start,
+            end,
+            open_only,
+            MAX_ORDER_EVENT_PAGES,
+            RejectedPagePolicy::Fail,
+        )
+        .await
+        .map(|(reports, _)| reports)
     }
 
     /// Requests order status reports for a single-order query, reading one page of history.

@@ -825,6 +825,7 @@ impl ExecutionManager {
             orders: adjusted_order_reports,
             fills: adjusted_fill_reports,
             mut order_only_ids,
+            order_only_fill_keys,
         } = self.adjust_mass_status_fills(mass_status);
 
         order_only_ids.extend(self.order_only_ids(
@@ -1285,6 +1286,7 @@ impl ExecutionManager {
                     &retained_fill_state,
                     &reported_fill_keys,
                     &order_only_ids,
+                    &order_only_fill_keys,
                 )
             {
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
@@ -4887,6 +4889,7 @@ impl ExecutionManager {
             mass_status.order_reports();
         let mut final_fills: IndexMap<VenueOrderId, Vec<FillReport>> = mass_status.fill_reports();
         let mut order_only_ids = IndexSet::new();
+        let mut order_only_fill_keys = IndexSet::new();
 
         final_fills.retain(|_, fills| {
             fills.retain(|fill| {
@@ -4906,6 +4909,7 @@ impl ExecutionManager {
                 orders: final_orders,
                 fills: final_fills,
                 order_only_ids,
+                order_only_fill_keys,
             };
         }
 
@@ -4966,6 +4970,7 @@ impl ExecutionManager {
                 orders: final_orders,
                 fills: final_fills,
                 order_only_ids,
+                order_only_fill_keys,
             };
         }
 
@@ -4991,6 +4996,7 @@ impl ExecutionManager {
             match result {
                 Ok(result) => {
                     order_only_ids.extend(result.order_only_ids);
+                    order_only_fill_keys.extend(result.order_only_fill_keys);
                     final_orders.retain(|_, order| order.instrument_id != instrument_id);
                     final_fills.retain(|_, fills| {
                         fills
@@ -5018,6 +5024,7 @@ impl ExecutionManager {
             orders: final_orders,
             fills: final_fills,
             order_only_ids,
+            order_only_fill_keys,
         }
     }
 

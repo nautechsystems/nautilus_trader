@@ -615,11 +615,17 @@ flag.
 - Startup mass status reads the event history alongside open orders, so an order that reached a
   terminal state while the node was down is reconciled.
 - Pricing safeguard: the fills endpoint returns a single page with no cursor, so an execution older
-  than that page is absent. A terminal report from the history that executed without a covering
-  fill is withheld from the mass status, because reconciliation would otherwise infer the fill at
-  the order's limit price. Withholding one marks the set incomplete. The fills page only moves
-  forward, so the missing execution does not come back on a later read; the report stays withheld
-  and the incomplete flag is what reconciliation acts on.
+  than that page is absent. A terminal report from the history whose fills do not cover its filled
+  quantity is withheld from the mass status, along with its fills, because reconciliation would
+  otherwise infer the remainder at the order's limit price. Coverage counts the fills a cached
+  order has already recorded, so an order the cache holds partly filled is kept when the page
+  carries the rest. Withholding one marks the set incomplete. The fills page only moves forward,
+  so the missing execution does not come back on a later read; the report stays withheld and the
+  incomplete flag is what reconciliation acts on.
+- Refused history pages: a page the venue refuses leaves the startup set incomplete rather than
+  failing startup. A read whose caller sees no completeness flag, such as a bulk
+  `generate_order_status_reports` with `open_only=False`, fails instead, so a truncated set is never
+  taken for the venue's full answer.
 - Targeted queries: a single-order query reads one page of history rather than following the
   continuation token, so it stays within the reconciliation timeout and the shared request budget.
 
