@@ -872,8 +872,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(currency)
+        Self::deserialize_currency(encoding, &result[0]).map(Some)
     }
 
     /// Loads a single instrument for `trader_key` and `instrument_id` using the specified `encoding`.
