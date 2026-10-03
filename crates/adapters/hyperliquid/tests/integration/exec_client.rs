@@ -9116,9 +9116,10 @@ async fn test_generate_mass_status_skips_inactive_cached_builder_dexes() {
     assert!(mass.position_reports().is_empty());
     assert_eq!(
         request_types,
+        // History is fetched before fills so the fills cover every fill a history row implies
         vec![
-            "userFills",
             "historicalOrders",
+            "userFills",
             "frontendOpenOrders",
             "clearinghouseState",
             "spotClearinghouseState",
@@ -9494,6 +9495,154 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
     assert_eq!(stop_report.price, None);
 
     client.disconnect().await.unwrap();
+}
+
+// A reduce-only stop sized 0.002 that closed a 0.0015 position: the venue reports it `filled`
+// with nothing remaining, while its two fills total only 0.0015
+fn capped_stop_fill(sz: &str, time_ms: u64, tid: u64) -> Value {
+    json!({
+        "coin": "BTC", "px": "49900.0", "sz": sz, "side": "A",
+        "time": time_ms, "startPosition": "0.0015",
+        "dir": "Close Long", "closedPnl": "-0.05", "hash": "0xdddd",
+        "oid": 200004u64, "crossed": true, "fee": "0.01", "tid": tid,
+        "feeToken": "USDC",
+    })
+}
+
+fn capped_stop_history(status: &str, sz: &str, reduce_only: bool) -> Value {
+    json!([
+        {
+            "order": {
+                "coin": "BTC", "side": "A", "limitPx": "49400.0", "sz": sz,
+                "oid": 200004u64, "timestamp": 1_754_000_001_000u64,
+                "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
+                "triggerPx": "0.0", "isTrigger": false, "triggerCondition": "Triggered",
+                "tif": "Gtc", "cloid": "0x00000000000000000000000000000004"
+            },
+            "status": status,
+            "statusTimestamp": 1_754_000_001_000u64
+        },
+        {
+            "order": {
+                "coin": "BTC", "side": "A", "limitPx": "49500.0", "sz": "0.002",
+                "oid": 200004u64, "timestamp": 1_754_000_000_000u64,
+                "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
+                "triggerPx": "49950.0", "isTrigger": true,
+                "triggerCondition": "Price below 49950",
+                "tif": null, "cloid": "0x00000000000000000000000000000004"
+            },
+            "status": "open",
+            "statusTimestamp": 1_754_000_000_000u64
+        }
+    ])
+}
+
+fn pad_to_venue_cap(rows: &mut Value, template: &Value, oid_key: &[&str]) {
+    // The venue returns at most 2,000 rows per history endpoint; a full page may be truncated
+    let rows = rows.as_array_mut().unwrap();
+    while rows.len() < 2_000 {
+        let mut row = template.clone();
+        let mut target = &mut row;
+        for key in &oid_key[..oid_key.len() - 1] {
+            target = &mut target[*key];
+        }
+        target[oid_key[oid_key.len() - 1]] = json!(300_000u64 + rows.len() as u64);
+        rows.push(row);
+    }
+}
+
+async fn capped_stop_report(
+    history: Value,
+    fills: Value,
+    lookback_mins: Option<u64>,
+) -> OrderStatusReport {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.user_fills_response.lock().await = Some(fills);
+    *state.historical_orders_response.lock().await = Some(history);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(lookback_mins)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let report = mass
+        .order_reports()
+        .get(&VenueOrderId::from("200004"))
+        .cloned()
+        .expect("historical stop report");
+
+    client.disconnect().await.unwrap();
+    report
+}
+
+#[rstest]
+#[case::complete_history(None, false, false, "0.0015")]
+#[case::fills_split_by_lookback(Some(60), false, false, "0.0015")]
+#[case::history_at_venue_cap(None, true, false, "0.0015")]
+#[case::fills_at_venue_cap(None, false, true, "0.002")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_clamps_reduce_only_filled_report_to_fills(
+    #[case] lookback_mins: Option<u64>,
+    #[case] history_at_cap: bool,
+    #[case] fills_at_cap: bool,
+    #[case] expected_qty: &str,
+) {
+    let recent_ms = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
+        - 60_000;
+    // With a lookback window only the recent fill is replayed; the total still covers both
+    let mut fills = json!([
+        capped_stop_fill("0.001", 1_754_000_001_000, 4),
+        capped_stop_fill("0.0005", recent_ms, 5),
+    ]);
+    let mut history = capped_stop_history("filled", "0.0", true);
+    if history_at_cap {
+        let template = history[1].clone();
+        pad_to_venue_cap(&mut history, &template, &["order", "oid"]);
+    }
+
+    if fills_at_cap {
+        let template = fills[0].clone();
+        pad_to_venue_cap(&mut fills, &template, &["oid"]);
+    }
+
+    let report = capped_stop_report(history, fills, lookback_mins).await;
+
+    // Without a complete fill history the venue size is kept, since fills may be missing
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from(expected_qty));
+    assert_eq!(report.filled_qty, Quantity::from(expected_qty));
+}
+
+#[rstest]
+#[case::canceled_order("canceled", "0.0005", true, "0.001", "0.0015")]
+#[case::fills_cover_filled_qty("filled", "0.0", true, "0.0025", "0.002")]
+#[case::not_reduce_only("filled", "0.0", false, "0.0015", "0.002")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_leaves_other_filled_shortfalls_unclamped(
+    #[case] status: &str,
+    #[case] sz: &str,
+    #[case] reduce_only: bool,
+    #[case] fill_total: &str,
+    #[case] expected_filled: &str,
+) {
+    let history = capped_stop_history(status, sz, reduce_only);
+    let fills = json!([capped_stop_fill(fill_total, 1_754_000_001_000, 4)]);
+
+    let report = capped_stop_report(history, fills, None).await;
+
+    assert_eq!(report.quantity, Quantity::from("0.002"));
+    assert_eq!(report.filled_qty, Quantity::from(expected_filled));
 }
 
 #[rstest]

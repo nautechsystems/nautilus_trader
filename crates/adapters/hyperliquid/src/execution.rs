@@ -2173,16 +2173,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .transpose()?
             .map(|lookback| ts_init.saturating_sub(lookback));
 
-        let fills_response = self
-            .http_client
-            .info_user_fills(&account_address)
-            .await
-            .context("failed to fetch fills for mass status")?;
+        // Fetch history before fills, so the fills cover every fill a history row implies
         let historical_orders = self
             .http_client
             .info_historical_orders(&account_address)
             .await
             .context("failed to fetch historical orders for mass status")?;
+        let fills_response = self
+            .http_client
+            .info_user_fills(&account_address)
+            .await
+            .context("failed to fetch fills for mass status")?;
+        let fills_capped = fills_response.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT;
         let dexes = self
             .http_client
             .reconciliation_dexes_from_activity(&historical_orders, &fills_response)
@@ -2191,8 +2193,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // The venue bounds both history endpoints to their most recent entries;
         // a saturated response may be truncated, so coverage is not provable
-        let history_capped = historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
-            || fills_response.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT;
+        let history_capped =
+            historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT || fills_capped;
 
         if history_capped {
             log::warn!(
@@ -2215,6 +2217,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .request_position_status_reports_for_dexes(&account_address, None, &dexes)
             .await
             .context("failed to generate position status reports")?;
+
+        // Per-order fill totals from the whole fill history, before any lookback trim, and only
+        // when that history is complete
+        let fill_totals = (fill_sweep.complete && !fills_capped)
+            .then(|| fill_totals_by_order(&fill_sweep.reports));
 
         let mut order_reports = order_sweep.reports;
         let mut fill_reports = fill_sweep.reports;
@@ -2249,6 +2256,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 filled_order_ids.contains(&report.venue_order_id)
                     && !open_order_ids.contains(&report.venue_order_id)
             });
+
+            if let Some(fill_totals) = &fill_totals {
+                clamp_filled_reports_to_fills(&mut historical_reports, fill_totals);
+            }
             order_reports.extend(historical_reports);
         }
 
@@ -2272,6 +2283,67 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         Ok(Some(mass_status))
+    }
+}
+
+fn fill_totals_by_order(fills: &[FillReport]) -> AHashMap<(InstrumentId, VenueOrderId), Decimal> {
+    let mut totals: AHashMap<(InstrumentId, VenueOrderId), Decimal> = AHashMap::new();
+    for fill in fills {
+        *totals
+            .entry((fill.instrument_id, fill.venue_order_id))
+            .or_default() += fill.last_qty.as_decimal();
+    }
+    totals
+}
+
+// The venue reports a reduce-only order `filled` with nothing remaining once it closes the
+// position, even when the position was smaller than the order, so the row's filled quantity
+// exceeds the order's fills and the core would try to infer the missing fill. Clamp such a
+// `Filled` report to its fills. Other orders are left alone and logged, since a shortfall there
+// is not a known venue shape.
+fn clamp_filled_reports_to_fills(
+    reports: &mut [OrderStatusReport],
+    fill_totals: &AHashMap<(InstrumentId, VenueOrderId), Decimal>,
+) {
+    for report in reports {
+        if report.order_status != OrderStatus::Filled {
+            continue;
+        }
+
+        let Some(&fill_total) = fill_totals.get(&(report.instrument_id, report.venue_order_id))
+        else {
+            continue;
+        };
+
+        if fill_total.is_zero() || fill_total >= report.filled_qty.as_decimal() {
+            continue;
+        }
+
+        if !report.reduce_only {
+            log::warn!(
+                "Filled order {} reports {} filled but its fills total {fill_total}, leaving as is",
+                report.venue_order_id,
+                report.filled_qty,
+            );
+            continue;
+        }
+
+        let Ok(filled_qty) = Quantity::from_decimal_dp(fill_total, report.filled_qty.precision)
+        else {
+            log::warn!(
+                "Cannot clamp filled order {} to its fill total {fill_total}",
+                report.venue_order_id,
+            );
+            continue;
+        };
+
+        log::info!(
+            "Clamping reduce-only order {} to its fills: venue quantity {}, filled {filled_qty}",
+            report.venue_order_id,
+            report.quantity,
+        );
+        report.quantity = filled_qty;
+        report.filled_qty = filled_qty;
     }
 }
 
