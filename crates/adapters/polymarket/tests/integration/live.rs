@@ -2169,6 +2169,92 @@ async fn restart_hydrates_cached_fill_and_ignores_replayed_trade() {
     assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
 }
 
+// The first venue order fills 3 and has 1 more voided when its trade fails, so a modify to 12
+// leaves 8 to the replacement. When the replacement's confirmed maker trade leaves only dust
+// unfilled, its MATCHED status closes the order at its filled quantity, without the voided 1.
+#[rstest]
+#[tokio::test]
+async fn replacement_dust_terminal_after_prior_void_closes_order() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    let old_venue_order_id = cached_order(&h, &order).venue_order_id();
+    serve_rest_trades(
+        &h,
+        &[
+            sized_trade("trade-kept", "3.0000", "CONFIRMED"),
+            sized_trade("trade-failed", "1.0000", "FAILED"),
+        ],
+    )
+    .await;
+    h.mock_state
+        .send_user(sized_trade("trade-kept", "3.0000", "CONFIRMED"))
+        .await;
+    h.mock_state
+        .send_user(sized_trade("trade-failed", "1.0000", "MATCHED"))
+        .await;
+    h.mock_state
+        .send_user(sized_trade("trade-failed", "1.0000", "FAILED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.filled_qty() == Quantity::from("3.0000")
+                    && cached.non_reopened_voided_qty() == Quantity::from("1.0000")
+            })
+        })
+        .await,
+        "first venue order did not settle at 3 filled and 1 voided",
+    );
+
+    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
+    canceled["size_matched"] = json!("3.0000");
+    *h.mock_state.single_order_response.lock().await = Some(canceled);
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    h.modify_via_risk(&order, None, Some(Quantity::from("12.0000")));
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.quantity() == Quantity::from("12.0000")
+                    && cached.venue_order_id() != old_venue_order_id
+            })
+        })
+        .await,
+        "replacement did not update the cached order",
+    );
+    let replacement_venue_order_id = cached_order(&h, &order).venue_order_id().unwrap();
+
+    let mut trade = owned_maker_trade("CONFIRMED");
+    trade["id"] = json!("trade-replacement");
+    trade["size"] = json!("47.9950");
+    trade["maker_orders"][1]["order_id"] = json!(replacement_venue_order_id.as_str());
+    trade["maker_orders"][1]["matched_amount"] = json!("7.9950");
+    h.mock_state.send_user(trade).await;
+    let mut matched = load_json("ws_user_order_matched.json");
+    matched["id"] = json!(replacement_venue_order_id.as_str());
+    matched["event_type"] = json!("order");
+    matched["original_size"] = json!("8.0000");
+    matched["size_matched"] = json!("7.9950");
+    matched["associate_trades"] = json!(["trade-replacement"]);
+    h.mock_state.send_user(matched).await;
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    let cached = cached_order(&h, &order);
+    assert!(filled, "order ended {:?}, not Filled", cached.status());
+    assert_eq!(cached.filled_qty(), Quantity::from("10.9950"));
+    let Some(OrderEventAny::Updated(updated)) = cached.events().last().copied() else {
+        panic!("expected the terminal quantity update last");
+    };
+    assert!(updated.reconciliation);
+    assert_eq!(updated.quantity, Quantity::from("10.9950"));
+}
+
 async fn submit_until_accepted(h: &mut harness::Harness, order: &OrderAny) {
     h.submit_via_risk(order);
     assert!(
@@ -2192,6 +2278,15 @@ fn user_trade(fixture: &str, status: &str) -> Value {
     let mut trade = load_json(fixture);
     trade["status"] = json!(status);
     trade["event_type"] = json!("trade");
+    trade
+}
+
+// A taker trade of `size` for the tracked order
+fn sized_trade(id: &str, size: &str, status: &str) -> Value {
+    let mut trade = user_trade("ws_user_trade.json", status);
+    trade["id"] = json!(id);
+    trade["size"] = json!(size);
+    trade["maker_orders"][0]["matched_amount"] = json!(size);
     trade
 }
 
