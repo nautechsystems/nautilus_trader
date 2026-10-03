@@ -138,21 +138,73 @@ trades and aggregating bars locally) rather than `EXTERNAL` exchange-provided ba
 
 Kraken uses different Bitcoin symbol conventions across their APIs:
 
-| Market  | Symbol Format | Example            | Notes                                       |
-| ------- | ------------- | ------------------ | ------------------------------------------- |
-| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time. |
-| Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
+| Market  | Symbol Format | Example            | Notes                                        |
+| ------- | ------------- | ------------------ | -------------------------------------------- |
+| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time.  |
+| Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Instrument symbols keep Kraken's native XBT. |
 
 :::note
 Kraken's REST API can return `XBT` for Bitcoin, while its WebSocket v2 API
 requires `BTC`. The adapter normalizes Spot symbols to `BTC` when loading
 instruments, whether `XBT` appears as the base currency (for example, `XBT/USD`
 to `BTC/USD`) or quote currency (for example, `ETH/XBT` to `ETH/BTC`). Futures
-retain Kraken's native `XBT` format.
+instrument symbols retain Kraken's native `XBT` format; futures currency codes do
+not, and are mapped like every other code (see Currency codes).
 :::
 
 Kraken also uses `XDG` for Dogecoin in some Spot responses. The adapter
 normalizes it to `DOGE`, including in quote currency symbols.
+
+### Currency codes
+
+Kraken reports some assets under legacy codes, prefixing them with `X` or `Z`: `XXBT` for Bitcoin,
+`ZEUR` for the euro. The adapter maps those to the standard code used everywhere else on the
+platform, so instruments, balances, fees and currency configuration all agree: `XXBT` and `XBT`
+become `BTC`, `XXDG` and `XDG` become `DOGE`, `ZEUR` becomes `EUR`, `ZUSD` becomes `USD`.
+
+The mapping is an explicit table rather than a prefix rule, because the prefix is not a rule. `XTZ`,
+`XRP`, `XLM`, `XAUT`, `ZRX` and `ZEC` legitimately begin with those letters, and a code the table
+does not list passes through unchanged. Kraken's own CLI normalizes the same way.
+
+Fees are booked in the currency the venue reports, where it reports one. Futures fills carry a fee
+currency, which on an inverse contract is the base rather than the quote. Kraken's Spot
+`TradesHistory` reports a fee amount without a currency, so those fills are booked in the
+instrument's quote currency.
+
+:::warning
+This changes the currency codes the adapter emits, in three places that previously disagreed with
+each other.
+
+Instruments carried Kraken's codes unchanged, so stored instruments were denominated in `XXBT`,
+`XETH`, `XXDG`, `ZUSD` and `ZEUR`, and so were the fills and positions that reference them. Those
+become `BTC`, `ETH`, `DOGE`, `USD` and `EUR`.
+
+Spot balances and the margin balance asset stripped one leading `X` or `Z`, so stored records carry
+`XBT` and `XDG` rather than `BTC` and `DOGE`, and the corrupted forms `TZ`, `RX` and `AUT` rather
+than `XTZ`, `ZRX` and `XAUT`. `KFEE` becomes `FEE`.
+
+Futures balances used the venue's own spelling, which differs per wallet: cash and margin wallets
+key an asset `xbt` while the flex wallet keys it `XBT`. Both become `BTC`, and `usd` becomes `USD`.
+Because the spellings now meet under one code, an asset held in several wallets is reported as one
+balance whose total and locked amounts are the sum of the wallets', each wallet's locked amount
+bounded to its own total first and the sums then reported as they are. Free can therefore be
+negative when one wallet's reservation exceeds the combined holding, which is a real shortfall
+rather than something to clamp away. Previously each wallet produced its own entry and the account
+kept whichever it read last.
+
+A cache or database written by an earlier version needs migrating or rebuilding.
+
+Configuration follows the same mapping and accepts either spelling, so
+`spot_positions_quote_currency="ZEUR"` and `"EUR"` both match a euro-quoted instrument.
+
+Money precision changes where a code now resolves to a built-in currency. `ZEUR` and `ZUSD` were
+unknown to the platform and were registered as 8-decimal crypto; `EUR` and `USD` are built-in fiat
+with 2 decimals, and `JPY` with none. That affects the instrument quote currency, REST fill
+commissions and the PnL derived from them. Account balances keep their 8-decimal precision, because
+the balance parsers construct their own currency from the code rather than resolving a registered
+one. The single exception runs the other way: the futures flex `portfolioValue` entry was built on
+the 2-decimal `USD` and now shares the 8-decimal balance currency, which widens it without loss.
+:::
 
 ### Spot markets
 

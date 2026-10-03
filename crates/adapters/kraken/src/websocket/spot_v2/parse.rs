@@ -27,7 +27,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -38,7 +38,10 @@ use super::{
         KrakenWsOhlcData, KrakenWsOrderResponse, KrakenWsTickerData, KrakenWsTradeData,
     },
 };
-use crate::common::enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce};
+use crate::common::{
+    enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
+    parse::get_currency,
+};
 
 /// Parses Kraken WebSocket ticker data into a Nautilus quote tick.
 ///
@@ -582,7 +585,7 @@ pub fn parse_ws_fill_report(
     // Calculate commission from fees array
     let commission = if let Some(ref fees) = exec.fees {
         if let Some(fee) = fees.first() {
-            let currency = Currency::get_or_create_crypto(&fee.asset);
+            let currency = get_currency(&fee.asset);
             Money::from_decimal(fee.qty.abs(), currency).context("Failed to parse fill fee")?
         } else {
             Money::zero(instrument.quote_currency())
