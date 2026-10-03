@@ -6980,6 +6980,139 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
 }
 
 #[rstest]
+#[case::partial_then_complete(vec![40_000, 60_000])]
+#[case::complete(vec![100_000])]
+fn test_expired_order_receiving_fills_updates_position(
+    mut execution_engine: ExecutionEngine,
+    #[case] fill_quantities: Vec<u64>,
+) {
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let position_id = PositionId::from("AUD/USD.SIM-S-001");
+    execution_engine
+        .register_client(Box::new(StubExecutionClient::new(
+            ClientId::from("STUB"),
+            account_id,
+            Venue::test_default(),
+            OmsType::Netting,
+            None,
+        )))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.25000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(10))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        account_id,
+        venue_order_id,
+    ));
+    let expired = OrderEventAny::Expired(build_order_expired(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        venue_order_id,
+        account_id,
+    ));
+    execution_engine.process(&expired);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Expired
+    );
+
+    let mut filled_qty = 0;
+    let mut trade_ids = AHashSet::new();
+    let mut commission = Money::from("0 USD");
+
+    for (index, quantity) in fill_quantities.into_iter().enumerate() {
+        let trade_id = TradeId::from(format!("FILL-{index}").as_str());
+        let fee = Money::from("2 USD");
+        let fill = OrderEventAny::Filled(build_order_filled(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            venue_order_id,
+            account_id,
+            trade_id,
+            order.order_side(),
+            order.order_type(),
+            Quantity::from(quantity),
+            Price::from("1.25000"),
+            instrument.quote_currency(),
+            LiquiditySide::Maker,
+            Some(position_id),
+            Some(fee),
+        ));
+        execution_engine.process(&fill);
+        execution_engine.process(&expired);
+        execution_engine.process(&expired);
+        execution_engine.process(&fill);
+        filled_qty += quantity;
+        trade_ids.insert(trade_id);
+        commission = commission + fee;
+
+        let cache = execution_engine.cache().borrow();
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        let position = &positions[0];
+
+        let expected_status = if filled_qty == 100_000 {
+            OrderStatus::Filled
+        } else {
+            OrderStatus::Expired
+        };
+
+        assert_eq!(cached_order.status(), expected_status);
+        assert_eq!(cached_order.events().len(), 4 + 2 * (index + 1));
+        assert_eq!(cached_order.last_event(), &expired);
+        assert_eq!(cached_order.filled_qty(), Quantity::from(filled_qty));
+        assert_eq!(
+            cached_order.leaves_qty(),
+            Quantity::from(100_000 - filled_qty)
+        );
+        assert_eq!(cached_order.avg_px(), Some(dec!(1.25)));
+        assert_eq!(
+            cached_order.commissions().get(&Currency::USD()),
+            Some(&commission)
+        );
+        assert!(cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert_eq!(position.id, position_id);
+        assert_eq!(position.quantity, Quantity::from(filled_qty));
+        assert_eq!(position.commissions(), vec![commission]);
+        assert_eq!(position.trade_ids, trade_ids);
+    }
+}
+
+#[rstest]
 fn test_canceled_order_receiving_full_fill_completes_order(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();

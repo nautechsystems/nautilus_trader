@@ -192,6 +192,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed fills after order expiry being dropped instead of updating the order and position
 - Fixed unnecessary Python borrow errors in default actor, strategy, and execution algorithm callbacks
 - Fixed duplicate error logging for propagated order-command failures
 - Fixed `RetainUnresolved` locally closing unacknowledged orders after recovery exhaustion

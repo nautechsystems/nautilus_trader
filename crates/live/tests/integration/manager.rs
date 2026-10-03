@@ -14848,6 +14848,19 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
         ctx.exec_engine.borrow_mut().process(event);
     }
 
+    let reconciled = ctx.get_order(&client_order_id).unwrap();
+
+    for _ in 0..2 {
+        let events = ctx.manager.check_open_orders(&[&repeated_client]).await;
+
+        for event in events {
+            ctx.exec_engine.borrow_mut().process(&event);
+        }
+    }
+
+    let after_repeated = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(after_repeated.events(), reconciled.events());
+
     let additional = OrderFilledTestBuilder::new(&recovered, &instrument)
         .trade_id(TradeId::from("T-TERMINAL-ADDITIONAL"))
         .last_qty(Quantity::from("1.0"))
@@ -14857,9 +14870,7 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
         .without_position_id()
         .build();
 
-    if status == OrderStatus::Canceled {
-        ctx.exec_engine.borrow_mut().process(&additional);
-    }
+    ctx.exec_engine.borrow_mut().process(&additional);
 
     let final_order = ctx.get_order(&client_order_id).unwrap();
     let cache = ctx.cache.borrow();
@@ -14891,20 +14902,11 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
 
     assert_eq!(final_order.status(), status);
 
-    let (quantity, price, commission) = if status == OrderStatus::Canceled {
-        (
-            Quantity::from("3.0"),
-            dec!(3010.0),
-            Money::from("0.75 USDT"),
-        )
-    } else {
-        (
-            Quantity::from("2.0"),
-            dec!(3000.0),
-            Money::from("0.50 USDT"),
-        )
-    };
+    let quantity = Quantity::from("3.0");
+    let price = dec!(3010.0);
+    let commission = Money::from("0.75 USDT");
 
+    assert_eq!(final_order.events().len(), reconciled.events().len() + 1);
     assert_eq!(final_order.filled_qty(), quantity);
     assert_eq!(final_order.avg_px(), Some(price));
     assert_eq!(

@@ -280,6 +280,7 @@ impl OrderStatus {
             (Self::PartiallyFilled, OrderEventAny::FillVoided(_)) => Self::PartiallyFilled,
             (Self::Filled, OrderEventAny::FillVoided(_)) => Self::Voided,
             (Self::Filled, OrderEventAny::Updated(_)) => Self::Filled,
+            (Self::Expired, OrderEventAny::Filled(_)) => Self::Filled,  // Real world possibility
             (Self::Expired, OrderEventAny::FillVoided(_)) => Self::Expired,
             (Self::Expired, OrderEventAny::Updated(_)) => Self::Expired,
             (Self::Voided, OrderEventAny::FillVoided(_)) => Self::Voided,
@@ -858,8 +859,27 @@ impl OrderCore {
             return Err(OrderError::InvalidOrderEvent);
         }
 
-        if matches!(event, OrderEventAny::Initialized(_)) {
-            return Err(OrderError::AlreadyInitialized);
+        match &event {
+            OrderEventAny::Initialized(_) => return Err(OrderError::AlreadyInitialized),
+
+            // A replayed expiry must not overwrite a later fill's status or timestamps
+            OrderEventAny::Expired(_)
+                if matches!(self.status, OrderStatus::Expired | OrderStatus::Filled)
+                    && self
+                        .events
+                        .iter()
+                        .rposition(|event| matches!(event, OrderEventAny::Expired(_)))
+                        .is_some_and(|index| {
+                            self.events[index + 1..]
+                                .iter()
+                                .any(|event| matches!(event, OrderEventAny::Filled(_)))
+                        }) =>
+            {
+                // Cache persistence writes last_event after every successful apply
+                self.events.push(event);
+                return Ok(());
+            }
+            _ => {}
         }
 
         let is_reclose_after_fill = self.status == OrderStatus::Canceled
@@ -1301,8 +1321,8 @@ impl OrderCore {
         } else if new_leaves_qty.is_zero() && !self.voided_qty.is_zero() {
             self.status = OrderStatus::Voided;
             self.ts_closed = Some(event.ts_event);
-        } else if source_status == OrderStatus::Canceled {
-            self.status = OrderStatus::Canceled;
+        } else if matches!(source_status, OrderStatus::Canceled | OrderStatus::Expired) {
+            self.status = source_status;
         } else {
             self.status = OrderStatus::PartiallyFilled;
 
@@ -1359,9 +1379,12 @@ impl OrderCore {
             ) || (self.status == source_status
                 && matches!(
                     source_status,
-                    OrderStatus::Canceled | OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+                    OrderStatus::Canceled
+                        | OrderStatus::Expired
+                        | OrderStatus::PendingUpdate
+                        | OrderStatus::PendingCancel
                 )),
-            "Invariant: status must reflect the fill or preserve a pending source status after fill handler (status={:?})",
+            "Invariant: status must reflect the fill or preserve a closed or pending source status after fill handler (status={:?})",
             self.status
         );
         debug_assert!(
@@ -4335,6 +4358,139 @@ mod tests {
 
         assert!(!order.is_quote_quantity());
         assert_eq!(order.quantity(), Quantity::new(8.0, 6));
+    }
+
+    #[rstest]
+    #[case::partial(40_000, OrderStatus::Expired, 10)]
+    #[case::complete(100_000, OrderStatus::Filled, 20)]
+    fn test_expired_order_receiving_fill(
+        #[case] fill_qty: u64,
+        #[case] expected_status: OrderStatus,
+        #[case] closed_at: u64,
+    ) {
+        let mut order: LimitOrder = OrderInitializedSpec::builder()
+            .order_type(OrderType::Limit)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(10))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        let expired = OrderEventAny::Expired(
+            OrderExpiredSpec::builder()
+                .ts_event(UnixNanos::from(10))
+                .build(),
+        );
+        order.apply(expired).unwrap();
+        let fill = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .order_type(OrderType::Limit)
+                .last_qty(Quantity::from(fill_qty))
+                .last_px(Price::from("1.25000"))
+                .commission(Money::from("2 USD"))
+                .ts_event(UnixNanos::from(20))
+                .build(),
+        );
+        let mut persisted_events: Vec<_> = order.events().into_iter().cloned().collect();
+        order.apply(fill.clone()).unwrap();
+        persisted_events.push(order.last_event().clone());
+        let repeated_expiry = OrderEventAny::Expired(
+            OrderExpiredSpec::builder()
+                .ts_event(UnixNanos::from(30))
+                .build(),
+        );
+        order.apply(repeated_expiry.clone()).unwrap();
+        persisted_events.push(order.last_event().clone());
+        let replayed = OrderAny::from_events(persisted_events).unwrap();
+
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.filled_qty(), Quantity::from(fill_qty));
+        assert_eq!(order.leaves_qty(), Quantity::from(100_000 - fill_qty));
+        assert_eq!(order.avg_px(), Some(dec!(1.25)));
+        assert_eq!(
+            order.commissions().get(&Currency::USD()),
+            Some(&Money::from("2 USD"))
+        );
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(closed_at)));
+        assert_eq!(order.ts_last(), UnixNanos::from(20));
+        assert_eq!(order.events().len(), 5);
+        assert_eq!(order.last_event(), &repeated_expiry);
+        assert_eq!(replayed.status(), expected_status);
+        assert_eq!(replayed.filled_qty(), Quantity::from(fill_qty));
+        assert_eq!(replayed.leaves_qty(), Quantity::from(100_000 - fill_qty));
+        assert_eq!(replayed.avg_px(), Some(dec!(1.25)));
+        assert_eq!(replayed.commissions(), order.commissions());
+        assert_eq!(replayed.ts_closed(), Some(UnixNanos::from(closed_at)));
+        assert_eq!(replayed.ts_last(), UnixNanos::from(20));
+        assert_eq!(replayed.events(), order.events());
+        assert!(matches!(
+            order.apply(repeated_expiry),
+            Err(OrderError::InvalidStateTransition)
+        ));
+        assert_eq!(order.events(), replayed.events());
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+        assert!(matches!(
+            order.apply(fill),
+            Err(OrderError::DuplicateFill(_))
+        ));
+        assert_eq!(order.filled_qty(), Quantity::from(fill_qty));
+    }
+
+    #[rstest]
+    fn test_expired_order_rejects_expiry_without_new_fill() {
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Expired(
+                OrderExpiredSpec::builder()
+                    .ts_event(UnixNanos::from(10))
+                    .build(),
+            ))
+            .unwrap();
+        let events: Vec<_> = order.events().into_iter().cloned().collect();
+
+        let result = order.apply(OrderEventAny::Expired(
+            OrderExpiredSpec::builder()
+                .ts_event(UnixNanos::from(30))
+                .build(),
+        ));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.status(), OrderStatus::Expired);
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(10)));
+        assert_eq!(order.ts_last(), UnixNanos::from(10));
+        assert_eq!(order.events(), events.iter().collect::<Vec<_>>());
+    }
+
+    #[rstest]
+    fn test_filled_order_rejects_expiry_without_prior_expiry() {
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(OrderFilledSpec::builder().build()))
+            .unwrap();
+
+        let result = order.apply(OrderEventAny::Expired(OrderExpiredSpec::builder().build()));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
+        assert_eq!(order.events().len(), 3);
     }
 
     #[rstest]
