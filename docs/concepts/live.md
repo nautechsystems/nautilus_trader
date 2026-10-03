@@ -92,6 +92,26 @@ Live node lifecycle: instruments and execution state are prepared before strateg
 Cache restoration runs when a backing database is attached and cache loading is enabled. Connection,
 reconciliation, or trader startup failures abort startup and follow the coordinated cleanup path.
 
+### Submission recovery at shutdown
+
+Rust `LiveNode::stop`, `run`, and `run_with_mode`, and Python `run_async()` use the same submission
+recovery boundary. During `delay_post_stop`, the node continues processing venue evidence and native
+managed-exit timers without starting new reconciliation queries. At the end of that window, any
+retained submission without a native outcome or venue confirmation makes shutdown return an error
+listing the unresolved client order IDs. Clients disconnect and the kernel stops even when recovery
+is incomplete. Evidence drained after this boundary cannot change the recorded shutdown result.
+
+This applies to `RetainUnresolved` and to clients which require submission retention, including
+submissions whose recovery budget has not yet exhausted. Polymarket requires retention automatically,
+so its callers can receive this error without selecting an opt-in policy. The default `ResolveLocally`
+policy remains unchanged for clients which do not require retention.
+
+Submission acknowledgement ends submission recovery; it does not prove that an accepted order's
+cancel or update completed, or that positions are flat. Managed exit keeps its existing attempt
+budget, and this result does not extend cleanup beyond `delay_post_stop` or implement recovery
+across restarts. See [submission recovery](execution/reconciliation.md#submission-recovery)
+for identity and query-budget rules.
+
 ## Hosted event loops
 
 Use `run_async()` from Python to run a node on an event loop you already own, such as an ASGI server
@@ -167,21 +187,9 @@ graceful shutdown and returns immediately, so the awaiting task resolves only on
 finishes. Cancelling that task requests the same shutdown, waits for it, then re-raises the
 cancellation, which keeps `asyncio.timeout` and task groups behaving as their callers expect.
 
-During `delay_post_stop`, the node continues processing venue evidence and native managed-exit
-timers. It does not start new reconciliation queries. At the end of that window, any retained
-submission without a native outcome or venue confirmation makes shutdown report an error listing
-the unresolved client order IDs. This applies both to `RetainUnresolved` and to clients which
-require submission retention, including submissions whose recovery budget has not yet exhausted.
-Clients disconnect and the kernel stops even when submission recovery is incomplete. Evidence
-drained after this boundary cannot change the recorded shutdown result.
-If an awaiting Python task is cancelled, cancellation still propagates after teardown, with any
-shutdown error preserved as the cancellation exception's cause.
-
-The default `ResolveLocally` policy is unchanged for clients which do not require retention.
-Submission acknowledgement ends submission recovery; it does not prove that an accepted order's
-cancel or update completed, or that positions are flat. Managed exit keeps its existing attempt
-budget, and this result does not extend cleanup beyond `delay_post_stop` or implement recovery
-across restarts.
+The shared [submission recovery shutdown contract](#submission-recovery-at-shutdown) applies to
+hosted nodes. If an awaiting Python task is cancelled, cancellation still propagates after teardown,
+with any shutdown error preserved as the cancellation exception's cause.
 
 ### Host integration and limits
 

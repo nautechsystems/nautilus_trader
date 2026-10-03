@@ -23,5 +23,6 @@ mod data_client;
 mod dst;
 mod exec_client;
 mod http;
+mod node;
 mod python;
 mod websocket;
