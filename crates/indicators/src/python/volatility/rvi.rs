@@ -28,9 +28,12 @@ impl RelativeVolatilityIndex {
     /// An indicator which calculates a Relative Volatility Index (RVI) across a rolling window.
     #[new]
     #[pyo3(signature = (period, scalar=None, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, scalar, ma_type)
+    pub fn py_new(
+        period: usize,
+        scalar: Option<f64>,
+        ma_type: Option<MovingAverageType>,
+    ) -> PyResult<Self> {
+        Self::new_checked(period, scalar, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -38,6 +41,12 @@ impl RelativeVolatilityIndex {
             "RelativeVolatilityIndex({},{},{})",
             self.period, self.scalar, self.ma_type,
         )
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
     }
 
     #[getter]

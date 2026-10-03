@@ -15,10 +15,11 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use super::kc::KeltnerChannel;
-use crate::{average::MovingAverageType, indicator::Indicator};
+use crate::{average::MovingAverageType, indicator::Indicator, support::is_valid_hlc};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -85,6 +86,11 @@ impl Indicator for KeltnerPosition {
 
 impl KeltnerPosition {
     /// Creates a new [`KeltnerPosition`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is outside `1..=MAX_PERIOD`, the multiplier is not positive and finite,
+    /// or the ATR floor is negative or non-finite.
     #[must_use]
     pub fn new(
         period: usize,
@@ -94,7 +100,35 @@ impl KeltnerPosition {
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
     ) -> Self {
-        Self {
+        Self::new_checked(
+            period,
+            k_multiplier,
+            ma_type,
+            ma_type_atr,
+            use_previous,
+            atr_floor,
+        )
+        .expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        k_multiplier: f64,
+        ma_type: Option<MovingAverageType>,
+        ma_type_atr: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        atr_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        let kc = KeltnerChannel::new_checked(
+            period,
+            k_multiplier,
+            None,
+            ma_type,
+            ma_type_atr.or(Some(MovingAverageType::Simple)),
+            use_previous,
+            atr_floor,
+        )?;
+        Ok(Self {
             period,
             k_multiplier,
             ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
@@ -104,18 +138,15 @@ impl KeltnerPosition {
             value: 0.0,
             has_inputs: false,
             initialized: false,
-            kc: KeltnerChannel::new(
-                period,
-                k_multiplier,
-                ma_type,
-                ma_type_atr,
-                use_previous,
-                atr_floor,
-            ),
-        }
+            kc,
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
+        if !is_valid_hlc(high, low, close) {
+            return;
+        }
+
         self.kc.update_raw(high, low, close);
 
         // Initialization logic
@@ -178,8 +209,8 @@ mod tests {
         ];
 
         let close_values = [
-            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.05, 10.15, 10.25, 11.05,
-            11.45,
+            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.55, 11.1, 12.0, 13.0,
+            14.0,
         ];
 
         for i in 0..15 {
@@ -187,14 +218,23 @@ mod tests {
         }
 
         assert!(kp_10.initialized());
-        assert_approx_equal(kp_10.value, 0.471631205674);
+        assert_approx_equal(kp_10.value, 1.17533718690);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut kp_10: KeltnerPosition) {
-        kp_10.update_raw(1.00020, 1.00050, 1.00030);
-        kp_10.update_raw(1.00030, 1.00060, 1.00040);
-        kp_10.update_raw(1.00070, 1.00080, 1.00075);
+        for _ in 0..9 {
+            kp_10.update_raw(11.0, 9.0, 10.0);
+        }
+        kp_10.update_raw(11.0, 9.0, 10.5);
+        // The last typical price 61/6 lifts the simple centerline to 10 + 1/60;
+        // true range stays 2, so the half band width is 2 * 2
+        let middle = 10.0 + 1.0 / 60.0;
+        assert!(kp_10.initialized());
+        assert!((kp_10.kc.middle - middle).abs() < 1e-12);
+        assert!((kp_10.kc.upper - (middle + 4.0)).abs() < 1e-12);
+        assert!((kp_10.kc.lower - (middle - 4.0)).abs() < 1e-12);
+        assert!((kp_10.value - (10.5 - middle) / 4.0).abs() < 1e-12);
 
         kp_10.reset();
 
@@ -204,6 +244,31 @@ mod tests {
         assert_eq!(kp_10.kc.upper, 0.0);
         assert_eq!(kp_10.kc.middle, 0.0);
         assert_eq!(kp_10.kc.lower, 0.0);
+    }
+
+    #[rstest]
+    #[case(1.0, 2.0, 2.0)]
+    #[case(2.0, 1.0, 2.5)]
+    #[case(2.0, 1.0, f64::NAN)]
+    fn test_rejected_candle_leaves_state_unchanged(
+        #[case] high: f64,
+        #[case] low: f64,
+        #[case] close: f64,
+    ) {
+        let mut kp = KeltnerPosition::new(
+            1,
+            2.0,
+            Some(MovingAverageType::Simple),
+            Some(MovingAverageType::Simple),
+            None,
+            None,
+        );
+        kp.update_raw(2.0, 1.0, 1.5);
+        kp.update_raw(high, low, close);
+
+        assert!(kp.initialized());
+        assert_eq!(kp.kc.middle, 1.5);
+        assert_eq!(kp.value, 0.0);
     }
 
     #[rstest]
@@ -229,6 +294,6 @@ mod tests {
         assert_eq!(kp.ma_type, MovingAverageType::Exponential);
         assert_eq!(kp.ma_type_atr, MovingAverageType::Simple);
         assert!(kp.initialized());
-        assert_approx_equal(kp.value, 0.358717256402);
+        assert_approx_equal(kp.value, 0.364862661420);
     }
 }

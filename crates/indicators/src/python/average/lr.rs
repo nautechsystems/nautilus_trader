@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -21,11 +22,10 @@ use crate::{average::lr::LinearRegression, indicator::Indicator, python::float_p
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LinearRegression {
-    /// Creates a new `LinearRegression` instance.
+    /// Linear regression over a rolling price window.
     #[new]
-    #[must_use]
-    pub fn py_new(period: usize) -> Self {
-        Self::new(period)
+    pub fn py_new(period: usize) -> PyResult<Self> {
+        Self::new_checked(period).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

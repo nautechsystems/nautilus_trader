@@ -13,18 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Ichimoku Cloud (Kinko Hyo) indicator.
+use std::{collections::VecDeque, fmt::Display};
 
-use std::fmt::Display;
-
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
-use crate::indicator::Indicator;
+use crate::{
+    indicator::Indicator,
+    support::{MAX_PERIOD, is_valid_hlc},
+};
 
-const MAX_PERIOD: usize = 128;
-const MAX_DISPLACEMENT: usize = 64;
-
+/// Ichimoku Kinko Hyo: the five-line cloud chart.
+///
+/// ```text
+/// tenkan_sen    = midpoint(high, low over tenkan_period)
+/// kijun_sen     = midpoint(high, low over kijun_period)
+/// senkou_span_a = (tenkan_sen + kijun_sen) / 2      as computed `displacement - 1` bars ago
+/// senkou_span_b = midpoint(high, low over senkou_period) as computed `displacement - 1` bars ago
+/// chikou_span   = close from `displacement - 1` bars ago
+/// ```
+///
+/// The two Senkou spans form the Kumo (cloud). Charts draw them `displacement`
+/// bars ahead and the Chikou span `displacement` bars behind; streaming in
+/// chronological order, the values visible at bar `n` are the ones buffered
+/// `displacement` updates ago, that is bar `n - displacement + 1`.
+///
+/// Each line becomes available at its own bar: `tenkan_sen` after `tenkan_period`
+/// bars, `kijun_sen` after `kijun_period`, `chikou_span` after `displacement`,
+/// `senkou_span_a` after `kijun_period + displacement - 1`, and `senkou_span_b`
+/// after `senkou_period + displacement - 1` (77 bars at the classic
+/// `(9, 26, 52, 26)`). The matching `has_*` flag reports whether each field
+/// holds a value, and `initialized` gates on all five.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -45,13 +64,19 @@ pub struct IchimokuCloud {
     pub senkou_span_a: f64,
     pub senkou_span_b: f64,
     pub chikou_span: f64,
+    pub has_tenkan: bool,
+    pub has_kijun: bool,
+    pub has_senkou_a: bool,
+    pub has_senkou_b: bool,
+    pub has_chikou: bool,
+    pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
-    highs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    lows: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    senkou_a: ArrayDeque<f64, MAX_DISPLACEMENT, Wrapping>,
-    senkou_b: ArrayDeque<f64, MAX_DISPLACEMENT, Wrapping>,
-    chikou: ArrayDeque<f64, MAX_DISPLACEMENT, Wrapping>,
+    highs: VecDeque<f64>,
+    lows: VecDeque<f64>,
+    senkou_a_history: VecDeque<f64>,
+    senkou_b_history: VecDeque<f64>,
+    close_history: VecDeque<f64>,
 }
 
 impl Display for IchimokuCloud {
@@ -88,14 +113,20 @@ impl Indicator for IchimokuCloud {
     fn reset(&mut self) {
         self.highs.clear();
         self.lows.clear();
-        self.senkou_a.clear();
-        self.senkou_b.clear();
-        self.chikou.clear();
+        self.senkou_a_history.clear();
+        self.senkou_b_history.clear();
+        self.close_history.clear();
         self.tenkan_sen = 0.0;
         self.kijun_sen = 0.0;
         self.senkou_span_a = 0.0;
         self.senkou_span_b = 0.0;
         self.chikou_span = 0.0;
+        self.has_tenkan = false;
+        self.has_kijun = false;
+        self.has_senkou_a = false;
+        self.has_senkou_b = false;
+        self.has_chikou = false;
+        self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
     }
@@ -104,16 +135,13 @@ impl Indicator for IchimokuCloud {
 impl IchimokuCloud {
     /// Creates a new [`IchimokuCloud`] instance.
     ///
-    /// The indicator becomes `initialized` after `senkou_period` bars,
-    /// at which point `tenkan_sen` and `kijun_sen` are valid. The displaced
-    /// outputs (`senkou_span_a`, `senkou_span_b`, `chikou_span`) require an
-    /// additional `displacement` bars before they become non-zero.
-    ///
     /// # Panics
     ///
-    /// Panics if periods are invalid: `tenkan_period` and others must be positive,
-    /// `kijun_period >= tenkan_period`, `senkou_period >= kijun_period`,
-    /// and all within allowed maximums.
+    /// Panics if:
+    /// - any of `tenkan_period`, `kijun_period`, `senkou_period` or
+    ///   `displacement` is zero or exceeds 16,777,216.
+    /// - the periods are not non-decreasing
+    ///   (`tenkan_period <= kijun_period <= senkou_period`).
     #[must_use]
     pub fn new(
         tenkan_period: usize,
@@ -121,32 +149,57 @@ impl IchimokuCloud {
         senkou_period: usize,
         displacement: usize,
     ) -> Self {
-        assert!(
-            tenkan_period > 0 && tenkan_period <= MAX_PERIOD,
-            "IchimokuCloud: tenkan_period must be in 1..={MAX_PERIOD}"
+        Self::new_checked(tenkan_period, kijun_period, senkou_period, displacement).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        tenkan_period: usize,
+        kijun_period: usize,
+        senkou_period: usize,
+        displacement: usize,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            tenkan_period <= MAX_PERIOD,
+            "tenkan_period must not exceed {MAX_PERIOD}"
         );
-        assert!(
-            kijun_period > 0 && kijun_period <= MAX_PERIOD,
-            "IchimokuCloud: kijun_period must be in 1..={MAX_PERIOD}"
+        anyhow::ensure!(
+            kijun_period <= MAX_PERIOD,
+            "kijun_period must not exceed {MAX_PERIOD}"
         );
-        assert!(
-            senkou_period > 0 && senkou_period <= MAX_PERIOD,
-            "IchimokuCloud: senkou_period must be in 1..={MAX_PERIOD}"
+        anyhow::ensure!(
+            senkou_period <= MAX_PERIOD,
+            "senkou_period must not exceed {MAX_PERIOD}"
         );
-        assert!(
-            displacement > 0 && displacement <= MAX_DISPLACEMENT,
-            "IchimokuCloud: displacement must be in 1..={MAX_DISPLACEMENT}"
+        anyhow::ensure!(
+            displacement <= MAX_PERIOD,
+            "displacement must not exceed {MAX_PERIOD}"
         );
-        assert!(
+
+        anyhow::ensure!(
+            tenkan_period > 0,
+            "IchimokuCloud: tenkan_period must be > 0 (received {tenkan_period})"
+        );
+        anyhow::ensure!(
+            kijun_period > 0,
+            "IchimokuCloud: kijun_period must be > 0 (received {kijun_period})"
+        );
+        anyhow::ensure!(
+            senkou_period > 0,
+            "IchimokuCloud: senkou_period must be > 0 (received {senkou_period})"
+        );
+        anyhow::ensure!(
+            displacement > 0,
+            "IchimokuCloud: displacement must be > 0 (received {displacement})"
+        );
+        anyhow::ensure!(
             kijun_period >= tenkan_period,
             "IchimokuCloud: kijun_period must be >= tenkan_period"
         );
-        assert!(
+        anyhow::ensure!(
             senkou_period >= kijun_period,
             "IchimokuCloud: senkou_period must be >= kijun_period"
         );
-
-        Self {
+        Ok(Self {
             tenkan_period,
             kijun_period,
             senkou_period,
@@ -156,202 +209,297 @@ impl IchimokuCloud {
             senkou_span_a: 0.0,
             senkou_span_b: 0.0,
             chikou_span: 0.0,
+            has_tenkan: false,
+            has_kijun: false,
+            has_senkou_a: false,
+            has_senkou_b: false,
+            has_chikou: false,
+            count: 0,
             initialized: false,
             has_inputs: false,
-            highs: ArrayDeque::new(),
-            lows: ArrayDeque::new(),
-            senkou_a: ArrayDeque::new(),
-            senkou_b: ArrayDeque::new(),
-            chikou: ArrayDeque::new(),
-        }
+            highs: VecDeque::with_capacity(senkou_period),
+            lows: VecDeque::with_capacity(senkou_period),
+            senkou_a_history: VecDeque::with_capacity(displacement),
+            senkou_b_history: VecDeque::with_capacity(displacement),
+            close_history: VecDeque::with_capacity(displacement),
+        })
     }
 
-    /// Updates the indicator with OHLC values.
+    /// Updates the indicator with the given high, low and close.
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        let _ = self.highs.push_back(high);
-        let _ = self.lows.push_back(low);
-
-        if !self.initialized {
-            self.has_inputs = true;
-            let n = self.highs.len();
-            if n >= self.tenkan_period && n >= self.kijun_period && n >= self.senkou_period {
-                self.initialized = true;
-            }
+        if !is_valid_hlc(high, low, close) {
+            return;
         }
 
-        self.tenkan_sen = Self::midpoint_over(&self.highs, &self.lows, self.tenkan_period);
-        self.kijun_sen = Self::midpoint_over(&self.highs, &self.lows, self.kijun_period);
-        let mid52 = Self::midpoint_over(&self.highs, &self.lows, self.senkou_period);
+        self.count += 1;
+        self.has_inputs = true;
 
-        if self.initialized {
-            if self.senkou_a.len() == self.displacement {
-                self.senkou_span_a = self.senkou_a.pop_front().unwrap_or(0.0);
-            }
-            let _ = self
-                .senkou_a
-                .push_back(f64::midpoint(self.tenkan_sen, self.kijun_sen));
-
-            if self.senkou_b.len() == self.displacement {
-                self.senkou_span_b = self.senkou_b.pop_front().unwrap_or(0.0);
-            }
-            let _ = self.senkou_b.push_back(mid52);
-
-            if self.chikou.len() == self.displacement {
-                self.chikou_span = self.chikou.pop_front().unwrap_or(0.0);
-            }
-            let _ = self.chikou.push_back(close);
+        if self.highs.len() == self.senkou_period {
+            self.highs.pop_front();
+            self.lows.pop_front();
         }
+        self.highs.push_back(high);
+        self.lows.push_back(low);
+
+        if self.highs.len() >= self.tenkan_period {
+            self.tenkan_sen = self.midpoint(self.tenkan_period);
+            self.has_tenkan = true;
+        }
+
+        if self.highs.len() >= self.kijun_period {
+            self.kijun_sen = self.midpoint(self.kijun_period);
+            self.has_kijun = true;
+        }
+        let senkou_b_now = if self.highs.len() >= self.senkou_period {
+            self.midpoint(self.senkou_period)
+        } else {
+            f64::NAN
+        };
+        let senkou_a_now = if self.has_tenkan && self.has_kijun {
+            f64::midpoint(self.tenkan_sen, self.kijun_sen)
+        } else {
+            f64::NAN
+        };
+
+        // Push every bar (NaN encodes "no value yet") so the buffers stay
+        // aligned 1:1 with bars and the displaced read is a plain front peek.
+        Self::push_capped(&mut self.senkou_a_history, senkou_a_now, self.displacement);
+        Self::push_capped(&mut self.senkou_b_history, senkou_b_now, self.displacement);
+        Self::push_capped(&mut self.close_history, close, self.displacement);
+
+        if let Some(value) = Self::displaced(&self.senkou_a_history, self.displacement) {
+            self.senkou_span_a = value;
+            self.has_senkou_a = true;
+        }
+
+        if let Some(value) = Self::displaced(&self.senkou_b_history, self.displacement) {
+            self.senkou_span_b = value;
+            self.has_senkou_b = true;
+        }
+
+        if let Some(value) = Self::displaced(&self.close_history, self.displacement) {
+            self.chikou_span = value;
+            self.has_chikou = true;
+        }
+
+        self.initialized = self.has_tenkan
+            && self.has_kijun
+            && self.has_senkou_a
+            && self.has_senkou_b
+            && self.has_chikou;
     }
 
-    fn midpoint_over(
-        highs: &ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-        lows: &ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-        period: usize,
-    ) -> f64 {
-        if highs.len() < period || lows.len() < period {
-            return 0.0;
+    // Midpoint of the last `n` highs and lows; the caller guarantees `n` bars exist.
+    fn midpoint(&self, n: usize) -> f64 {
+        let len = self.highs.len();
+        let start = len - n;
+        let mut hi = f64::NEG_INFINITY;
+        let mut lo = f64::INFINITY;
+
+        for i in start..len {
+            hi = hi.max(self.highs[i]);
+            lo = lo.min(self.lows[i]);
         }
-        let high_max = highs
-            .iter()
-            .rev()
-            .take(period)
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max);
-        let low_min = lows
-            .iter()
-            .rev()
-            .take(period)
-            .copied()
-            .fold(f64::INFINITY, f64::min);
-        f64::midpoint(high_max, low_min)
+        f64::midpoint(hi, lo)
+    }
+
+    fn push_capped(queue: &mut VecDeque<f64>, value: f64, cap: usize) {
+        if queue.len() == cap {
+            queue.pop_front();
+        }
+        queue.push_back(value);
+    }
+
+    // The value buffered `displacement` updates ago, once the buffer is full.
+    fn displaced(queue: &VecDeque<f64>, cap: usize) -> Option<f64> {
+        if queue.len() == cap && !queue[0].is_nan() {
+            Some(queue[0])
+        } else {
+            None
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rstest::{fixture, rstest};
+    use rstest::rstest;
 
     use super::*;
     use crate::indicator::Indicator;
 
-    #[fixture]
-    fn ich_default() -> IchimokuCloud {
+    fn classic() -> IchimokuCloud {
         IchimokuCloud::new(9, 26, 52, 26)
     }
 
-    #[rstest]
-    fn test_name(ich_default: IchimokuCloud) {
-        assert_eq!(ich_default.name(), "IchimokuCloud");
+    fn ramp(n: i32) -> Vec<(f64, f64, f64)> {
+        (0..n)
+            .map(|i| {
+                let p = 100.0 + f64::from(i);
+                (p + 2.0, p - 2.0, p + 1.0)
+            })
+            .collect()
     }
 
     #[rstest]
-    fn test_display(ich_default: IchimokuCloud) {
-        assert_eq!(format!("{ich_default}"), "IchimokuCloud(9,26,52,26)");
+    fn test_name_and_display() {
+        let ichi = classic();
+        assert_eq!(ichi.name(), "IchimokuCloud");
+        assert_eq!(format!("{ichi}"), "IchimokuCloud(9,26,52,26)");
+        assert_eq!(ichi.tenkan_period, 9);
+        assert_eq!(ichi.kijun_period, 26);
+        assert_eq!(ichi.senkou_period, 52);
+        assert_eq!(ichi.displacement, 26);
+        assert!(!ichi.initialized());
+        assert!(!ichi.has_inputs());
     }
 
     #[rstest]
-    fn test_initialized_without_inputs(ich_default: IchimokuCloud) {
-        assert!(!ich_default.initialized());
-        assert!(!ich_default.has_inputs());
+    #[should_panic(expected = "tenkan_period must be > 0")]
+    fn test_zero_tenkan_period_panics() {
+        let _ = IchimokuCloud::new(0, 26, 52, 26);
     }
 
     #[rstest]
-    fn test_tenkan_after_nine_bars(mut ich_default: IchimokuCloud) {
-        for _ in 0..9 {
-            ich_default.update_raw(12.0, 8.0, 10.0);
-        }
-        assert_eq!(ich_default.tenkan_sen, 10.0);
+    #[should_panic(expected = "kijun_period must be > 0")]
+    fn test_zero_kijun_period_panics() {
+        let _ = IchimokuCloud::new(9, 0, 52, 26);
     }
 
     #[rstest]
-    fn test_kijun_after_twenty_six_bars(mut ich_default: IchimokuCloud) {
-        for _ in 0..26 {
-            ich_default.update_raw(12.0, 8.0, 10.0);
-        }
-        assert_eq!(ich_default.kijun_sen, 10.0);
+    #[should_panic(expected = "senkou_period must be > 0")]
+    fn test_zero_senkou_period_panics() {
+        let _ = IchimokuCloud::new(9, 26, 0, 26);
     }
 
     #[rstest]
-    fn test_initialized_after_fifty_two_bars(mut ich_default: IchimokuCloud) {
-        for _ in 0..52 {
-            ich_default.update_raw(10.0, 8.0, 9.0);
-        }
-        assert!(ich_default.initialized());
-    }
-
-    #[rstest]
-    fn test_senkou_chikou_after_displacement_bars(mut ich_default: IchimokuCloud) {
-        for _ in 0..(52 + 26) {
-            ich_default.update_raw(12.0, 8.0, 10.0);
-        }
-        assert_eq!(ich_default.senkou_span_a, 10.0);
-        assert_eq!(ich_default.senkou_span_b, 10.0);
-        assert_eq!(ich_default.chikou_span, 10.0);
-    }
-
-    #[rstest]
-    fn test_reset(mut ich_default: IchimokuCloud) {
-        for _ in 0..20 {
-            ich_default.update_raw(10.0, 8.0, 9.0);
-        }
-        ich_default.reset();
-        assert!(!ich_default.initialized());
-        assert_eq!(ich_default.tenkan_sen, 0.0);
-        assert_eq!(ich_default.kijun_sen, 0.0);
-        assert_eq!(ich_default.senkou_span_a, 0.0);
-        assert_eq!(ich_default.senkou_span_b, 0.0);
-        assert_eq!(ich_default.chikou_span, 0.0);
-    }
-
-    #[rstest]
-    fn test_tenkan_sen_updates_with_varying_data() {
-        let mut ich = IchimokuCloud::new(3, 3, 3, 2);
-
-        // Fill the window: highs=[10, 12, 14], lows=[5, 6, 7]
-        ich.update_raw(10.0, 5.0, 8.0);
-        ich.update_raw(12.0, 6.0, 9.0);
-        ich.update_raw(14.0, 7.0, 10.0);
-        assert_eq!(ich.tenkan_sen, f64::midpoint(14.0, 5.0)); // 9.5
-
-        // Push a new bar that evicts the (10, 5) pair: highs=[12, 14, 8], lows=[6, 7, 3]
-        ich.update_raw(8.0, 3.0, 6.0);
-        assert_eq!(ich.tenkan_sen, f64::midpoint(14.0, 3.0)); // 8.5
-
-        // Push another bar that evicts the (12, 6) pair: highs=[14, 8, 20], lows=[7, 3, 4]
-        ich.update_raw(20.0, 4.0, 12.0);
-        assert_eq!(ich.tenkan_sen, f64::midpoint(20.0, 3.0)); // 11.5
-    }
-
-    #[rstest]
-    #[should_panic(expected = "kijun_period must be >= tenkan_period")]
-    fn test_new_panics_invalid_kijun() {
-        let _ = IchimokuCloud::new(9, 5, 52, 26);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "senkou_period must be >= kijun_period")]
-    fn test_new_panics_invalid_senkou() {
-        let _ = IchimokuCloud::new(9, 26, 20, 26);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "displacement must be in 1..=")]
-    fn test_new_panics_invalid_displacement() {
+    #[should_panic(expected = "displacement must be > 0")]
+    fn test_zero_displacement_panics() {
         let _ = IchimokuCloud::new(9, 26, 52, 0);
     }
 
     #[rstest]
-    fn test_custom_periods_initialization() {
-        let mut ich = IchimokuCloud::new(5, 10, 20, 10);
-        assert_eq!(ich.tenkan_period, 5);
-        assert_eq!(ich.kijun_period, 10);
-        assert_eq!(ich.senkou_period, 20);
-        assert_eq!(ich.displacement, 10);
-        for _ in 0..20 {
-            ich.update_raw(1.0, 1.0, 1.0);
+    #[should_panic(expected = "kijun_period must be >= tenkan_period")]
+    fn test_kijun_below_tenkan_panics() {
+        let _ = IchimokuCloud::new(27, 26, 52, 26);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "senkou_period must be >= kijun_period")]
+    fn test_senkou_below_kijun_panics() {
+        let _ = IchimokuCloud::new(9, 26, 25, 26);
+    }
+
+    #[rstest]
+    fn test_warmup_boundaries_per_line() {
+        let mut ichi = classic();
+        for (i, &(h, l, c)) in ramp(80).iter().enumerate() {
+            ichi.update_raw(h, l, c);
+            let bars = i + 1;
+            assert_eq!(ichi.has_tenkan, bars >= 9, "tenkan at bar {bars}");
+            assert_eq!(ichi.has_kijun, bars >= 26, "kijun at bar {bars}");
+            assert_eq!(ichi.has_chikou, bars >= 26, "chikou at bar {bars}");
+            // senkou_a first reads a real value at kijun_period + displacement - 1.
+            assert_eq!(ichi.has_senkou_a, bars >= 51, "senkou_a at bar {bars}");
+            // senkou_b first reads a real value at senkou_period + displacement - 1.
+            assert_eq!(ichi.has_senkou_b, bars >= 77, "senkou_b at bar {bars}");
+            assert_eq!(ichi.initialized(), bars >= 77, "initialized at bar {bars}");
         }
-        assert!(ich.initialized());
-        assert_eq!(ich.tenkan_sen, 1.0);
-        assert_eq!(ich.kijun_sen, 1.0);
+    }
+
+    #[rstest]
+    fn test_ramp_tenkan_equals_window_midpoint() {
+        // On a strict ramp the 9-bar window at bar 9 spans highs 102..110 and
+        // lows 98..106, so the midpoint is (110 + 98) / 2 = 104.
+        let mut ichi = classic();
+        for &(h, l, c) in &ramp(9) {
+            ichi.update_raw(h, l, c);
+        }
+        assert!(ichi.has_tenkan);
+        assert_eq!(ichi.tenkan_sen, 104.0);
+    }
+
+    #[rstest]
+    fn test_chikou_is_close_displacement_bars_back() {
+        let candles = ramp(60);
+        let mut ichi = classic();
+        for (i, &(h, l, c)) in candles.iter().enumerate() {
+            ichi.update_raw(h, l, c);
+
+            if i + 1 >= 26 {
+                // At bar n the visible chikou is the close from bar n - 25.
+                assert_eq!(ichi.chikou_span, candles[i + 1 - 26].2, "bar {}", i + 1);
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_senkou_a_is_midpoint_of_lines_displacement_bars_back() {
+        let candles = ramp(80);
+        let mut reference = classic();
+        let mut history = Vec::new();
+
+        for &(h, l, c) in &candles {
+            reference.update_raw(h, l, c);
+            history.push(if reference.has_tenkan && reference.has_kijun {
+                Some(f64::midpoint(reference.tenkan_sen, reference.kijun_sen))
+            } else {
+                None
+            });
+        }
+        let mut ichi = classic();
+        for (i, &(h, l, c)) in candles.iter().enumerate() {
+            ichi.update_raw(h, l, c);
+
+            if i + 1 >= 26
+                && let Some(want) = history[i + 1 - 26]
+            {
+                assert_eq!(ichi.senkou_span_a, want, "bar {}", i + 1);
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_reset() {
+        let mut ichi = classic();
+        for &(h, l, c) in &ramp(100) {
+            ichi.update_raw(h, l, c);
+        }
+        assert!(ichi.initialized());
+        ichi.reset();
+        assert!(!ichi.initialized());
+        assert!(!ichi.has_inputs());
+        assert_eq!(ichi.tenkan_sen, 0.0);
+        assert_eq!(ichi.kijun_sen, 0.0);
+        assert_eq!(ichi.senkou_span_a, 0.0);
+        assert_eq!(ichi.senkou_span_b, 0.0);
+        assert_eq!(ichi.chikou_span, 0.0);
+        assert!(!ichi.has_tenkan);
+        assert!(!ichi.has_kijun);
+        assert!(!ichi.has_senkou_a);
+        assert!(!ichi.has_senkou_b);
+        assert!(!ichi.has_chikou);
+        assert_eq!(ichi.count, 0);
+
+        // A fresh instance and the reset instance must agree thereafter.
+        let mut fresh = classic();
+
+        for &(h, l, c) in &ramp(90) {
+            ichi.update_raw(h, l, c);
+            fresh.update_raw(h, l, c);
+        }
+        assert_eq!(ichi.tenkan_sen, fresh.tenkan_sen);
+        assert_eq!(ichi.kijun_sen, fresh.kijun_sen);
+        assert_eq!(ichi.senkou_span_a, fresh.senkou_span_a);
+        assert_eq!(ichi.senkou_span_b, fresh.senkou_span_b);
+        assert_eq!(ichi.chikou_span, fresh.chikou_span);
+    }
+
+    #[rstest]
+    fn test_custom_periods_accepted() {
+        let mut ichi = IchimokuCloud::new(5, 10, 20, 10);
+        for &(h, l, c) in &ramp(40) {
+            ichi.update_raw(h, l, c);
+        }
+        assert!(ichi.initialized());
     }
 }

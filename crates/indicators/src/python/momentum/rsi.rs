@@ -28,9 +28,8 @@ impl RelativeStrengthIndex {
     /// An indicator which calculates a relative strength index (RSI) across a rolling window.
     #[new]
     #[pyo3(signature = (period, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, ma_type)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new_checked(period, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

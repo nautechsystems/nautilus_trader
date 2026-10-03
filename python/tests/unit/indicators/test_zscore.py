@@ -18,7 +18,6 @@ Test zscore behavior.
 
 from collections import deque
 from math import isfinite
-from math import isnan
 from math import sqrt
 
 import pytest
@@ -32,7 +31,7 @@ def _batch_zscore(window: list[float]) -> tuple[float, float, float]:
     n = len(window)
     mean = sum(window) / n
     m2 = sum((x - mean) ** 2 for x in window)
-    std = (m2 / (n - 1)) ** 0.5
+    std = (m2 / n) ** 0.5
     x = window[-1]
     is_constant = all(isfinite(value) and value == x for value in window)
     z = 0.0 if is_constant or std == 0.0 else (x - mean) / std
@@ -75,11 +74,9 @@ def test_invalid_period_raises_value_error() -> None:
     """
     Test invalid period raises value error.
     """
-    with pytest.raises(ValueError, match="`period` must be at least 2"):
-        ZScore(1)
-    with pytest.raises(ValueError, match="`period` must be at least 2"):
+    with pytest.raises(ValueError, match="period must be > 0"):
         ZScore(0)
-    with pytest.raises(ValueError, match="`period` must be at least 2"):
+    with pytest.raises(ValueError, match="`period` must be positive"):
         ZScore(-1)
 
 
@@ -124,14 +121,14 @@ def test_value_with_one_input_returns_expected_value(zscore: ZScore) -> None:
     # Act, Assert
     assert not zscore.initialized
     assert zscore.count == 1
-    assert zscore.mean == 2.0
+    assert zscore.mean == 0.0
     assert zscore.std == 0.0
     assert zscore.value == 0.0
 
 
-def test_value_with_two_inputs_uses_expanding_window() -> None:
+def test_value_is_zero_before_window_is_full() -> None:
     """
-    Test value with two inputs uses expanding window.
+    Test mean, std, and value stay zero until the window is full.
     """
     # Arrange
     indicator = ZScore(5)
@@ -143,14 +140,14 @@ def test_value_with_two_inputs_uses_expanding_window() -> None:
     # Assert
     assert not indicator.initialized
     assert indicator.count == 2
-    assert indicator.mean == 3.0
-    assert indicator.std == pytest.approx(sqrt(2.0))
-    assert indicator.value == pytest.approx(1.0 / sqrt(2.0))
+    assert indicator.mean == 0.0
+    assert indicator.std == 0.0
+    assert indicator.value == 0.0
 
 
-def test_value_transitions_from_expanding_to_rolling() -> None:
+def test_value_rolls_over_full_window() -> None:
     """
-    Test value transitions from expanding to rolling.
+    Test the full window rolls and uses population standard deviation.
     """
     # Arrange
     indicator = ZScore(3)
@@ -164,14 +161,14 @@ def test_value_transitions_from_expanding_to_rolling() -> None:
     assert indicator.initialized
     assert indicator.count == 3
     assert indicator.mean == 4.0
-    assert indicator.std == 2.0
-    assert indicator.value == 1.0
+    assert indicator.std == pytest.approx(sqrt(8.0 / 3.0))
+    assert indicator.value == pytest.approx(2.0 / sqrt(8.0 / 3.0))
 
     indicator.update_raw(8.0)
-    assert indicator.count == 3
+    assert indicator.count == 4
     assert indicator.mean == 6.0
-    assert indicator.std == 2.0
-    assert indicator.value == 1.0
+    assert indicator.std == pytest.approx(sqrt(8.0 / 3.0))
+    assert indicator.value == pytest.approx(2.0 / sqrt(8.0 / 3.0))
 
 
 @pytest.mark.parametrize(
@@ -214,9 +211,9 @@ def test_constant_bars_produce_zero_zscore() -> None:
     assert indicator.value == 0.0
 
 
-def test_non_finite_input_propagates_to_value() -> None:
+def test_non_finite_input_is_ignored() -> None:
     """
-    Test non-finite inputs do not produce a neutral z-score.
+    Test non-finite inputs leave the window and outputs unchanged.
     """
     # Arrange
     indicator = ZScore(2)
@@ -224,10 +221,18 @@ def test_non_finite_input_propagates_to_value() -> None:
     # Act
     indicator.update_raw(1.0)
     indicator.update_raw(float("nan"))
+    indicator.update_raw(float("inf"))
 
     # Assert
-    assert isnan(indicator.std)
-    assert isnan(indicator.value)
+    assert indicator.count == 1
+    assert not indicator.initialized
+    assert indicator.value == 0.0
+
+    indicator.update_raw(3.0)
+    assert indicator.initialized
+    assert indicator.mean == 2.0
+    assert indicator.std == 1.0
+    assert indicator.value == 1.0
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
@@ -235,7 +240,7 @@ def test_handle_quote_tick_updates_indicator() -> None:
     Test handle quote tick updates indicator.
     """
     # Arrange
-    indicator = ZScore(10, PriceType.MID)
+    indicator = ZScore(1, PriceType.MID)
     tick = TestDataProviderPyo3.quote_tick()
 
     # Act
@@ -252,7 +257,7 @@ def test_handle_trade_tick_updates_indicator() -> None:
     Test handle trade tick updates indicator.
     """
     # Arrange
-    indicator = ZScore(10)
+    indicator = ZScore(1)
     tick = TestDataProviderPyo3.trade_tick()
 
     # Act
@@ -269,7 +274,7 @@ def test_handle_bar_updates_indicator() -> None:
     Test handle bar updates indicator.
     """
     # Arrange
-    indicator = ZScore(10)
+    indicator = ZScore(1)
     bar = TestDataProviderPyo3.bar_5decimal()
 
     # Act
@@ -302,9 +307,9 @@ def test_reset_successfully_returns_indicator_to_fresh_state(zscore: ZScore) -> 
 
 
 @pytest.mark.parametrize("period", [2, 5, 10])
-def test_expanding_then_rolling_matches_batch_window(period: int) -> None:
+def test_rolling_matches_batch_window(period: int) -> None:
     """
-    Test expanding then rolling z-score matches a batch window.
+    Test rolling z-score matches a batch window once the window is full.
     """
     # Arrange
     values = [100.0 + ((i * 17) % 50) - 10.0 + (i % 7) * 0.25 for i in range(40)]
@@ -315,11 +320,12 @@ def test_expanding_then_rolling_matches_batch_window(period: int) -> None:
     for x in values:
         window.append(x)
         indicator.update_raw(x)
-        if len(window) < 2:
+        if len(window) < period:
             assert indicator.value == 0.0
+            assert not indicator.initialized
             continue
         mean, std, batch_z = _batch_zscore(list(window))
         assert indicator.mean == pytest.approx(mean, rel=1e-9, abs=1e-12)
         assert indicator.std == pytest.approx(std, rel=1e-9, abs=1e-12)
         assert indicator.value == pytest.approx(batch_z, rel=1e-9, abs=1e-12)
-        assert indicator.initialized == (len(window) == period)
+        assert indicator.initialized

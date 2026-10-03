@@ -79,11 +79,13 @@ def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage) -
     hma.update_raw(1.00020)
     hma.update_raw(1.00010)
     hma.update_raw(1.00000)
+    assert not hma.initialized
+    hma.update_raw(1.00010)
 
     # Act, Assert
     assert hma.initialized
-    assert hma.count == 11
-    assert hma.value == 1.0001403928170598
+    assert hma.count == 12
+    assert hma.value == pytest.approx(1.0000454545454545)
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
@@ -91,7 +93,7 @@ def test_handle_quote_tick_updates_indicator() -> None:
     Test handle quote tick updates indicator.
     """
     # Arrange
-    indicator = HullMovingAverage(10, PriceType.MID)
+    indicator = HullMovingAverage(1, PriceType.MID)
 
     tick = TestDataProviderPyo3.quote_tick()
 
@@ -108,7 +110,7 @@ def test_handle_trade_tick_updates_indicator() -> None:
     Test handle trade tick updates indicator.
     """
     # Arrange
-    indicator = HullMovingAverage(10)
+    indicator = HullMovingAverage(1)
 
     tick = TestDataProviderPyo3.trade_tick()
 
@@ -125,7 +127,7 @@ def test_handle_bar_updates_indicator() -> None:
     Test handle bar updates indicator.
     """
     # Arrange
-    indicator = HullMovingAverage(10)
+    indicator = HullMovingAverage(1)
 
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -145,20 +147,22 @@ def test_value_with_one_input_returns_expected_value(hma: HullMovingAverage) -> 
     hma.update_raw(1.0)
 
     # Act, Assert
-    assert hma.value == 1.0
+    assert not hma.initialized
+    assert hma.value == 0.0
 
 
-def test_value_with_three_inputs_returns_expected_value(hma: HullMovingAverage) -> None:
+def test_value_with_three_inputs_returns_expected_value() -> None:
     """
     Test value with three inputs returns expected value.
     """
+    hma = HullMovingAverage(2)
     # Arrange
     hma.update_raw(1.0)
     hma.update_raw(2.0)
     hma.update_raw(3.0)
 
     # Act, Assert
-    assert hma.value == 1.824561403508772
+    assert hma.value == pytest.approx(3.3333333333333335)
 
 
 def test_handle_quote_tick_updates_with_expected_value() -> None:
@@ -166,9 +170,9 @@ def test_handle_quote_tick_updates_with_expected_value() -> None:
     Test handle quote tick updates with expected value.
     """
     # Arrange
-    hma_for_ticks1 = HullMovingAverage(10, PriceType.ASK)
-    hma_for_ticks2 = HullMovingAverage(10, PriceType.MID)
-    hma_for_ticks3 = HullMovingAverage(10, PriceType.BID)
+    hma_for_ticks1 = HullMovingAverage(1, PriceType.ASK)
+    hma_for_ticks2 = HullMovingAverage(1, PriceType.MID)
+    hma_for_ticks3 = HullMovingAverage(1, PriceType.BID)
 
     tick = TestDataProviderPyo3.quote_tick(
         bid_price=1.00001,
@@ -194,7 +198,7 @@ def test_handle_trade_tick_updates_with_expected_value() -> None:
     Test handle trade tick updates with expected value.
     """
     # Arrange
-    hma_for_ticks = HullMovingAverage(10)
+    hma_for_ticks = HullMovingAverage(1)
 
     tick = TestDataProviderPyo3.trade_tick()
 
@@ -222,20 +226,19 @@ def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAver
     assert hma.value == 0
 
 
-# The inner `WeightedMovingAverage` buffers into a fixed-capacity `ArrayDeque`
-# sized by `MAX_PERIOD` in `crates/indicators/src/average/wma.rs`.
-MAX_PERIOD = 8192
+# Mirrors `MAX_PERIOD` in `crates/indicators/src/support/mod.rs`.
+MAX_PERIOD = 16_777_216
 
 
-def test_new_at_max_period_constructs() -> None:
+def test_new_above_former_max_period_constructs() -> None:
     """
-    Test construction at the period upper bound succeeds.
+    Test construction above the former 8,192 period limit succeeds.
     """
     # Act
-    hma = HullMovingAverage(MAX_PERIOD)
+    hma = HullMovingAverage(8193)
 
     # Assert
-    assert hma.period == MAX_PERIOD
+    assert hma.period == 8193
 
 
 def test_new_above_max_period_raises_value_error() -> None:
@@ -247,7 +250,7 @@ def test_new_above_max_period_raises_value_error() -> None:
 
     """
     # Act, Assert
-    with pytest.raises(ValueError, match="exceeds MAX_PERIOD"):
+    with pytest.raises(ValueError, match="cannot exceed"):
         HullMovingAverage(MAX_PERIOD + 1)
 
 

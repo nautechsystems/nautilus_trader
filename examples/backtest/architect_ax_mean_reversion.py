@@ -111,8 +111,8 @@ if __name__ == "__main__":
         bb_period=20,
         bb_std=2.0,
         rsi_period=14,
-        rsi_buy_threshold=0.30,
-        rsi_sell_threshold=0.70,
+        rsi_buy_threshold=30.0,
+        rsi_sell_threshold=70.0,
     )
 
     strategy = BBMeanReversion(config=strategy_config)

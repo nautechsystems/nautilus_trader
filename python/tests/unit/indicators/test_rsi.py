@@ -42,8 +42,8 @@ def test_str_repr_returns_expected_string(rsi: RelativeStrengthIndex) -> None:
     Test str repr returns expected string.
     """
     # Arrange, Act, Assert
-    assert str(rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
-    assert repr(rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
+    assert str(rsi) == "RelativeStrengthIndex(10, WILDER)"
+    assert repr(rsi) == "RelativeStrengthIndex(10, WILDER)"
 
 
 def test_period_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
@@ -67,16 +67,10 @@ def test_initialized_with_required_inputs_returns_true(rsi: RelativeStrengthInde
     Test initialized with required inputs returns true.
     """
     # Arrange
-    rsi.update_raw(1.0)
-    rsi.update_raw(2.0)
-    rsi.update_raw(3.0)
-    rsi.update_raw(4.0)
-    rsi.update_raw(5.0)
-    rsi.update_raw(6.0)
-    rsi.update_raw(7.0)
-    rsi.update_raw(8.0)
-    rsi.update_raw(9.0)
-    rsi.update_raw(10.0)
+    for value in range(1, 11):
+        rsi.update_raw(float(value))
+    assert not rsi.initialized
+    rsi.update_raw(11.0)
 
     # Act, Assert
     assert rsi.initialized
@@ -96,7 +90,8 @@ def test_handle_bar_updates_indicator() -> None:
 
     # Assert
     assert indicator.has_inputs
-    assert indicator.value == 1.0
+    assert not indicator.initialized
+    assert indicator.value == 0.0
 
 
 def test_value_with_one_input_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
@@ -107,13 +102,15 @@ def test_value_with_one_input_returns_expected_value(rsi: RelativeStrengthIndex)
     rsi.update_raw(1.00000)
 
     # Act, Assert
-    assert rsi.value == 1
+    assert not rsi.initialized
+    assert rsi.value == 0.0
 
 
-def test_value_with_all_higher_inputs_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
+def test_value_with_all_higher_inputs_returns_expected_value() -> None:
     """
     Test value with all higher inputs returns expected value.
     """
+    rsi = RelativeStrengthIndex(3)
     # Arrange
     rsi.update_raw(1.00000)
     rsi.update_raw(2.00000)
@@ -121,13 +118,14 @@ def test_value_with_all_higher_inputs_returns_expected_value(rsi: RelativeStreng
     rsi.update_raw(4.00000)
 
     # Act, Assert
-    assert rsi.value == 1
+    assert rsi.value == 100.0
 
 
-def test_value_with_all_lower_inputs_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
+def test_value_with_all_lower_inputs_returns_expected_value() -> None:
     """
     Test value with all lower inputs returns expected value.
     """
+    rsi = RelativeStrengthIndex(3)
     # Arrange
     rsi.update_raw(3.00000)
     rsi.update_raw(2.00000)
@@ -138,10 +136,11 @@ def test_value_with_all_lower_inputs_returns_expected_value(rsi: RelativeStrengt
     assert rsi.value == 0
 
 
-def test_value_with_various_inputs_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
+def test_value_with_various_inputs_returns_expected_value() -> None:
     """
     Test value with various inputs returns expected value.
     """
+    rsi = RelativeStrengthIndex(3)
     # Arrange
     rsi.update_raw(3.00000)
     rsi.update_raw(2.00000)
@@ -151,13 +150,14 @@ def test_value_with_various_inputs_returns_expected_value(rsi: RelativeStrengthI
     rsi.update_raw(6.00000)
 
     # Act, Assert
-    assert rsi.value == 0.6837363325825265
+    assert rsi.value == pytest.approx(62.857142857142854)
 
 
-def test_value_at_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
+def test_value_at_returns_expected_value() -> None:
     """
     Test value at returns expected value.
     """
+    rsi = RelativeStrengthIndex(3)
     # Arrange
     rsi.update_raw(3.00000)
     rsi.update_raw(2.00000)
@@ -169,13 +169,14 @@ def test_value_at_returns_expected_value(rsi: RelativeStrengthIndex) -> None:
     rsi.update_raw(7.00000)
 
     # Act, Assert
-    assert rsi.value == 0.7615344667662725
+    assert rsi.value == pytest.approx(76.47058823529412)
 
 
-def test_min_value_as_first(rsi: RelativeStrengthIndex) -> None:
+def test_min_value_as_first() -> None:
     """
     Test min value as first.
     """
+    rsi = RelativeStrengthIndex(3)
     # Arrange
     rsi.update_raw(1.00000)
     rsi.update_raw(2.00000)
@@ -187,7 +188,7 @@ def test_min_value_as_first(rsi: RelativeStrengthIndex) -> None:
     rsi.update_raw(2.00000)
 
     # Act, Assert
-    assert rsi.value == 0.38650828748031707
+    assert rsi.value == pytest.approx(28.571428571428566)
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(rsi: RelativeStrengthIndex) -> None:

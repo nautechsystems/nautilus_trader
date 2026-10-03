@@ -179,13 +179,13 @@ PRICE_BAR_INDICATORS = [
     ("kc", lambda: KeltnerChannel(10, 2.0)),
     ("kp", lambda: KeltnerPosition(10, 2.0)),
     ("rvi", lambda: RelativeVolatilityIndex(10)),
-    ("vr", lambda: VolatilityRatio(3, 10)),
+    ("vr", lambda: VolatilityRatio(10)),
     ("efficiency-ratio", lambda: EfficiencyRatio(10)),
 ]
 VOLUME_BAR_INDICATORS = [
     ("vwap", VolumeWeightedAveragePrice),
-    ("kvo", lambda: KlingerVolumeOscillator(3, 10, 5)),
-    ("obv", lambda: OnBalanceVolume(10)),
+    ("kvo", lambda: KlingerVolumeOscillator(3, 10)),
+    ("obv", OnBalanceVolume),
     ("pressure", lambda: Pressure(10)),
 ]
 HANDLER_CASES = [

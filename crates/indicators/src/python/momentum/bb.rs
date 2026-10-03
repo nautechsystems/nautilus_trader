@@ -25,12 +25,11 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BollingerBands {
-    /// Creates a new `BollingerBands` instance.
+    /// Bollinger bands around a moving average.
     #[new]
     #[pyo3(signature = (period, k, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, k, ma_type)
+    pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new_checked(period, k, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -80,14 +79,20 @@ impl BollingerBands {
     }
 
     #[getter]
+    #[pyo3(name = "stddev")]
+    const fn py_stddev(&self) -> f64 {
+        self.stddev
+    }
+
+    #[getter]
     #[pyo3(name = "initialized")]
     const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
-        self.update_raw(high, low, close);
+    fn py_update_raw(&mut self, value: f64) {
+        self.update_raw(value);
     }
 
     #[pyo3(name = "handle_quote_tick")]

@@ -21,27 +21,25 @@ use crate::{indicator::Indicator, momentum::obv::OnBalanceVolume, python::float_
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OnBalanceVolume {
-    /// Creates a new `OnBalanceVolume` instance.
+    /// On-Balance Volume: Granville's cumulative signed-volume series.
+    ///
+    /// Each bar adds `+volume`, `-volume`, or `0` depending on whether its close
+    /// is above, below, or equal to the previous close. The first bar establishes
+    /// the baseline at `0`.
     #[new]
     #[must_use]
-    pub fn py_new(period: usize) -> Self {
-        Self::new(period)
+    pub fn py_new() -> Self {
+        Self::new()
     }
 
     fn __repr__(&self) -> String {
-        format!("OnBalanceVolume({})", self.period)
+        "OnBalanceVolume()".to_string()
     }
 
     #[getter]
     #[pyo3(name = "name")]
     fn py_name(&self) -> String {
         self.name()
-    }
-
-    #[getter]
-    #[pyo3(name = "period")]
-    const fn py_period(&self) -> usize {
-        self.period
     }
 
     #[getter]
@@ -63,8 +61,8 @@ impl OnBalanceVolume {
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, open: f64, close: f64, volume: f64) {
-        self.update_raw(open, close, volume);
+    fn py_update_raw(&mut self, close: f64, volume: f64) {
+        self.update_raw(close, volume);
     }
 
     #[pyo3(name = "handle_bar")]

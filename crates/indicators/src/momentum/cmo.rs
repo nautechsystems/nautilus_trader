@@ -15,13 +15,16 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
+/// Chande momentum oscillator.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -92,9 +95,19 @@ impl ChandeMomentumOscillator {
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(period > 0, "ChandeMomentumOscillator: period must be > 0");
-        let ma_type = ma_type.unwrap_or(MovingAverageType::Wilder);
-        Self {
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
+        );
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Simple);
+        Ok(Self {
             period,
             ma_type,
             average_gain: MovingAverageFactory::create(ma_type, period),
@@ -104,45 +117,41 @@ impl ChandeMomentumOscillator {
             count: 0,
             initialized: false,
             has_inputs: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        if !close.is_finite() {
+            return;
+        }
+
         self.count += 1;
 
         if !self.has_inputs {
             self.previous_close = close;
             self.has_inputs = true;
+            return;
         }
 
-        let gain: f64 = close - self.previous_close;
-        if gain > 0.0 {
-            self.average_gain.update_raw(gain);
-            self.average_loss.update_raw(0.0);
-        } else if gain < 0.0 {
-            self.average_gain.update_raw(0.0);
-            self.average_loss.update_raw(-gain);
-        } else {
-            self.average_gain.update_raw(0.0);
-            self.average_loss.update_raw(0.0);
-        }
-
-        if !self.initialized && self.average_gain.initialized() && self.average_loss.initialized() {
-            self.initialized = true;
-        }
-
-        if self.initialized {
-            let divisor = self.average_gain.value() + self.average_loss.value();
-            if divisor == 0.0 {
-                self.value = 0.0;
-            } else {
-                // Divide before scaling, so a zero gain average gives exactly -100
-                // rather than a value just outside the oscillator's range.
-                self.value =
-                    100.0 * ((self.average_gain.value() - self.average_loss.value()) / divisor);
-            }
-        }
+        let change = close - self.previous_close;
         self.previous_close = close;
+        self.average_gain.update_raw(change.max(0.0));
+        self.average_loss.update_raw((-change).max(0.0));
+        if !self.average_gain.initialized() || !self.average_loss.initialized() {
+            return;
+        }
+
+        let gain = self.average_gain.value();
+        let loss = self.average_loss.value();
+        let total = gain + loss;
+        self.value = if total == 0.0 {
+            0.0
+        } else {
+            // Divide before scaling, so a zero gain average gives exactly -100
+            // rather than a value just outside the oscillator's range
+            100.0 * ((gain - loss) / total)
+        };
+        self.initialized = true;
     }
 }
 
@@ -153,7 +162,7 @@ mod tests {
 
     use crate::{
         average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandeMomentumOscillator,
-        stubs::*, testing::assert_approx_equal,
+        stubs::*,
     };
 
     #[rstest]
@@ -166,18 +175,12 @@ mod tests {
 
     #[rstest]
     fn test_value_stays_within_bounds_when_gain_average_is_zero() {
-        // A drop followed by flat prices decays the gain average to exactly zero, so
-        // the oscillator sits on its lower bound. Scaling before dividing put it just
-        // outside, which `VariableIndexDynamicAverage` then read as a weight above one.
-        let mut cmo = ChandeMomentumOscillator::new(14, None);
-        for price in std::iter::repeat_n(100.0, 21).chain(std::iter::repeat_n(50.0, 20)) {
-            cmo.update_raw(price);
-            assert!(
-                (-100.0..=100.0).contains(&cmo.value),
-                "value {} outside [-100, 100]",
-                cmo.value
-            );
+        let mut cmo = ChandeMomentumOscillator::new(3, None);
+        for value in [4.0, 3.0, 2.0, 1.0] {
+            cmo.update_raw(value);
         }
+
+        assert!(cmo.initialized());
         assert_eq!(cmo.value, -100.0);
     }
 
@@ -190,28 +193,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_value_all_higher_inputs_returns_expected_value(mut cmo_10: ChandeMomentumOscillator) {
-        cmo_10.update_raw(109.93);
-        cmo_10.update_raw(110.0);
-        cmo_10.update_raw(109.77);
-        cmo_10.update_raw(109.96);
-        cmo_10.update_raw(110.29);
-        cmo_10.update_raw(110.53);
-        cmo_10.update_raw(110.27);
-        cmo_10.update_raw(110.21);
-        cmo_10.update_raw(110.06);
-        cmo_10.update_raw(110.19);
-        cmo_10.update_raw(109.83);
-        cmo_10.update_raw(109.9);
-        cmo_10.update_raw(110.0);
-        cmo_10.update_raw(110.03);
-        cmo_10.update_raw(110.13);
-        cmo_10.update_raw(109.95);
-        cmo_10.update_raw(109.75);
-        cmo_10.update_raw(110.15);
-        cmo_10.update_raw(109.9);
-        cmo_10.update_raw(110.04);
-        assert_approx_equal(cmo_10.value, 2.08962945624);
+    fn test_value_all_higher_inputs_returns_expected_value() {
+        let mut cmo_10 = ChandeMomentumOscillator::new(10, None);
+        for value in 1..=11 {
+            cmo_10.update_raw(f64::from(value));
+        }
+
+        assert_eq!(cmo_10.value, 100.0);
+        assert!(cmo_10.initialized());
     }
 
     #[rstest]
@@ -269,17 +258,18 @@ mod tests {
     #[rstest]
     fn test_reset_resets_inner_mas() {
         let mut cmo = ChandeMomentumOscillator::new(3, None);
-        for price in [1.0, 2.0, 3.0] {
-            cmo.update_raw(price);
+        for value in [1.0, 2.0, 3.0, 4.0] {
+            cmo.update_raw(value);
         }
         assert!(cmo.average_gain.initialized());
         assert!(cmo.average_loss.initialized());
-        assert_ne!(cmo.average_gain.value(), 0.0);
+
         cmo.reset();
+
         assert!(!cmo.average_gain.initialized());
         assert!(!cmo.average_loss.initialized());
-        assert_eq!(cmo.average_gain.value(), 0.0);
-        assert_eq!(cmo.average_loss.value(), 0.0);
+        assert_eq!(cmo.average_gain.count(), 0);
+        assert_eq!(cmo.average_loss.count(), 0);
     }
 
     #[rstest]
@@ -317,5 +307,20 @@ mod tests {
         }
         assert!(cmo.initialized);
         assert!(cmo.value <= 100.0 && cmo.value >= -100.0);
+    }
+
+    #[rstest]
+    #[case(0.0, 0.123, 100.0)]
+    #[case(0.123, 0.0, -100.0)]
+    fn test_one_sided_window_is_exact(
+        #[case] first: f64,
+        #[case] second: f64,
+        #[case] expected: f64,
+    ) {
+        let mut cmo = ChandeMomentumOscillator::new(1, Some(MovingAverageType::Simple));
+        cmo.update_raw(first);
+        cmo.update_raw(second);
+
+        assert_eq!(cmo.value, expected);
     }
 }

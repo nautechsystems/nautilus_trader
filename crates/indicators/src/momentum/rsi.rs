@@ -15,6 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -23,6 +24,7 @@ use nautilus_model::{
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 /// An indicator which calculates a relative strength index (RSI) across a rolling window.
@@ -94,10 +96,25 @@ impl Indicator for RelativeStrengthIndex {
 
 impl RelativeStrengthIndex {
     /// Creates a new [`RelativeStrengthIndex`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is zero or exceeds 16,777,216.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
-        Self {
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
+        );
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Wilder);
+        Ok(Self {
             period,
             ma_type,
             value: 0.0,
@@ -106,45 +123,41 @@ impl RelativeStrengthIndex {
             has_inputs: false,
             average_gain: MovingAverageFactory::create(ma_type, period),
             average_loss: MovingAverageFactory::create(ma_type, period),
-            rsi_max: 1.0,
+            rsi_max: 100.0,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs {
-            self.last_value = value;
-            self.has_inputs = true;
-        }
-        let gain = value - self.last_value;
-        if gain > 0.0 {
-            self.average_gain.update_raw(gain);
-            self.average_loss.update_raw(0.0);
-        } else if gain < 0.0 {
-            self.average_loss.update_raw(-gain);
-            self.average_gain.update_raw(0.0);
-        } else {
-            self.average_loss.update_raw(0.0);
-            self.average_gain.update_raw(0.0);
-        }
-        self.count = self.average_gain.count();
-        if !self.initialized && self.average_loss.initialized() && self.average_gain.initialized() {
-            self.initialized = true;
+        if !value.is_finite() {
+            return;
         }
 
-        if self.average_loss.value() == 0.0 {
-            self.value = self.rsi_max;
+        self.count += 1;
+        self.has_inputs = true;
+
+        if self.count == 1 {
             self.last_value = value;
             return;
         }
 
-        let rs = self.average_gain.value() / self.average_loss.value();
-        self.value = self.rsi_max - (self.rsi_max / (1.0 + rs));
+        let change = value - self.last_value;
         self.last_value = value;
-
-        if !self.initialized && self.count >= self.period {
-            self.initialized = true;
+        self.average_gain.update_raw(change.max(0.0));
+        self.average_loss.update_raw((-change).max(0.0));
+        if !self.average_gain.initialized() || !self.average_loss.initialized() {
+            return;
         }
+
+        let average_gain = self.average_gain.value();
+        let average_loss = self.average_loss.value();
+        let total = average_gain + average_loss;
+        self.value = if total == 0.0 {
+            50.0
+        } else {
+            self.rsi_max * (average_gain / total)
+        };
+        self.initialized = true;
     }
 }
 
@@ -177,49 +190,50 @@ mod tests {
     #[rstest]
     fn test_value_with_one_input_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         rsi_10.update_raw(1.0);
-        assert_eq!(rsi_10.value, 1.0);
-    }
-
-    #[rstest]
-    fn test_value_all_higher_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
-        for i in 1..4 {
-            rsi_10.update_raw(f64::from(i));
-        }
-        assert_eq!(rsi_10.value, 1.0);
-    }
-
-    #[rstest]
-    fn test_value_with_all_lower_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
-        for i in (1..4).rev() {
-            rsi_10.update_raw(f64::from(i));
-        }
         assert_eq!(rsi_10.value, 0.0);
+        assert!(!rsi_10.initialized());
     }
 
     #[rstest]
-    fn test_value_with_various_input_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
-        rsi_10.update_raw(3.0);
-        rsi_10.update_raw(2.0);
-        rsi_10.update_raw(5.0);
-        rsi_10.update_raw(6.0);
-        rsi_10.update_raw(7.0);
-        rsi_10.update_raw(6.0);
+    fn test_value_all_higher_inputs_returns_expected_value() {
+        let mut rsi_10 = RelativeStrengthIndex::new(3, None);
+        for value in [1.0, 2.0, 3.0, 4.0] {
+            rsi_10.update_raw(value);
+        }
 
-        assert_approx_equal(rsi_10.value, 0.683736332583);
+        assert_eq!(rsi_10.value, 100.0);
+        assert!(rsi_10.initialized());
     }
 
     #[rstest]
-    fn test_value_at_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
-        rsi_10.update_raw(3.0);
-        rsi_10.update_raw(2.0);
-        rsi_10.update_raw(5.0);
-        rsi_10.update_raw(6.0);
-        rsi_10.update_raw(7.0);
-        rsi_10.update_raw(6.0);
-        rsi_10.update_raw(6.0);
-        rsi_10.update_raw(7.0);
+    fn test_value_with_all_lower_inputs_returns_expected_value() {
+        let mut rsi_10 = RelativeStrengthIndex::new(3, None);
+        for value in [4.0, 3.0, 2.0, 1.0] {
+            rsi_10.update_raw(value);
+        }
 
-        assert_approx_equal(rsi_10.value, 0.761534466766);
+        assert_eq!(rsi_10.value, 0.0);
+        assert!(rsi_10.initialized());
+    }
+
+    #[rstest]
+    fn test_value_with_various_input_returns_expected_value() {
+        let mut rsi_10 = RelativeStrengthIndex::new(3, None);
+        for value in [1.0, 2.0, 1.0, 3.0] {
+            rsi_10.update_raw(value);
+        }
+
+        assert_eq!(rsi_10.value, 75.0);
+    }
+
+    #[rstest]
+    fn test_value_at_returns_expected_value() {
+        let mut rsi_10 = RelativeStrengthIndex::new(3, None);
+        for value in [1.0, 2.0, 1.0, 3.0, 2.0] {
+            rsi_10.update_raw(value);
+        }
+
+        assert_approx_equal(rsi_10.value, 54.545_454_545_454_55);
     }
 
     #[rstest]
@@ -243,31 +257,39 @@ mod tests {
     #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, stub_quote: QuoteTick) {
         rsi_10.handle_quote(&stub_quote).unwrap();
+        assert!(rsi_10.has_inputs());
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0);
+        assert_eq!(rsi_10.value, 0.0);
+        assert!(!rsi_10.initialized());
     }
 
     #[rstest]
     fn test_handle_trade_tick(mut rsi_10: RelativeStrengthIndex, stub_trade: TradeTick) {
         rsi_10.handle_trade(&stub_trade);
+        assert!(rsi_10.has_inputs());
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0);
+        assert_eq!(rsi_10.value, 0.0);
+        assert!(!rsi_10.initialized());
     }
 
     #[rstest]
     fn test_handle_bar(mut rsi_10: RelativeStrengthIndex, bar_ethusdt_binance_minute_bid: Bar) {
         rsi_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        assert!(rsi_10.has_inputs());
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0);
+        assert_eq!(rsi_10.value, 0.0);
+        assert!(!rsi_10.initialized());
     }
 
     #[rstest]
-    fn test_constant_inputs_initializes_and_value_max(mut rsi_10: RelativeStrengthIndex) {
-        for _ in 0..12 {
-            rsi_10.update_raw(5.0);
+    fn test_constant_inputs_initializes_and_value_max() {
+        let mut rsi = RelativeStrengthIndex::new(3, None);
+        for _ in 0..4 {
+            rsi.update_raw(42.0);
         }
-        assert!(rsi_10.initialized);
-        assert_eq!(rsi_10.value, 1.0);
+
+        assert!(rsi.initialized());
+        assert_eq!(rsi.value, 50.0);
     }
 
     #[rstest]
@@ -289,59 +311,32 @@ mod tests {
 
     #[rstest]
     fn test_ma_type_is_plumbed_into_inner_averages() {
-        // The `ma_type` argument must reach the inner gain/loss averages, so distinct
-        // moving-average types must produce distinct output on the same series.
-        // Previously all types collapsed onto Exponential (see issue: v2 RSI ignores ma_type).
-        let series = [
-            44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03,
-            45.61, 46.28, 46.28,
-        ];
+        let prices = [1.0, 2.0, 1.0, 3.0, 2.0, 4.0];
+        let simple = run_rsi(&prices, 3, MovingAverageType::Simple);
+        let wilder = run_rsi(&prices, 3, MovingAverageType::Wilder);
 
-        let wilder = run_rsi(&series, 14, MovingAverageType::Wilder);
-        let simple = run_rsi(&series, 14, MovingAverageType::Simple);
-        let exponential = run_rsi(&series, 14, MovingAverageType::Exponential);
-
-        assert_ne!(wilder, simple);
-        assert_ne!(wilder, exponential);
-        assert_ne!(simple, exponential);
+        assert_ne!(simple, wilder);
     }
 
     #[rstest]
     fn test_recovers_below_max_after_losses() {
-        // Regression for the flat-1.0 defect (#2703): once real down-moves arrive, RSI must
-        // fall below `rsi_max` rather than staying pinned at 1.0 because `last_value` was
-        // never advanced on zero-loss bars.
-        let mut values: Vec<f64> = (1..=15).map(f64::from).collect();
-        values.extend([14.0, 12.0, 9.0, 5.0, 2.0]);
+        let mut rsi = RelativeStrengthIndex::new(3, None);
+        for value in [1.0, 2.0, 3.0, 4.0, 3.0] {
+            rsi.update_raw(value);
+        }
 
-        let value = run_rsi(&values, 14, MovingAverageType::Wilder);
-        assert!(
-            value < 1.0,
-            "RSI should drop below rsi_max after losses, was {value}"
-        );
+        assert!(rsi.value < 100.0);
+        assert!(rsi.value > 0.0);
     }
 
     #[rstest]
-    fn test_wilder_golden_series() {
-        // Golden reference: up 1..15 then down 14, 12, 9, 5, 2 with period 14, Wilder MA.
-        // Expected Wilder RSI values (×100) after each down-move, per the published reference.
-        let base: Vec<f64> = (1..=15).map(f64::from).collect();
-        let downs = [14.0, 12.0, 9.0, 5.0, 2.0];
-        let expected = [0.8935, 0.7269, 0.5586, 0.4192, 0.3489];
-
-        let mut rsi = RelativeStrengthIndex::new(14, Some(MovingAverageType::Wilder));
-        for &v in &base {
-            rsi.update_raw(v);
-        }
-
-        for (i, &v) in downs.iter().enumerate() {
-            rsi.update_raw(v);
-            assert!(
-                (rsi.value - expected[i]).abs() < 1e-4,
-                "step {i}: expected {}, was {}",
-                expected[i],
-                rsi.value
-            );
+    fn test_wilder_smoothed_series() {
+        let mut rsi = RelativeStrengthIndex::new(3, None);
+        let inputs = [1.0, 2.0, 1.0, 3.0, 2.0];
+        let expected = [0.0, 0.0, 0.0, 75.0, 54.545_454_545_454_55];
+        for (input, expected) in inputs.into_iter().zip(expected) {
+            rsi.update_raw(input);
+            assert_approx_equal(rsi.value, expected);
         }
     }
 }

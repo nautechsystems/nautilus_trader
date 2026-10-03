@@ -15,11 +15,13 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::is_valid_hlc,
     volatility::atr::AverageTrueRange,
 };
 
@@ -88,25 +90,38 @@ impl Pressure {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is outside `1..=MAX_PERIOD` or the ATR floor is negative or non-finite.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>, atr_floor: Option<f64>) -> Self {
-        assert!(period > 0, "Pressure: period must be > 0");
+        Self::new_checked(period, ma_type, atr_floor).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+        atr_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(period > 0, "Pressure: period must be > 0");
         let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
-        Self {
+        let atr = AverageTrueRange::new_checked(period, Some(ma_type), Some(true), atr_floor)?;
+        Ok(Self {
             period,
             ma_type,
             atr_floor: atr_floor.unwrap_or(0.0),
             value: 0.0,
             value_cumulative: 0.0,
-            atr: AverageTrueRange::new(period, Some(ma_type), Some(true), atr_floor),
+            atr,
             average_volume: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {
+        if !is_valid_hlc(high, low, close) || !volume.is_finite() || volume < 0.0 {
+            return;
+        }
+
         self.atr.update_raw(high, low, close);
         self.average_volume.update_raw(volume);
 
@@ -184,7 +199,8 @@ mod tests {
             0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9, 10.1, 10.2, 10.3, 11.1, 11.4,
         ];
         let close_values = [
-            1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 8.1, 9.1, 10.1, 11.1, 12.1, 13.1, 14.1, 15.1,
+            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.95, 11.95, 12.95, 13.95,
+            14.95,
         ];
         let volume_values = [
             100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0, 1100.0, 1200.0,
@@ -229,17 +245,23 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_approx_equal(pressure_10.value, -0.0181818181818);
-        assert_approx_equal(pressure_10.value_cumulative, -0.0181818181818);
+        assert_eq!(pressure_10.value, 0.0);
+        assert_eq!(pressure_10.value_cumulative, 0.0);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut pressure_10: Pressure) {
-        pressure_10.update_raw(1.00020, 1.00050, 1.00070, 100.0);
-        pressure_10.update_raw(1.00030, 1.00060, 1.00080, 200.0);
-        pressure_10.update_raw(1.00070, 1.00080, 1.00090, 300.0);
+        for _ in 0..9 {
+            pressure_10.update_raw(11.0, 9.0, 10.0, 100.0);
+        }
+        pressure_10.update_raw(11.0, 9.0, 10.5, 100.0);
+        // Mid-range closes balance; the last close sits 1.5 above the low and 0.5
+        // below the high on an ATR of 2
+        assert!(pressure_10.initialized());
+        assert_eq!(pressure_10.value, 0.5);
+        assert_eq!(pressure_10.value_cumulative, 0.5);
 
         pressure_10.reset();
 
@@ -268,6 +290,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1.0, 1.5, 1.2, 100.0)]
+    #[case(1.5, 1.0, 1.6, 100.0)]
+    #[case(1.5, 1.0, f64::NAN, 100.0)]
+    #[case(1.5, 1.0, 1.2, -1.0)]
+    #[case(1.5, 1.0, 1.2, f64::INFINITY)]
+    fn test_rejected_input_leaves_state_unchanged(
+        #[case] high: f64,
+        #[case] low: f64,
+        #[case] close: f64,
+        #[case] volume: f64,
+    ) {
+        let mut pressure = Pressure::new(1, Some(MovingAverageType::Simple), Some(0.5));
+        pressure.update_raw(1.5, 1.0, 1.2, 100.0);
+        pressure.update_raw(high, low, close, volume);
+
+        assert_eq!(pressure.atr.count, 1);
+        assert_eq!(pressure.average_volume.count(), 1);
+        assert!((pressure.value + 0.2).abs() < 1e-6);
+        assert!((pressure.value_cumulative + 0.2).abs() < 1e-6);
+    }
+
+    #[rstest]
     fn test_atr_floor_applied_to_zero_range() {
         let mut pressure = Pressure::new(1, Some(MovingAverageType::Simple), Some(0.5));
         pressure.update_raw(1.5, 1.0, 1.2, 100.0);
@@ -276,7 +320,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_defaults_match_cython() {
+    fn test_new_defaults_use_seeded_averages() {
         let mut pressure = Pressure::new(10, None, None);
         let high_values = [
             100.75, 102.5, 102.0, 103.0, 104.0, 102.25, 101.25, 103.0, 105.75, 104.5, 106.0, 105.5,
@@ -306,7 +350,7 @@ mod tests {
 
         assert!(pressure.atr.use_previous);
         assert!(pressure.initialized());
-        assert_approx_equal(pressure.value, -0.110801189707);
-        assert_approx_equal(pressure.value_cumulative, -4.12922120583);
+        assert_approx_equal(pressure.value, -0.111000235499);
+        assert_approx_equal(pressure.value_cumulative, -1.90133577924);
     }
 }

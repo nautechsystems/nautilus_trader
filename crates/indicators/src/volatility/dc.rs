@@ -13,15 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
-use crate::indicator::Indicator;
+use crate::{indicator::Indicator, support::MAX_PERIOD};
 
-const MAX_PERIOD: usize = 1_024;
-
+/// Donchian channel over rolling high and low prices.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -39,8 +38,8 @@ pub struct DonchianChannel {
     pub lower: f64,
     pub initialized: bool,
     has_inputs: bool,
-    upper_prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    lower_prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    upper_prices: VecDeque<f64>,
+    lower_prices: VecDeque<f64>,
 }
 
 impl Display for DonchianChannel {
@@ -86,24 +85,32 @@ impl DonchianChannel {
     /// - `period` is not in the range of 1 to `MAX_PERIOD` (inclusive).
     #[must_use]
     pub fn new(period: usize) -> Self {
-        assert!(
+        Self::new_checked(period).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(period: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period > 0 && period <= MAX_PERIOD,
             "DonchianChannel: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
 
-        Self {
+        Ok(Self {
             period,
             upper: 0.0,
             middle: 0.0,
             lower: 0.0,
-            upper_prices: ArrayDeque::new(),
-            lower_prices: ArrayDeque::new(),
+            upper_prices: VecDeque::with_capacity(period),
+            lower_prices: VecDeque::with_capacity(period),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {
+        if !high.is_finite() || !low.is_finite() || high < low {
+            return;
+        }
+
         if self.upper_prices.len() == self.period {
             let _ = self.upper_prices.pop_front();
         }
@@ -112,8 +119,8 @@ impl DonchianChannel {
             let _ = self.lower_prices.pop_front();
         }
 
-        let _ = self.upper_prices.push_back(high);
-        let _ = self.lower_prices.push_back(low);
+        self.upper_prices.push_back(high);
+        self.lower_prices.push_back(low);
 
         if !self.initialized {
             self.has_inputs = true;
@@ -123,6 +130,9 @@ impl DonchianChannel {
             }
         }
 
+        if !self.initialized {
+            return;
+        }
         self.upper = self
             .upper_prices
             .iter()
@@ -161,9 +171,9 @@ mod tests {
     #[rstest]
     fn test_value_with_one_input(mut dc_10: DonchianChannel) {
         dc_10.update_raw(1.0, 0.9);
-        assert_eq!(dc_10.upper, 1.0);
-        assert_approx_equal(dc_10.middle, 0.95);
-        assert_eq!(dc_10.lower, 0.9);
+        assert_eq!(dc_10.upper, 0.0);
+        assert_eq!(dc_10.middle, 0.0);
+        assert_eq!(dc_10.lower, 0.0);
     }
 
     #[rstest]
@@ -171,9 +181,9 @@ mod tests {
         dc_10.update_raw(1.0, 0.9);
         dc_10.update_raw(2.0, 1.8);
         dc_10.update_raw(3.0, 2.7);
-        assert_eq!(dc_10.upper, 3.0);
-        assert_approx_equal(dc_10.middle, 1.95);
-        assert_eq!(dc_10.lower, 0.9);
+        assert_eq!(dc_10.upper, 0.0);
+        assert_eq!(dc_10.middle, 0.0);
+        assert_eq!(dc_10.lower, 0.0);
     }
 
     #[rstest]
@@ -212,11 +222,19 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut dc_10: DonchianChannel, bar_ethusdt_binance_minute_bid: Bar) {
         dc_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(dc_10.upper, 1550.0);
-        assert_eq!(dc_10.middle, 1522.5);
-        assert_eq!(dc_10.lower, 1495.0);
+        assert_eq!(dc_10.upper, 0.0);
+        assert_eq!(dc_10.middle, 0.0);
+        assert_eq!(dc_10.lower, 0.0);
         assert!(dc_10.has_inputs);
         assert!(!dc_10.initialized);
+        for _ in 1..10 {
+            dc_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        }
+        assert_eq!(
+            (dc_10.upper, dc_10.middle, dc_10.lower),
+            (1550.0, 1522.5, 1495.0)
+        );
+        assert!(dc_10.initialized);
     }
 
     #[rstest]
