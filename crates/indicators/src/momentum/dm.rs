@@ -267,9 +267,15 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut dm_10: DirectionalMovement) {
-        dm_10.update_raw(1.00020, 1.00050);
-        dm_10.update_raw(1.00030, 1.00060);
-        dm_10.update_raw(1.00070, 1.00080);
+        dm_10.update_raw(12.0, 10.0);
+        dm_10.update_raw(13.0, 11.0);
+        dm_10.update_raw(15.0, 12.0);
+        // Up moves of 1 and 2 against down moves of -1
+        assert!(dm_10.has_inputs());
+        assert_eq!(dm_10.pos, 3.0);
+        assert_eq!(dm_10.neg, 0.0);
+        assert_eq!(dm_10.previous, Some((15.0, 12.0)));
+        assert_eq!(dm_10.seed_count, 2);
 
         dm_10.reset();
 

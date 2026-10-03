@@ -229,6 +229,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_tiny_spread_far_from_previous_offset_keeps_its_deviation() {
+        // The window [100, 100 + 2^-24] has population deviation 2^-25, but it sits
+        // about 10 from the reference point the first reseed left, where
+        // `sum_sq / n - mean^2` cancels to zero unless the sums reseed.
+        let tiny = 2.0_f64.powi(-24);
+        let mut indicator = ZScore::new(2, None);
+        for value in [110.0, 100.0, 100.0 + tiny] {
+            indicator.update_raw(value);
+        }
+        assert_eq!(indicator.mean, 100.0 + tiny / 2.0);
+        assert_eq!(indicator.std, tiny / 2.0);
+        assert_eq!(indicator.value, 1.0);
+    }
+
+    #[rstest]
     fn test_matches_naive_definition() {
         // Independent two-pass reference computed straight from the definition.
         fn naive(window: &[f64]) -> f64 {

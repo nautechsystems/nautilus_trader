@@ -15,6 +15,8 @@
 
 use std::collections::VecDeque;
 
+use super::moments::{centered_offset, offset_is_stale};
+
 // Rolling regression sums held relative to a reference point inside the window,
 // with a periodic reseed from the live window.
 // Accumulating `y - offset` keeps the residual cancellation on the order of the
@@ -26,6 +28,7 @@ struct ShiftedTrend {
     sum_y: f64,
     sum_xy: f64,
     sum_y_sq: f64,
+    count: usize,
     pushes_since_reseed: usize,
 }
 
@@ -37,6 +40,7 @@ impl ShiftedTrend {
             sum_y: 0.0,
             sum_xy: 0.0,
             sum_y_sq: 0.0,
+            count: 0,
             pushes_since_reseed: 0,
         }
     }
@@ -50,6 +54,7 @@ impl ShiftedTrend {
         self.sum_y += d;
         self.sum_xy += index as f64 * d;
         self.sum_y_sq += d * d;
+        self.count += 1;
         self.pushes_since_reseed += 1;
     }
 
@@ -60,13 +65,15 @@ impl ShiftedTrend {
         self.sum_xy = self.sum_xy - self.sum_y + d;
         self.sum_y -= d;
         self.sum_y_sq -= d * d;
+        self.count -= 1;
     }
 
-    const fn needs_reseed(&self, period: usize) -> bool {
-        self.pushes_since_reseed >= period
+    fn needs_reseed(&self, period: usize) -> bool {
+        self.pushes_since_reseed >= period || offset_is_stale(self.sum_y, self.sum_y_sq, self.count)
     }
 
-    // Rebuild every sum from the live window, re-centering `offset` on its mean.
+    // Rebuild every sum from the live window, re-centering `offset` on the value
+    // closest to its mean.
     fn reseed<'a, I>(&mut self, values: I)
     where
         I: Iterator<Item = &'a f64> + Clone,
@@ -83,8 +90,9 @@ impl ShiftedTrend {
             self.reset();
             return;
         }
-        self.offset = total / count as f64;
+        self.offset = centered_offset(values.clone(), total / count as f64);
         self.seeded = true;
+        self.count = count;
         self.sum_y = 0.0;
         self.sum_xy = 0.0;
         self.sum_y_sq = 0.0;
@@ -104,6 +112,7 @@ impl ShiftedTrend {
         self.sum_y = 0.0;
         self.sum_xy = 0.0;
         self.sum_y_sq = 0.0;
+        self.count = 0;
         self.pushes_since_reseed = 0;
     }
 }

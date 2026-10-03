@@ -223,9 +223,18 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut kp_10: KeltnerPosition) {
-        kp_10.update_raw(1.00020, 1.00050, 1.00030);
-        kp_10.update_raw(1.00030, 1.00060, 1.00040);
-        kp_10.update_raw(1.00070, 1.00080, 1.00075);
+        for _ in 0..9 {
+            kp_10.update_raw(11.0, 9.0, 10.0);
+        }
+        kp_10.update_raw(11.0, 9.0, 10.5);
+        // The last typical price 61/6 lifts the simple centerline to 10 + 1/60;
+        // true range stays 2, so the half band width is 2 * 2
+        let middle = 10.0 + 1.0 / 60.0;
+        assert!(kp_10.initialized());
+        assert!((kp_10.kc.middle - middle).abs() < 1e-12);
+        assert!((kp_10.kc.upper - (middle + 4.0)).abs() < 1e-12);
+        assert!((kp_10.kc.lower - (middle - 4.0)).abs() < 1e-12);
+        assert!((kp_10.value - (10.5 - middle) / 4.0).abs() < 1e-12);
 
         kp_10.reset();
 

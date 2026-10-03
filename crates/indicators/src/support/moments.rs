@@ -13,12 +13,44 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Past this ratio of squared offset drift to variance, `sum_sq / n - mean^2`
+// cancels more than about ten of its mantissa bits.
+const STALE_DRIFT_RATIO: f64 = 1024.0;
+
+/// Reports whether the window mean has drifted so far from the reference point
+/// that the shifted variance `sum_sq / n - mean^2` loses its precision.
+///
+/// `sum` and `sum_sq` are the window's sums of `value - offset` and its square.
+pub(crate) fn offset_is_stale(sum: f64, sum_sq: f64, count: usize) -> bool {
+    if count == 0 {
+        return false;
+    }
+    let n = count as f64;
+    let mean = sum / n;
+    let drift = mean * mean;
+    drift > STALE_DRIFT_RATIO * (sum_sq / n - drift).max(0.0)
+}
+
+/// Returns the window value closest to `mean`, the reference point a reseed
+/// shifts by. A flat window then shifts to exact zeros, and the drift starts
+/// within one standard deviation, so a fresh reseed is never stale.
+pub(crate) fn centered_offset<'a, I>(values: I, mean: f64) -> f64
+where
+    I: Iterator<Item = &'a f64>,
+{
+    values
+        .copied()
+        .min_by(|a, b| (a - mean).abs().total_cmp(&(b - mean).abs()))
+        .unwrap_or(mean)
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ShiftedMoments {
     offset: f64,
     seeded: bool,
     sum: f64,
     sum_sq: f64,
+    count: usize,
     pushes_since_reseed: usize,
 }
 
@@ -29,6 +61,7 @@ impl ShiftedMoments {
             seeded: false,
             sum: 0.0,
             sum_sq: 0.0,
+            count: 0,
             pushes_since_reseed: 0,
         }
     }
@@ -41,6 +74,7 @@ impl ShiftedMoments {
         let shifted = value - self.offset;
         self.sum += shifted;
         self.sum_sq += shifted * shifted;
+        self.count += 1;
         self.pushes_since_reseed += 1;
     }
 
@@ -48,6 +82,7 @@ impl ShiftedMoments {
         let shifted = value - self.offset;
         self.sum -= shifted;
         self.sum_sq -= shifted * shifted;
+        self.count -= 1;
     }
 
     pub(crate) fn mean(&self, n: usize) -> f64 {
@@ -59,8 +94,8 @@ impl ShiftedMoments {
         (self.sum_sq / n as f64 - mean * mean).max(0.0).sqrt()
     }
 
-    pub(crate) const fn needs_reseed(&self, period: usize) -> bool {
-        self.pushes_since_reseed >= period
+    pub(crate) fn needs_reseed(&self, period: usize) -> bool {
+        self.pushes_since_reseed >= period || offset_is_stale(self.sum, self.sum_sq, self.count)
     }
 
     pub(crate) fn reseed<'a, I>(&mut self, values: I)
@@ -74,10 +109,12 @@ impl ShiftedMoments {
             self.reset();
             return;
         }
-        self.offset = values.clone().sum::<f64>() / count as f64;
+        let mean = values.clone().sum::<f64>() / count as f64;
+        self.offset = centered_offset(values.clone(), mean);
         self.seeded = true;
         self.sum = 0.0;
         self.sum_sq = 0.0;
+        self.count = count;
 
         for &value in values {
             let shifted = value - self.offset;
@@ -92,6 +129,7 @@ impl ShiftedMoments {
         self.seeded = false;
         self.sum = 0.0;
         self.sum_sq = 0.0;
+        self.count = 0;
         self.pushes_since_reseed = 0;
     }
 }
@@ -132,6 +170,34 @@ mod tests {
         assert!(!moments.needs_reseed(1));
         moments.push(11.0);
         assert_eq!(moments.mean(1), 11.0);
+    }
+
+    #[rstest]
+    fn stale_offset_reseeds_before_the_periodic_reseed() {
+        let tiny = 2.0_f64.powi(-24);
+        let mut moments = ShiftedMoments::new();
+        moments.push(110.0);
+        moments.push(100.0);
+        assert!(!moments.needs_reseed(10));
+        moments.evict(110.0);
+        moments.push(100.0 + tiny);
+        // Three pushes are short of the period, but the offset is stale.
+        assert!(moments.needs_reseed(10));
+        moments.reseed(&VecDeque::from([100.0, 100.0 + tiny]));
+        assert!(!moments.needs_reseed(10));
+        assert_eq!(moments.mean(2), 100.0 + tiny / 2.0);
+        assert_eq!(moments.std_dev(2), tiny / 2.0);
+    }
+
+    #[rstest]
+    fn flat_window_reseed_never_reports_stale() {
+        let mut moments = ShiftedMoments::new();
+        let window = VecDeque::from([0.1, 0.1, 0.1]);
+        moments.push(7.0);
+        moments.reseed(&window);
+        assert!(!moments.needs_reseed(4));
+        assert_eq!(moments.mean(3), 0.1);
+        assert_eq!(moments.std_dev(3), 0.0);
     }
 
     #[rstest]

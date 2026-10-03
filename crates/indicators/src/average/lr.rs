@@ -140,7 +140,9 @@ impl LinearRegression {
         };
         let mean = self.ols.sum_y() / n;
         let sst = (self.ols.sum_y_sq() - n * mean * mean).max(0.0);
-        self.r2 = if sst < f64::EPSILON {
+        // Only a flat window has no variance to explain; any absolute threshold
+        // would also reject valid fits on finely priced instruments.
+        self.r2 = if sst == 0.0 {
             f64::NAN
         } else {
             (self.slope * self.slope * self.ols.denom() / n / sst).clamp(0.0, 1.0)
@@ -338,6 +340,22 @@ mod tests {
             lr.r2.is_nan(),
             "R² should be NaN for a constant-value input series"
         );
+    }
+
+    #[rstest]
+    fn r2_survives_tiny_spread_far_from_previous_offset() {
+        // The window [100, 100 + 2^-24] sits about 10 from the reference point the
+        // first reseed left, where `sum_y_sq - n * mean^2` cancels its variance
+        // unless the sums reseed onto the window.
+        let tiny = 2.0_f64.powi(-24);
+        let mut lr = LinearRegression::new(2);
+        for value in [110.0, 100.0, 100.0 + tiny] {
+            lr.update_raw(value);
+        }
+        assert_eq!(lr.slope, tiny);
+        assert_eq!(lr.intercept, 100.0);
+        assert_eq!(lr.value, 100.0 + tiny);
+        assert_eq!(lr.r2, 1.0);
     }
 
     #[rstest]

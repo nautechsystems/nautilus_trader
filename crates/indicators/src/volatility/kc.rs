@@ -255,9 +255,14 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut kc_10: KeltnerChannel) {
-        kc_10.update_raw(1.00020, 1.00050, 1.00030);
-        kc_10.update_raw(1.00030, 1.00060, 1.00040);
-        kc_10.update_raw(1.00070, 1.00080, 1.00075);
+        for _ in 0..10 {
+            kc_10.update_raw(11.0, 9.0, 10.0);
+        }
+        // Typical price 10 and true range 2 give bands at 10 -/+ 2 * 2
+        assert!(kc_10.initialized());
+        assert_eq!(kc_10.upper, 14.0);
+        assert_eq!(kc_10.middle, 10.0);
+        assert_eq!(kc_10.lower, 6.0);
 
         kc_10.reset();
 

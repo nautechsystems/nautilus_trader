@@ -253,9 +253,15 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut pressure_10: Pressure) {
-        pressure_10.update_raw(1.00020, 1.00050, 1.00070, 100.0);
-        pressure_10.update_raw(1.00030, 1.00060, 1.00080, 200.0);
-        pressure_10.update_raw(1.00070, 1.00080, 1.00090, 300.0);
+        for _ in 0..9 {
+            pressure_10.update_raw(11.0, 9.0, 10.0, 100.0);
+        }
+        pressure_10.update_raw(11.0, 9.0, 10.5, 100.0);
+        // Mid-range closes balance; the last close sits 1.5 above the low and 0.5
+        // below the high on an ATR of 2
+        assert!(pressure_10.initialized());
+        assert_eq!(pressure_10.value, 0.5);
+        assert_eq!(pressure_10.value_cumulative, 0.5);
 
         pressure_10.reset();
 

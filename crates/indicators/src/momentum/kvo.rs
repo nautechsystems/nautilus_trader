@@ -291,9 +291,25 @@ mod tests {
     fn test_reset_successfully_returns_indicator_to_fresh_state(
         mut kvo_34: KlingerVolumeOscillator,
     ) {
-        kvo_34.update_raw(1.00020, 1.00030, 1.00040, 1.00050);
-        kvo_34.update_raw(1.00030, 1.00040, 1.00050, 1.00060);
-        kvo_34.update_raw(1.00050, 1.00060, 1.00070, 1.00080);
+        for (high, low, close, volume) in [
+            (12.0, 10.0, 11.0, 100.0),
+            (13.0, 11.0, 12.0, 200.0),
+            (15.0, 12.0, 14.0, 300.0),
+            (16.0, 13.0, 14.0, 400.0),
+            (17.0, 14.0, 16.0, 500.0),
+        ] {
+            kvo_34.update_raw(high, low, close, volume);
+        }
+        // An uptrend from bar 2 accumulates cm = 4, 7, 10, 13 against dm = 2, 3, 3, 3
+        let forces = [20_000.0, 240_000.0 / 7.0, 56_000.0, 1_000_000.0 / 13.0];
+        let fast = forces[1..].iter().sum::<f64>() / 3.0;
+        let slow = forces.iter().sum::<f64>() / 4.0;
+        assert!(kvo_34.initialized());
+        assert!((kvo_34.value - (fast - slow)).abs() < 1e-9);
+        assert_eq!(kvo_34.trend, 1);
+        assert_eq!(kvo_34.cm, 13.0);
+        assert_eq!(kvo_34.previous_hlc, Some(47.0));
+        assert_eq!(kvo_34.previous_dm, 3.0);
 
         kvo_34.reset();
 
