@@ -370,6 +370,15 @@ resolved to an instrument, or converted into a report. Valid rows remain in the 
 snapshot whose venue responses decoded cleanly within the record limits is authoritative, including
 an empty one.
 
+#### Reduce-only fill quantity
+
+Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a
+position smaller than the order. During startup mass status the adapter clamps such an order to
+the total of its fills, so it closes `Filled` at a quantity smaller than the size originally
+submitted. The clamp applies only when the `userFills` history is complete and under its
+2,000-record limit. Otherwise the adapter keeps the venue's quantity, and reconciliation can infer
+the missing fill.
+
 #### Command and direct requests
 
 Outside startup mass status, unfiltered `LiveNode` open-order and position report commands and direct
