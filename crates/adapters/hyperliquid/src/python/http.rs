@@ -745,7 +745,9 @@ impl HyperliquidHttpClient {
     /// account-wide margin. Otherwise USDC comes from the perp margin summary only when that
     /// summary reflects non-zero collateral, margin used, or withdrawable balance; if the
     /// summary is absent or zeroed, spot USDC is used instead. Non-USDC tokens are always
-    /// appended from the spot balances.
+    /// appended from the spot balances. Spot tokens the venue lists at zero are reported at
+    /// zero, and USDC is reported at zero when there is no USDC balance (on accounts without
+    /// spot collateral, only when a perp summary is present), so a previous balance is cleared.
     ///
     /// # Errors
     ///

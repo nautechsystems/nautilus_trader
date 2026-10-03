@@ -1403,6 +1403,10 @@ non-zero collateral, margin, or withdrawable balance; when the perp summary is a
 zeroed, spot USDC is used instead. A mode the adapter does not recognize is logged as a
 warning and handled the same way.
 
+Spot tokens that `spotClearinghouseState` lists at zero are reported at zero, so a sold-out or
+withdrawn token clears its previous balance. USDC is reported at zero when the account has no USDC
+balance; outside unified and portfolio margin this needs a perp summary in the response.
+
 If the account mode cannot be fetched or read, the account state request fails, and so
 does connect.
 

@@ -1047,13 +1047,16 @@ pub fn parse_account_balances_and_margins(
 /// USDC reserved by resting spot orders; margin on dexes collateralized in another token shows
 /// up as that token's locked balance. The perp summary describes only the default dex in these
 /// modes: its `totalRawUsd` goes negative while longs are open and its `withdrawable` is per-dex.
-/// USDC is always reported in these modes, as zero when the spot row is zero or missing, because
-/// account updates keep any currency an update omits.
 ///
 /// Otherwise the perp parser already reflects combined USDC when its cross-margin summary
 /// carries collateral or margin state, so this parser appends only non-USDC spot
 /// tokens in that case. If the perp state has no margin summary, or the summary
 /// is present but zeroed, spot USDC is used verbatim.
+///
+/// Account updates keep any currency an update omits, so spot tokens the venue lists at zero are
+/// reported at zero, clearing a previous balance, and USDC is always reported, at zero when there
+/// is no USDC balance. On accounts without spot collateral this needs a perp summary; with none,
+/// the previous USDC balance is kept.
 ///
 /// # Errors
 ///
@@ -1065,14 +1068,7 @@ pub fn parse_combined_account_balances_and_margins(
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     if abstraction.uses_spot_collateral() {
         let mut balances = parse_spot_account_balances(spot_state)?;
-
-        // Account updates keep any currency an update omits, so always report USDC: a zero or
-        // missing spot row must clear a previously funded collateral balance
-        let usdc = Currency::USDC();
-        if !balances.iter().any(|balance| balance.currency == usdc) {
-            let zero = Money::zero(usdc);
-            balances.push(AccountBalance::new(zero, zero, zero));
-        }
+        push_zeroed_balances(&mut balances, spot_state, true);
 
         let mut margins = Vec::new();
 
@@ -1114,7 +1110,41 @@ pub fn parse_combined_account_balances_and_margins(
         balances.push(balance);
     }
 
+    // Without a perp summary there is no USDC reading to report, so keep the previous balance
+    // rather than zero it
+    push_zeroed_balances(
+        &mut balances,
+        spot_state,
+        perp_state.cross_margin_summary.is_some(),
+    );
+
     Ok((balances, margins))
+}
+
+// Account updates keep any currency an update omits, so a balance that reached zero must still be
+// reported to clear the previous one: spot tokens the venue lists at zero, and USDC (when
+// `report_usdc`) whenever the update would otherwise carry none. The venue keeps every token an
+// account has held as a zero row, so these entries recur on every update; a token dropped from
+// the spot state entirely still keeps its last balance
+fn push_zeroed_balances(
+    balances: &mut Vec<AccountBalance>,
+    spot_state: &SpotClearinghouseState,
+    report_usdc: bool,
+) {
+    let zeroed_spot = spot_state
+        .balances
+        .iter()
+        .filter(|balance| balance.total.is_zero())
+        .map(|balance| crate::http::parse::get_currency(balance.coin.as_str()));
+
+    let usdc = report_usdc.then(Currency::USDC);
+
+    for currency in zeroed_spot.chain(usdc) {
+        if !balances.iter().any(|balance| balance.currency == currency) {
+            let zero = Money::zero(currency);
+            balances.push(AccountBalance::new(zero, zero, zero));
+        }
+    }
 }
 
 /// Parses Hyperliquid spot clearinghouse state into Nautilus account balances.
