@@ -1889,11 +1889,18 @@ impl HyperliquidHttpClient {
     /// Returns an error if the request fails or the response is not a JSON string.
     pub async fn info_user_abstraction(&self, user: &str) -> Result<HyperliquidAccountAbstraction> {
         let response = self.inner.info_user_abstraction(user).await?;
-        let abstraction: HyperliquidAccountAbstraction = serde_json::from_value(response.clone())
-            .map_err(|e| {
-            log::debug!("Raw user abstraction response: {response}");
-            Error::decode(format!("Failed to parse user abstraction: {e}"))
-        })?;
+
+        // Serde reads a single-key object like `{"mode": null}` as a unit variant, which
+        // `#[serde(other)]` would map to `Unknown`, so only a bare string is accepted. Any
+        // string decodes, to a known mode or to `Unknown`
+        let abstraction = response
+            .as_str()
+            .and_then(|_| serde_json::from_value(response.clone()).ok())
+            .ok_or_else(|| {
+                Error::decode(format!(
+                    "Failed to parse user abstraction: expected a mode string, was {response}"
+                ))
+            })?;
 
         if abstraction == HyperliquidAccountAbstraction::Unknown {
             log::warn!(

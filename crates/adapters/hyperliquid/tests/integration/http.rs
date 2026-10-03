@@ -1475,15 +1475,10 @@ async fn test_request_account_state_preserves_parsed_margins() {
     assert_eq!(margin.maintenance.as_f64(), 1250.0);
 }
 
-#[rstest]
-#[case::unified("unifiedAccount")]
-#[case::portfolio_margin("portfolioMargin")]
-#[tokio::test]
-async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[case] mode: &str) {
-    // Unified account holding longs on the default dex and a HIP-3 dex: the default-dex
-    // perp summary carries a negative `totalRawUsd`, while spot USDC holds the collateral and
-    // its `hold` is the margin used across both dexes.
-    let state = TestServerState::default();
+// Account holding longs on the default dex and a HIP-3 dex: the default-dex perp summary
+// carries a negative `totalRawUsd`, while spot USDC holds the collateral and its `hold` is the
+// margin used across both dexes.
+async fn set_open_positions_account_state(state: &TestServerState, mode: &str) {
     *state.user_abstraction_response.lock().await = Some(json!(mode));
     *state.clearinghouse_response.lock().await = Some(json!({
         "marginSummary": {
@@ -1507,6 +1502,15 @@ async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[cas
             {"coin": "USDC", "token": 0, "total": "512.25", "hold": "420.0", "entryNtl": "0.0"}
         ]
     }));
+}
+
+#[rstest]
+#[case::unified("unifiedAccount")]
+#[case::portfolio_margin("portfolioMargin")]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[case] mode: &str) {
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);
@@ -1528,10 +1532,46 @@ async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[cas
 }
 
 #[rstest]
+#[case::disabled("disabled")]
+#[case::default("default")]
+#[case::dex_abstraction("dexAbstraction")]
+#[case::unrecognized("someFutureMode")]
 #[tokio::test]
-async fn test_request_account_state_propagates_user_abstraction_failure() {
+async fn test_request_account_state_other_modes_keep_perp_summary_usdc(#[case] mode: &str) {
+    // Same venue state as the spot-collateral test: outside unified and portfolio margin the
+    // default-dex perp summary stays authoritative for USDC, and an unrecognized mode string
+    // must fall back to that logic rather than fail the request
     let state = TestServerState::default();
-    *state.user_abstraction_response.lock().await = Some(json!({"unexpected": "shape"}));
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(account_state.balances.len(), 1);
+    let usdc = &account_state.balances[0];
+    assert_eq!(usdc.currency.code, "USDC");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(-689.5));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(30.5));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(180.0),
+    );
+}
+
+#[rstest]
+#[case::object(json!({"unexpected": "shape"}))]
+#[case::null_valued_object(json!({"unexpected": null}))]
+#[case::null(json!(null))]
+#[case::number(json!(42))]
+#[tokio::test]
+async fn test_request_account_state_propagates_user_abstraction_failure(#[case] response: Value) {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(response);
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);

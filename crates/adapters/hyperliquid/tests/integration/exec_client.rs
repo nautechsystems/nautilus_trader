@@ -2497,11 +2497,13 @@ async fn test_query_account_unified_account_uses_spot_usdc() {
 }
 
 #[rstest]
+#[case::object(json!({"unexpected": "shape"}))]
+#[case::null_valued_object(json!({"unexpected": null}))]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_query_account_propagates_user_abstraction_failure() {
+async fn test_query_account_propagates_user_abstraction_failure(#[case] response: Value) {
     let state = TestServerState::default();
-    *state.user_abstraction_response.lock().await = Some(json!({"unexpected": "shape"}));
-    let addr = start_mock_server(state).await;
+    *state.user_abstraction_response.lock().await = Some(response);
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
 
@@ -2524,6 +2526,47 @@ async fn test_query_account_propagates_user_abstraction_failure() {
         event.is_err(),
         "no AccountState must be emitted when the account mode cannot be read; got {event:?}",
     );
+    // The silence must come from the unreadable mode, not from the task never reaching it
+    let requested_abstraction = state
+        .info_requests
+        .lock()
+        .await
+        .iter()
+        .any(|request| request.get("type").and_then(Value::as_str) == Some("userAbstraction"));
+    assert!(
+        requested_abstraction,
+        "query_account must have requested userAbstraction"
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_connect_fails_when_user_abstraction_unreadable() {
+    let state = TestServerState::default();
+    set_unified_account_state(&state).await;
+    *state.user_abstraction_response.lock().await = Some(json!({"unexpected": null}));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+    let err = client
+        .connect()
+        .await
+        .expect_err("connect must fail when the account mode cannot be read");
+
+    assert!(
+        format!("{err:#}").contains("user abstraction"),
+        "error must reference the failing abstraction fetch; got: {err:#}",
+    );
+    assert!(!client.is_connected());
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, ExecutionEvent::Account(_)),
+            "no AccountState must be emitted when connect fails; got {event:?}",
+        );
+    }
 }
 
 #[rstest]
