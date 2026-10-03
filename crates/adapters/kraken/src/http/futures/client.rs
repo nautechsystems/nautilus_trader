@@ -2899,10 +2899,6 @@ fn map_futures_trigger_signal(
 
 fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
     for (currency_code, currency_info) in &account.currencies {
-        if currency_info.quantity.is_zero() {
-            continue;
-        }
-
         let currency = Currency::new(
             currency_code.as_str(),
             8,
@@ -2968,10 +2964,6 @@ fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<Ma
 
 fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
     for (currency_code, &amount) in &account.balances {
-        if amount.is_zero() {
-            continue;
-        }
-
         let currency = Currency::new(
             currency_code.as_str(),
             8,
@@ -3022,10 +3014,6 @@ fn push_margin(
 
 fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
     for (currency_code, &amount) in &account.balances {
-        if amount.is_zero() {
-            continue;
-        }
-
         let currency = Currency::new(
             currency_code.as_str(),
             8,
@@ -3289,6 +3277,67 @@ mod tests {
         assert_eq!(balances.len(), 2);
     }
 
+    /// A zero-quantity collateral currency must still be reported.
+    #[rstest]
+    fn test_parse_multi_collateral_balances_reports_zero_quantity() {
+        let mut currencies = AHashMap::new();
+        currencies.insert(
+            "BTC".to_string(),
+            FuturesFlexCurrency {
+                quantity: Decimal::ZERO,
+                value: None,
+                collateral: None,
+                available: Some(Decimal::ZERO),
+            },
+        );
+
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            balances: AHashMap::new(),
+            currencies,
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut balances = Vec::new();
+        parse_multi_collateral_balances(&account, &mut balances);
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
+        assert_eq!(balances[0].total.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].free.as_decimal(), Decimal::ZERO);
+    }
+
+    /// A margin wallet drawn down to zero must still be reported.
+    #[rstest]
+    fn test_parse_margin_account_balances_reports_zero_wallet() {
+        let mut bals = AHashMap::new();
+        bals.insert("XBT".to_string(), Decimal::ZERO);
+
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: bals,
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut balances = Vec::new();
+        parse_margin_account_balances(&account, &mut balances);
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].total.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].free.as_decimal(), Decimal::ZERO);
+    }
+
     #[rstest]
     fn test_parse_margin_account_balances_preserves_exact_values() {
         let mut bals = AHashMap::new();
@@ -3327,7 +3376,9 @@ mod tests {
     fn test_parse_cash_account_balances() {
         let mut bals = AHashMap::new();
         bals.insert("ETH".to_string(), dec!(10));
-        bals.insert("BTC".to_string(), Decimal::ZERO); // zero, should be skipped
+        // A wallet Kraken still lists at zero. It must reach the engine, which never removes a
+        // balance, so dropping it here would leave the previous non-zero value in place forever.
+        bals.insert("BTC".to_string(), Decimal::ZERO);
 
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::CashAccount,
@@ -3344,10 +3395,21 @@ mod tests {
         let mut balances = Vec::new();
         parse_cash_account_balances(&account, &mut balances);
 
-        assert_eq!(balances.len(), 1);
-        let balance = &balances[0];
-        assert_eq!(balance.total.as_decimal(), dec!(10));
-        assert_eq!(balance.locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances.len(), 2);
+        let eth = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "ETH")
+            .expect("ETH balance");
+        assert_eq!(eth.total.as_decimal(), dec!(10));
+        assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
+
+        let btc = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "BTC")
+            .expect("a zero wallet must still be reported");
+        assert_eq!(btc.total.as_decimal(), Decimal::ZERO);
+        assert_eq!(btc.locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(btc.free.as_decimal(), Decimal::ZERO);
     }
 
     #[rstest]

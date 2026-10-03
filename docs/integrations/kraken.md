@@ -570,6 +570,10 @@ flag.
   resting orders. For accounts with a credit line, net credit (`credit - credit_used`)
   is included in `AccountBalance.total`, so `free` matches Kraken's available balance
   of `balance + credit - credit_used - hold_trade`.
+- Zero balances: An asset Kraken lists at zero is reported at zero rather than omitted,
+  on both spot and futures. The engine only ever inserts balances, so a currency left out
+  of a snapshot keeps its previous value. An asset Kraken drops from the response
+  entirely still keeps its last reported value.
 
 **Margin position reports** (when `spot_account_type=Margin`):
 
