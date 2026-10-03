@@ -55,6 +55,8 @@ use crate::{config::PortfolioConfig, manager::AccountsManager};
 // at per-minute cadence), long-lived live deployments should consume snapshots
 // via the message bus instead of relying on this buffer.
 const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
+const EQUITY_CURVE_TIMER_PREFIX: &str = "portfolio_equity_curve.";
+const SNAPSHOT_TIMER_PREFIX: &str = "portfolio_snapshot.";
 
 struct PortfolioState {
     accounts: AccountsManager,
@@ -4155,7 +4157,7 @@ fn update_account(
 }
 
 fn equity_curve_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_equity_curve.{account_id}")
+    format!("{EQUITY_CURVE_TIMER_PREFIX}{account_id}")
 }
 
 fn register_equity_curve_account(
@@ -4230,7 +4232,17 @@ fn arm_equity_curve_timer(
 }
 
 fn snapshot_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_snapshot.{account_id}")
+    format!("{SNAPSHOT_TIMER_PREFIX}{account_id}")
+}
+
+/// Returns whether the timer name uses a portfolio snapshot namespace.
+///
+/// Backtests use this classification so snapshot-only timestamps do not release older
+/// latency-deferred commands.
+#[doc(hidden)]
+#[must_use]
+pub fn is_snapshot_timer(name: &str) -> bool {
+    name.starts_with(EQUITY_CURVE_TIMER_PREFIX) || name.starts_with(SNAPSHOT_TIMER_PREFIX)
 }
 
 fn update_snapshot_timer_state(
@@ -4378,6 +4390,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::equity_curve(equity_curve_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::snapshot(snapshot_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::strategy("settlement".to_string(), false)]
+    #[case::similar_name("portfolio_snapshot_strategy".to_string(), false)]
+    fn test_is_snapshot_timer(#[case] name: String, #[case] expected: bool) {
+        assert_eq!(is_snapshot_timer(&name), expected);
+    }
 
     fn mk_snapshot(seq: u64) -> PortfolioSnapshot {
         PortfolioSnapshot::new(

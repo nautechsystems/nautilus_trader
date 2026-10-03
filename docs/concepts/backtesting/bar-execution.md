@@ -108,10 +108,12 @@ timestamp, the engine can release it from the venue's latency queue in two ways:
   timer events, the first bar at or after the arrival timestamp completes its OHLC sweep before the
   order settles, so the order sees that bar's close. Quote or trade ticks can release it earlier
   against the book state they establish.
-- An unrestricted settlement point, such as a timer, funding-rate settlement, or shutdown drain.
+- An unrestricted settlement point, such as an actor or strategy timer, funding-rate settlement, or shutdown drain.
   These points release all commands due at that time.
 
 Market data for another instrument does not release the delayed command against stale book state.
+Portfolio snapshot timers for daily equity curves and `PortfolioConfig.snapshot_interval_ms` samples
+do not release older delayed commands.
 
 ```python
 from decimal import Decimal

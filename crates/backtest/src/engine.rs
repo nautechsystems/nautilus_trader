@@ -59,6 +59,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     position::Position,
 };
+use nautilus_portfolio::portfolio::is_snapshot_timer;
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -1688,14 +1689,15 @@ impl BacktestEngine {
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_before)
         {
-            self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
                 shutdown_at = Some(ts_event);
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
+
+            self.finalize_timestamp(clocks, ts_event, settlement_scope)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1743,13 +1745,14 @@ impl BacktestEngine {
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_now)
         {
-            self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
+
+            self.finalize_timestamp(clocks, ts_event, settlement_scope)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1804,27 +1807,35 @@ impl BacktestEngine {
         clocks: &[Rc<RefCell<dyn Clock>>],
         ts_event: UnixNanos,
         advance_to: UnixNanos,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<SettlementScope> {
         self.last_ns = ts_event;
+        let mut settlement_scope = SettlementScope::Data(None);
+
         while self.accumulator.peek_next_time() == Some(ts_event) {
             let handler = self
                 .accumulator
                 .pop_next_at_or_before(ts_event)
                 .expect("timer exists at timestamp");
+
+            if !is_snapshot_timer(handler.event.name.as_str()) {
+                settlement_scope = SettlementScope::All;
+            }
+
             Self::set_all_clocks_time(clocks, ts_event);
             logging_clock_set_static_time(ts_event.as_u64());
             handler.run();
             self.drain_command_queues()?;
 
             if self.kernel.is_shutdown_requested() {
-                return Ok(());
+                return Ok(settlement_scope);
             }
 
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, advance_to, false);
             }
         }
-        Ok(())
+
+        Ok(settlement_scope)
     }
 
     fn finalize_timestamp(
@@ -1846,8 +1857,13 @@ impl BacktestEngine {
             }
 
             if self.accumulator.peek_next_time() == Some(ts_now) {
-                self.run_timer_handlers_at(clocks, ts_now, ts_now)?;
-                settlement_scope = SettlementScope::All;
+                if matches!(
+                    self.run_timer_handlers_at(clocks, ts_now, ts_now)?,
+                    SettlementScope::All
+                ) {
+                    settlement_scope = SettlementScope::All;
+                }
+
                 continue;
             }
 
@@ -3835,28 +3851,39 @@ mod tests {
     }
 
     #[rstest]
-    fn test_timer_handler_sets_last_ns_to_fire_time() {
+    #[case::strategy(&["ROLL"], true)]
+    #[case::snapshots(&["portfolio_equity_curve.SIM-001", "portfolio_snapshot.SIM-001"], false)]
+    #[case::strategy_first(&["a_strategy", "portfolio_equity_curve.SIM-001"], true)]
+    #[case::strategy_last(&["portfolio_equity_curve.SIM-001", "z_strategy"], true)]
+    fn test_timer_handler_sets_last_ns_to_fire_time(
+        #[case] timer_names: &[&str],
+        #[case] settle_all: bool,
+    ) {
         let mut engine = create_engine();
         engine.last_ns = UnixNanos::from(30);
-        let fired = Rc::new(Cell::new(false));
+        let fired = Rc::new(Cell::new(0));
         let fired_clone = Rc::clone(&fired);
         let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
-            fired_clone.set(true);
+            fired_clone.set(fired_clone.get() + 1);
         }));
-        engine
-            .kernel
-            .clock
-            .borrow_mut()
-            .set_timer_ns(
-                "ROLL",
-                DurationNanos::new(1),
-                Some(UnixNanos::from(20)),
-                None,
-                Some(callback),
-                Some(true),
-                Some(true),
-            )
-            .unwrap();
+
+        for name in timer_names {
+            engine
+                .kernel
+                .clock
+                .borrow_mut()
+                .set_timer_ns(
+                    name,
+                    DurationNanos::new(1),
+                    Some(UnixNanos::from(20)),
+                    None,
+                    Some(callback.clone()),
+                    Some(true),
+                    Some(true),
+                )
+                .unwrap();
+        }
+
         let clocks = engine.collect_all_clocks();
 
         for clock in &clocks {
@@ -3867,12 +3894,18 @@ mod tests {
                 false,
             );
         }
-        engine
+
+        let settlement_scope = engine
             .run_timer_handlers_at(&clocks, UnixNanos::from(20), UnixNanos::from(30))
             .unwrap();
 
-        assert!(fired.get());
+        assert_eq!(fired.get(), timer_names.len());
         assert_eq!(engine.last_ns, UnixNanos::from(20));
+        assert_eq!(matches!(settlement_scope, SettlementScope::All), settle_all);
+        assert_eq!(
+            matches!(settlement_scope, SettlementScope::Data(None)),
+            !settle_all,
+        );
     }
 
     #[rstest]
