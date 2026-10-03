@@ -359,6 +359,12 @@ pub struct FuturesOrderEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesOrderEventsResponse {
+    /// Body-level outcome, which the venue may report with a success status code.
+    #[serde(default)]
+    pub result: Option<KrakenApiResult>,
+    /// Body-level error message, which the venue may report with a success status code.
+    #[serde(default)]
+    pub error: Option<String>,
     #[serde(default)]
     pub server_time: Option<String>,
     #[serde(default)]
@@ -1098,6 +1104,37 @@ mod tests {
             response.order_events[2].event_type,
             KrakenFuturesOrderEventType::Cancel
         );
+    }
+
+    /// A refused history page must be recognizable from the body alone.
+    ///
+    /// Kraken's futures rate-limit guide documents a refusal as
+    /// `{"result":"error","serverTime":"...","error":"apiLimitExceeded"}`, and the venue can send
+    /// it with a success status code. Without these fields the body deserializes as an empty last
+    /// page, which ends a paginated read as complete. The literal below is the documented example.
+    #[rstest]
+    fn test_parse_futures_order_events_surfaces_a_refusal_body() {
+        let data = r#"{"result":"error","serverTime":"2016-02-25T09:45:53.818Z","error":"apiLimitExceeded"}"#;
+        let response: FuturesOrderEventsResponse =
+            serde_json::from_str(data).expect("a refusal body must still deserialize");
+
+        assert_eq!(response.result, Some(KrakenApiResult::Error));
+        assert_eq!(response.error.as_deref(), Some("apiLimitExceeded"));
+        assert!(
+            response.order_events.is_empty(),
+            "the refusal carries no events, which is why the body must be checked"
+        );
+    }
+
+    /// A successful page must not look like a refusal.
+    #[rstest]
+    fn test_parse_futures_order_events_success_carries_no_error() {
+        let data = load_test_data("http_futures_order_events.json");
+        let response: FuturesOrderEventsResponse =
+            serde_json::from_str(&data).expect("Failed to parse futures order events");
+
+        assert_ne!(response.result, Some(KrakenApiResult::Error));
+        assert!(response.error.is_none());
     }
 
     #[rstest]

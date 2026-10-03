@@ -16,7 +16,7 @@
 //! HTTP client for the Kraken Futures REST API.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     num::NonZeroU32,
     sync::{
@@ -26,6 +26,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -89,6 +90,33 @@ use crate::{
 pub const KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND: u32 = 5;
 
 const KRAKEN_GLOBAL_RATE_KEY: &str = "kraken:futures:global";
+
+/// Caps the order-event pagination at the share of Kraken's `/history` allowance one read may
+/// spend.
+///
+/// The loop below follows the venue's continuation token, so a venue that kept returning one
+/// would otherwise leave a startup read spinning. Kraken meters `/history` with a pool of 100
+/// tokens that replenishes 100 per 10 minutes, and each order-events page costs one, so half the
+/// pool is left for the reads that follow: the targeted single-order queries and the post-submit
+/// order-event lookup, one page each. The cap is also what the reconciliation timeout permits. At
+/// the client's default of [`KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND`] these pages take
+/// about ten seconds, inside the default 30s `timeout_reconciliation`, where 500 pages would take
+/// about 100 seconds and could not finish.
+///
+/// This bounds one read rather than metering a window: two non-open-only reads inside ten minutes
+/// still spend the whole pool, which is why a refused page leaves the set incomplete instead of
+/// failing startup.
+const MAX_ORDER_EVENT_PAGES: usize = 50;
+
+/// What a page the venue refuses means for the read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RejectedPagePolicy {
+    /// Keep the pages read so far and report the set incomplete.
+    MarkIncomplete,
+    /// Fail the call, so a caller that discards the completeness flag cannot read a truncated set
+    /// as the venue's full answer.
+    Fail,
+}
 
 /// Maximum orders per batch cancel request for Kraken Futures API.
 const BATCH_CANCEL_LIMIT: usize = 50;
@@ -794,7 +822,20 @@ impl KrakenFuturesRawHttpClient {
 
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
-        self.send_get_with_query(endpoint, url, &query_string).await
+        let response: FuturesOrderEventsResponse = self
+            .send_get_with_query(endpoint, url, &query_string)
+            .await?;
+
+        // A refused history page can arrive with a success status code and an error body, which
+        // would otherwise deserialize as an empty last page and end the read as complete.
+        if response.result == Some(KrakenApiResult::Error) || response.error.is_some() {
+            let message = response
+                .error
+                .unwrap_or_else(|| "Order events request refused".to_string());
+            return Err(KrakenHttpError::ApiError(vec![message]));
+        }
+
+        Ok(response)
     }
 
     /// Requests the status of specific orders (requires authentication).
@@ -1684,6 +1725,10 @@ impl KrakenFuturesHttpClient {
         ))
     }
 
+    /// Requests order status reports.
+    ///
+    /// This caller sees no completeness flag, so a page the venue refuses fails the call rather
+    /// than returning a truncated set that reads as the venue's full answer.
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -1692,9 +1737,40 @@ impl KrakenFuturesHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        self.request_order_status_reports_checked(account_id, instrument_id, start, end, open_only)
-            .await
-            .map(|(reports, _)| reports)
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            start,
+            end,
+            open_only,
+            MAX_ORDER_EVENT_PAGES,
+            RejectedPagePolicy::Fail,
+        )
+        .await
+        .map(|(reports, _)| reports)
+    }
+
+    /// Requests order status reports for a single-order query, reading one page of history.
+    ///
+    /// A targeted query runs while the caller waits, so it must not walk the whole history the way
+    /// a mass status can. One page is what this path read before it began following the
+    /// continuation token, and it still covers the recent events a query is asking about.
+    pub(crate) async fn request_order_status_reports_targeted(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            None,
+            None,
+            false,
+            1,
+            RejectedPagePolicy::Fail,
+        )
+        .await
+        .map(|(reports, _)| reports)
     }
 
     /// Requests order status reports, also reporting whether the set is complete.
@@ -1708,6 +1784,34 @@ impl KrakenFuturesHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+        self.request_order_status_reports_bounded(
+            account_id,
+            instrument_id,
+            start,
+            end,
+            open_only,
+            MAX_ORDER_EVENT_PAGES,
+            RejectedPagePolicy::MarkIncomplete,
+        )
+        .await
+    }
+
+    /// Requests order status reports, reading at most `max_event_pages` of order-event history.
+    ///
+    /// `rejected` decides what a page the venue refuses means. A caller that reads the
+    /// completeness flag can keep the pages it has; one that discards it must fail, so a
+    /// truncated set is never mistaken for the venue's full answer.
+    #[allow(clippy::too_many_arguments)]
+    async fn request_order_status_reports_bounded(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        open_only: bool,
+        max_event_pages: usize,
+        rejected: RejectedPagePolicy,
     ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         let mut complete = true;
 
@@ -1817,47 +1921,106 @@ impl KrakenFuturesHttpClient {
             // Kraken Futures order events API expects Unix timestamp in milliseconds
             let start_ms = start.map(|dt| dt.as_millisecond());
             let end_ms = end.map(|dt| dt.as_millisecond());
-            let response = self
-                .inner
-                .get_order_events(end_ms, start_ms, None)
-                .await
-                .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
 
-            for event_wrapper in response.order_events {
-                let event = &event_wrapper.order;
+            // The venue still reports these as open, so their current state is authoritative and a
+            // replayed event must not displace it.
+            let open_order_ids: HashSet<VenueOrderId> = all_reports
+                .iter()
+                .map(|report| report.venue_order_id)
+                .collect();
 
-                // Resolve the row and compare instrument ids, so a scoped read cannot match on a
-                // spelling and cannot fall through to every instrument when the id is not held.
-                let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+            // One report per order, the latest by `ts_last`. `ExecutionMassStatus` keys reports by
+            // venue order ID, so emitting every event would let arrival order decide which state
+            // survives.
+            let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
+            let mut continuation_token: Option<String> = None;
+            let mut pages = 0;
+
+            loop {
+                if pages >= max_event_pages {
+                    // A caller asking for fewer pages accepts the shorter read, so only the safety
+                    // cap reports the set as incomplete.
+                    if max_event_pages >= MAX_ORDER_EVENT_PAGES {
+                        log::warn!(
+                            "Order events pagination hit the cap of {MAX_ORDER_EVENT_PAGES} pages; returning a truncated set and marking it incomplete"
+                        );
+                        complete = false;
+                    }
+                    break;
                 }
 
-                if let Some(instrument) = resolved {
-                    match parse_futures_order_event_status_report(
-                        event,
-                        Some(event_wrapper.event_type),
-                        &instrument,
-                        account_id,
-                        ts_init,
-                    ) {
-                        Ok(report) => all_reports.push(report),
-                        Err(e) => {
-                            let order_id = &event.order_id;
-                            log::warn!("Failed to parse futures order event {order_id}: {e}");
-                            complete = false;
-                        }
+                let response = match self
+                    .inner
+                    .get_order_events(end_ms, start_ms, continuation_token.as_deref())
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(e) if rejected == RejectedPagePolicy::MarkIncomplete => {
+                        log::warn!(
+                            "Order events page refused: {e}; keeping the pages read so far and \
+                             marking the set incomplete"
+                        );
+                        complete = false;
+                        break;
                     }
-                } else {
-                    log::warn!(
-                        "Instrument not in cache for futures symbol {}, skipping order event",
-                        event.symbol
-                    );
-                    complete = false;
+                    Err(e) => anyhow::bail!("get_order_events failed: {e}"),
+                };
+                pages += 1;
+
+                for event_wrapper in &response.order_events {
+                    let event = &event_wrapper.order;
+
+                    // Resolve the row and compare instrument ids, so a scoped read cannot match on a
+                    // spelling and cannot fall through to every instrument when the id is not held.
+                    let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
+                    if let Some(ref target_id) = instrument_id
+                        && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
+                    {
+                        continue;
+                    }
+
+                    if let Some(instrument) = resolved {
+                        match parse_futures_order_event_status_report(
+                            event,
+                            Some(event_wrapper.event_type),
+                            &instrument,
+                            account_id,
+                            ts_init,
+                        ) {
+                            Ok(report) => {
+                                if open_order_ids.contains(&report.venue_order_id) {
+                                    continue;
+                                }
+
+                                match latest.get(&report.venue_order_id) {
+                                    Some(existing) if existing.ts_last >= report.ts_last => {}
+                                    _ => {
+                                        latest.insert(report.venue_order_id, report);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let order_id = &event.order_id;
+                                log::warn!("Failed to parse futures order event {order_id}: {e}");
+                                complete = false;
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                            "Instrument not in cache for futures symbol {}, skipping order event",
+                            event.symbol
+                        );
+                        complete = false;
+                    }
+                }
+
+                match response.continuation_token {
+                    Some(token) if !token.is_empty() => continuation_token = Some(token),
+                    _ => break,
                 }
             }
+
+            all_reports.extend(latest.into_values());
         }
 
         Ok((all_reports, complete))

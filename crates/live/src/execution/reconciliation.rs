@@ -560,10 +560,12 @@ pub(super) fn should_project_fill(
     retained_fill_state: &RetainedFillState,
     reported_fill_keys: &IndexSet<FillKey>,
     order_only_ids: &IndexSet<VenueOrderId>,
+    order_only_fill_keys: &IndexSet<FillKey>,
 ) -> bool {
     let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
     if retained_fill_state.fill_keys.contains(&fill_key)
         || order_only_ids.contains(&fill.venue_order_id)
+        || order_only_fill_keys.contains(&fill_key)
     {
         return true;
     }

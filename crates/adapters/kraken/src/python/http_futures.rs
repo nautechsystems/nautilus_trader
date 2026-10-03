@@ -324,6 +324,10 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests order status reports.
+    ///
+    /// This caller sees no completeness flag, so a page the venue refuses fails the call rather
+    /// than returning a truncated set that reads as the venue's full answer.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=false))]
     fn py_request_order_status_reports<'py>(

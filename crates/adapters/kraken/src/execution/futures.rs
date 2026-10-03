@@ -16,7 +16,7 @@
 //! Kraken Futures execution client implementation.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -47,7 +47,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderStatus, OrderType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -765,7 +765,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let account_id = self.core.account_id;
         let reports = self
             .http
-            .request_order_status_reports(account_id, None, None, None, false)
+            .request_order_status_reports_targeted(account_id, None)
             .await?;
 
         // Match by venue_order_id or client_order_id (comparing truncated form
@@ -950,10 +950,19 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let start = lookback_start.map(Timestamp::from);
         let account_id = self.core.account_id;
 
+        // Read the order-event history as well as open orders, matching the shared default. An
+        // order that reached a terminal state while the node was down is only visible there.
         let (mut order_reports, orders_complete) = self
             .http
-            .request_order_status_reports_checked(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
+        // Captured before the orders-status extension is merged in, so the safeguard below applies
+        // to the venue read alone and leaves the extension to its own rule.
+        let from_venue_read: HashSet<VenueOrderId> = order_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
+
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
             .await?;
@@ -972,10 +981,101 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             order_reports.push(report);
         }
 
-        let (fill_reports, fills_complete) = self
+        let (mut fill_reports, fills_complete) = self
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
+
+        // Same safeguard as above, for the order-event history. The fills endpoint returns one
+        // page with no cursor, so an execution older than that page is simply absent. A terminal
+        // report whose fills do not cover its filled quantity carries no `avg_px` for the
+        // remainder, and reconciliation would infer that quantity at the order's limit price.
+        // Withhold those: the fills page only moves forward, so the covering fill does not come
+        // back, and the incomplete flag is what reconciliation acts on. The predicate is the
+        // filled quantity rather than `Filled`, because a partially filled order that was then
+        // cancelled or expired is priced the same way.
+        // Coverage counts the fills on the page plus those a cached order has already recorded,
+        // deduplicated by trade ID, so an order the cache holds at 600 of 1,000 is kept when the
+        // page carries the final 400: the engine matches those to the cached order at their actual
+        // prices and commissions, which withholding would discard.
+        let mut page_fills: HashMap<VenueOrderId, Vec<&FillReport>> = HashMap::new();
+        for fill in &fill_reports {
+            page_fills
+                .entry(fill.venue_order_id)
+                .or_default()
+                .push(fill);
+        }
+        // Resolved in one pass while the cache borrow is held, which ends before the await below.
+        let covered_by_order: HashMap<VenueOrderId, Decimal> = {
+            let cache = self.core.cache();
+            order_reports
+                .iter()
+                .map(|report| {
+                    let venue_order_id = report.venue_order_id;
+                    let cached = cache
+                        .client_order_id(&venue_order_id)
+                        .and_then(|client_order_id| cache.order(client_order_id));
+                    let (cached_qty, cached_trade_ids): (Decimal, Vec<TradeId>) = match &cached {
+                        Some(order) => (
+                            order.filled_qty().as_decimal(),
+                            order.trade_ids().into_iter().copied().collect(),
+                        ),
+                        None => (Decimal::ZERO, Vec::new()),
+                    };
+                    let page_qty: Decimal =
+                        page_fills
+                            .get(&venue_order_id)
+                            .map_or(Decimal::ZERO, |fills| {
+                                fills
+                                    .iter()
+                                    .filter(|fill| !cached_trade_ids.contains(&fill.trade_id))
+                                    .map(|fill| fill.last_qty.as_decimal())
+                                    .sum()
+                            });
+                    (venue_order_id, cached_qty + page_qty)
+                })
+                .collect()
+        };
+
+        let mut withheld: HashSet<VenueOrderId> = HashSet::new();
+        order_reports.retain(|report| {
+            let terminal = matches!(
+                report.order_status,
+                OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Expired
+                    | OrderStatus::Voided
+            );
+            // Only terminal reports are withheld, so an open order is never dropped: the venue
+            // still reports it, and dropping it would let reconciliation resolve it as missing.
+            let covered = covered_by_order
+                .get(&report.venue_order_id)
+                .copied()
+                .unwrap_or(Decimal::ZERO);
+            let keep = !from_venue_read.contains(&report.venue_order_id)
+                || !terminal
+                || report.filled_qty.is_zero()
+                || covered >= report.filled_qty.as_decimal();
+            if !keep {
+                withheld.insert(report.venue_order_id);
+                log::debug!(
+                    "Withholding executed order {} from mass status: fills cover {} of {}",
+                    report.venue_order_id,
+                    covered,
+                    report.filled_qty,
+                );
+            }
+            keep
+        });
+
+        // A withheld order's own fills must go with it. Unpaired, they do not sit idle: snapshot
+        // reconciliation materializes an external market order at the partial quantity bound to
+        // the real venue order ID, and the live path drops them instead, since Kraken futures
+        // fill reports carry no venue position ID.
+        fill_reports.retain(|fill| !withheld.contains(&fill.venue_order_id));
+
+        let orders_complete = orders_complete && withheld.is_empty();
+
         let position_reports = self
             .http
             .request_position_status_reports(account_id, None)
