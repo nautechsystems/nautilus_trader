@@ -247,13 +247,6 @@ schema. For example, `EQUS.MINI` cannot serve `mbo`, `mbp-10`, `statistics`, or
 `status`.
 :::
 
-:::warning
-The live data client does not handle `subscribe_book_depth()`, `subscribe_bars()`, or
-`subscribe_data()`. Those commands log a "handler not implemented" warning and deliver no data.
-Reach MBP-10 depth and OHLCV bars through historical requests (`request_book_depth()` and
-`request_bars()`), and imbalance and statistics through the historical client or the data loader.
-:::
-
 :::note
 The examples below assume a `Strategy` or `DataActor` context where `self` has
 subscription methods. Import the required types:
@@ -262,6 +255,7 @@ subscription methods. Import the required types:
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import DataType
 from nautilus_trader.model import InstrumentId
 
 
@@ -359,6 +353,34 @@ self.subscribe_instrument_status(
     client_id=DATABENTO_CLIENT_ID,
 )
 ```
+
+### Depth, bar, and custom data subscriptions
+
+`subscribe_book_depth()` streams `mbp-10` depth snapshots for one instrument. The bar aggregation in
+the `BarType` selects the OHLCV schema for `subscribe_bars()` (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`,
+or `ohlcv-1d`), and the step must be 1. `subscribe_data()` streams `DatabentoStatistics` or
+`DatabentoImbalance` records, and the data type identifier is the instrument ID:
+
+```python
+self.subscribe_book_depth(
+    instrument_id=instrument_id,
+    book_type=BookType.L2_MBP,
+    client_id=DATABENTO_CLIENT_ID,
+)
+
+self.subscribe_bars(
+    BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
+    client_id=DATABENTO_CLIENT_ID,
+)
+
+self.subscribe_data(
+    DataType("DatabentoStatistics", identifier=str(instrument_id)),
+    client_id=DATABENTO_CLIENT_ID,
+)
+```
+
+Databento live subscriptions cannot be removed one at a time, so the matching `unsubscribe_*`
+commands are ignored.
 
 ### Historical requests for depth and bars
 
@@ -627,12 +649,14 @@ The `imbalance` and `statistics` schemas have no built-in Nautilus equivalents.
 The adapter defines `DatabentoImbalance` and `DatabentoStatistics` in Rust, and
 Python bindings expose both types from `nautilus_trader.adapters.databento`.
 
-The live data client does not route these types through node subscriptions or
-requests. Reach them one of three ways:
+Subscribe to live records with `subscribe_data()` and a `DataType` named `DatabentoStatistics` or
+`DatabentoImbalance` whose identifier is the instrument ID. Historical requests and files use:
 
 - `DatabentoDataLoader.load_imbalance` and `load_statistics` for DBN files.
 - `DatabentoHistoricalClient.get_range_imbalance` and `get_range_statistics` for historical ranges.
-- `DatabentoLiveClient.subscribe` with the `imbalance` or `statistics` schema for live streams.
+
+`DatabentoLiveClient.subscribe` with the `imbalance` or `statistics` schema also streams them
+outside a node.
 
 Request a bounded range of `statistics` for the `ES.FUT` parent symbol
 (all active E-mini S&P 500 futures). Both `get_range_*` methods are asynchronous.
