@@ -185,6 +185,10 @@ than `XTZ`, `ZRX` and `XAUT`. `KFEE` becomes `FEE`.
 
 Futures balances used the venue's own spelling, which differs per wallet: cash and margin wallets
 key an asset `xbt` while the flex wallet keys it `XBT`. Both become `BTC`, and `usd` becomes `USD`.
+Because the spellings now meet under one code, an asset held in several wallets is reported as one
+balance whose total and locked amounts are the sum of the wallets', each wallet's locked amount
+bounded to its own total first. Previously each wallet produced its own entry and the account kept
+whichever it read last.
 
 A cache or database written by an earlier version needs migrating or rebuilding.
 
@@ -194,8 +198,10 @@ Configuration follows the same mapping and accepts either spelling, so
 Money precision changes where a code now resolves to a built-in currency. `ZEUR` and `ZUSD` were
 unknown to the platform and were registered as 8-decimal crypto; `EUR` and `USD` are built-in fiat
 with 2 decimals, and `JPY` with none. That affects the instrument quote currency, REST fill
-commissions and the PnL derived from them. Account balances are unaffected, because the balance
-parsers construct their own 8-decimal currency from the code rather than resolving a registered one.
+commissions and the PnL derived from them. Account balances keep their 8-decimal precision, because
+the balance parsers construct their own currency from the code rather than resolving a registered
+one. The single exception runs the other way: the futures flex `portfolioValue` entry was built on
+the 2-decimal `USD` and now shares the 8-decimal balance currency, which widens it without loss.
 :::
 
 ### Spot markets

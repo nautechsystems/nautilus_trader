@@ -2876,21 +2876,25 @@ fn map_futures_trigger_signal(
     }
 }
 
-/// Accumulated `(total, locked)` for balances, or `(initial, maintenance)` for margins, per code.
+/// Accumulated `(total, locked)` balance amounts per standard code.
 type AmountsByCode = AHashMap<Ustr, (Decimal, Decimal)>;
 
 /// Combines the per-wallet balances and margins of a Kraken Futures accounts response.
 ///
 /// The venue keys the same asset differently per wallet, `xbt` in the cash and single-collateral
 /// wallets against `XBT` in the flex wallet, and every spelling maps to one standard code. The
-/// accounts map is unordered, so entries accumulate per code and are emitted once in code order.
+/// accounts map is unordered, so balances accumulate per code and are emitted once in code order.
 /// Pushing them into a flat vector instead would leave the surviving entry to iteration order,
-/// since the account keys its balances and its account-wide margins by currency.
+/// since the account keys its balances by currency.
+///
+/// Margins are not combined. Single-collateral requirements are denominated in the wallet's own
+/// currency while flex requirements are in USD, so their raw amounts cannot be added under one
+/// code; they are pushed as reported, as before.
 fn parse_account_entries(
     accounts: &AHashMap<String, FuturesAccount>,
 ) -> (Vec<AccountBalance>, Vec<MarginBalance>) {
     let mut balances: AmountsByCode = AHashMap::new();
-    let mut margins: AmountsByCode = AHashMap::new();
+    let mut margins: Vec<MarginBalance> = Vec::new();
 
     for account in accounts.values() {
         match account.account_type {
@@ -2911,21 +2915,18 @@ fn parse_account_entries(
         }
     }
 
-    (emit_balances(&balances), emit_margins(&margins))
+    (emit_balances(&balances), margins)
 }
 
-/// Resolves the currency a futures wallet code maps to.
+/// Resolves the currency a futures balance is emitted in.
 ///
-/// Futures margin requirements are reported in USD and built from the registered two-decimal
-/// currency, so USD resolves to that same currency wherever it appears. Every other code keeps
-/// the eight-decimal crypto currency the futures balances are built with, which preserves the
-/// collateral amounts the venue reports.
-fn futures_currency(code: &str) -> Currency {
-    if code == "USD" {
-        Currency::USD()
-    } else {
-        Currency::new(code, 8, 0, code, CurrencyType::Crypto)
-    }
+/// Every balance keeps the eight-decimal currency the wallet parsers have always built, so wallet
+/// amounts are never rounded; resolving USD to the registered two-decimal currency would round
+/// cash and single-collateral USD balances to cents. The one entry that previously used the
+/// two-decimal currency, the flex `portfolioValue`, now shares this precision, which widens it
+/// without loss.
+fn futures_balance_currency(code: &str) -> Currency {
+    Currency::new(code, 8, 0, code, CurrencyType::Crypto)
 }
 
 /// Returns the codes of `amounts` in a stable order.
@@ -2940,8 +2941,11 @@ fn emit_balances(amounts: &AmountsByCode) -> Vec<AccountBalance> {
 
     for code in sorted_codes(amounts) {
         let (total, locked) = amounts[&code];
-        match AccountBalance::from_total_and_locked(total, locked, futures_currency(code.as_str()))
-        {
+        match AccountBalance::from_total_and_locked(
+            total,
+            locked,
+            futures_balance_currency(code.as_str()),
+        ) {
             Ok(balance) => balances.push(balance),
             Err(e) => log::warn!("Skipping {code} balance: {e}"),
         }
@@ -2950,40 +2954,26 @@ fn emit_balances(amounts: &AmountsByCode) -> Vec<AccountBalance> {
     balances
 }
 
-fn emit_margins(amounts: &AmountsByCode) -> Vec<MarginBalance> {
-    let mut margins = Vec::with_capacity(amounts.len());
-
-    for code in sorted_codes(amounts) {
-        let (initial, maintenance) = amounts[&code];
-        let currency = futures_currency(code.as_str());
-        match (
-            Money::from_decimal(initial, currency),
-            Money::from_decimal(maintenance, currency),
-        ) {
-            (Ok(initial), Ok(maintenance)) => {
-                margins.push(MarginBalance::new(initial, maintenance, None));
-            }
-            (Err(e), _) => log::warn!("Skipping {code} margin with invalid initial margin: {e}"),
-            (_, Err(e)) => {
-                log::warn!("Skipping {code} margin with invalid maintenance margin: {e}");
-            }
-        }
-    }
-
-    margins
-}
-
-/// Adds `first` and `second` to the entry for `code`.
+/// Adds one wallet's `total` and `locked` to the entry for `code`.
 ///
-/// Amounts are summed as raw `Decimal`, before `AccountBalance` clamps `locked` into
-/// `[0, total]` and before `Money` rounds, so a wallet's contribution is not altered by the
-/// order in which wallets are read.
-fn accumulate(amounts: &mut AmountsByCode, code: &str, first: Decimal, second: Decimal) {
+/// The wallet's `locked` is bounded first, exactly as `AccountBalance::from_total_and_locked`
+/// bounds a single balance: clamped into `[0, total]` for a non-negative total, and passed
+/// through unchanged for a negative one. Summing the raw figure instead would let one wallet
+/// cancel another's reservation. A flex wallet holding 1 BTC with 1.6 BTC-equivalent available
+/// margin reports a raw locked of -0.6, which would erase the 0.6 a single-collateral wallet
+/// holding 1 BTC with 0.4 available has genuinely reserved.
+fn accumulate_balance(amounts: &mut AmountsByCode, code: &str, total: Decimal, locked: Decimal) {
+    let locked = if total.is_sign_negative() {
+        locked
+    } else {
+        locked.clamp(Decimal::ZERO, total)
+    };
+
     let entry = amounts
         .entry(Ustr::from(code))
         .or_insert((Decimal::ZERO, Decimal::ZERO));
-    entry.0 += first;
-    entry.1 += second;
+    entry.0 += total;
+    entry.1 += locked;
 }
 
 fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
@@ -3009,7 +2999,7 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
         let available_amount = currency_info.available.unwrap_or(total_amount);
         let locked_amount = total_amount - available_amount;
 
-        accumulate(balances, &code, total_amount, locked_amount);
+        accumulate_balance(balances, &code, total_amount, locked_amount);
     }
 
     // Multi-collateral accounts track margin in USD even though the
@@ -3020,14 +3010,15 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
         let available_usd = account.available_margin.unwrap_or(portfolio_value);
         let locked_usd = portfolio_value - available_usd;
 
-        accumulate(balances, "USD", portfolio_value, locked_usd);
+        accumulate_balance(balances, "USD", portfolio_value, locked_usd);
     }
 }
 
-fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
+fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
     if let Some(initial_margin) = account.initial_margin
         && initial_margin > Decimal::ZERO
     {
+        let usd_currency = Currency::USD();
         let maintenance = account
             .margin_requirements
             .as_ref()
@@ -3035,7 +3026,7 @@ fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Amount
             .unwrap_or(Decimal::ZERO);
         // Kraken Futures reports cross-margin aggregates in USD; emit as an
         // account-wide entry keyed by USD.
-        accumulate(margins, "USD", initial_margin, maintenance);
+        push_margin(margins, initial_margin, maintenance, usd_currency);
     }
 }
 
@@ -3062,17 +3053,36 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Amount
             .unwrap_or(amount);
         let locked = amount - available;
 
-        accumulate(balances, &code, amount, locked);
+        accumulate_balance(balances, &code, amount, locked);
     }
 }
 
-fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
+fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
     if let Some(ref mr) = account.margin_requirements {
         let im = mr.im.unwrap_or(Decimal::ZERO);
         let mm = mr.mm.unwrap_or(Decimal::ZERO);
         if im > Decimal::ZERO || mm > Decimal::ZERO {
-            accumulate(margins, "USD", im, mm);
+            let usd_currency = Currency::USD();
+            push_margin(margins, im, mm, usd_currency);
         }
+    }
+}
+
+fn push_margin(
+    margins: &mut Vec<MarginBalance>,
+    initial: Decimal,
+    maintenance: Decimal,
+    currency: Currency,
+) {
+    let initial = Money::from_decimal(initial, currency);
+    let maintenance = Money::from_decimal(maintenance, currency);
+
+    match (initial, maintenance) {
+        (Ok(initial), Ok(maintenance)) => {
+            margins.push(MarginBalance::new(initial, maintenance, None));
+        }
+        (Err(e), _) => log::warn!("Skipping margin balance with invalid initial margin: {e}"),
+        (_, Err(e)) => log::warn!("Skipping margin balance with invalid maintenance margin: {e}"),
     }
 }
 
@@ -3085,7 +3095,7 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
         // The venue keys these by its own spelling and casing, so map to the standard code.
         let code = normalize_asset_key(currency_code.as_str());
 
-        accumulate(balances, &code, amount, Decimal::ZERO);
+        accumulate_balance(balances, &code, amount, Decimal::ZERO);
     }
 }
 
@@ -3316,9 +3326,103 @@ mod tests {
         assert_eq!(usd[0].total.as_decimal(), dec!(34995.52));
     }
 
-    /// The account-wide USD margin requirement must be one deterministic entry.
+    /// Each wallet's `locked` is bounded before the sum, so one wallet cannot cancel another's.
+    ///
+    /// A single-collateral wallet with 1 BTC and 0.4 available has reserved 0.6. A flex wallet
+    /// with 1 BTC and 1.6 BTC-equivalent available margin reports a raw locked of -0.6, which
+    /// summed unbounded would erase that reservation.
     #[rstest]
-    fn test_parse_account_entries_combines_account_wide_margins() {
+    fn test_parse_account_entries_bounds_locked_per_wallet() {
+        let single = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: [("xbt".to_string(), dec!(1))].into_iter().collect(),
+            currencies: AHashMap::new(),
+            auxiliary: Some(FuturesAuxiliary {
+                usd: None,
+                pv: None,
+                pnl: None,
+                af: Some(dec!(0.4)),
+                funding: None,
+            }),
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut flex = flex_wallet(&[], None);
+        flex.currencies.insert(
+            "XBT".to_string(),
+            FuturesFlexCurrency {
+                quantity: dec!(1),
+                value: None,
+                collateral: None,
+                available: Some(dec!(1.6)),
+            },
+        );
+
+        let (balances, _) = entries_for(&[("fi_xbtusd", single), ("flex", flex)]);
+
+        let btc = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "BTC")
+            .expect("one BTC balance");
+        assert_eq!(btc.total.as_decimal(), dec!(2));
+        assert_eq!(
+            btc.locked.as_decimal(),
+            dec!(0.6),
+            "the flex wallet's negative raw locked must not cancel the reservation"
+        );
+        assert_eq!(btc.free.as_decimal(), dec!(1.4));
+    }
+
+    /// A negative total keeps its reported `locked`, as a single balance always has.
+    #[rstest]
+    fn test_parse_account_entries_passes_a_negative_total_through() {
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: [("xbt".to_string(), dec!(-1))].into_iter().collect(),
+            currencies: AHashMap::new(),
+            auxiliary: Some(FuturesAuxiliary {
+                usd: None,
+                pv: None,
+                pnl: None,
+                af: Some(dec!(-0.4)),
+                funding: None,
+            }),
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let (balances, _) = entries_for(&[("fi_xbtusd", account)]);
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].total.as_decimal(), dec!(-1));
+        assert_eq!(balances[0].locked.as_decimal(), dec!(-0.6));
+        assert_eq!(balances[0].free.as_decimal(), dec!(-0.4));
+    }
+
+    /// A USD wallet balance keeps eight decimals rather than rounding to cents.
+    #[rstest]
+    fn test_parse_account_entries_keeps_usd_balance_at_eight_decimals() {
+        let (balances, _) = entries_for(&[("cash", cash_wallet(&[("usd", dec!(1234.56789012))]))]);
+
+        let usd = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "USD")
+            .expect("one USD balance");
+        assert_eq!(usd.currency.precision, 8);
+        assert_eq!(usd.total.as_decimal(), dec!(1234.56789012));
+    }
+
+    /// Margins stay one entry per wallet: single-collateral requirements are denominated in the
+    /// wallet's currency and flex requirements in USD, so their amounts must not be added.
+    #[rstest]
+    fn test_parse_account_entries_keeps_margins_per_wallet() {
         let mut flex = flex_wallet(&[], Some(dec!(10000)));
         flex.initial_margin = Some(dec!(500));
         flex.margin_requirements = Some(FuturesMarginRequirements {
@@ -3347,9 +3451,10 @@ mod tests {
 
         let (_, margins) = entries_for(&[("flex", flex), ("fi_xbtusd", single)]);
 
-        assert_eq!(margins.len(), 1, "expected one USD margin: {margins:?}");
-        assert_eq!(margins[0].initial.as_decimal(), dec!(600));
-        assert_eq!(margins[0].maintenance.as_decimal(), dec!(300));
+        assert_eq!(margins.len(), 2, "one margin entry per wallet: {margins:?}");
+        let mut initials: Vec<Decimal> = margins.iter().map(|m| m.initial.as_decimal()).collect();
+        initials.sort();
+        assert_eq!(initials, vec![dec!(100), dec!(500)]);
     }
 
     /// A single-collateral wallet keys positions by contract symbol, which are not balances.
