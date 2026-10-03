@@ -147,7 +147,8 @@ and closing the parent only shrinks them:
 - Released children keep working for the parent's filled quantity. A child with nothing left to
   cover is canceled.
 - Reducing the parent to its filled quantity completes it, so `OtoTriggerMode.FULL` releases held
-  children at that quantity.
+  children at that quantity, and a child that fills on release leaves the others only what it did
+  not fill.
 - Canceling or expiring the parent cancels held children, so a partially filled parent that closes
   this way under `OtoTriggerMode.FULL` leaves its fills without children.
 
