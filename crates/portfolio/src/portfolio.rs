@@ -519,6 +519,10 @@ impl Portfolio {
         let (unrealized_pnls, unpriced) =
             self.unrealized_pnls_with_missing(*venue, account_id, target_currency)?;
 
+        if account_id.is_some() {
+            self.update_missing_price_state(*venue, account_id.copied(), &unpriced);
+        }
+
         if unpriced.is_empty() {
             Some(unrealized_pnls)
         } else {
@@ -565,10 +569,6 @@ impl Portfolio {
                 }
                 Err(UnrealizedPnlError::Invalid) => return None,
             }
-        }
-
-        if account_id.is_some() {
-            self.update_missing_price_state(venue, account_id.copied(), &unpriced);
         }
 
         Some((unrealized_pnls, unpriced))
@@ -908,8 +908,20 @@ impl Portfolio {
     /// touched (open or closed) so a multi-venue account where one venue is
     /// now flat still reports its accumulated realized PnL. Returns `None` if
     /// no account is registered.
+    ///
+    /// Unpriced open positions are also recorded in the missing-price tracker
+    /// under the account's scope (see [`Portfolio::missing_price_instruments`]).
     #[must_use]
     pub fn build_snapshot(&mut self, account_id: &AccountId) -> Option<PortfolioSnapshot> {
+        self.build_snapshot_inner(*account_id, true)
+    }
+
+    fn build_snapshot_inner(
+        &mut self,
+        account_id: AccountId,
+        track_missing_prices: bool,
+    ) -> Option<PortfolioSnapshot> {
+        let account_id = &account_id;
         let account = self.cache.borrow().account_owned(account_id)?;
 
         let balances: Vec<AccountBalance> = account.balances().into_values().collect();
@@ -959,6 +971,10 @@ impl Portfolio {
         for venue in &open_venues {
             let (unrealized_pnls, venue_unpriced) =
                 self.unrealized_pnls_with_missing(*venue, Some(account_id), None)?;
+
+            if track_missing_prices {
+                self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+            }
             snapshot_unpriced.extend(venue_unpriced);
 
             for money in unrealized_pnls.into_values() {
@@ -986,14 +1002,25 @@ impl Portfolio {
             }
             AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
                 for venue in &open_venues {
-                    for money in self
-                        .mark_values_with_mode(*venue, Some(account_id), MarkValueMode::Equity)
-                        .into_values()
-                    {
+                    let mut values: IndexMap<Currency, Decimal> = IndexMap::new();
+                    let mut venue_unpriced: AHashSet<InstrumentId> = AHashSet::new();
+                    // Returns true here: `open_venues` only holds venues with open positions
+                    self.accumulate_mark_values(
+                        *venue,
+                        Some(account_id),
+                        &mut values,
+                        &mut venue_unpriced,
+                        MarkValueMode::Equity,
+                    );
+
+                    if track_missing_prices {
+                        self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+                    }
+
+                    for money in decimal_map_to_money(values).into_values() {
                         checked_add_money_map(&mut equity, money, "snapshot equity")?;
                     }
-                    snapshot_unpriced
-                        .extend(self.missing_price_instruments_for_account(*venue, *account_id));
+                    snapshot_unpriced.extend(venue_unpriced);
                 }
             }
         }
@@ -1182,20 +1209,6 @@ impl Portfolio {
         // tracking set is AHash-backed.
         ids.sort();
         ids
-    }
-
-    fn missing_price_instruments_for_account(
-        &self,
-        venue: Venue,
-        account_id: AccountId,
-    ) -> AHashSet<InstrumentId> {
-        self.inner
-            .borrow()
-            .venues_missing_price
-            .get(&venue)
-            .and_then(|observations| observations.get(&Some(account_id)))
-            .cloned()
-            .unwrap_or_default()
     }
 
     fn update_missing_price_state(
@@ -4322,7 +4335,9 @@ fn emit_snapshot(
         config,
     };
 
-    let mut snapshot = match portfolio.build_snapshot(&account_id) {
+    // Skip the missing-price tracker: no caller refreshes the account scope between
+    // scheduled samples. The snapshot still reports its unpriced instruments.
+    let mut snapshot = match portfolio.build_snapshot_inner(account_id, false) {
         Some(snapshot) => snapshot,
         None => return,
     };
