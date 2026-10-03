@@ -22570,46 +22570,50 @@ fn test_instrument_update_canceling_oto_entry_keeps_fitting_exits(
 
 // Each OTO child is sized as if it covers the whole parent quantity, so two split children
 // each keep covering the whole filled quantity when the parent closes
+// A 10.000 OTO entry at 1500.00 whose two exits, the stop-loss then the take-profit IDs, are
+// independent sell limits at `prices` with no OUO link between them
+fn independent_oto_orders(
+    instrument: &InstrumentAny,
+    exit_quantity: &str,
+    prices: [&str; 2],
+) -> Vec<OrderAny> {
+    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
+    let exit_ids = [
+        ClientOrderId::from(BRACKET_SL_ID),
+        ClientOrderId::from(BRACKET_TP_ID),
+    ];
+    let entry = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("10.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(exit_ids.to_vec())
+        .submit(true)
+        .build();
+    let exits = exit_ids.iter().zip(prices).map(|(id, price)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .price(Price::from(price))
+            .quantity(Quantity::from(exit_quantity))
+            .client_order_id(*id)
+            .parent_order_id(entry_id)
+            .submit(true)
+            .build()
+    });
+    std::iter::once(entry).chain(exits).collect()
+}
+
 #[rstest]
 fn test_split_oto_children_each_cover_whole_parent_quantity(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
 ) {
     let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
-    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
-    let child_ids = [
-        ClientOrderId::from(BRACKET_SL_ID),
-        ClientOrderId::from(BRACKET_TP_ID),
-    ];
-    let entry = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_eth_usdt.id())
-        .side(OrderSide::Buy)
-        .price(Price::from("1500.00"))
-        .quantity(Quantity::from("10.000"))
-        .client_order_id(entry_id)
-        .contingency_type(ContingencyType::Oto)
-        .linked_order_ids(child_ids.to_vec())
-        .submit(true)
-        .build();
-    let children = child_ids
-        .iter()
-        .zip(["3000.00", "3100.00"])
-        .map(|(id, price)| {
-            OrderTestBuilder::new(OrderType::Limit)
-                .instrument_id(instrument_eth_usdt.id())
-                .side(OrderSide::Sell)
-                .price(Price::from(price))
-                .quantity(Quantity::from("5.000"))
-                .client_order_id(*id)
-                .parent_order_id(entry_id)
-                .submit(true)
-                .build()
-        });
-    submit_orders(
-        &mut engine,
-        account_id,
-        std::iter::once(entry).chain(children).collect(),
-    );
+    let orders = independent_oto_orders(&instrument_eth_usdt, "5.000", ["3000.00", "3100.00"]);
+    submit_orders(&mut engine, account_id, orders);
     add_then_remove_liquidity(
         &mut engine,
         &instrument_eth_usdt,
@@ -22625,6 +22629,152 @@ fn test_split_oto_children_each_cover_whole_parent_quantity(
 
     engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
     assert_bracket_exits(&cache.borrow(), &handler, OrderStatus::Accepted, "4.000");
+}
+
+// Under the full trigger, reducing an entry filled 4 of 10 to 4 releases its independent exits in
+// turn against a 3100.00 bid. An exit that fills on release leaves the other only what it did not
+// fill, whether that exit is released first or second, or both exits are marketable.
+#[rstest]
+#[case::marketable_first(["3000.00", "3200.00"], [OrderStatus::Filled, OrderStatus::Canceled])]
+#[case::marketable_second(["3200.00", "3000.00"], [OrderStatus::Canceled, OrderStatus::Filled])]
+#[case::both_marketable(["3000.00", "3050.00"], [OrderStatus::Filled, OrderStatus::Canceled])]
+fn test_full_trigger_release_keeps_exits_within_entry_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] prices: [&str; 2],
+    #[case] statuses: [OrderStatus; 2],
+    #[values(false, true)] deferred: bool,
+) {
+    let config = OrderMatchingEngineConfig {
+        oto_full_trigger: true,
+        ..engine_config()
+    };
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, config);
+    let orders = independent_oto_orders(&instrument_eth_usdt, "10.000", prices);
+    submit_orders(&mut engine, account_id, orders);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "4.000",
+        1,
+    );
+    let bid = book_delta(
+        &instrument_eth_usdt,
+        BookAction::Add,
+        OrderSide::Buy,
+        "3100.00",
+        "20.000",
+        2,
+    );
+    engine.process_order_book_delta(&bid).unwrap();
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        let modify = modify_bracket_entry(&instrument_eth_usdt, Some("4.000"), None);
+        engine.process_modify(&modify, account_id);
+    });
+
+    let summary = event_summary(&handler);
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    let mut exits_filled = Quantity::from("0.000");
+
+    for (id, status) in [BRACKET_SL_ID, BRACKET_TP_ID].into_iter().zip(statuses) {
+        let exit = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(exit.status(), status, "{id}: {summary:?}");
+        let canceled = format!("{:?}:{id}", OrderEventType::Canceled);
+        let cancels = summary.iter().filter(|event| **event == canceled).count();
+        let expected_cancels = usize::from(status == OrderStatus::Canceled);
+        assert_eq!(cancels, expected_cancels, "{id}: {summary:?}");
+        exits_filled = exits_filled + exit.filled_qty();
+    }
+    assert_eq!(exits_filled, Quantity::from("4.000"), "{summary:?}");
+}
+
+// Without the full trigger, an exit that filled 1 and then closes, ahead of the entry in the same
+// deferred batch, still counts that fill, so the other exit covers the remaining 3
+#[rstest]
+fn test_deferred_exit_fill_and_close_before_entry_cancel_counts_exit_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderStatus::Canceled, OrderStatus::Expired)] exit_status: OrderStatus,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let mut orders = independent_oto_orders(&instrument_eth_usdt, "10.000", ["3000.00", "3100.00"]);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+
+    if exit_status == OrderStatus::Expired {
+        orders[1] = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("3000.00"))
+            .quantity(Quantity::from("10.000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(BRACKET_EXPIRE_NS))
+            .client_order_id(sl_id)
+            .parent_order_id(ClientOrderId::from(BRACKET_ENTRY_ID))
+            .submit(true)
+            .build();
+    }
+    submit_orders(&mut engine, account_id, orders);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "4.000",
+        1,
+    );
+    let cancel_sl = CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        sl_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "1.000",
+            2,
+        );
+
+        if exit_status == OrderStatus::Expired {
+            let ts = UnixNanos::from(BRACKET_EXPIRE_NS + 1);
+            engine.process_quote_tick(&QuoteTick::new(
+                instrument_eth_usdt.id(),
+                Price::from("1490.00"),
+                Price::from("1510.00"),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts,
+                ts,
+            ));
+        } else {
+            engine.process_cancel(&cancel_sl, account_id);
+        }
+        engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+    });
+
+    let summary = event_summary(&handler);
+    let cache = cache.borrow();
+    assert_bracket_entry(&cache, OrderStatus::Canceled, "4.000");
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), exit_status, "{summary:?}");
+    assert_eq!(sl.filled_qty(), Quantity::from("1.000"), "{summary:?}");
+    let tp = cache.order(&ClientOrderId::from(BRACKET_TP_ID)).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Accepted, "{summary:?}");
+    assert_eq!(tp.quantity(), Quantity::from("3.000"), "{summary:?}");
 }
 
 #[rstest]

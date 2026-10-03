@@ -4234,7 +4234,7 @@ impl OrderMatchingEngine {
                 PostMatchOrderAction::Expire(order) => {
                     self.delete_core_order(client_order_id);
                     self.expire_order(&order);
-                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    self.purge_cached_filled_qty_if_closed(client_order_id);
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
@@ -6489,10 +6489,12 @@ impl OrderMatchingEngine {
             && order.contingency_type().is_some()
             && cancel_contingencies
         {
-            // Sizes OTO children from the filled quantity, so drop it only afterwards
             self.cancel_contingent_orders(order, excluded);
         }
-        self.cached_filled_qty.swap_remove(&order.client_order_id());
+
+        // OTO children are sized from this order's fills, and OTO siblings count them, so keep
+        // them until the cache shows the order closed
+        self.purge_cached_filled_qty_if_closed(order.client_order_id());
     }
 
     fn update_order(
@@ -6963,13 +6965,7 @@ impl OrderMatchingEngine {
         let parent_closed = parent_quantity <= parent_filled_qty;
         // `parent` precedes the modify, and reduce-only children track fills between modifies
         let parent_grew = parent_quantity > parent.quantity();
-        let children_filled = linked_order_ids
-            .iter()
-            .filter_map(|id| self.order_snapshot(*id))
-            .fold(Quantity::zero(parent_quantity.precision), |acc, child| {
-                acc + self.engine_filled_qty(&child)
-            });
-        let remaining = parent_quantity.saturating_sub(children_filled);
+        let mut released_children = false;
 
         for client_order_id in linked_order_ids {
             if excluded.contains(client_order_id) {
@@ -6993,6 +6989,15 @@ impl OrderMatchingEngine {
             {
                 continue;
             }
+
+            // Recounted per child, as releasing a marketable child fills it at once
+            let children_filled = linked_order_ids
+                .iter()
+                .filter_map(|id| self.order_snapshot(*id))
+                .fold(Quantity::zero(parent_quantity.precision), |acc, child| {
+                    acc + self.engine_filled_qty(&child)
+                });
+            let remaining = parent_quantity.saturating_sub(children_filled);
 
             // A released child is in the book even before its deferred acceptance applies
             let released = self.core.order_exists(*client_order_id);
@@ -7037,10 +7042,22 @@ impl OrderMatchingEngine {
                 match (self.order_snapshot(*client_order_id), account_id) {
                     (Some(mut child_order), Some(account_id)) => {
                         self.process_order(&mut child_order, account_id);
+                        released_children = true;
                     }
                     _ => log::error!("Cannot release OTO order {client_order_id}"),
                 }
             }
+        }
+
+        // A child released above can fill at once, leaving less for those sized before it, so
+        // size the children resting in the book again
+        if released_children {
+            let not_resting: Vec<ClientOrderId> = linked_order_ids
+                .iter()
+                .filter(|id| excluded.contains(*id) || !self.core.order_exists(**id))
+                .copied()
+                .collect();
+            self.update_oto_children(parent, Some(parent_quantity), &not_resting);
         }
     }
 
