@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, collections::HashSet};
+use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use futures_util::StreamExt;
@@ -397,7 +397,7 @@ impl<'a> PoolDiscoveryService<'a> {
                     let sanitized_symbol = sanitize_string(&token_info.symbol);
 
                     let token = Token::new(
-                        self.chain.clone(),
+                        Arc::clone(&self.chain),
                         token_address,
                         sanitized_name,
                         sanitized_symbol,
@@ -481,8 +481,8 @@ impl<'a> PoolDiscoveryService<'a> {
                 .unwrap_or_default();
 
             let mut pool = Pool::new(
-                self.chain.clone(),
-                dex.clone(),
+                Arc::clone(&self.chain),
+                Arc::clone(dex),
                 pool_event.pool_address,
                 pool_event.pool_identifier,
                 pool_event.block_number,

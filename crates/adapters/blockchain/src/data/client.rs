@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use nautilus_common::{
@@ -89,7 +89,7 @@ impl BlockchainDataClient {
     /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
     #[must_use]
     pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> Self {
-        let chain = config.chain.clone();
+        let chain = Arc::clone(&config.chain);
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         let socket_factory = SocketControlFactory::new(client_id, None);
@@ -1090,7 +1090,7 @@ impl BlockchainDataClient {
 
                 match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
-                        let pool = pool.clone();
+                        let pool = Arc::clone(pool);
                         log::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
 
                         // Send the pool definition
@@ -1552,7 +1552,7 @@ mod tests {
         let address = address!("1111111111111111111111111111111111111111");
 
         BlockchainMessage::SwapEvent(SwapEvent::new(
-            pool.dex.clone(),
+            Arc::clone(&pool.dex),
             pool.pool_identifier,
             block_number,
             "0x1".to_string(),
@@ -1586,7 +1586,7 @@ mod tests {
         let address = address!("1111111111111111111111111111111111111111");
 
         BlockchainMessage::FlashEvent(FlashEvent::new(
-            pool.dex.clone(),
+            Arc::clone(&pool.dex),
             pool.pool_identifier,
             block_number,
             "0x1".to_string(),
@@ -1607,20 +1607,21 @@ mod tests {
                 .expect("Ethereum chain should exist")
                 .clone(),
         );
-        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Ethereum UniswapV3 should be registered")
-            .dex
-            .clone();
+        let dex = Arc::clone(
+            &get_dex_extended(chain.name, &DexType::UniswapV3)
+                .expect("Ethereum UniswapV3 should be registered")
+                .dex,
+        );
         let pool_address = address!("4e68ccd3e89f51c3074ca5072bbac773960dfa36");
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("dAC17F958D2ee523a2206206994597C13D831ec7"),
             "Tether USD".to_string(),
             "USDT".to_string(),

@@ -288,7 +288,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have a HyperSync swap event parser defined or if parsing fails.
     pub fn parse_swap_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<SwapEvent> {
         if let Some(parse_fn) = &self.parse_swap_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of swap event is not defined in this dex: {}:{}",
@@ -305,7 +305,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have a HyperSync mint event parser defined or if parsing fails.
     pub fn parse_mint_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<MintEvent> {
         if let Some(parse_fn) = &self.parse_mint_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of mint event is not defined in this dex: {}:{}",
@@ -322,7 +322,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have a HyperSync burn event parser defined or if parsing fails.
     pub fn parse_burn_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<BurnEvent> {
         if let Some(parse_fn) = &self.parse_burn_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of burn event is not defined in this dex: {}:{}",
@@ -342,7 +342,7 @@ impl DexExtended {
         log: &HypersyncLog,
     ) -> anyhow::Result<InitializeEvent> {
         if let Some(parse_fn) = &self.parse_initialize_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of initialize event is not defined in this dex: {}:{}",
@@ -362,7 +362,7 @@ impl DexExtended {
         log: &HypersyncLog,
     ) -> anyhow::Result<CollectEvent> {
         if let Some(parse_fn) = &self.parse_collect_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of collect event is not defined in this dex: {}:{}",
@@ -379,7 +379,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have a HyperSync flash event parser defined or if parsing fails.
     pub fn parse_flash_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<FlashEvent> {
         if let Some(parse_fn) = &self.parse_flash_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of flash event is not defined in this dex: {}:{}",
@@ -399,7 +399,7 @@ impl DexExtended {
         log: &HypersyncLog,
     ) -> anyhow::Result<FeeProtocolUpdateEvent> {
         if let Some(parse_fn) = &self.parse_fee_protocol_update_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of SetFeeProtocol event is not defined in this dex: {}:{}",
@@ -419,7 +419,7 @@ impl DexExtended {
         log: &HypersyncLog,
     ) -> anyhow::Result<FeeProtocolCollectEvent> {
         if let Some(parse_fn) = &self.parse_fee_protocol_collect_event_hypersync_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "HyperSync parsing of CollectProtocol event is not defined in this dex: {}:{}",
@@ -453,7 +453,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC swap event parser defined or if parsing fails.
     pub fn parse_swap_event_rpc(&self, log: &RpcLog) -> anyhow::Result<SwapEvent> {
         if let Some(parse_fn) = &self.parse_swap_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of swap event is not defined in this dex: {}:{}",
@@ -470,7 +470,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC mint event parser defined or if parsing fails.
     pub fn parse_mint_event_rpc(&self, log: &RpcLog) -> anyhow::Result<MintEvent> {
         if let Some(parse_fn) = &self.parse_mint_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of mint event is not defined in this dex: {}:{}",
@@ -487,7 +487,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC burn event parser defined or if parsing fails.
     pub fn parse_burn_event_rpc(&self, log: &RpcLog) -> anyhow::Result<BurnEvent> {
         if let Some(parse_fn) = &self.parse_burn_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of burn event is not defined in this dex: {}:{}",
@@ -504,7 +504,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC initialize event parser defined or if parsing fails.
     pub fn parse_initialize_event_rpc(&self, log: &RpcLog) -> anyhow::Result<InitializeEvent> {
         if let Some(parse_fn) = &self.parse_initialize_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of initialize event is not defined in this dex: {}:{}",
@@ -521,7 +521,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC collect event parser defined or if parsing fails.
     pub fn parse_collect_event_rpc(&self, log: &RpcLog) -> anyhow::Result<CollectEvent> {
         if let Some(parse_fn) = &self.parse_collect_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of collect event is not defined in this dex: {}:{}",
@@ -538,7 +538,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have an RPC flash event parser defined or if parsing fails.
     pub fn parse_flash_event_rpc(&self, log: &RpcLog) -> anyhow::Result<FlashEvent> {
         if let Some(parse_fn) = &self.parse_flash_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of flash event is not defined in this dex: {}:{}",
@@ -558,7 +558,7 @@ impl DexExtended {
         log: &RpcLog,
     ) -> anyhow::Result<FeeProtocolUpdateEvent> {
         if let Some(parse_fn) = &self.parse_fee_protocol_update_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of SetFeeProtocol event is not defined in this dex: {}:{}",
@@ -578,7 +578,7 @@ impl DexExtended {
         log: &RpcLog,
     ) -> anyhow::Result<FeeProtocolCollectEvent> {
         if let Some(parse_fn) = &self.parse_fee_protocol_collect_event_rpc_fn {
-            parse_fn(self.dex.clone(), log)
+            parse_fn(Arc::clone(&self.dex), log)
         } else {
             anyhow::bail!(
                 "RPC parsing of CollectProtocol event is not defined in this dex: {}:{}",

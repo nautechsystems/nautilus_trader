@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -96,7 +98,7 @@ impl FlashEvent {
     ) -> PoolFlash {
         PoolFlash::new(
             chain,
-            self.dex.clone(),
+            Arc::clone(&self.dex),
             instrument_id,
             self.pool_identifier,
             self.block_number,
