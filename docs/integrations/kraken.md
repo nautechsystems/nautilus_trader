@@ -641,12 +641,38 @@ flag.
   price Kraken documents as the average entry price.
 - No synthetic FLAT cleanup: `OpenPositions` reports leveraged positions only, so an
   unleveraged spot holding never appears there and its absence is not evidence that the
-  position is closed. The bulk read therefore reports only what the venue returns, and
-  a leveraged position closed while the node was down is reconciled from the order and fill
-  reports in the startup mass status rather than from a fabricated FLAT.
+  position is closed. The bulk read reports only what the venue returns.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
   account-state refresh; used margin populates `MarginBalance.initial`, while
   equity and free margin populate the summary balance (see Spot margin trading).
+
+:::warning
+A leveraged position closed while the node was down is not recovered from its closing fill when
+`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the
+instrument carries no position report, and the engine projects that order's fill as order-only:
+the order reaches `FILLED`, while the cached position keeps both its quantity and its realized
+PnL, so the closing PnL is never recorded. This is the shared engine's documented behavior for an
+instrument with no in-scope position report, not a Kraken rule. See
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
+Removing the synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously
+supplied an explicit FLAT.
+
+A periodic position check does not recover it either, since margin mode declares no bulk position
+coverage, and that skip is logged at debug level. The condition also persists across restarts: the
+closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
+as already in sync.
+
+Leaving `reconciliation_lookback_mins` unset avoids the projection but is not a general remedy.
+The closing order is external to the cache, so it is attributed to the `EXTERNAL` strategy and keys
+a netting position by instrument and strategy. Unless the cached position is itself `EXTERNAL`-owned
+or the instrument is claimed through `external_order_claim`, the recovered fill opens a second,
+opposite position rather than closing the cached one: net exposure reaches zero, but the stale
+position and its realized PnL remain.
+
+Until this is addressed, reconcile a margin position closed during downtime manually, or run
+`spot_account_type=Cash` with `use_spot_position_reports=True`, where the wallet read enumerates
+every holding it covers and an absent report is genuine evidence of flat.
+:::
 
 ### Futures reconciliation
 

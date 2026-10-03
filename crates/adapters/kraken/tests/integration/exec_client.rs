@@ -535,6 +535,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     .unwrap_or_else(|| r#"{"error":[],"result":{}}"#.to_string()),
             )
         }
+        "/0/private/TradeBalance" => {
+            json_response(load_test_data("http_spot_trade_balance.json"))
+        }
         "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
         "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
         "/0/private/AddOrder" => {
@@ -1114,6 +1117,77 @@ async fn test_spot_margin_bulk_reports_leave_an_unleveraged_cached_position_alon
         reports.is_empty(),
         "an empty `OpenPositions` must not report the cached spot position flat: {reports:?}"
     );
+}
+
+/// The startup mass status must not invent a FLAT for a cached position either.
+///
+/// The sweep ran from two call sites; the periodic one is covered above, this is the startup one.
+/// It also pins the configuration the omission matters in: with a lookback declared, the engine
+/// projects a closing fill for an instrument carrying no position report as order-only, so the
+/// cached position keeps its quantity and its realized PnL. That is the shared engine's documented
+/// behavior for a missing report, and it is why absence must not be reported as FLAT here.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_startup_mass_status_adds_no_synthetic_flat() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_margin_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+
+    let (instrument_id, instrument) = xbtusd_spot_instrument();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.5"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-STARTUP-001")),
+        Some(PositionId::from("P-STARTUP-001")),
+        Some(Price::from("29500.0")),
+        Some(Quantity::from("0.5")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("1 USD")),
+        None,
+        Some(test_account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    let cached_qty = position.quantity;
+    let cached_realized = position.realized_pnl;
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        mass_status.position_reports().is_empty(),
+        "an empty `OpenPositions` must not put a synthetic FLAT in the startup mass status: {:?}",
+        mass_status.position_reports()
+    );
+    assert!(
+        mass_status.lookback_start().is_some(),
+        "the window must be declared, which is what makes an omitted report order-only"
+    );
+
+    let cache_ref = cache.borrow();
+    let cached = cache_ref
+        .position(&position.id)
+        .expect("the cached position must survive the read");
+    assert_eq!(cached.quantity, cached_qty);
+    assert_eq!(cached.realized_pnl, cached_realized);
 }
 
 /// Bulk position coverage must follow what the wallet read can actually report.
