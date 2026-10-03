@@ -2920,11 +2920,9 @@ fn parse_account_entries(
 
 /// Resolves the currency a futures balance is emitted in.
 ///
-/// Every balance keeps the eight-decimal currency the wallet parsers have always built, so wallet
-/// amounts are never rounded; resolving USD to the registered two-decimal currency would round
-/// cash and single-collateral USD balances to cents. The one entry that previously used the
-/// two-decimal currency, the flex `portfolioValue`, now shares this precision, which widens it
-/// without loss.
+/// Every balance keeps an eight-decimal currency, so wallet amounts are never rounded; resolving
+/// USD to the registered two-decimal currency would round cash and single-collateral USD balances
+/// to cents.
 fn futures_balance_currency(code: &str) -> Currency {
     Currency::new(code, 8, 0, code, CurrencyType::Crypto)
 }
