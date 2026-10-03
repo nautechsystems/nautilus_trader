@@ -75,7 +75,7 @@ pub mod sorted_hashset {
     }
 }
 
-/// Zero-allocation decimal visitor for maximum deserialization performance.
+/// Decimal visitor for direct JSON token conversion.
 ///
 /// Directly visits JSON tokens without intermediate `serde_json::Value` allocation.
 /// Handles all JSON numeric representations: strings, integers, floats, and null.
@@ -142,7 +142,7 @@ impl<'de> Visitor<'de> for DecimalVisitor {
     }
 }
 
-/// Zero-allocation optional decimal visitor for maximum deserialization performance.
+/// Optional decimal visitor for direct JSON token conversion.
 ///
 /// Handles null values as `None` and empty strings as `None`.
 /// Uses `deserialize_any` approach to handle all JSON value types uniformly.
@@ -212,7 +212,11 @@ fn json_token_text(raw: &RawValue) -> serde_json::Result<Cow<'_, str>> {
 
 fn parse_decimal_str(value: &str) -> Result<Decimal, String> {
     let parsed = if value.contains('e') || value.contains('E') {
-        Decimal::from_scientific(value)
+        if value.len() <= Decimal::MAX_SCALE as usize {
+            Decimal::from_scientific(value)
+        } else {
+            decimal::parse(value).or_else(|_| Decimal::from_scientific(value))
+        }
     } else {
         Decimal::from_str(value)
     };
@@ -477,11 +481,13 @@ pub const fn default_false() -> bool {
 /// - JSON null: → `Decimal::ZERO`
 /// - Scientific notation: `"1.5e-8"` → Decimal
 /// - Fractional digits beyond `Decimal`'s maximum scale (28) are rounded
+/// - Scientific strings preserve exactly representable values after exponent normalization
 ///
 /// # Performance
 ///
 /// This implementation is optimized for high-frequency trading scenarios:
-/// - Zero allocations for string values (uses borrowed `&str`)
+/// - Zero allocations for exactly representable plain borrowed strings
+/// - Scientific normalization and high-scale rounding may allocate
 /// - Direct integer conversion without string intermediary
 /// - No intermediate `serde_json::Value` heap allocation
 ///
@@ -542,11 +548,13 @@ where
 /// - Empty string: `""` → `None`
 /// - Scientific notation: `"1.5e-8"` → Some(Decimal)
 /// - Fractional digits beyond `Decimal`'s maximum scale (28) are rounded
+/// - Scientific strings preserve exactly representable values after exponent normalization
 ///
 /// # Performance
 ///
 /// This implementation is optimized for high-frequency trading scenarios:
-/// - Zero allocations for string values (uses borrowed `&str`)
+/// - Zero allocations for exactly representable plain borrowed strings
+/// - Scientific normalization and high-scale rounding may allocate
 /// - Direct integer conversion without string intermediary
 /// - No intermediate `serde_json::Value` heap allocation
 ///
@@ -1692,6 +1700,52 @@ mod tests {
     }
 
     #[rstest]
+    #[case("0.12345678901234567890123456789e1", dec!(1.2345678901234567890123456789))]
+    #[case("-0.12345678901234567890123456789E1", dec!(-1.2345678901234567890123456789))]
+    #[case("0.00000000000000000000000000001e1", dec!(0.0000000000000000000000000001))]
+    fn test_deserialize_decimal_scientific_representable(
+        #[case] value: &str,
+        #[case] expected: Decimal,
+        #[values(false, true)] optional: bool,
+    ) {
+        let json = serde_json::to_string(&json!({"value": value})).unwrap();
+
+        let actual = if optional {
+            serde_json::from_str::<TestOptionalDecimalOnly>(&json)
+                .unwrap()
+                .value
+        } else {
+            Some(
+                serde_json::from_str::<TestDecimalOnly>(&json)
+                    .unwrap()
+                    .value,
+            )
+        };
+
+        assert_eq!(actual, Some(expected));
+    }
+
+    #[rstest]
+    #[case(23, 28, 23)]
+    #[case(24, 29, 0)]
+    fn test_deserialize_decimal_scientific_length_boundary(
+        #[case] zeros: usize,
+        #[case] length: usize,
+        #[case] scale: u32,
+    ) {
+        let value = format!("1.5{}e1", "0".repeat(zeros));
+        let json = serde_json::to_string(&json!({"value": value})).unwrap();
+        let required: TestDecimalOnly = serde_json::from_str(&json).unwrap();
+        let optional: TestOptionalDecimalOnly = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value.len(), length);
+        assert_eq!(required.value, dec!(15));
+        assert_eq!(required.value.scale(), scale);
+        assert_eq!(optional.value, Some(dec!(15)));
+        assert_eq!(optional.value.unwrap().scale(), scale);
+    }
+
+    #[rstest]
     #[case(r#"{"value": "1.5e-8"}"#, dec!(0.000000015))]
     #[case(r#"{"value": "1E10"}"#, dec!(10000000000))]
     #[case(r#"{"value": "-1.23e5"}"#, dec!(-123000))]
@@ -1936,6 +1990,25 @@ mod tests {
     }
 
     proptest! {
+        #[rstest]
+        fn prop_deserialize_decimal_scientific_roundtrips_representable_values(
+            expected in representable_decimal_strategy(),
+            zeros in 0usize..=35,
+        ) {
+            let scientific = format!(
+                "{}{}e-{}",
+                expected.mantissa(),
+                "0".repeat(zeros),
+                expected.scale() as usize + zeros,
+            );
+            let json = serde_json::to_string(&json!({"value": scientific})).unwrap();
+            let required: TestDecimalOnly = serde_json::from_str(&json).unwrap();
+            let optional: TestOptionalDecimalOnly = serde_json::from_str(&json).unwrap();
+
+            prop_assert_eq!(required.value, expected);
+            prop_assert_eq!(optional.value, Some(expected));
+        }
+
         #[rstest]
         fn prop_deserialize_decimal_roundtrips_representable_values(
             expected in representable_decimal_strategy()

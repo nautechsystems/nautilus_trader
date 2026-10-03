@@ -194,6 +194,9 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `StackStr` hashing to support borrowed `str` lookups in maps and sets
+- Fixed precision loss when deserializing exactly representable scientific `Decimal` strings
+- Fixed `from_pydict` to raise `ValueError` for integers outside the signed or unsigned 64-bit range
 - Fixed fills after order expiry being dropped instead of updating the order and position
 - Fixed unnecessary Python borrow errors in default actor, strategy, and execution algorithm callbacks
 - Fixed duplicate error logging for propagated order-command failures
