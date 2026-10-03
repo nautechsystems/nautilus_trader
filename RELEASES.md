@@ -234,6 +234,7 @@ Released on TBD (UTC).
 - Fixed simulated trailing stop limits with a price filling before they trigger
 - Fixed simulated cancels rejected for pending OTO children and partially filled market orders
 - Fixed simulated venues accepting off-tick prices that could never fill
+- Fixed simulated cash accounts allowing binary-option sells to open or increase short positions
 - Fixed simulated OTO children left submitted after their parent is rejected
 - Fixed simulated bar execution evaluating last-price triggers against the previous bar leg
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale

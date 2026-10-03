@@ -3147,52 +3147,18 @@ impl OrderMatchingEngine {
                 );
             }
 
-            let position = self.position_for_order_in_cache(&cache_borrow, order);
-
-            // Check not shorting an equity without a MARGIN account
-            if order.order_side() == OrderSide::Sell
-                && self.account_type != AccountType::Margin
-                && matches!(self.instrument, InstrumentAny::Equity(_))
-                && position
-                    .as_ref()
-                    .is_none_or(|pos| !order.would_reduce_only(pos.side, pos.quantity))
-            {
-                let position_string = position
-                    .as_ref()
-                    .map_or("None".to_string(), |pos| pos.id.to_string());
-                break 'validate Some(
-                    format!(
-                        "Short selling not permitted on a CASH account with position {position_string} and order {order}",
-                    )
-                    .into(),
-                );
-            }
-
-            // Check reduce-only instruction
-            if self.config.use_reduce_only
-                && order.is_reduce_only()
-                && !order.is_closed()
-                && position.as_ref().is_none_or(|pos| {
-                    pos.is_closed()
-                        || (order.is_buy() && pos.is_long())
-                        || (order.is_sell() && pos.is_short())
-                })
-            {
-                break 'validate Some(
-                    format!(
-                        "Reduce-only order {} ({}-{}) would have increased position",
-                        order.client_order_id(),
-                        order.order_type().to_string().to_uppercase(),
-                        order.order_side().to_string().to_uppercase()
-                    )
-                    .into(),
-                );
-            }
-
             None
         };
 
         if let Some(reason) = reject_reason {
+            self.generate_order_rejected(order, reason);
+            return;
+        }
+
+        if let Some(reason) = self
+            .order_position_rejection(order)
+            .unwrap_or_else(|e| Some(e.to_string().into()))
+        {
             self.generate_order_rejected(order, reason);
             return;
         }
@@ -3231,6 +3197,89 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
+    }
+
+    fn order_position_rejection(&mut self, order: &OrderAny) -> anyhow::Result<Option<Ustr>> {
+        if self.restricts_short_selling() {
+            self.purge_applied_fills();
+        }
+
+        let cache = self.cache.borrow();
+        let position = self.position_for_order_in_cache(&cache, order);
+
+        if let Some(reason) = self.cash_sell_rejection(&cache, order, position.as_ref())? {
+            return Ok(Some(reason));
+        }
+
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && !order.is_closed()
+            && !(self.restricts_short_selling() && order.is_sell())
+            && position.as_ref().is_none_or(|pos| {
+                pos.is_closed()
+                    || (order.is_buy() && pos.is_long())
+                    || (order.is_sell() && pos.is_short())
+            })
+        {
+            return Ok(Some(
+                format!(
+                    "Reduce-only order {} ({}-{}) would have increased position",
+                    order.client_order_id(),
+                    order.order_type().to_string().to_uppercase(),
+                    order.order_side().to_string().to_uppercase()
+                )
+                .into(),
+            ));
+        }
+
+        Ok(None)
+    }
+
+    fn restricts_short_selling(&self) -> bool {
+        self.account_type != AccountType::Margin
+            && matches!(
+                self.instrument,
+                InstrumentAny::Equity(_) | InstrumentAny::BinaryOption(_)
+            )
+    }
+
+    fn cash_sell_rejection(
+        &self,
+        cache: &Cache,
+        order: &OrderAny,
+        position: Option<&Position>,
+    ) -> anyhow::Result<Option<Ustr>> {
+        if !self.restricts_short_selling() || !order.is_sell() {
+            return Ok(None);
+        }
+
+        let quantity = if order.is_quote_quantity() {
+            let reference_price = order.price().or(self.core.bid).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No market for {} to convert quote quantity to base",
+                    order.instrument_id()
+                )
+            })?;
+
+            self.instrument
+                .try_calculate_base_quantity(order.leaves_qty(), reference_price)?
+        } else {
+            order.leaves_qty()
+        };
+
+        let position_quantity = self.position_quantity(cache, order, position)?;
+
+        if quantity.as_decimal() <= position_quantity {
+            return Ok(None);
+        }
+
+        let position_string = position.map_or("None".to_string(), |pos| pos.id.to_string());
+        Ok(Some(
+            format!(
+                "Short selling not permitted on a CASH account with position {position_string} and order {order}",
+            )
+            .into(),
+        ))
     }
 
     fn order_price_rejection(&self, order: &OrderAny, field: &str, price: Price) -> Option<Ustr> {
@@ -4695,7 +4744,7 @@ impl OrderMatchingEngine {
 
         let (venue_position_id, position) = self.fill_position_for_order(&order, Some(true));
 
-        if self.config.use_reduce_only && order.is_reduce_only() && position.is_none() {
+        if self.reduce_only_position_missing(&order, position.as_ref()) {
             log::warn!(
                 "Canceling REDUCE_ONLY {} as would increase position",
                 order.order_type()
@@ -4909,7 +4958,7 @@ impl OrderMatchingEngine {
 
                 let (venue_position_id, position) = self.fill_position_for_order(&order, None);
 
-                if self.config.use_reduce_only && order.is_reduce_only() && position.is_none() {
+                if self.reduce_only_position_missing(&order, position.as_ref()) {
                     log::warn!(
                         "Canceling REDUCE_ONLY {} as would increase position",
                         order.order_type()
@@ -4994,11 +5043,39 @@ impl OrderMatchingEngine {
         }
     }
 
+    fn reduce_only_position_missing(
+        &mut self,
+        order: &OrderAny,
+        position: Option<&Position>,
+    ) -> bool {
+        self.config.use_reduce_only
+            && order.is_reduce_only()
+            && position.is_none()
+            && self
+                .position_quantity_remaining(order, None)
+                .map_or(true, |quantity| quantity.is_zero())
+    }
+
     fn fill_position_for_order(
         &mut self,
         order: &OrderAny,
         generate: Option<bool>,
     ) -> (Option<PositionId>, Option<Position>) {
+        if self.restricts_short_selling()
+            && self.oms_type == OmsType::Hedging
+            && let Some(position) = self.position_for_order_in_cache(&self.cache.borrow(), order)
+        {
+            return (Some(position.id), Some(position));
+        }
+
+        if self.restricts_short_selling()
+            && self.oms_type == OmsType::Hedging
+            && order.parent_order_id().is_some()
+        {
+            let cache = self.cache.borrow();
+            return (Self::position_id_for_order(&cache, order), None);
+        }
+
         if self.oms_type == OmsType::Hedging
             && self.config.use_reduce_only
             && order.is_reduce_only()
@@ -5033,6 +5110,13 @@ impl OrderMatchingEngine {
             return Some(position.clone_without_events());
         }
 
+        if self.restricts_short_selling()
+            && let Some(position_id) = Self::position_id_for_order(cache, order)
+            && let Some(position) = cache.position(&position_id)
+        {
+            return Some(position.clone_without_events());
+        }
+
         if self.oms_type == OmsType::Netting {
             let position_id = PositionId::new(
                 format!("{}-{}", order.instrument_id(), order.strategy_id()).as_str(),
@@ -5050,6 +5134,17 @@ impl OrderMatchingEngine {
         }
 
         None
+    }
+
+    fn position_id_for_order(cache: &Cache, order: &OrderAny) -> Option<PositionId> {
+        cache
+            .position_id(&order.client_order_id())
+            .copied()
+            .or_else(|| {
+                order
+                    .parent_order_id()
+                    .and_then(|parent_id| cache.position_id(&parent_id).copied())
+            })
     }
 
     fn open_position_reduced_by_order(cache: &Cache, order: &OrderAny) -> Option<Position> {
@@ -5119,11 +5214,7 @@ impl OrderMatchingEngine {
         let mut reduce_only_remaining = None;
         let mut reduce_only_filled = None;
 
-        if self.config.use_reduce_only
-            && order.is_reduce_only()
-            && let Some(current_position) = position
-        {
-            let remaining = self.position_quantity_remaining(order, current_position)?;
+        if let Some(remaining) = self.reduce_only_remaining(order, position)? {
             if remaining.is_zero() {
                 self.cancel_order(order, None);
                 return Ok(());
@@ -5370,43 +5461,126 @@ impl OrderMatchingEngine {
         normalized
     }
 
+    fn reduce_only_remaining(
+        &mut self,
+        order: &OrderAny,
+        position: Option<&Position>,
+    ) -> anyhow::Result<Option<Quantity>> {
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && (position.is_some() || self.restricts_short_selling())
+        {
+            return Ok(Some(self.position_quantity_remaining(order, position)?));
+        }
+
+        Ok(None)
+    }
+
     fn position_quantity_remaining(
         &mut self,
         order: &OrderAny,
-        position: &Position,
+        position: Option<&Position>,
     ) -> anyhow::Result<Quantity> {
-        self.purge_applied_fills();
-        let mut quantity = match position.side {
-            PositionSide::Long => position.quantity.as_decimal(),
-            PositionSide::Short => -position.quantity.as_decimal(),
-            PositionSide::Flat => Decimal::ZERO,
-        };
+        let precision = self.instrument.size_precision();
 
-        for fill in self.pending_fills.values() {
-            if fill.position_id == Some(position.id) {
-                quantity = quantity
-                    .checked_add(fill.quantity_change)
-                    .ok_or_else(|| anyhow::anyhow!("Pending position quantity overflow"))?;
-            }
+        if position.is_none() && !self.restricts_short_selling() {
+            return Ok(Quantity::zero(precision));
         }
+
+        self.purge_applied_fills();
+        let quantity = self.position_quantity(&self.cache.borrow(), order, position)?;
 
         if (order.is_buy() && quantity >= Decimal::ZERO)
             || (order.is_sell() && quantity <= Decimal::ZERO)
         {
-            return Ok(Quantity::zero(position.quantity.precision));
+            return Ok(Quantity::zero(precision));
         }
-        Ok(Quantity::from_decimal_dp(
-            quantity.abs(),
-            position.quantity.precision,
-        )?)
+
+        Ok(Quantity::from_decimal_dp(quantity.abs(), precision)?)
+    }
+
+    fn position_quantity(
+        &self,
+        cache: &Cache,
+        order: &OrderAny,
+        position: Option<&Position>,
+    ) -> anyhow::Result<Decimal> {
+        let position_id = position
+            .map(|position| position.id)
+            .or_else(|| Self::position_id_for_order(cache, order))
+            .or_else(|| {
+                (self.oms_type == OmsType::Netting).then(|| {
+                    PositionId::new(format!("{}-{}", order.instrument_id(), order.strategy_id()))
+                })
+            });
+
+        let cached_position = position_id.as_ref().and_then(|id| cache.position(id));
+        let position = position.or(cached_position.as_deref());
+        let splits_virtual_position = self.restricts_short_selling()
+            && self.oms_type == OmsType::Hedging
+            && position_id.is_some_and(|id| id.is_virtual());
+
+        let mut quantity = position.map_or(Decimal::ZERO, |position| match position.side {
+            PositionSide::Long => position.quantity.as_decimal(),
+            PositionSide::Short => -position.quantity.as_decimal(),
+            PositionSide::Flat => Decimal::ZERO,
+        });
+
+        let mut flipped_orders = IndexSet::new();
+
+        for fill in self.pending_fills.values() {
+            let matches_position = match position_id {
+                Some(position_id) => fill.position_id == Some(position_id),
+                None => order.parent_order_id().is_some_and(|parent_id| {
+                    fill.client_order_id == parent_id
+                        || cache
+                            .order(&fill.client_order_id)
+                            .is_some_and(|order| order.parent_order_id() == Some(parent_id))
+                }),
+            };
+
+            if !matches_position || flipped_orders.contains(&fill.client_order_id) {
+                continue;
+            }
+
+            let remaining = quantity
+                .checked_add(fill.quantity_change)
+                .ok_or_else(|| anyhow::anyhow!("Pending position quantity overflow"))?;
+
+            quantity = if splits_virtual_position
+                && !quantity.is_zero()
+                && !remaining.is_zero()
+                && quantity.is_sign_negative() != remaining.is_sign_negative()
+            {
+                flipped_orders.insert(fill.client_order_id);
+                Decimal::ZERO
+            } else {
+                remaining
+            };
+        }
+
+        Ok(quantity)
     }
 
     fn purge_applied_fills(&mut self) {
         let cache = self.cache.borrow();
+        let cash_cache = self.restricts_short_selling().then_some(&*cache);
         self.pending_fills.retain(|trade_id, fill| {
-            fill.position_id = fill
-                .position_id
-                .or_else(|| cache.position_id(&fill.client_order_id).copied());
+            let previous_position_id = cash_cache.and(fill.position_id);
+            fill.position_id = cash_cache
+                .and_then(|cache| cache.position_id(&fill.client_order_id).copied())
+                .or_else(|| {
+                    fill.position_id
+                        .filter(|id| cash_cache.is_none_or(|cache| cache.position(id).is_some()))
+                })
+                .or_else(|| cache.position_id(&fill.client_order_id).copied())
+                .or_else(|| {
+                    let cache = cash_cache?;
+                    let order = cache.order(&fill.client_order_id)?;
+                    Self::position_id_for_order(cache, &order)
+                })
+                .or(fill.position_id);
+
             let Some(position_id) = fill.position_id else {
                 return cache.order_exists(&fill.client_order_id);
             };
@@ -5414,7 +5588,12 @@ impl OrderMatchingEngine {
                 return cache.order_exists(&fill.client_order_id);
             };
 
-            if position.trade_ids.contains(trade_id) {
+            if previous_position_id
+                .and_then(|id| cache.position(&id))
+                .iter()
+                .chain(std::iter::once(&position))
+                .any(|position| position.trade_ids.contains(trade_id))
+            {
                 return false;
             }
             let opening_trade_id = position.events.first().map(|event| event.trade_id);
@@ -5424,6 +5603,16 @@ impl OrderMatchingEngine {
                     matches!(event, PositionReplayEvent::Filled(event) if event.trade_id == *trade_id)
                 }) || cache.position_snapshots(Some(&position_id), None).iter()
                     .any(|snapshot| snapshot.trade_ids.contains(trade_id))
+                    || cash_cache
+                        .and_then(|cache| cache.order(&fill.client_order_id))
+                        .filter(|order| position.opening_order_id == order.client_order_id())
+                        .is_some_and(|order| {
+                            order
+                                .trade_ids()
+                                .into_iter()
+                                .take_while(|id| Some(**id) != opening_trade_id)
+                                .any(|id| id == trade_id)
+                        })
                 {
                     return false;
                 }
@@ -5726,7 +5915,7 @@ impl OrderMatchingEngine {
                 |position| position.clone_without_events(),
             );
 
-            let remaining = self.position_quantity_remaining(&order, &position)?;
+            let remaining = self.position_quantity_remaining(&order, Some(&position))?;
             if remaining.is_zero() {
                 self.cancel_reduce_only_order(&order, filled_order.client_order_id())?;
                 continue;
@@ -7049,7 +7238,9 @@ impl OrderMatchingEngine {
     }
 
     fn record_pending_fill(&mut self, fill: &OrderFilled) {
-        if !self.config.use_reduce_only || self.instrument.is_spread() {
+        if (!self.config.use_reduce_only && !self.restricts_short_selling())
+            || self.instrument.is_spread()
+        {
             return;
         }
         self.purge_applied_fills();
@@ -7541,7 +7732,7 @@ mod tests {
         engine.record_pending_fill(&unrelated_fill);
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("0.100")
         );
@@ -7552,7 +7743,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("0.100")
         );
@@ -7562,7 +7753,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("0.100")
         );
@@ -7571,7 +7762,7 @@ mod tests {
         engine.record_pending_fill(&second_fill);
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("0.000")
         );
@@ -7579,7 +7770,7 @@ mod tests {
         assert!(engine.pending_fills.is_empty());
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("0.100")
         );
@@ -7638,7 +7829,7 @@ mod tests {
         engine.record_pending_fill(&increase_fill);
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from(expected)
         );
@@ -7648,7 +7839,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from(expected)
         );
@@ -7694,7 +7885,7 @@ mod tests {
         engine.record_pending_fill(&close_fill);
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("1.000")
         );
@@ -7711,7 +7902,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("1.000")
         );
@@ -7724,7 +7915,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("1.000")
         );
@@ -7749,7 +7940,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             engine
-                .position_quantity_remaining(&closing, &position)
+                .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
             Quantity::from("3.000")
         );
@@ -9097,7 +9288,7 @@ mod tests {
             engine
                 .position_quantity_remaining(
                     &closing,
-                    &cache.borrow().position(&position_id).unwrap()
+                    Some(&cache.borrow().position(&position_id).unwrap())
                 )
                 .unwrap(),
             Quantity::from("6.000")
