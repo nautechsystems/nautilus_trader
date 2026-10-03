@@ -275,9 +275,12 @@ Released on TBD (UTC).
 - Fixed catalog consolidation, deletes, name resets, intervals, and remote queries of non-ASCII identifiers
 - Fixed `ParquetDataCatalog` accepting a zero `batch_size` or `max_row_group_size`
 - Fixed HTTP client omitting configured `User-Agent` from proxy `CONNECT` requests for HTTPS URLs
+- Fixed authenticated HTTP proxy requests failing after cross-origin redirects
 - Fixed HTTP client adaptive HTTP/2 flow control triggering Cloudflare resets of large response bodies
+- Fixed rate limiters admitting an extra request after idle periods
 - Fixed TLS client config panicking on first use when ring is also enabled
 - Fixed Sockudo handshake retries logged as errors, hiding reconnect recovery
+- Fixed concurrent WebSocket authentication leaving the result and shared state inconsistent
 - Fixed WebSocket sends skipping the reconnect replay buffer before authentication (#5128), thanks @Robin1987China
 - Fixed dropping unfilled working orders when replacing a reconciliation lifecycle (#5003), thanks @abhijeetvichare76
 - Fixed live reconciliation applying report-task results after shutdown (#4982), thanks @folknor

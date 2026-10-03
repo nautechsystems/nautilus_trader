@@ -2119,6 +2119,143 @@ mod tests {
         assert!(!error.to_string().contains(&expected_auth));
     }
 
+    #[rstest]
+    #[case::cross_origin("http://127.0.0.1:2/final", None, false)]
+    #[case::cross_origin_override("http://127.0.0.1:2/final", Some("Basic b3ZlcnJpZGU="), false)]
+    #[case::same_origin("http://127.0.0.1:1/final", None, true)]
+    #[case::same_origin_override("http://127.0.0.1:1/final", Some("Basic b3ZlcnJpZGU="), true)]
+    #[case::https_connect("https://127.0.0.1:2/final", None, false)]
+    #[tokio::test]
+    async fn test_proxy_authentication_per_redirect_hop(
+        #[case] destination: &'static str,
+        #[case] initial_auth: Option<&'static str>,
+        #[case] same_origin: bool,
+    ) {
+        const PROXY_AUTH: &str = "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==";
+
+        let expected_initial_auth = initial_auth.unwrap_or(PROXY_AUTH);
+
+        let expected_redirect_auth = if same_origin {
+            expected_initial_auth
+        } else {
+            PROXY_AUTH
+        };
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
+
+        let router = Router::new().fallback(any(move |request: Request| {
+            let request_tx = request_tx.clone();
+
+            async move {
+                let (parts, _) = request.into_parts();
+                let first = parts.uri.path() == "/start";
+
+                let expected_auth = if first {
+                    expected_initial_auth
+                } else {
+                    expected_redirect_auth
+                };
+
+                let authenticated = parts.headers.get(http::header::PROXY_AUTHORIZATION)
+                    == Some(&http::HeaderValue::from_static(expected_auth));
+                let connect = parts.method == http::Method::CONNECT;
+                request_tx.send(parts).await.unwrap();
+
+                if !authenticated || connect {
+                    return StatusCode::PROXY_AUTHENTICATION_REQUIRED.into_response();
+                }
+
+                if first {
+                    return (StatusCode::TEMPORARY_REDIRECT, [("location", destination)])
+                        .into_response();
+                }
+
+                "accepted".into_response()
+            }
+        }));
+
+        let server = tokio::spawn(async move { serve(listener, router).await.unwrap() });
+        let origin_headers = HashMap::from([
+            ("authorization".to_string(), "Bearer origin-19".to_string()),
+            ("cookie".to_string(), "session=origin-23".to_string()),
+            ("cookie2".to_string(), "legacy=origin-29".to_string()),
+            (
+                "www-authenticate".to_string(),
+                "Basic realm=origin-31".to_string(),
+            ),
+        ]);
+        let mut headers = origin_headers.clone();
+
+        if let Some(initial_auth) = initial_auth {
+            headers.insert("proxy-authorization".to_string(), initial_auth.to_string());
+        }
+
+        let client = HttpClient::builder()
+            .headers(headers)
+            .timeout_secs(2)
+            .use_system_proxy(false)
+            .proxy_url(format!("http://proxytest:fixture42@{addr}"))
+            .build()
+            .unwrap();
+        let result = client
+            .request(
+                Method::GET,
+                "http://127.0.0.1:1/start".to_string(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        let first = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let redirected = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        server.abort();
+        let connect = destination.starts_with("https:");
+
+        assert_eq!(first.method, http::Method::GET);
+        assert_eq!(first.uri.to_string(), "http://127.0.0.1:1/start");
+        assert_eq!(
+            first.headers[http::header::PROXY_AUTHORIZATION],
+            expected_initial_auth
+        );
+        assert_eq!(
+            redirected.headers[http::header::PROXY_AUTHORIZATION],
+            expected_redirect_auth
+        );
+
+        for (name, value) in origin_headers {
+            assert_eq!(first.headers.get(&name).unwrap(), value.as_str());
+            assert_eq!(
+                redirected
+                    .headers
+                    .get(&name)
+                    .map(|value| value.to_str().unwrap()),
+                same_origin.then_some(value.as_str())
+            );
+        }
+
+        if connect {
+            assert_eq!(redirected.method, http::Method::CONNECT);
+            assert_eq!(redirected.uri.to_string(), "127.0.0.1:2");
+            assert!(result.is_err());
+        } else {
+            let response = result.unwrap();
+            assert_eq!(redirected.method, http::Method::GET);
+            assert_eq!(redirected.uri.to_string(), destination);
+            assert_eq!(response.status.as_u16(), 200);
+            assert_eq!(response.body.as_ref(), b"accepted");
+        }
+    }
+
     #[tokio::test]
     async fn test_http_client_unreachable_proxy_error_redacts_credentials() {
         const USERNAME: &str = "proxy-user";
@@ -2354,7 +2491,6 @@ mod rate_limit_tests {
         assert!(!request.is_finished());
 
         advance_test_clock(Duration::from_millis(9_999)).await;
-        global_limiter.until_key_ready(&global_key).await;
         global_limiter.until_key_ready(&global_key).await;
         advance_test_clock(Duration::from_millis(1)).await;
         test_task::yield_now().await;

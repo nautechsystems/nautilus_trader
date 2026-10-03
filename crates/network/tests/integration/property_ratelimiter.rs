@@ -63,13 +63,15 @@ impl GcraReference {
     }
 
     fn check(&mut self, key_index: usize) -> bool {
-        let tat = self.tat_by_key[key_index].unwrap_or(self.now_ns + self.cell_ns);
-        let earliest_time = tat.saturating_sub(self.burst_ns);
+        let next = self.tat_by_key[key_index]
+            .unwrap_or(self.now_ns)
+            .max(self.now_ns)
+            + self.cell_ns;
 
-        if self.now_ns < earliest_time {
+        if next > self.now_ns + self.burst_ns {
             false
         } else {
-            self.tat_by_key[key_index] = Some(tat.max(self.now_ns) + self.cell_ns);
+            self.tat_by_key[key_index] = Some(next);
             true
         }
     }

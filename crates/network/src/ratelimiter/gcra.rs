@@ -149,7 +149,7 @@ impl Gcra {
                 start,
             ))
         } else {
-            Ok(cmp::max(tat, t0) + self.t)
+            Ok(cmp::max(tat, self.starting_state(t0)) + self.t)
         }
     }
 }
