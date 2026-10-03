@@ -1003,8 +1003,6 @@ pub fn parse_order_status_report_from_basic(
     let time_in_force = order
         .tif
         .map_or(TimeInForce::Gtc, hyperliquid_time_in_force_to_nautilus);
-    let order_status = OrderStatus::from(*status);
-
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -1016,6 +1014,16 @@ pub fn parse_order_status_report_from_basic(
     let filled_sz = orig_sz.abs() - current_sz.abs();
     let filled_qty = Quantity::from_decimal_dp(filled_sz, size_precision)
         .map_err(|e| anyhow::anyhow!("Failed to create quantity from filled_sz: {e}"))?;
+
+    // The venue marks an order `filled` once it stops executing, with `sz` holding any remainder
+    // it canceled (seen on IOC orders). A filled report would leave that remainder open.
+    let venue_status = OrderStatus::from(*status);
+    let remainder_canceled = venue_status == OrderStatus::Filled && filled_qty < quantity;
+    let order_status = if remainder_canceled {
+        OrderStatus::Canceled
+    } else {
+        venue_status
+    };
 
     let ts_accepted = UnixNanos::from(order.timestamp * 1_000_000);
     let ts_last = ts_accepted;
@@ -1053,13 +1061,15 @@ pub fn parse_order_status_report_from_basic(
 
     if let Some(reason) = status.rejection_reason() {
         report = report.with_cancel_reason(reason.to_string());
+    } else if remainder_canceled {
+        report = report.with_cancel_reason("Unfilled remainder canceled".to_string());
     }
 
-    // Only set price for non-filled orders. For filled orders, the limit price is not
-    // the execution price, and setting it would cause bogus inferred fills to be created
-    // during reconciliation. Real fills arrive via the userEvents WebSocket channel.
+    // Only set price for orders the venue did not report as filled. For filled orders, the
+    // limit price is not the execution price, and setting it would cause bogus inferred fills
+    // to be created during reconciliation. Real fills arrive via the userEvents WebSocket channel.
     if !matches!(
-        order_status,
+        venue_status,
         OrderStatus::Filled | OrderStatus::PartiallyFilled
     ) {
         let price = Price::from_decimal_dp(order.limit_px, price_precision)
@@ -2744,5 +2754,44 @@ mod tests {
         assert_eq!(report.order_type, OrderType::Limit);
         assert!(report.trigger_price.is_none());
         assert!(report.trigger_type.is_none());
+    }
+
+    #[rstest]
+    #[case("Ioc", "0.0005", OrderStatus::Canceled, "0.0145")]
+    #[case("Gtc", "0.0005", OrderStatus::Canceled, "0.0145")]
+    #[case("Ioc", "0.0", OrderStatus::Filled, "0.015")]
+    #[case("Ioc", "0.000001", OrderStatus::Filled, "0.015")] // Below size precision
+    fn test_parse_order_status_report_from_basic_filled_with_remainder(
+        #[case] tif: &str,
+        #[case] sz: &str,
+        #[case] expected_status: OrderStatus,
+        #[case] expected_filled: &str,
+    ) {
+        // The venue marks an IOC order `filled` even when its remainder was canceled; `sz`
+        // carries that unfilled remainder
+        let instrument = create_btc_perp_instrument();
+        let mut row = frontend_open_order_row("Limit", false, "0.0");
+        row["origSz"] = json!("0.015");
+        row["sz"] = json!(sz);
+        row["tif"] = json!(tif);
+        let order: WsBasicOrderData = serde_json::from_value(row).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Filled,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from("0.015"));
+        assert_eq!(report.filled_qty, Quantity::from(expected_filled));
+        assert!(report.price.is_none(), "venue-filled rows carry no price");
+        assert_eq!(
+            report.cancel_reason.is_some(),
+            expected_status == OrderStatus::Canceled
+        );
     }
 }

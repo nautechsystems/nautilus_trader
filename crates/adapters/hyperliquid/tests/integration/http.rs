@@ -2075,6 +2075,50 @@ async fn test_request_order_status_report_closed_order_fallback() {
 
 #[rstest]
 #[tokio::test]
+async fn test_request_order_status_report_filled_with_remainder_is_canceled() {
+    // The venue reports an IOC order `filled` once it stops executing, with `sz` holding the
+    // remainder it canceled
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "A",
+                "limitPx": "95000.0",
+                "sz": "0.02",
+                "oid": 55557,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1",
+                "tif": "Ioc"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55557)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.quantity, Quantity::from("0.1"));
+    assert_eq!(report.filled_qty, Quantity::from("0.08"));
+    assert!(report.price.is_none());
+    assert_eq!(
+        report.cancel_reason.as_deref(),
+        Some("Unfilled remainder canceled")
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_order_status_report_closed_order_fallback_propagates_cloid() {
     let coid = ClientOrderId::new("O-20240101-000042");
     let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
