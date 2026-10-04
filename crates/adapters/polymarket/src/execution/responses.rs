@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use super::{
     cancellations::execute_deferred_cancel,
     context::OrderContextRegistry,
-    order_fill_tracker::{BufferedFill, OrderFillTrackerMap},
+    fill_tracker::{BufferedFill, OrderFillTrackerMap},
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
@@ -1216,7 +1216,7 @@ mod tests {
             PolymarketOrderStatus, PolymarketOutcome, PolymarketTradeStatus,
         },
         execution::{
-            order_fill_tracker::FillCorrectionMetadata,
+            fill_tracker::FillCorrectionMetadata,
             reconciliation::FillReportScope,
             settlement::{
                 AdmittedLeg, TradeEvidence, admission::AdmittedTrade, admit_trade_evidence,

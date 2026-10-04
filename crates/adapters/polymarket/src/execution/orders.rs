@@ -1501,7 +1501,7 @@ fn reject_modify_and_finish(
     close_canceled_order: bool,
     emitter: &nautilus_live::ExecutionEventEmitter,
     clock: &'static AtomicTime,
-    fill_tracker: &super::order_fill_tracker::OrderFillTrackerMap,
+    fill_tracker: &super::fill_tracker::OrderFillTrackerMap,
     ws_dispatch_state: &std::sync::Arc<
         parking_lot::Mutex<crate::websocket::dispatch::WsDispatchState>,
     >,
