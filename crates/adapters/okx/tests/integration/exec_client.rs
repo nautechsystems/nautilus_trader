@@ -3993,6 +3993,7 @@ async fn test_query_order_adopted_external_regular_uses_cached_venue_order_id(
 async fn test_generate_order_status_reports_honors_open_only(
     #[case] instrument_id: Option<&str>,
     #[values(true, false)] open_only: bool,
+    #[values(false, true)] worker: bool,
 ) {
     let state = Arc::new(ReportRouteState {
         include_regular_orders: true,
@@ -4019,7 +4020,17 @@ async fn test_generate_order_status_reports_honors_open_only(
         None,
     );
 
-    let mut reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let mut reports = if worker {
+        let task = client.generate_order_status_reports_task(&cmd).unwrap();
+        nautilus_common::live::get_runtime()
+            .spawn(task.collection)
+            .await
+            .unwrap();
+        task.result.await.unwrap()
+    } else {
+        client.generate_order_status_reports(&cmd).await.unwrap()
+    };
+
     reports.sort_by_key(|report| report.venue_order_id);
     let pending_queries = state.regular_order_pending_queries.lock().await;
     let history_queries = state.regular_order_history_queries.lock().await;
@@ -4402,7 +4413,9 @@ async fn test_generate_order_status_reports_includes_spreads_when_enabled(
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_fill_reports_includes_spreads_when_enabled() {
+async fn test_generate_fill_reports_includes_spreads_when_enabled(
+    #[values(false, true)] worker: bool,
+) {
     let state = Arc::new(ReportRouteState::default());
     let addr = start_exec_report_test_server(Arc::clone(&state)).await;
     let base_url = format!("http://{addr}");
@@ -4423,7 +4436,17 @@ async fn test_generate_fill_reports_includes_spreads_when_enabled() {
         None,
     );
 
-    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let reports = if worker {
+        let task = client.generate_fill_reports_task(&cmd).unwrap();
+        nautilus_common::live::get_runtime()
+            .spawn(task.collection)
+            .await
+            .unwrap();
+        task.result.await.unwrap()
+    } else {
+        client.generate_fill_reports(cmd).await.unwrap()
+    };
+
     let regular_fill_queries = state.regular_fill_queries.lock().await;
     let spread_trade_queries = state.spread_trade_queries.lock().await;
 
@@ -5101,18 +5124,29 @@ async fn test_generate_order_status_report_requires_instrument_id() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_report_uses_targeted_lookup() {
+async fn test_generate_order_status_report_uses_targeted_lookup(
+    #[values(false, true)] worker: bool,
+) {
     let (client, _rx, _cache, state) = create_query_order_test_client().await;
     let client_order_id = ClientOrderId::from("OQUERYREGULAR1");
-    let report = client
-        .generate_order_status_report(&generate_order_status_report_cmd(
-            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
-            Some(client_order_id),
-            None,
-        ))
-        .await
-        .unwrap()
-        .unwrap();
+    let command = generate_order_status_report_cmd(
+        Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+        Some(client_order_id),
+        None,
+    );
+
+    let report = if worker {
+        let task = client.generate_order_status_report_task(&command).unwrap();
+        nautilus_common::live::get_runtime()
+            .spawn(task.collection)
+            .await
+            .unwrap();
+        task.result.await.unwrap()
+    } else {
+        client.generate_order_status_report(&command).await.unwrap()
+    }
+    .unwrap();
+
     let regular_queries = state.regular_queries.lock().await;
     let sequence = state.sequence.lock().await;
 

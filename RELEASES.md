@@ -575,6 +575,7 @@ Released on TBD (UTC).
 - Optimized per-order overhead in account balance updates, order matching, and event publishing
 - Optimized Deribit WebSocket and HTTP decimal decoding
 - Optimized OKX WebSocket frame decoding and per-message handler overhead
+- Optimized OKX reconciliation report collection to reduce `LiveNode` main-thread stalls
 - Optimized Tardis Machine decimal decoding
 - Upgraded `cargo-codspeed` tool to v5.0.2
 - Upgraded `cargo-nextest` tool to v0.9.146

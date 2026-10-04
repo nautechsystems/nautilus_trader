@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    clients::ExecutionReportTask,
     component::component_state,
     enums::ComponentState,
     messages::execution::{CancelOrder, QueryOrder},
@@ -25,6 +26,157 @@ use super::*;
 #[cfg(feature = "python")]
 use crate::python::node::PyLiveNode;
 
+#[cfg(not(madsim))]
+#[rstest]
+#[case::failed_first(false)]
+#[case::pending_first(true)]
+#[tokio::test(flavor = "current_thread")]
+async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
+    #[case] pending_first: bool,
+) {
+    let mut node = LiveNode::build("ReportShutdownNode".to_string(), None).unwrap();
+    let command =
+        GenerateOrderStatusReports::new(UUID4::new(), 0.into(), true, None, None, None, None, None);
+    let (failed, failed_started, failed_completed) =
+        shutdown_report_client(Duration::from_millis(30), true, Duration::ZERO);
+    let (pending, pending_started, _) =
+        shutdown_report_client(Duration::from_millis(200), false, Duration::ZERO);
+    let mut failed_collection = Box::pin(failed.generate_order_status_reports(&command));
+    tokio::select! {
+        biased;
+        started = failed_started => { started.unwrap(); },
+        result = &mut failed_collection => panic!("worker completed before observation: {result:?}"),
+    }
+    drop(failed_collection);
+    failed_completed.await.unwrap();
+    let mut pending_collection = Box::pin(pending.generate_order_status_reports(&command));
+    tokio::select! {
+        biased;
+        started = pending_started => { started.unwrap(); },
+        result = &mut pending_collection => panic!("worker completed before observation: {result:?}"),
+    }
+    drop(pending_collection);
+    node.exec_clients = vec![failed, pending];
+
+    if pending_first {
+        node.exec_clients.reverse();
+    }
+
+    let mut errors = Vec::new();
+    let timed_out = tokio::time::timeout(
+        Duration::from_millis(50),
+        LiveNode::finish_report_tasks(&node.exec_clients, &mut errors),
+    )
+    .await;
+    let observed = errors.clone();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        LiveNode::finish_report_tasks(&node.exec_clients, &mut errors),
+    )
+    .await
+    .unwrap();
+    assert!(timed_out.is_err());
+    assert_eq!(observed.len(), 1);
+    assert!(observed[0].contains("SHUTDOWN report collection:"));
+    assert!(observed[0].contains("report worker failed"));
+    assert_eq!(errors, observed);
+}
+
+#[cfg(not(madsim))]
+#[tokio::test(flavor = "current_thread")]
+async fn test_report_shutdown_timeout_preserves_disconnect_budget() {
+    let config = LiveNodeConfig {
+        timeout_disconnection: Duration::from_millis(50),
+        ..Default::default()
+    };
+
+    let mut node =
+        LiveNode::build("ReportShutdownDisconnectNode".to_string(), Some(config)).unwrap();
+    let (client, started, _) =
+        shutdown_report_client(Duration::from_millis(200), false, Duration::from_millis(15));
+    node.kernel
+        .exec_engine
+        .borrow_mut()
+        .register_client(Box::new(client.clone()))
+        .unwrap();
+    let command =
+        GenerateOrderStatusReports::new(UUID4::new(), 0.into(), true, None, None, None, None, None);
+    let mut collection = Box::pin(client.generate_order_status_reports(&command));
+    tokio::select! {
+        biased;
+        started = started => { started.unwrap(); },
+        result = &mut collection => panic!("worker completed before observation: {result:?}"),
+    }
+    drop(collection);
+    node.exec_clients = vec![client.clone()];
+    let failure = node.finalize_stop().await.unwrap_err();
+    let disconnected = node.kernel.check_engines_disconnected();
+    let mut errors = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        LiveNode::finish_report_tasks(&node.exec_clients, &mut errors),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        failure
+            .to_string()
+            .contains("report collection shutdown timeout")
+    );
+    assert!(!failure.to_string().contains("disconnect timeout"));
+    assert!(disconnected);
+    assert!(!client.is_connected());
+    assert_eq!(node.state(), NodeState::Stopped);
+    assert!(errors.is_empty());
+}
+
+#[cfg(not(madsim))]
+fn shutdown_report_client(
+    duration: Duration,
+    fail: bool,
+    disconnect_delay: Duration,
+) -> (
+    LiveExecutionClient,
+    tokio::sync::oneshot::Receiver<()>,
+    tokio::sync::oneshot::Receiver<()>,
+) {
+    let (started_sender, started) = tokio::sync::oneshot::channel();
+    let (completed_sender, completed) = tokio::sync::oneshot::channel();
+
+    let task = ExecutionReportTask::new(
+        async move {
+            started_sender.send(()).unwrap();
+            let deadline = std::time::Instant::now() + duration;
+            while std::time::Instant::now() < deadline {
+                std::hint::spin_loop();
+            }
+
+            let outcome = std::panic::catch_unwind(|| assert!(!fail, "report worker failed"));
+            let _ = completed_sender.send(());
+
+            if let Err(payload) = outcome {
+                std::panic::resume_unwind(payload);
+            }
+
+            Ok(Vec::new())
+        },
+        Ok,
+    );
+
+    let client = LiveExecutionClient::new(Box::new(ShutdownClient {
+        connected: true,
+        retain: false,
+        disconnect_event: Rc::default(),
+        submitted: Rc::default(),
+        queries: Rc::default(),
+        report_task: RefCell::new(Some(task)),
+        disconnect_delay,
+    }));
+
+    (client, started, completed)
+}
+
 #[derive(Debug)]
 struct ShutdownClient {
     connected: bool,
@@ -32,6 +184,8 @@ struct ShutdownClient {
     disconnect_event: Rc<RefCell<Option<OrderEventAny>>>,
     submitted: Rc<RefCell<Vec<SubmitOrder>>>,
     queries: Rc<Cell<usize>>,
+    report_task: RefCell<Option<ExecutionReportTask<Vec<OrderStatusReport>>>>,
+    disconnect_delay: Duration,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -60,6 +214,13 @@ impl ExecutionClient for ShutdownClient {
         None
     }
 
+    fn generate_order_status_reports_task(
+        &self,
+        _command: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        self.report_task.borrow_mut().take()
+    }
+
     fn retain_unresolved_submissions(&self) -> bool {
         self.retain
     }
@@ -86,6 +247,10 @@ impl ExecutionClient for ShutdownClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
+        if !self.disconnect_delay.is_zero() {
+            tokio::time::sleep(self.disconnect_delay).await;
+        }
+
         self.connected = false;
 
         if let Some(event) = self.disconnect_event.borrow_mut().take() {
@@ -267,6 +432,8 @@ async fn test_submission_shutdown_boundary(
             disconnect_event: Rc::clone(&disconnect_event),
             submitted: Rc::default(),
             queries: queries.clone(),
+            report_task: RefCell::default(),
+            disconnect_delay: Duration::ZERO,
         },
         false,
     );
@@ -352,6 +519,8 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
             disconnect_event: Rc::default(),
             submitted: submitted.clone(),
             queries: Rc::default(),
+            report_task: RefCell::default(),
+            disconnect_delay: Duration::ZERO,
         },
         true,
     );
@@ -480,6 +649,8 @@ fn test_submission_shutdown_python_result(
             disconnect_event: Rc::default(),
             submitted: Rc::default(),
             queries: Rc::default(),
+            report_task: RefCell::default(),
+            disconnect_delay: Duration::ZERO,
         },
         false,
     );

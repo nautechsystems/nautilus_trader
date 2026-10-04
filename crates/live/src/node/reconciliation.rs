@@ -24,6 +24,7 @@
 
 use std::{future::Future, pin::Pin, time::Duration};
 
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     clients::ExecutionClient,
@@ -149,13 +150,15 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_open_order_reports(clients, command))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(OpenOrderReportResult {
-                        check,
-                        reports: result.reports,
-                        queried_clients: result.queried_clients,
-                        failed_clients: result.failed_clients,
-                    }),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(OpenOrderReportResult {
+                            check,
+                            reports: result.reports,
+                            queried_clients: result.queried_clients,
+                            failed_clients: result.failed_clients,
+                        })
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
@@ -190,8 +193,10 @@ impl LiveNode {
                 )
                 .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(result),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(result)
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
             planned_client_order_ids,
@@ -222,15 +227,17 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_position_reports(clients, command))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(
-                        PositionReportTaskResult::Positions(PositionReportResult {
-                            check,
-                            reports: result.reports,
-                            queried_clients: result.queried_clients,
-                            failed_clients: result.failed_clients,
-                        }),
-                    ),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(
+                            PositionReportResult {
+                                check,
+                                reports: result.reports,
+                                queried_clients: result.queried_clients,
+                                failed_clients: result.failed_clients,
+                            },
+                        ))
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
@@ -250,14 +257,16 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_position_fill_reports(clients, queries))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
-                        PositionFillReportResult {
-                            position_result,
-                            reports: result.reports,
-                            successful_keys: result.successful_keys,
-                        },
-                    )),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
+                            PositionFillReportResult {
+                                position_result,
+                                reports: result.reports,
+                                successful_keys: result.successful_keys,
+                            },
+                        ))
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         }
@@ -495,7 +504,32 @@ impl LiveNode {
         drop(open_order_report_task.take());
         drop(targeted_order_report_task.take());
         drop(position_report_task.take());
+
+        for client in &self.exec_clients {
+            client.cancel_report_task();
+        }
+
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+    }
+
+    pub(super) async fn finish_report_tasks(
+        clients: &[LiveExecutionClient],
+        errors: &mut Vec<String>,
+    ) {
+        for client in clients {
+            client.cancel_report_task();
+        }
+
+        let mut tasks = clients
+            .iter()
+            .map(|client| async move { (client.client_id(), client.join_report_task().await) })
+            .collect::<FuturesUnordered<_>>();
+
+        while let Some((client_id, result)) = tasks.next().await {
+            if let Err(e) = result {
+                errors.push(format!("{client_id} report collection: {e}"));
+            }
+        }
     }
 }
 

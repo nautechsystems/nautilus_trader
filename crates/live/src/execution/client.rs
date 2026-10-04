@@ -17,16 +17,22 @@
 //!
 //! The execution engine stores execution clients as trait objects, but continuous reconciliation
 //! also needs to issue bulk report requests from the live node loop. This facade wraps the adapter
-//! client once and hands cloneable views to both places, so the live crate can poll reconciliation
-//! futures without adding live-only request methods to the shared execution traits or creating a
-//! second adapter client instance. Instrument updates are deferred while a client request is in
-//! progress and flushed when the request completes.
+//! client once and hands cloneable views to both places. Owned report tasks collect on runtime
+//! workers, then finish cache-dependent decisions on the core thread. Clients without owned report
+//! tasks retain inline collection. Instrument updates are deferred only while an inline request
+//! borrows the client and are flushed when that request completes.
 
-use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
+    live::dst::task::JoinHandle,
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -46,10 +52,14 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use crate::task::{TaskJoinOutcome, TaskSlot};
+
 #[derive(Clone)]
 pub(crate) struct LiveExecutionClient {
     client: Rc<RefCell<Box<dyn ExecutionClient>>>,
     pending_instruments: Rc<RefCell<VecDeque<InstrumentAny>>>,
+    report_task: Rc<RefCell<TaskSlot<()>>>,
+    report_collecting: Rc<Cell<bool>>,
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
@@ -77,6 +87,8 @@ impl LiveExecutionClient {
         Self {
             client: Rc::new(RefCell::new(client)),
             pending_instruments: Rc::new(RefCell::new(VecDeque::new())),
+            report_task: Rc::new(RefCell::new(TaskSlot::new())),
+            report_collecting: Rc::new(Cell::new(false)),
             client_id,
             account_id,
             venue,
@@ -92,6 +104,13 @@ impl LiveExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let task = self.client.borrow().generate_order_status_report_task(cmd);
+        if let Some(task) = task {
+            return self.collect_report(task).await;
+        }
+
+        log::debug!("{} collects single-order reports inline", self.client_id);
+        let _guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_order_status_report(cmd).await };
         self.flush_pending_instruments();
         result
@@ -105,6 +124,14 @@ impl LiveExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let task = self.client.borrow().generate_order_status_reports_task(cmd);
+        if let Some(task) = task {
+            return self.collect_report(task).await;
+        }
+
+        log::debug!("{} collects bulk order reports inline", self.client_id);
+        let _guard = self.reserve_report_task().await?;
+
         let result = {
             self.client
                 .borrow()
@@ -124,6 +151,13 @@ impl LiveExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let task = self.client.borrow().generate_fill_reports_task(&cmd);
+        if let Some(task) = task {
+            return self.collect_report(task).await;
+        }
+
+        log::debug!("{} collects fill reports inline", self.client_id);
+        let _guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_fill_reports(cmd).await };
         self.flush_pending_instruments();
         result
@@ -137,6 +171,18 @@ impl LiveExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let task = self
+            .client
+            .borrow()
+            .generate_position_status_reports_task(cmd);
+
+        if let Some(task) = task {
+            return self.collect_report(task).await;
+        }
+
+        log::debug!("{} collects position reports inline", self.client_id);
+        let _guard = self.reserve_report_task().await?;
+
         let result = {
             self.client
                 .borrow()
@@ -146,6 +192,65 @@ impl LiveExecutionClient {
 
         self.flush_pending_instruments();
         result
+    }
+
+    async fn collect_report<T>(&self, task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+        let _guard = self.reserve_report_task().await?;
+
+        self.report_task.borrow_mut().spawn(task.collection)?;
+        self.join_report_task().await?;
+        let result = task.result.await;
+        self.flush_pending_instruments();
+        result
+    }
+
+    async fn reserve_report_task(&self) -> anyhow::Result<ReportTaskGuard> {
+        anyhow::ensure!(
+            !self.report_collecting.get(),
+            "{} report collection is already running",
+            self.client_id
+        );
+        self.report_collecting.set(true);
+
+        let guard = ReportTaskGuard {
+            task: Rc::clone(&self.report_task),
+            collecting: Rc::clone(&self.report_collecting),
+        };
+
+        if self.report_task.borrow().is_some() {
+            if !self
+                .report_task
+                .borrow()
+                .as_ref()
+                .is_some_and(JoinHandle::is_finished)
+            {
+                anyhow::bail!("{} report collection is still terminating", self.client_id);
+            }
+
+            self.join_report_task().await?;
+        }
+
+        Ok(guard)
+    }
+
+    pub(crate) fn cancel_report_task(&self) {
+        self.report_task.borrow_mut().abort();
+    }
+
+    pub(crate) async fn join_report_task(&self) -> anyhow::Result<()> {
+        let outcome =
+            std::future::poll_fn(|context| self.report_task.borrow_mut().poll_join(context)).await;
+
+        match outcome {
+            Some(TaskJoinOutcome::Failed(e)) => {
+                if e.is_panic() {
+                    log::error!("{} report collection worker panicked: {e}", self.client_id);
+                }
+
+                Err(e.into())
+            }
+            _ => Ok(()),
+        }
     }
 
     pub(crate) fn flush_pending_instruments(&self) {
@@ -162,6 +267,18 @@ impl LiveExecutionClient {
         }
 
         log::debug!("Flushed {count} deferred execution client instrument update(s)");
+    }
+}
+
+struct ReportTaskGuard {
+    task: Rc<RefCell<TaskSlot<()>>>,
+    collecting: Rc<Cell<bool>>,
+}
+
+impl Drop for ReportTaskGuard {
+    fn drop(&mut self) {
+        self.task.borrow_mut().abort();
+        self.collecting.set(false);
     }
 }
 
@@ -330,10 +447,14 @@ impl ExecutionClient for LiveExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        self.client
+        let _guard = self.reserve_report_task().await?;
+        let result = self
+            .client
             .borrow()
             .generate_mass_status(lookback_mins)
-            .await
+            .await;
+        self.flush_pending_instruments();
+        result
     }
 
     fn register_external_order(
@@ -380,5 +501,394 @@ impl ExecutionClient for LiveExecutionClient {
         self.client
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+}
+
+#[cfg(test)]
+#[cfg(not(madsim))]
+mod tests {
+    use std::{
+        cell::Cell,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        thread::ThreadId,
+        time::Duration,
+    };
+
+    use rstest::rstest;
+
+    use super::*;
+
+    struct ReportExecutionClient;
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for ReportExecutionClient {
+        fn is_connected(&self) -> bool {
+            true
+        }
+        fn client_id(&self) -> ClientId {
+            ClientId::from("REPORT")
+        }
+        fn account_id(&self) -> AccountId {
+            AccountId::from("REPORT-001")
+        }
+        fn venue(&self) -> Venue {
+            Venue::from("REPORT")
+        }
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn generate_mass_status(
+            &self,
+            _lookback_mins: Option<u64>,
+        ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+            std::future::pending().await
+        }
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn collection_runs_on_worker_and_finishes_with_current_core_state() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let core_thread = std::thread::current().id();
+        let current = Rc::new(Cell::new(11));
+        let current_for_finish = Rc::clone(&current);
+
+        let (task, started, gate) = cpu_collection(move |value| {
+            assert_eq!(std::thread::current().id(), core_thread);
+            Ok(value + current_for_finish.get())
+        });
+
+        let mut collection = Box::pin(client.collect_report(task));
+        let worker_thread = tokio::select! {
+            result = &mut collection => panic!("collection finished before release: {result:?}"),
+            started = started => started.unwrap(),
+        };
+        assert_ne!(worker_thread, core_thread);
+        current.set(29);
+        gate.release();
+        let result = collection.await.unwrap();
+        assert_eq!(result, 42);
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[rstest]
+    #[case::dropped(false)]
+    #[case::timed_out(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn canceled_cpu_collection_stays_owned_and_never_finishes_on_core(
+        #[case] timed_out: bool,
+    ) {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let finalized = Rc::new(Cell::new(0));
+        let finalized_for_task = Rc::clone(&finalized);
+
+        let (task, started, gate) = cpu_collection(move |value| {
+            finalized_for_task.set(finalized_for_task.get() + 1);
+            Ok(value)
+        });
+
+        let mut collection = Box::pin(client.collect_report(task));
+        tokio::select! {
+            result = &mut collection => panic!("collection finished before release: {result:?}"),
+            started = started => { started.unwrap(); },
+        }
+
+        if timed_out {
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), collection)
+                    .await
+                    .is_err()
+            );
+        } else {
+            drop(collection);
+        }
+
+        assert!(client.report_task.borrow().is_some());
+        let rejected = client
+            .collect_report(ExecutionReportTask::new(async { Ok(47) }, Ok))
+            .await
+            .unwrap_err();
+        let mass_rejected = client.generate_mass_status(None).await.unwrap_err();
+        assert_eq!(
+            rejected.to_string(),
+            "REPORT report collection is still terminating"
+        );
+        assert_eq!(mass_rejected.to_string(), rejected.to_string());
+        gate.release();
+        client.join_report_task().await.unwrap();
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(53) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(finalized.get(), 0);
+        assert_eq!(next, 53);
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn collection_panic_is_observed_and_slot_can_be_reused() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+
+        let task = ExecutionReportTask::<usize>::new::<usize, _, _>(
+            async { panic!("report decoding failed") },
+            Ok,
+        );
+        let failure = client.collect_report(task).await.unwrap_err();
+        assert!(failure.to_string().contains("report decoding failed"));
+        assert!(client.report_task.borrow().is_none());
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(59) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(next, 59);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn collection_error_does_not_run_continuation() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let finalized = Rc::new(Cell::new(false));
+        let finalized_for_task = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(
+            async { Err::<usize, _>(anyhow::anyhow!("report endpoint unavailable")) },
+            move |value| {
+                finalized_for_task.set(true);
+                Ok(value)
+            },
+        );
+
+        let failure = client.collect_report(task).await.unwrap_err();
+        assert_eq!(failure.to_string(), "report endpoint unavailable");
+        assert!(!finalized.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[rstest]
+    #[case::dropped(false)]
+    #[case::resumed(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn finished_worker_keeps_admission_until_collector_releases(#[case] resume: bool) {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let (task, started, gate) = cpu_collection(Ok);
+        let mut collection = Box::pin(client.collect_report(task));
+        tokio::select! {
+            result = &mut collection => panic!("collection finished before release: {result:?}"),
+            started = started => { started.unwrap(); },
+        }
+        gate.release();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !client.report_task.borrow().as_ref().unwrap().is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let rejected = client
+            .collect_report(ExecutionReportTask::new(async { Ok(61) }, Ok))
+            .await
+            .unwrap_err();
+
+        if resume {
+            assert_eq!(collection.await.unwrap(), 13);
+        } else {
+            drop(collection);
+        }
+
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(67) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(
+            rejected.to_string(),
+            "REPORT report collection is already running"
+        );
+        assert_eq!(next, 67);
+        assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn retained_worker_join_reserves_admission_before_cooperative_yield() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let (task, started, gate) = cpu_collection(Ok);
+        let mut collection = Box::pin(client.collect_report(task));
+        tokio::select! {
+            result = &mut collection => panic!("collection finished before release: {result:?}"),
+            started = started => { started.unwrap(); },
+        }
+        drop(collection);
+        gate.release();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !client.report_task.borrow().as_ref().unwrap().is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let mut reservation = Box::pin(client.reserve_report_task());
+        std::future::poll_fn(|context| {
+            loop {
+                let mut budget = std::pin::pin!(tokio::task::consume_budget());
+                if budget.as_mut().poll(context).is_pending() {
+                    break;
+                }
+            }
+
+            assert!(reservation.as_mut().poll(context).is_pending());
+            assert!(client.report_collecting.get());
+            let mut overlapping =
+                Box::pin(client.collect_report(ExecutionReportTask::new(async { Ok(89) }, Ok)));
+
+            let std::task::Poll::Ready(Err(rejected)) = overlapping.as_mut().poll(context) else {
+                panic!("overlapping collection was not rejected");
+            };
+
+            assert_eq!(
+                rejected.to_string(),
+                "REPORT report collection is already running"
+            );
+            std::task::Poll::Ready(())
+        })
+        .await;
+
+        drop(reservation);
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(97) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(next, 97);
+        assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn pending_continuation_keeps_admission_until_collector_releases() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let (started_sender, started) = tokio::sync::oneshot::channel();
+
+        let task = ExecutionReportTask {
+            collection: Box::pin(async {}),
+            result: Box::pin(async move {
+                started_sender.send(()).unwrap();
+                std::future::pending::<anyhow::Result<usize>>().await
+            }),
+        };
+
+        let mut collection = Box::pin(client.collect_report(task));
+        tokio::select! {
+            result = &mut collection => panic!("continuation unexpectedly returned: {result:?}"),
+            started = started => { started.unwrap(); },
+        }
+        let rejected = client
+            .collect_report(ExecutionReportTask::new(async { Ok(71) }, Ok))
+            .await
+            .unwrap_err();
+        drop(collection);
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(73) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(
+            rejected.to_string(),
+            "REPORT report collection is already running"
+        );
+        assert_eq!(next, 73);
+        assert!(!client.report_collecting.get());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn inline_mass_status_keeps_worker_admission_until_collector_releases() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let mut mass_status = Box::pin(client.generate_mass_status(None));
+        std::future::poll_fn(|context| {
+            assert!(mass_status.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+
+        let rejected = client
+            .collect_report(ExecutionReportTask::new(async { Ok(79) }, Ok))
+            .await
+            .unwrap_err();
+        drop(mass_status);
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(83) }, Ok))
+            .await
+            .unwrap();
+        assert_eq!(
+            rejected.to_string(),
+            "REPORT report collection is already running"
+        );
+        assert_eq!(next, 83);
+        assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    fn cpu_collection(
+        finish: impl FnOnce(usize) -> anyhow::Result<usize> + 'static,
+    ) -> (
+        ExecutionReportTask<usize>,
+        tokio::sync::oneshot::Receiver<ThreadId>,
+        CpuGate,
+    ) {
+        let (started_sender, started) = tokio::sync::oneshot::channel();
+        let released = Arc::new(AtomicBool::new(false));
+        let released_for_worker = Arc::clone(&released);
+
+        let task = ExecutionReportTask::new(
+            async move {
+                started_sender.send(std::thread::current().id()).unwrap();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+                while !released_for_worker.load(Ordering::Acquire)
+                    && std::time::Instant::now() < deadline
+                {
+                    std::hint::spin_loop();
+                }
+
+                assert!(released_for_worker.load(Ordering::Acquire));
+                Ok(13)
+            },
+            finish,
+        );
+
+        (task, started, CpuGate(released))
+    }
+
+    struct CpuGate(Arc<AtomicBool>);
+
+    impl CpuGate {
+        fn release(&self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    impl Drop for CpuGate {
+        fn drop(&mut self) {
+            self.release();
+        }
     }
 }

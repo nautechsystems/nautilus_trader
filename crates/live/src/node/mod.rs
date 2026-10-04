@@ -2522,13 +2522,25 @@ impl LiveNode {
         let timeout = self.config.timeout_disconnection;
         let deadline = dst::time::Instant::now() + timeout;
 
-        let disconnect_result =
-            match dst::time::timeout(timeout, self.kernel.disconnect_clients()).await {
-                Ok(result) => result,
-                Err(_) => Err(anyhow::anyhow!(
-                    "disconnect timeout while disconnecting clients"
-                )),
-            };
+        let mut errors = Vec::new();
+        let (report_result, disconnect_result) = futures_util::join!(
+            dst::time::timeout(
+                timeout,
+                Self::finish_report_tasks(&self.exec_clients, &mut errors)
+            ),
+            dst::time::timeout(timeout, self.kernel.disconnect_clients()),
+        );
+
+        if report_result.is_err() {
+            errors.push("report collection shutdown timeout".to_string());
+        }
+
+        let disconnect_result = match disconnect_result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow::anyhow!(
+                "disconnect timeout while disconnecting clients"
+            )),
+        };
 
         if let Err(ref e) = disconnect_result {
             log::error!("Error disconnecting clients: {e}");
@@ -2538,8 +2550,6 @@ impl LiveNode {
         let kernel_result = self.kernel.finalize_stop().await;
 
         self.handle.set_stopped();
-
-        let mut errors = Vec::new();
 
         if !unresolved_submissions.is_empty() {
             errors.push(format!(

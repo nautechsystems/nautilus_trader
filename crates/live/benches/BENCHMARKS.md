@@ -10,10 +10,11 @@ each run produces its own measurements.
 The tests use in-memory reports: no venue connection or credentials are required. Simulation builds
 exclude these wall-clock tests.
 
-From the repository root:
+From the repository root. Two runtime workers keep the comparison bounded independently of the
+host's CPU count; four build jobs limit compilation load on shared machines:
 
 ```bash
-CARGO_BUILD_JOBS=8 NEXTEST_TEST_THREADS=1 cargo nextest run \
+NAUTILUS_WORKER_THREADS=2 CARGO_BUILD_JOBS=4 NEXTEST_TEST_THREADS=1 cargo nextest run \
   --cargo-profile bench -p nautilus-live --test integration \
   --run-ignored ignored-only -E 'test(reconciliation_latency)' \
   --stress-count 3 --success-output immediate --failure-output immediate
@@ -64,6 +65,38 @@ order count and open position count and quantity.
 | Position history           | 1,024 existing fills on one order. | Repeated history plus one missing fill.          |
 | Warm baseline and recovery | One existing fill on one order.    | Baseline, or 1 / 1,024 missing fills.            |
 | Stall control              | One accepted order.                | A deliberate 5 ms data-callback stall.           |
+
+The `collection_inline` and `collection_worker` cases add 500 ms of CPU work to the first bulk
+report fetch. They use identical reports and traffic. The inline case polls collection on the
+node thread; the worker case uses an owned report task and returns the result to that thread.
+Both cases check the collection thread identity and require collection to finish inside the
+measurement window. The second request remains pending until shutdown, giving each case exactly
+one CPU collection and two report requests. Use these cases to compare scheduling isolation, not
+venue decoding speed.
+
+The `collection_sustained_inline` and `collection_sustained_worker` cases run 25 ms of CPU work
+on every bulk report request. They require multiple collections to finish. All collection cases
+check that concurrency never exceeds one and that shutdown drains every collection. Worker cases
+must dispatch trade callbacks during report CPU work; inline cases must dispatch none during that
+work. The output includes collection counts and the number of callbacks observed during CPU work.
+
+Compare inline and worker runs only when their report and request counts match. The sustained cases
+depend on elapsed time, so check counts across paired outputs; a passing case alone does not prove
+that both runs perform the same amount of work.
+
+The sustained `_many` cases return 1,024 order reports per collection and check every cached order.
+These cases include the cost of handing a larger batch back to the core and reconciling it there.
+Core application still runs synchronously, so offloading collection does not remove that cost.
+
+The sustained `cancel` cases return canceled reports for 1,024 initially accepted orders. They
+require every cached order to become canceled, proving that worker results reach core reconciliation
+rather than being discarded. The focused state-changing node test also requires exactly one
+collection in both inline and worker variants. Applying a large batch of terminal events can still
+stall the core; these cases measure that remaining cost rather than assuming collection isolation
+also isolates event application.
+
+To run only this comparison, replace the filter with
+`-E 'test(reconciliation_latency) & test(collection_)'`.
 
 ### Reconciliation settings
 

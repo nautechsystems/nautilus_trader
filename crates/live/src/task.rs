@@ -666,6 +666,23 @@ impl<T> TaskSlot<T> {
         }
     }
 
+    /// Polls the owned task to termination without borrowing its owner across an await.
+    ///
+    /// A pending or canceled poll retains ownership. A ready poll consumes the terminal handle.
+    pub fn poll_join(
+        &mut self,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<TaskJoinOutcome<T>>> {
+        let Some(handle) = self.handle.as_mut() else {
+            return std::task::Poll::Ready(None);
+        };
+
+        match std::pin::Pin::new(handle).poll(context) {
+            std::task::Poll::Pending => std::task::Poll::Pending,
+            std::task::Poll::Ready(result) => std::task::Poll::Ready(Some(self.complete(result))),
+        }
+    }
+
     fn complete(&mut self, result: Result<T, JoinError>) -> TaskJoinOutcome<T> {
         let outcome = match result {
             Ok(output) => TaskJoinOutcome::Completed(output),
