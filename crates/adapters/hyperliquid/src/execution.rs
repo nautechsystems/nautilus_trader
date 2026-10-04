@@ -1889,6 +1889,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
                         );
                     } else {
+                        clamp_reduce_only_report_to_fills(&http_client, &account_address, &mut report)
+                            .await;
                         attach_known_client_order_id(&mut report, client_order_id);
                         log::debug!("Queried order status for oid {oid}");
                         emitter.send_order_status_report(report);
@@ -2102,6 +2104,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             attach_known_client_order_id(report, client_order_id);
         }
 
+        if let Some(report) = &mut report {
+            clamp_reduce_only_report_to_fills(&self.http_client, &account_address, report).await;
+        }
+
         if report.is_some() {
             log::debug!("Generated order status report for oid {oid}");
         } else {
@@ -2298,6 +2304,50 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         Ok(Some(mass_status))
+    }
+}
+
+// Mass status clamps a reduce-only `Filled` report to its fills from its own fill sweep. The
+// single-order lookups have no fills, so fetch them under the same rules; a failed fetch, a
+// history at the venue cap, or an incomplete history leaves the venue report as it is
+async fn clamp_reduce_only_report_to_fills(
+    http_client: &HyperliquidHttpClient,
+    account_address: &str,
+    report: &mut OrderStatusReport,
+) {
+    if report.order_status != OrderStatus::Filled || !report.reduce_only {
+        return;
+    }
+
+    let venue_order_id = report.venue_order_id;
+    let fills_response = match http_client.info_user_fills(account_address).await {
+        Ok(fills) => fills,
+        Err(e) => {
+            log::warn!(
+                "Failed to fetch fills for reduce-only order {venue_order_id}, keeping venue quantity: {e}"
+            );
+            return;
+        }
+    };
+
+    if fills_response.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT {
+        log::debug!(
+            "Fill history at venue cap, keeping venue quantity for reduce-only order {venue_order_id}"
+        );
+        return;
+    }
+
+    match http_client.fill_reports_from_response(fills_response, Some(report.instrument_id)) {
+        Ok(fill_sweep) if fill_sweep.complete => {
+            let fill_totals = fill_totals_by_order(&fill_sweep.reports);
+            clamp_filled_reports_to_fills(std::slice::from_mut(report), &fill_totals);
+        }
+        Ok(_) => log::debug!(
+            "Fill history incomplete, keeping venue quantity for reduce-only order {venue_order_id}"
+        ),
+        Err(e) => log::warn!(
+            "Failed to parse fills for reduce-only order {venue_order_id}, keeping venue quantity: {e}"
+        ),
     }
 }
 

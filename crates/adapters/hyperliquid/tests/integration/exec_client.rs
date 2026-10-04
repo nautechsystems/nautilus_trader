@@ -10617,3 +10617,191 @@ async fn test_modify_order_missing_asset_emits_rejection() {
     );
     client.disconnect().await.unwrap();
 }
+
+#[derive(Clone, Copy, Debug)]
+enum SingleOrderFills {
+    Complete,
+    AtVenueCap,
+    Incomplete,
+    RequestFails,
+    Empty,
+}
+
+fn single_order_fills(kind: SingleOrderFills) -> Value {
+    let mut fills = json!([
+        capped_stop_fill("0.001", 1_754_000_001_000, 4),
+        capped_stop_fill("0.0005", 1_754_000_001_000, 5),
+    ]);
+
+    match kind {
+        SingleOrderFills::AtVenueCap => {
+            let template = user_fill("ETH", 1);
+            pad_to_venue_cap(&mut fills, &template, &["oid"]);
+        }
+        SingleOrderFills::Incomplete => {
+            let mut unusable_fill = capped_stop_fill("0.0005", 1_754_000_001_000, 6);
+            unusable_fill["coin"] = json!("NOCOIN");
+            fills.as_array_mut().unwrap().push(unusable_fill);
+        }
+        SingleOrderFills::Empty => fills = json!([]),
+        SingleOrderFills::Complete | SingleOrderFills::RequestFails => {}
+    }
+    fills
+}
+
+async fn user_fills_reads(state: &TestServerState) -> usize {
+    history_reads(&state.info_requests)
+        .await
+        .iter()
+        .filter(|kind| *kind == "userFills")
+        .count()
+}
+
+// Returns the lookup's report and how many userFills requests it made
+async fn capped_stop_single_report(
+    status_row: Value,
+    fills: SingleOrderFills,
+) -> (OrderStatusReport, usize) {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await =
+        Some(json!({"status": "order", "order": status_row}));
+    *state.user_fills_response.lock().await = Some(single_order_fills(fills));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    state.info_requests.lock().await.clear();
+    if matches!(fills, SingleOrderFills::RequestFails) {
+        state.fail_user_fills_count.store(1, Ordering::Relaxed);
+    }
+
+    let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("200004")));
+    let report = client
+        .generate_order_status_report(&cmd)
+        .await
+        .unwrap()
+        .expect("terminal stop report");
+    let reads = user_fills_reads(&state).await;
+
+    client.disconnect().await.unwrap();
+    (report, reads)
+}
+
+// The single-order lookup must agree with mass status: a reduce-only stop the venue reports
+// `filled` past its fills is clamped to them when the fill history is complete, and every other
+// outcome keeps the venue quantity. Only a reduce-only `Filled` report requests fills
+#[rstest]
+#[case::complete_fills(
+    true,
+    "filled",
+    "0.0",
+    SingleOrderFills::Complete,
+    "0.0015",
+    "0.0015",
+    1
+)]
+#[case::fills_at_venue_cap(
+    true,
+    "filled",
+    "0.0",
+    SingleOrderFills::AtVenueCap,
+    "0.002",
+    "0.002",
+    1
+)]
+#[case::incomplete_fills(
+    true,
+    "filled",
+    "0.0",
+    SingleOrderFills::Incomplete,
+    "0.002",
+    "0.002",
+    1
+)]
+#[case::fills_request_fails(
+    true,
+    "filled",
+    "0.0",
+    SingleOrderFills::RequestFails,
+    "0.002",
+    "0.002",
+    1
+)]
+#[case::no_fills(true, "filled", "0.0", SingleOrderFills::Empty, "0.002", "0.002", 1)]
+#[case::not_reduce_only(
+    false,
+    "filled",
+    "0.0",
+    SingleOrderFills::Complete,
+    "0.002",
+    "0.002",
+    0
+)]
+#[case::canceled(
+    true,
+    "canceled",
+    "0.0005",
+    SingleOrderFills::Complete,
+    "0.002",
+    "0.0015",
+    0
+)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_clamps_reduce_only_fill_to_fills(
+    #[case] reduce_only: bool,
+    #[case] status: &str,
+    #[case] remaining: &str,
+    #[case] fills: SingleOrderFills,
+    #[case] expected_qty: &str,
+    #[case] expected_filled: &str,
+    #[case] expected_fills_reads: usize,
+) {
+    let status_row = capped_stop_history(status, remaining, reduce_only)[0].clone();
+
+    let (report, fills_reads) = capped_stop_single_report(status_row, fills).await;
+
+    assert_eq!(report.reduce_only, reduce_only);
+    assert_eq!(report.quantity, Quantity::from(expected_qty));
+    assert_eq!(report.filled_qty, Quantity::from(expected_filled));
+    assert_eq!(fills_reads, expected_fills_reads);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_order_clamps_reduce_only_fill_to_fills() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": capped_stop_history("filled", "0.0", true)[0].clone(),
+    }));
+    *state.user_fills_response.lock().await = Some(single_order_fills(SingleOrderFills::Complete));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    client
+        .query_order(make_query_order_cmd(
+            ClientOrderId::new("O-QUERY-STOP"),
+            Some(VenueOrderId::from("200004")),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reports = drain_order_status_reports(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].order_status, OrderStatus::Filled);
+    assert_eq!(reports[0].quantity, Quantity::from("0.0015"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("0.0015"));
+
+    client.disconnect().await.unwrap();
+}
