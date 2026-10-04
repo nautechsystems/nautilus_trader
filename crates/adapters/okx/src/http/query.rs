@@ -739,14 +739,27 @@ pub struct GetOrderParams {
 #[builder(setter(into, strip_option))]
 #[serde(rename_all = "camelCase")]
 pub struct GetTradeFeeParams {
-    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
+    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION, EVENTS.
     pub inst_type: OKXInstrumentType,
-    /// Underlying, required for SWAP/FUTURES/OPTION (optional).
+    /// Legacy underlying selector for SWAP/FUTURES/OPTION (optional).
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uly: Option<String>,
-    /// Instrument family, required for SWAP/FUTURES/OPTION (optional).
+    /// Instrument family for SWAP/FUTURES/OPTION (optional).
+    /// Required to obtain applicable incentive-program rates.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inst_family: Option<String>,
+    /// Instrument ID for SPOT/MARGIN (optional).
+    /// Required to obtain applicable incentive-program rates.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Fee group ID from instrument metadata (optional).
+    /// Mutually exclusive with `inst_id` and `inst_family`.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
 }
 
 #[cfg(test)]

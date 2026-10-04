@@ -89,6 +89,8 @@ use ustr::Ustr;
 struct TestServerState {
     account_configuration_request: Arc<tokio::sync::Mutex<Option<(HeaderMap, Uri, Bytes)>>>,
     account_configuration_response: Arc<tokio::sync::Mutex<Option<(StatusCode, String)>>>,
+    trade_fee_request: Arc<tokio::sync::Mutex<Option<(HeaderMap, Uri, Bytes)>>>,
+    trade_fee_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_history_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
@@ -369,6 +371,7 @@ fn event_contract_markets_response(params: &HashMap<String, String>) -> Value {
 
 fn create_router(state: Arc<TestServerState>) -> Router {
     let account_configuration_state = state.clone();
+    let trade_fee_state = state.clone();
     let instruments_state = state.clone();
     let spreads_state = state.clone();
     let spread_order_query_state = state.clone();
@@ -1190,20 +1193,34 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         )
         .route(
             "/api/v5/account/trade-fee",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            get(move |headers: HeaderMap, uri: Uri, body: Bytes| {
+                let state = trade_fee_state.clone();
+                async move {
+                    let authenticated = has_auth_headers(&headers);
+                    *state.trade_fee_request.lock().await = Some((headers, uri, body));
 
-                Json(load_test_data("http_get_trade_fee_response.json")).into_response()
+                    if !authenticated {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    Json(
+                        state
+                            .trade_fee_response
+                            .lock()
+                            .await
+                            .clone()
+                            .unwrap_or_else(|| load_test_data("http_get_trade_fee_response.json")),
+                    )
+                    .into_response()
+                }
             }),
         )
         .route(
@@ -5331,6 +5348,263 @@ async fn test_http_get_position_tiers_returns_data() {
 
     assert!(!tiers.is_empty());
     assert_eq!(tiers[0].inst_id, Ustr::from("BTC-USDT"));
+}
+
+async fn trade_fee_client(
+    state: Arc<TestServerState>,
+    environment: OKXEnvironment,
+) -> OKXRawHttpClient {
+    let addr = start_test_server(state).await;
+    OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+        format!("http://{addr}"),
+        5,
+        0,
+        1,
+        1,
+        environment,
+        None,
+    )
+    .unwrap()
+}
+
+#[rstest]
+#[case::unscoped(OKXInstrumentType::Spot, None, None, None, None, "instType=SPOT")]
+#[case::spot(
+    OKXInstrumentType::Spot,
+    Some("BTC-USDT"),
+    None,
+    None,
+    None,
+    "instType=SPOT&instId=BTC-USDT"
+)]
+#[case::margin(
+    OKXInstrumentType::Margin,
+    Some("BTC-USDT"),
+    None,
+    None,
+    None,
+    "instType=MARGIN&instId=BTC-USDT"
+)]
+#[case::swap(
+    OKXInstrumentType::Swap,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=SWAP&instFamily=BTC-USD"
+)]
+#[case::futures(
+    OKXInstrumentType::Futures,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=FUTURES&instFamily=BTC-USD"
+)]
+#[case::option(
+    OKXInstrumentType::Option,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=OPTION&instFamily=BTC-USD"
+)]
+#[case::group(
+    OKXInstrumentType::Spot,
+    None,
+    None,
+    Some("1"),
+    None,
+    "instType=SPOT&groupId=1"
+)]
+#[case::events_group(
+    OKXInstrumentType::Events,
+    None,
+    None,
+    Some("0"),
+    None,
+    "instType=EVENTS&groupId=0"
+)]
+#[case::legacy(
+    OKXInstrumentType::Swap,
+    None,
+    Some("BTC-USD"),
+    None,
+    Some("BTC-USD"),
+    "instType=SWAP&uly=BTC-USD&instFamily=BTC-USD"
+)]
+#[tokio::test]
+async fn test_http_trade_fee_authenticated_scoped_request(
+    #[case] inst_type: OKXInstrumentType,
+    #[case] inst_id: Option<&str>,
+    #[case] inst_family: Option<&str>,
+    #[case] group_id: Option<&str>,
+    #[case] uly: Option<&str>,
+    #[case] expected_query: &str,
+    #[values(OKXEnvironment::Live, OKXEnvironment::Demo)] environment: OKXEnvironment,
+) {
+    let state = Arc::new(TestServerState::default());
+    let client = trade_fee_client(state.clone(), environment).await;
+    let mut builder = GetTradeFeeParamsBuilder::default();
+    builder.inst_type(inst_type);
+    if let Some(value) = inst_id {
+        builder.inst_id(value);
+    }
+
+    if let Some(value) = inst_family {
+        builder.inst_family(value);
+    }
+
+    if let Some(value) = group_id {
+        builder.group_id(value);
+    }
+
+    if let Some(value) = uly {
+        builder.uly(value);
+    }
+
+    let fees = client
+        .get_trade_fee(builder.build().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(fees.len(), 1);
+    assert_eq!(fees[0].maker, "-0.0008");
+    assert_eq!(fees[0].taker, "-0.001");
+    assert!(fees[0].fee_group.is_empty());
+    let (headers, uri, body) = state.trade_fee_request.lock().await.clone().unwrap();
+    assert_eq!(uri.path(), "/api/v5/account/trade-fee");
+    assert_eq!(uri.query(), Some(expected_query));
+    assert!(body.is_empty());
+    assert!(has_auth_headers(&headers));
+    assert_eq!(headers["ok-access-key"], "test_key");
+    assert_eq!(headers["ok-access-passphrase"], "passphrase");
+    assert_eq!(
+        headers
+            .get("x-simulated-trading")
+            .map(|value| value.to_str().unwrap()),
+        (environment == OKXEnvironment::Demo).then_some("1"),
+    );
+    let timestamp = headers["ok-access-timestamp"].to_str().unwrap();
+    assert_eq!(
+        timestamp,
+        format!("{:.3}", timestamp.parse::<Timestamp>().unwrap())
+    );
+    let credential = Credential::new(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+    );
+    assert_eq!(
+        headers["ok-access-sign"],
+        credential.sign_bytes(
+            timestamp,
+            "GET",
+            uri.path_and_query().unwrap().as_str(),
+            None
+        ),
+    );
+}
+
+#[rstest]
+#[case::instrument(Some("BTC-USDT"), None)]
+#[case::family(None, Some("BTC-USD"))]
+#[case::both(Some("BTC-USDT"), Some("BTC-USD"))]
+#[tokio::test]
+async fn test_http_trade_fee_rejects_conflicting_scope_before_request(
+    #[case] inst_id: Option<&str>,
+    #[case] inst_family: Option<&str>,
+) {
+    let state = Arc::new(TestServerState::default());
+    let client = trade_fee_client(state.clone(), OKXEnvironment::Demo).await;
+    let mut params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .group_id("1")
+        .build()
+        .unwrap();
+    params.inst_id = inst_id.map(str::to_string);
+    params.inst_family = inst_family.map(str::to_string);
+
+    let result = client.get_trade_fee(params).await;
+
+    assert!(matches!(result, Err(OKXHttpError::ValidationError(_))));
+    assert!(state.trade_fee_request.lock().await.is_none());
+}
+
+#[rstest]
+#[case::rpi_only(Some("-0.00015"), None)]
+#[case::elp_only(None, Some("-0.00016"))]
+#[case::both_equal(Some("-0.00015"), Some("-0.00015"))]
+#[case::both_distinct(Some("-0.00015"), Some("-0.00016"))]
+#[case::empty_rpi(Some(""), Some("-0.00016"))]
+#[case::empty_elp(Some("-0.00015"), Some(""))]
+#[tokio::test]
+async fn test_http_trade_fee_grouped_response_without_legacy_scalars(
+    #[case] rpi: Option<&str>,
+    #[case] elp: Option<&str>,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut first_group = json!({"groupId": "1", "maker": "0.0002", "taker": "-0.001"});
+    if let Some(value) = rpi {
+        first_group["rpiMaker"] = json!(value);
+    }
+
+    if let Some(value) = elp {
+        first_group["elpMaker"] = json!(value);
+    }
+    *state.trade_fee_response.lock().await = Some(json!({
+        "code": "0", "msg": "", "data": [{
+            "level": "Lv1", "instType": "SPOT", "ts": "1763979985847",
+            "feeGroup": [
+                first_group,
+                {"groupId": "2", "maker": "0", "taker": "", "rpiMaker": ""}
+            ]
+        }]
+    }));
+    let client = trade_fee_client(state, OKXEnvironment::Demo).await;
+    let params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .build()
+        .unwrap();
+
+    let fees = client.get_trade_fee(params).await.unwrap();
+
+    assert_eq!(fees.len(), 1);
+    let fee = &fees[0];
+    assert!(fee.maker.is_empty());
+    assert!(fee.taker.is_empty());
+    assert!(fee.maker_u.is_empty());
+    assert!(fee.taker_u.is_empty());
+    assert_eq!(fee.fee_group.len(), 2);
+    let first = &fee.fee_group[0];
+    assert_eq!(first.group_id, "1");
+    assert_eq!(
+        first.maker,
+        Some(Decimal::from_str_exact("0.0002").unwrap())
+    );
+    assert_eq!(
+        first.taker,
+        Some(Decimal::from_str_exact("-0.001").unwrap())
+    );
+    assert_eq!(
+        first.rpi_maker,
+        rpi.filter(|value| !value.is_empty())
+            .map(|value| Decimal::from_str_exact(value).unwrap())
+    );
+    assert_eq!(
+        first.elp_maker,
+        elp.filter(|value| !value.is_empty())
+            .map(|value| Decimal::from_str_exact(value).unwrap())
+    );
+    let second = &fee.fee_group[1];
+    assert_eq!(second.group_id, "2");
+    assert_eq!(second.maker, Some(Decimal::ZERO));
+    assert_eq!(second.taker, None);
+    assert_eq!(second.rpi_maker, None);
+    assert_eq!(second.elp_maker, None);
 }
 
 #[rstest]
